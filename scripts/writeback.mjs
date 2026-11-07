@@ -6,7 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, parseArgs, need, isMain, settings, inside, loadBrand, readJson, writeJson, today, findDraft, setStatus } from './lib.mjs';
+import { cleanDraftImage } from './image-clean.mjs';
+import { main, out, parseArgs, need, isMain, settings, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus } from './lib.mjs';
 
 export function slugify(text) {
   const s = String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase()
@@ -14,7 +15,14 @@ export function slugify(text) {
   return /^[a-z]/.test(s) ? s : `post-${s || 'social'}`.replace(/-$/, '');
 }
 
+// One write-back at a time per brand catalog (the UI and a scheduled agent may approve at the same moment).
 export function writeBack(id) {
+  const { draft } = findDraft(id);
+  const brand = loadBrand(draft.brand);
+  return withLock(path.join(brand.dir, 'workspace', 'catalog.json'), () => writeBackInner(id));
+}
+
+function writeBackInner(id) {
   const { dir, draft, status } = findDraft(id);
   if (status.brand_post) return { id, status: 'approved', brand_post: status.brand_post, reused: true };
   if (status.status !== 'approved' || !status.by) throw new Error(`Bản nháp ${id} chưa được duyệt (status "${status.status}"); không ghi vào thương hiệu.`);
@@ -38,11 +46,18 @@ export function writeBack(id) {
   fs.mkdirSync(folder, { recursive: true });
 
   const warnings = [];
+  // Clean again before it leaves the tool: the remove-watermark skill (skipped when image.png is still its clean output),
+  // then the brand skill's own clean-image.mjs only when its --check does not already say SẠCH (no double work).
+  try { cleanDraftImage(dir, { generator: 'codex' }); } catch (e) { fs.rmSync(folder, { recursive: true, force: true }); throw e; }
   const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
-  if (fs.existsSync(cleaner)) {
+  const already = fs.existsSync(cleaner) && /SẠCH:/.test(spawnSync(process.execPath, [cleaner, '--check', path.join(dir, 'image.png')], { encoding: 'utf8' }).stdout || '');
+  if (fs.existsSync(cleaner) && !already) {
     const r = spawnSync(process.execPath, [cleaner, path.join(dir, 'image.png'), path.join(folder, 'image.png')], { encoding: 'utf8' });
     if (r.status !== 0) { fs.rmSync(folder, { recursive: true, force: true }); throw new Error(`clean-image.mjs lỗi: ${(r.stderr || r.stdout).trim()}`); }
-  } else { fs.copyFileSync(path.join(dir, 'image.png'), path.join(folder, 'image.png')); warnings.push('skill không có scripts/clean-image.mjs; ảnh chép nguyên'); }
+  } else {
+    fs.copyFileSync(path.join(dir, 'image.png'), path.join(folder, 'image.png'));
+    if (!fs.existsSync(cleaner)) warnings.push('skill không có scripts/clean-image.mjs; dùng bản sạch của remove-watermark-skill');
+  }
   const captionFiles = fs.readdirSync(dir).filter((f) => /^content-[a-z]{2}(-[a-z]+)?\.txt$/.test(f));
   for (const f of captionFiles) fs.copyFileSync(path.join(dir, f), path.join(folder, f));
   const png = fs.readFileSync(path.join(folder, 'image.png'));
@@ -54,14 +69,19 @@ export function writeBack(id) {
     id: postId, folder: folderRel, group: 'standard',
     sequence: Math.max(0, ...catalog.posts.filter((p) => p.group === 'standard').map((p) => Number(p.sequence) || 0)) + 1,
     status: 'approved', created: date,
-    image: 'image.png', ...(dims ? { image_dimensions: dims } : {}), image_source: inside(brand.dir, draft.product_image) ? rel(draft.product_image) : draft.product_image,
+    image: 'image.png', ...(dims ? { image_dimensions: dims } : {}),
+    image_mode: draft.image_mode || 'brand-image',
+    image_source: draft.image_mode === 'scene-swap' ? `reference:${draft.inspiration.post_url || draft.inspiration.source_url}` : inside(brand.dir, draft.product_image) ? rel(draft.product_image) : draft.product_image,
     captions: Object.fromEntries(brand.languages.map((l) => [l, `content-${l}.txt`])),
     caption_status: Object.fromEntries(brand.languages.map((l) => [l, 'approved'])),
     ...(captionFiles.some((f) => /-[a-z]+\.txt$/.test(f.replace(/^content-[a-z]{2}/, ''))) ? { caption_variants: captionFiles.filter((f) => /^content-[a-z]{2}-/.test(f)) } : {}),
     channels: draft.networks.map((n) => n.network),
     language_mode: draft.language_mode,
-    inspiration: { ...(/^https?:\/\//.test(draft.inspiration.post_url || '') ? { url: draft.inspiration.post_url } : {}), source: draft.inspiration.source, source_url: draft.inspiration.source_url, run: draft.inspiration.run, ref: draft.inspiration.ref, idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}` },
-    ai_disclosure: { ai_scene: true, tool: 'codex', label: draft.ai_disclosure?.label || brand.social.product_images?.ai_disclosure_label || '' },
+    inspiration: { ...(/^https?:\/\//.test(draft.inspiration.post_url || '') ? { url: draft.inspiration.post_url } : {}), source: draft.inspiration.source, source_shop: draft.inspiration.source_shop || '', mode: draft.image_mode || 'brand-image', source_url: draft.inspiration.source_url, run: draft.inspiration.run, ref: draft.inspiration.ref, idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}` },
+    // Scene-swap (user, 07/11/2026): ai_disclosure true, the label kept beside it.
+    ...(draft.image_mode === 'scene-swap'
+      ? { ai_disclosure: true, ai_disclosure_label: draft.ai_disclosure?.label || brand.social.product_images?.ai_disclosure_label || '' }
+      : { ai_disclosure: { ai_scene: true, tool: 'codex', label: draft.ai_disclosure?.label || brand.social.product_images?.ai_disclosure_label || '' } }),
     approval: { by, date, note },
     source: `social-autopilot ${draft.id}`,
   };

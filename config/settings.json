@@ -23,5 +23,14 @@
   "publish": {
     "provider": "none",
     "note": "Publish (later: Metricool). Chưa có code đăng bài."
+  },
+  "ffmpeg": {
+    "command": "ffmpeg"
+  },
+  "remove_watermark": {
+    "script": "C:/hoangpq/remove-watermark-skill/scripts/strip-png-metadata.mjs",
+    "providers": {
+      "codex": "chatgpt"
+    }
   }
 }

@@ -10,7 +10,7 @@
 // across every brand (one shared Facebook account) (config/settings.json).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, cleanText, parseCsv, toCsv, sha1, latestRun, brandSources } from './lib.mjs';
+import { main, out, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, sha1, latestRun, brandSources } from './lib.mjs';
 
 const logFile = () => path.join(workspace, 'research-log.json');
 const readLog = () => { const l = readJson(logFile(), {}); return { runs: l.runs || [], collected: l.collected || {} }; };
@@ -147,8 +147,8 @@ main(() => {
   const s = settings();
   const cmd = args._[0];
   try {
-    if (cmd === 'start') return start(args, s);
-    if (cmd === 'ingest') return ingest(args, s);
+    if (cmd === 'start') return withLock(logFile(), () => start(args, s));
+    if (cmd === 'ingest') return withLock(logFile(), () => ingest(args, s));
     if (cmd === 'clean') return clean(args);
     if (cmd === 'limits') return out({ limits: limits(s, args.brand ? loadBrand(String(args.brand)) : null) });
   } catch (e) {

@@ -17,7 +17,9 @@ Looks like a real photo taken with a good phone or camera, natural and believabl
 
 RULES:
 - Square 1:1 format.
-- No logos, no watermark, no text anywhere other than what is on the product itself. Remove any logo or watermark from the original.
+- NO LOGO: remove any logo, watermark, badge, sticker or shop name present in the source product photo, from the product and from the scene. The brand's logo must never appear on the product.
+- No logos or text anywhere except the product's own lettering/design (the words the customer ordered).
+- Do not add any logo or watermark yourself; if the brand wants one, it is added later as a small separate overlay in a corner.
 - No people, no faces.
 
 {{SECOND_IMAGE}}

@@ -48,12 +48,39 @@ export const readJson = (file, fallback) => {
   if (!fs.existsSync(file)) { if (fallback !== undefined) return fallback; throw new Error(`Không có file ${file}`); }
   return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
 };
-export const writeJson = (file, data) => {
+// Atomic write (temp file + rename), so a reader never sees half a file. Windows may refuse the rename for a moment
+// while another process reads the file; it is retried.
+export const writeJson = (file, data) => writeText(file, JSON.stringify(data, null, 2) + '\n');
+export function writeText(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
-  fs.renameSync(tmp, file);
-};
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, text, 'utf8');
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, file); return; } catch (e) {
+      if (i >= 20 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) { fs.rmSync(tmp, { force: true }); throw e; }
+      sleep(50);
+    }
+  }
+}
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// The UI server and a scheduled agent can run at the same time: every read-modify-write of a shared file
+// (status.json, ideas.json, research-log.json, the brand's catalog.json and social.json) runs inside this lock, a
+// <file>.lock folder (mkdir is atomic). A lock older than 2 minutes is a crashed run's and is taken over.
+export function withLock(file, fn, { timeoutMs = 20000, staleMs = 120000 } = {}) {
+  const lock = `${file}.lock`;
+  const start = Date.now();
+  for (;;) {
+    try { fs.mkdirSync(lock); break; } catch (e) {
+      if (e.code === 'ENOENT') { fs.mkdirSync(path.dirname(lock), { recursive: true }); continue; }
+      if (e.code !== 'EEXIST') throw e;
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > staleMs) { fs.rmSync(lock, { recursive: true, force: true }); continue; } } catch {}
+      if (Date.now() - start > timeoutMs) throw new Error(`Đang bận: ${path.basename(file)} đang được tiến trình khác ghi. Chạy lại sau.`);
+      sleep(100);
+    }
+  }
+  try { return fn(); } finally { fs.rmSync(lock, { recursive: true, force: true }); }
+}
 export const sha1 = (data) => crypto.createHash('sha1').update(data).digest('hex');
 export const inside = (base, target) => {
   const rel = path.relative(path.resolve(base), path.resolve(target));
@@ -72,6 +99,42 @@ export function settings() {
   const root = process.env.SA_SKILLS_ROOT || s.skillsRoot;
   s.skillsRoot = path.resolve(toolRoot, root);
   return s;
+}
+
+// The settings as stored (defaults + this machine's workspace/settings.json), without resolving paths.
+export function rawSettings() {
+  return merge(readJson(path.join(toolRoot, 'config', 'settings.json')), readJson(path.join(workspace, 'settings.json'), {}));
+}
+
+// Saves this machine's settings to workspace/settings.json (config/settings.json stays the default in git). Only the
+// known keys, checked; nothing that looks like a secret.
+export function saveSettings(input) {
+  const d = readJson(path.join(toolRoot, 'config', 'settings.json'));
+  const int = (v, name, min = 0) => { const n = Number(v); if (!Number.isInteger(n) || n < min) throw new Error(`${name} phải là số nguyên >= ${min}.`); return n; };
+  const str = (v, name) => { if (typeof v !== 'string' || !v.trim()) throw new Error(`${name} không được trống.`); if (/token|secret|password/i.test(v)) throw new Error(`${name} không được chứa token/mật khẩu.`); return v.trim(); };
+  const r = input.research || {}, a = input.approval || {};
+  const delay = [].concat(r.delay_seconds ?? d.research.delay_seconds).map((x, i) => int(x, `research.delay_seconds[${i}]`));
+  if (delay.length !== 2 || delay[0] > delay[1]) throw new Error('research.delay_seconds phải là [min, max] với min <= max.');
+  const next = {
+    skillsRoot: str(input.skillsRoot ?? d.skillsRoot, 'skillsRoot'),
+    research: {
+      max_sources_per_run: int(r.max_sources_per_run ?? d.research.max_sources_per_run, 'research.max_sources_per_run', 1),
+      max_posts_per_source: int(r.max_posts_per_source ?? d.research.max_posts_per_source, 'research.max_posts_per_source', 1),
+      max_posts_per_day_all_brands: int(r.max_posts_per_day_all_brands ?? d.research.max_posts_per_day_all_brands, 'research.max_posts_per_day_all_brands'),
+      delay_seconds: delay,
+    },
+    approval: Object.fromEntries(Object.keys(d.approval).map((k) => [k, a[k] === undefined ? d.approval[k] : a[k] === true || a[k] === 'true'])),
+    codex: { command: str(input.codex?.command ?? d.codex.command, 'codex.command'), timeout_minutes: int(input.codex?.timeout_minutes ?? d.codex.timeout_minutes, 'codex.timeout_minutes', 1) },
+    ffmpeg: { command: str(input.ffmpeg?.command ?? d.ffmpeg.command, 'ffmpeg.command') },
+    remove_watermark: {
+      script: str(input.remove_watermark?.script ?? d.remove_watermark.script, 'remove_watermark.script'),
+      providers: Object.fromEntries(Object.entries(input.remove_watermark?.providers ?? d.remove_watermark.providers).map(([k, v]) => [str(k, 'provider'), str(v, 'provider')])),
+    },
+  };
+  if (!fs.existsSync(path.resolve(toolRoot, next.skillsRoot))) throw new Error(`skillsRoot không tồn tại: ${path.resolve(toolRoot, next.skillsRoot)}`);
+  const file = path.join(workspace, 'settings.json');
+  withLock(file, () => writeJson(file, next));
+  return next;
 }
 
 // ----- text cleaning -----
@@ -213,10 +276,11 @@ export function findDraft(id) {
 }
 export function setStatus(dir, status, extra = {}) {
   const file = path.join(dir, 'status.json');
-  const now = readJson(file, {});
-  const next = { ...now, ...extra, status, updated: stamp() };
-  writeJson(file, next);
-  return next;
+  return withLock(file, () => {
+    const next = { ...readJson(file, {}), ...extra, status, updated: stamp() };
+    writeJson(file, next);
+    return next;
+  });
 }
 export function listDrafts(brand) {
   const brands = brand ? [brand] : (fs.existsSync(draftsRoot) ? fs.readdirSync(draftsRoot) : []);

@@ -1,5 +1,7 @@
 # RUNBOOK: một vòng social-autopilot
 
+Scripts + RUNBOOK là nguồn duy nhất của quy trình. Giao diện (`start-app.cmd`) chỉ gọi đúng các hàm này để xem và quản lý; agent theo lịch không cần giao diện.
+
 Dành cho agent (Claude Code scheduled task/routine, Codex/ChatGPT automation) được gọi theo lịch. Chạy từ thư mục `C:\hoangpq\social-autopilot`. Mọi script in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Script chạy lại không sinh trùng.
 
 Quy tắc cứng:
@@ -47,19 +49,27 @@ Không hợp thương hiệu: `ideas.mjs reject --id I01 --note "<lý do>"`. Ch�
 
 ## Bước 3. Bản nháp
 
-1. Chọn ảnh sản phẩm **của thương hiệu**, trong thư mục skill (theo `product_images.sources` của social.json, thường `project/sources/...`); chỉ khi `product_images.ai_scenes_allowed: true`. Ảnh không khí (tuỳ chọn) không được là ảnh tham khảo.
+Chỉ khi `product_images.ai_scenes_allowed: true`. Logo không bao giờ nằm trên sản phẩm (prompt có lệnh NO LOGO; `draft.mjs check` cảnh báo nếu prompt thiếu).
+
+1. Chọn ảnh sản phẩm. Mặc định (`brand-image`): ảnh **của thương hiệu**, trong thư mục skill hoặc thư mục ở `product_images.sources`. Ảnh không khí (tuỳ chọn) không được là ảnh tham khảo.
    ```
    node scripts/draft.mjs new --brand <id> --idea <date>/I01 --product "<ảnh của thương hiệu>" [--scene "<ảnh không khí>"]
    ```
-2. Mở `prompt.txt` trong thư mục nháp, thay `{{PRODUCT_DESCRIPTION}}` bằng mô tả đúng sản phẩm nhìn thấy trong ảnh (chữ từng ký tự, dấu, font, màu, vật liệu, tỉ lệ).
+   **Scene-swap** (chỉ khi social.json `product_images.reference_redraw.enabled: true`; người dùng đã chấp nhận rủi ro bản quyền/bị báo cáo): ảnh tham khảo của chính thương hiệu này làm ảnh sản phẩm, chỉ đổi cảnh, xoá mọi logo/watermark/nhãn size/số điện thoại của shop. Chỉ với sản phẩm thương hiệu làm được (project.md mục 5):
+   ```
+   node scripts/draft.mjs new --brand <id> --idea <date>/I01 --ref-image "<workspace/runs/<id>/<date>/<source>/refs/R01-....jpg>" --brand-can-produce
+   ```
+2. Mở `prompt.txt` trong thư mục nháp, thay `{{PRODUCT_DESCRIPTION}}` bằng mô tả đúng sản phẩm nhìn thấy trong ảnh (chữ từng ký tự, dấu, font, màu, vật liệu, tỉ lệ). Không xoá các dòng NO LOGO.
 3. Tạo ảnh (Codex CLI, mất vài phút):
    ```
    node scripts/draft.mjs image --id <draft>
    ```
-   Lệnh thật: `codex exec --skip-git-repo-check -s workspace-write - -i <ảnh thương hiệu> [-i <ảnh không khí>] < prompt.txt`. Hết hạn mức thì dừng tạo ảnh, ghi vào báo cáo.
+   Lệnh thật: `codex exec --skip-git-repo-check -s workspace-write - -i <ảnh sản phẩm> [-i <ảnh không khí>] < prompt.txt`. Ngay sau đó tool tự làm sạch metadata bằng **remove-watermark-skill** (provider `chatgpt` cho ảnh Codex): `image-generated.png` là ảnh gốc của Codex (không sửa), `image.png` là bản sạch dùng cho bài, `image-clean-report.json` là report. Chỉ bỏ metadata (C2PA, EXIF, XMP, text); điểm ảnh giữ nguyên; ảnh vẫn là ảnh AI và vẫn khai báo AI. Không bao giờ nói đã qua được nhận diện AI. Chạy lại riêng: `node scripts/image-clean.mjs --id <draft>`. Hết hạn mức Codex thì dừng tạo ảnh, ghi vào báo cáo.
 4. Xem `image.png`: sản phẩm giữ y hệt, đúng chữ, không logo/watermark lạ. Không đạt: sửa prompt, `draft.mjs image --id <draft> --force` (tối đa 2 lần).
-5. Viết caption theo `brief.md` (dùng SKILL.md mục A và project.md của thương hiệu), mỗi ngôn ngữ một file `content-<lang>.txt` trong thư mục nháp.
-6. `node scripts/draft.mjs check --id <draft>` → `awaiting_approval`, hoặc sửa theo `problems` rồi check lại.
+5. Chỉ khi social.json `product_images.watermark.enabled: true`: `node scripts/draft.mjs watermark --id <draft>` (logo nhỏ ở góc, cần ffmpeg; sau đó ảnh được làm sạch lại).
+6. Scene-swap: so `image.png` với ảnh gốc của shop; khi chắc không còn tên shop, logo, watermark, nhãn size, số điện thoại: `node scripts/draft.mjs confirm-clean --id <draft> --by "<tên>"`. Còn thì sửa prompt, tạo lại.
+7. Viết caption theo `brief.md` (dùng SKILL.md mục A và project.md của thương hiệu), mỗi ngôn ngữ một file `content-<lang>.txt` trong thư mục nháp. Không nhắc tên shop nguồn.
+8. `node scripts/draft.mjs check --id <draft>` → `awaiting_approval`, hoặc sửa theo `problems` rồi check lại. Check không đạt khi ảnh chưa sạch metadata hay điểm ảnh bị đổi, chưa chèn watermark mà thương hiệu bật, scene-swap chưa xác nhận sạch logo hoặc caption có tên shop.
 
 ## Bước 4. Duyệt (trong chat)
 
@@ -75,11 +85,11 @@ Người có thể sửa tay `status.json` của bản nháp (`"status": "approv
 ```
 node scripts/approve.mjs sync
 ```
-Không tự duyệt thay người.
+Người duyệt cũng có thể bấm **Duyệt / Bỏ** ở trang Bản nháp của giao diện (cùng hàm `approve.mjs`, cùng luật). Không tự duyệt thay người.
 
 ## Bước 5. Ghi vào thương hiệu
 
-`approve` tự gọi `writeback.mjs`: tạo `workspace/posts/POST-<slug>/` (image.png đã làm sạch metadata bằng `scripts/clean-image.mjs` của skill, `content-<lang>.txt`), thêm một mục `approved` vào `workspace/catalog.json`, rồi chạy `scripts/check-post.mjs` của skill. Ghi lỗi thì chạy lại `node scripts/writeback.mjs --id <draft>`.
+`approve` tự gọi `writeback.mjs`: làm sạch lại nếu cần (remove-watermark-skill; rồi `scripts/clean-image.mjs` của skill chỉ khi `--check` chưa báo SẠCH), tạo `workspace/posts/POST-<slug>/` (image.png, `content-<lang>.txt`), thêm một mục `approved` vào `workspace/catalog.json`, rồi chạy `scripts/check-post.mjs` của skill. Ghi lỗi thì chạy lại `node scripts/writeback.mjs --id <draft>`.
 
 **Publish (later: Metricool)**: chưa làm. Không đăng, không hẹn giờ ở đâu.
 
@@ -90,6 +100,6 @@ node scripts/queue.mjs
 ```
 Gửi người dùng một tin ngắn, mỗi thương hiệu:
 - nghiên cứu: đã lấy bao nhiêu bài / bị chặn vì giới hạn / dừng vì checkpoint;
-- **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption từng ngôn ngữ (nguyên văn), ý + link bài tham khảo; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
+- **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption từng ngôn ngữ (nguyên văn), ý + link bài tham khảo; bản scene-swap thì kèm đường dẫn ảnh gốc của shop (`reference_image`) để người duyệt xem hai ảnh cạnh nhau; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
 - đã duyệt và ghi vào thương hiệu (POST-xx, thư mục);
 - lỗi cần người xử lý (thiếu owner, Codex hết lượt, ảnh không đạt).

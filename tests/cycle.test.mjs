@@ -114,6 +114,18 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const image = run('draft.mjs', 'image', '--id', draft.id);
   assert.equal(image.ok, true, JSON.stringify(image));
   assert.match(fs.readFileSync(path.join(draft.dir, 'codex.log'), 'utf8'), /exec --skip-git-repo-check -s workspace-write - -i/);
+  // remove-watermark-skill: Codex's original kept, image.png without metadata chunks, same pixels, report beside it.
+  const original = fs.readFileSync(path.join(draft.dir, 'image-generated.png'));
+  assert.ok(original.includes(Buffer.from('caBX')), 'the original stays untouched');
+  assert.ok(!fs.readFileSync(path.join(draft.dir, 'image.png')).includes(Buffer.from('caBX')));
+  const cleanReport = JSON.parse(fs.readFileSync(path.join(draft.dir, 'image-clean-report.json'), 'utf8'));
+  assert.deepEqual(cleanReport.removedChunks.sort(), ['caBX', 'tEXt']);
+  assert.equal(cleanReport.imageDataIdentical, true);
+  assert.deepEqual(image.metadata_removed.sort(), ['caBX', 'tEXt']);
+  assert.equal(run('image-clean.mjs', '--id', draft.id).skipped, true); // idempotent
+  fs.copyFileSync(path.join(draft.dir, 'image-generated.png'), path.join(draft.dir, 'image.png')); // metadata back in
+  assert.ok(run('draft.mjs', 'check', '--id', draft.id).problems.some((p) => /làm sạch/.test(p)), 'check fails on an unclean image');
+  assert.equal(run('image-clean.mjs', '--id', draft.id).pixels_identical, true);
 
   assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'needs_caption');
   for (const l of ['vn', 'en']) write(path.join(draft.dir, `content-${l}.txt`), `Bảng neon "Love" cho bữa tối kỷ niệm (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows #neon\n`);
@@ -122,14 +134,15 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(run('queue.mjs').brands[0].awaiting_approval.length, 1);
 
   // Nothing in the brand before approval; wrong approver refused.
-  assert.equal(JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.filter((p) => p.id.startsWith('POST-')).length, 0);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.filter((p) => String(p.source || '').startsWith('social-autopilot')).length, 0);
   assert.equal(run('approve.mjs', 'approve', '--id', draft.id, '--by', 'someone').ok, false);
   assert.equal(run('writeback.mjs', '--id', draft.id).ok, false);
   const ok = run('approve.mjs', 'approve', '--id', draft.id, '--by', 'hoang', '--note', 'đẹp');
   assert.equal(ok.ok, true, JSON.stringify(ok));
   const catalog = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'));
   const post = catalog.posts.find((p) => p.id === ok.brand_post.id);
-  assert.equal(post.id, 'POST-01');
+  assert.match(post.id, /^POST-\d+$/);
+  assert.equal(catalog.posts.filter((p) => p.id === post.id).length, 1); // a new number, after the brand's own posts
   assert.equal(post.status, 'approved');
   assert.equal(post.ai_disclosure.label, 'Ảnh minh hoạ dựng bằng AI');
   assert.ok(fs.existsSync(path.join(brandDir, post.folder, 'image.png')));
@@ -142,6 +155,41 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const second = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--product', product, '--again');
   assert.equal(run('approve.mjs', 'reject', '--id', second.id).ok, false);
   assert.equal(run('approve.mjs', 'reject', '--id', second.id, '--note', 'không hợp').status, 'rejected');
+
+  // Scene-swap: off by default (brand images only), opt-in per brand in social.json.
+  const socialFile = path.join(brandDir, 'project', 'social.json');
+  const setRedraw = (value) => { const s = JSON.parse(fs.readFileSync(socialFile, 'utf8')); s.product_images.reference_redraw = value; fs.writeFileSync(socialFile, JSON.stringify(s, null, 2)); };
+  const refPath = path.join(a.dir, refs[1].image);
+  setRedraw({ enabled: false, require_logo_removal: true, only_if_brand_can_produce: true });
+  const swapArgs = ['draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--ref-image', refPath, '--again'];
+  assert.match(run(...swapArgs).error, /reference_redraw\.enabled/);
+  setRedraw({ enabled: true, require_logo_removal: true, only_if_brand_can_produce: true });
+  assert.match(run(...swapArgs).error, /brand-can-produce/);
+  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--ref-image', outside, '--again', '--brand-can-produce').ok, false); // not a reference of this brand
+  const swap = run(...swapArgs, '--brand-can-produce');
+  assert.equal(swap.ok, true, JSON.stringify(swap));
+  const swapPrompt = path.join(swap.dir, 'prompt.txt');
+  assert.match(fs.readFileSync(swapPrompt, 'utf8'), /Shop A/);
+  fs.writeFileSync(swapPrompt, fs.readFileSync(swapPrompt, 'utf8').replace('{{PRODUCT_DESCRIPTION}}', 'A neon sign reading "Love".'));
+  assert.equal(run('draft.mjs', 'image', '--id', swap.id).ok, true);
+  for (const l of ['vn', 'en']) write(path.join(swap.dir, `content-${l}.txt`), `Bảng neon "Love" giống mẫu của Shop A (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
+  const swapCheck = run('draft.mjs', 'check', '--id', swap.id);
+  assert.equal(swapCheck.status, 'needs_caption');
+  assert.ok(swapCheck.problems.some((p) => /Shop A/.test(p) && /content-vn/.test(p)), 'shop name in caption is flagged');
+  assert.ok(swapCheck.problems.some((p) => /confirm-clean/.test(p)), 'visual logo check is required');
+  for (const l of ['vn', 'en']) write(path.join(swap.dir, `content-${l}.txt`), `Bảng neon "Love" cho bàn tiệc (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
+  assert.equal(run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent').ok, true);
+  assert.equal(run('draft.mjs', 'check', '--id', swap.id).status, 'awaiting_approval');
+  const shown = run('queue.mjs').brands.find((b) => b.brand === 'dreamyvows').awaiting_approval.find((d) => d.id === swap.id);
+  assert.equal(shown.reference_image, refPath); // the approver sees the shop's original beside the result
+  const swapOk = run('approve.mjs', 'approve', '--id', swap.id, '--by', 'Hoang');
+  assert.equal(swapOk.ok, true, JSON.stringify(swapOk));
+  const swapPost = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.find((p) => p.id === swapOk.brand_post.id);
+  assert.equal(swapPost.image_mode, 'scene-swap');
+  assert.equal(swapPost.ai_disclosure, true);
+  assert.equal(swapPost.inspiration.source_shop, 'Shop A');
+  assert.equal(swapOk.check_post.errors, 0, JSON.stringify(swapOk.check_post));
+  setRedraw(undefined);
 });
 
 test('research limit: another brand cannot start once the all-brand day cap is used', { skip: !haveReal && 'no brand skills to copy' }, () => {

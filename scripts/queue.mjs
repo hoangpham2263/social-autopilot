@@ -3,11 +3,10 @@
 // node scripts/queue.mjs [--brand <id>]
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, parseArgs, discoverBrands, latestRun, runDir, readJson, listDrafts, workspace, today } from './lib.mjs';
+import { main, out, isMain, parseArgs, discoverBrands, latestRun, runDir, readJson, listDrafts, workspace, today } from './lib.mjs';
 import { summary } from './draft-lib.mjs';
 
-main(() => {
-  const args = parseArgs();
+export function queueReport(args = {}) {
   const { root, brands } = discoverBrands();
   const log = readJson(path.join(workspace, 'research-log.json'), {});
   const report = brands.filter((b) => !args.brand || b.id === args.brand).map((b) => {
@@ -26,5 +25,7 @@ main(() => {
       approved: drafts.filter((d) => d.status.brand_post).map((d) => ({ id: d.id, post: d.status.brand_post.id, folder: d.status.brand_post.folder, publish: 'chưa đăng: Publish (later: Metricool)' })),
     };
   });
-  out({ skillsRoot: root, date: today(), brands: report, publish: 'Publish (later: Metricool): chưa có, không bài nào được đăng.' });
-});
+  return { skillsRoot: root, date: today(), brands: report, publish: 'Publish (later: Metricool): chưa có, không bài nào được đăng.' };
+}
+
+if (isMain(import.meta.url)) main(() => out(queueReport(parseArgs())));

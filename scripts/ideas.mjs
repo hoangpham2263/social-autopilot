@@ -7,7 +7,7 @@
 //   node scripts/ideas.mjs list   --brand <id> [--date d] [--status s]
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, parseArgs, need, loadBrand, runDir, latestRun, loadRefs, readJson, writeJson, stamp, sharedWords, cleanText } from './lib.mjs';
+import { main, out, parseArgs, need, loadBrand, runDir, latestRun, loadRefs, readJson, writeJson, withLock, stamp, sharedWords, cleanText } from './lib.mjs';
 
 const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'];
 const CORE = ['product_type', 'scene', 'angle', 'caption_structure'];
@@ -36,6 +36,10 @@ main(() => {
   const args = parseArgs();
   const cmd = args._[0];
   const { brand, date, dir, file } = open(args);
+  return withLock(file, () => run(args, cmd, brand, date, dir, file));
+});
+
+function run(args, cmd, brand, date, dir, file) {
   const refs = loadRefs(brand.id, date);
   const data = readJson(file, { brand: brand.id, date, ideas: [] });
   const save = () => writeJson(file, data);
@@ -79,7 +83,7 @@ main(() => {
   }
   if (cmd === 'list') {
     const list = data.ideas.filter((i) => !args.status || i.status === args.status);
-    return out({ file, date, ideas: list.map(({ id, ref, status, product_type, scene, angle, caption_structure }) => ({ id, ref: `${date}/${ref}`, status, product_type, scene, angle, caption_structure })) });
+    return out({ file, date, ideas: list.map(({ id, ref, status, product_type, scene, angle, caption_structure }) => ({ id, idea: `${date}/${id}`, ref, status, product_type, scene, angle, caption_structure })) });
   }
   throw new Error('Lệnh: init | set | pick | reject | list');
-});
+}

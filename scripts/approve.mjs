@@ -8,13 +8,19 @@
 //   node scripts/approve.mjs sync      apply status.json files a person edited by hand ("approved"/"rejected" + "by")
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, parseArgs, need, settings, loadBrand, readJson, writeJson, today, stamp, findDraft, setStatus, listDrafts } from './lib.mjs';
+import { main, out, isMain, withLock, parseArgs, need, settings, loadBrand, readJson, writeJson, today, stamp, findDraft, setStatus, listDrafts } from './lib.mjs';
 import { checkDraft } from './draft-lib.mjs';
 import { writeBack } from './writeback.mjs';
 
 const owners = (brand) => [].concat(brand.social.approval?.owner || []).map((o) => String(o).trim().toLowerCase()).filter(Boolean);
 
-function approve({ id, by, note = '', s, fromFile = false }) {
+// One approval at a time per draft (UI button and chat agent at the same moment).
+export function approve({ id, by, note = '', s = settings(), fromFile = false }) {
+  const { dir } = findDraft(id);
+  return withLock(path.join(dir, 'approve'), () => approveInner({ id, by, note, s, fromFile }));
+}
+
+function approveInner({ id, by, note, s, fromFile }) {
   const { dir, draft, status } = findDraft(id);
   if (status.brand_post) return { id, status: 'approved', brand_post: status.brand_post, reused: true };
   if (status.status !== 'awaiting_approval' && !(fromFile && status.status === 'approved')) throw new Error(`Bản nháp ${id} đang "${status.status}"; chỉ duyệt được bản awaiting_approval (chạy draft.mjs check trước).`);
@@ -22,8 +28,9 @@ function approve({ id, by, note = '', s, fromFile = false }) {
   const allowed = owners(brand);
   if (!by) throw new Error('Thiếu người duyệt (--by).');
   if (s.approval.require_owner_match && !allowed.includes(String(by).trim().toLowerCase())) throw new Error(`"${by}" không phải người duyệt của ${brand.brand} (social.json approval.owner: ${allowed.join(', ') || 'chưa khai'}).`);
+  if (draft.image_mode === 'scene-swap' && brand.social.product_images?.reference_redraw?.enabled !== true) throw new Error('Thương hiệu đã tắt product_images.reference_redraw: không duyệt bản scene-swap.');
   const draftNow = { ...draft, brand_dir: brand.dir };
-  const { problems } = checkDraft(dir, draftNow);
+  const { problems } = checkDraft(dir, draftNow, status);
   if (s.approval.require_image && !fs.existsSync(path.join(dir, 'image.png'))) problems.push('chưa có image.png');
   if (s.approval.require_all_captions) for (const l of brand.languages) if (!fs.existsSync(path.join(dir, `content-${l}.txt`))) problems.push(`thiếu content-${l}.txt`);
   if (problems.length) { setStatus(dir, 'needs_caption', { problems }); throw new Error(`Chưa duyệt được: ${[...new Set(problems)].join('; ')}`); }
@@ -32,20 +39,15 @@ function approve({ id, by, note = '', s, fromFile = false }) {
   return writeBack(id);
 }
 
-function reject({ id, by, note, s }) {
+export function reject({ id, by, note, s = settings() }) {
   const { dir, status } = findDraft(id);
   if (status.brand_post) throw new Error(`Bản nháp ${id} đã duyệt và ghi vào thương hiệu; không từ chối được ở đây.`);
   if (s.approval.reject_requires_note && !String(note || '').trim()) throw new Error('Từ chối cần --note (lý do, để lần sau làm khác).');
   return { id, status: setStatus(dir, 'rejected', { by: by || '', note: note || '', rejected: stamp() }).status };
 }
 
-main(() => {
-  const args = parseArgs();
-  const s = settings();
-  const cmd = args._[0];
-  if (cmd === 'approve') return out(approve({ id: need(args, 'id'), by: need(args, 'by'), note: args.note ? String(args.note) : '', s }));
-  if (cmd === 'reject') return out(reject({ id: need(args, 'id'), by: args.by ? String(args.by) : '', note: args.note === true ? '' : args.note, s }));
-  if (cmd === 'sync') {
+// status.json files a person edited by hand ("approved"/"rejected" + "by"), applied with the same rules.
+export function sync(s = settings()) {
     const results = [];
     for (const d of listDrafts()) {
       if (d.status.brand_post) continue;
@@ -58,7 +60,15 @@ main(() => {
         results.push({ id: d.id, ok: false, error: e.message });
       }
     }
-    return out({ results });
-  }
+    return { results };
+}
+
+if (isMain(import.meta.url)) main(() => {
+  const args = parseArgs();
+  const s = settings();
+  const cmd = args._[0];
+  if (cmd === 'approve') return out(approve({ id: need(args, 'id'), by: need(args, 'by'), note: args.note ? String(args.note) : '', s }));
+  if (cmd === 'reject') return out(reject({ id: need(args, 'id'), by: args.by ? String(args.by) : '', note: args.note === true ? '' : args.note, s }));
+  if (cmd === 'sync') return out(sync(s));
   throw new Error('Lệnh: approve | reject | sync');
 });
