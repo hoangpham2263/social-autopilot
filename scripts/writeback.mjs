@@ -1,0 +1,83 @@
+// Step 5: write-back. Writes ONE approved draft into the brand's own skill folder: workspace/posts/POST-<slug>/
+// (image cleaned by the skill's scripts/clean-image.mjs, content-<lang>.txt) and one entry in workspace/catalog.json,
+// in the format the skill already uses; then runs the skill's scripts/check-post.mjs on it. Refuses anything that is
+// not approved. approve.mjs calls it; run it alone only to retry a write-back that failed.
+//   node scripts/writeback.mjs --id <draft>
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { main, out, parseArgs, need, isMain, settings, inside, loadBrand, readJson, writeJson, today, findDraft, setStatus } from './lib.mjs';
+
+export function slugify(text) {
+  const s = String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').filter(Boolean).slice(0, 5).join('-');
+  return /^[a-z]/.test(s) ? s : `post-${s || 'social'}`.replace(/-$/, '');
+}
+
+export function writeBack(id) {
+  const { dir, draft, status } = findDraft(id);
+  if (status.brand_post) return { id, status: 'approved', brand_post: status.brand_post, reused: true };
+  if (status.status !== 'approved' || !status.by) throw new Error(`Bản nháp ${id} chưa được duyệt (status "${status.status}"); không ghi vào thương hiệu.`);
+  const brand = loadBrand(draft.brand);
+  const { by, note = '' } = status;
+  // Re-checked here too, so a status.json edited by hand cannot skip the rule: the approver is the brand's owner.
+  const owners = [].concat(brand.social.approval?.owner || []).map((o) => String(o).trim().toLowerCase()).filter(Boolean);
+  if (settings().approval.require_owner_match && !owners.includes(String(by).trim().toLowerCase())) throw new Error(`"${by}" không phải người duyệt của ${brand.brand} (approval.owner).`);
+  if (!fs.existsSync(path.join(dir, 'image.png'))) throw new Error('Bản nháp không có image.png.');
+  // The brand's catalog and post folder, as its skill writes them.
+  const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
+  const catalog = readJson(catalogFile, { updated: '', paths: 'Đường dẫn tính từ gốc skill.', posts: [], covers: [] });
+  const number = Math.max(0, ...catalog.posts.map((p) => Number(/^POST-(\d+)$/.exec(p.id)?.[1] || 0))) + 1;
+  const postId = `POST-${String(number).padStart(2, '0')}`;
+  const taken = new Set(['posts', 'published'].flatMap((d) => { const p = path.join(brand.dir, 'workspace', d); return fs.existsSync(p) ? fs.readdirSync(p) : []; }));
+  const base = `POST-${slugify(`${draft.idea.product_type} ${draft.idea.scene}`)}`;
+  let name = base;
+  for (let i = 0; taken.has(name); i++) name = `${base}-${'bcdefghijklmnopqrstuvwxyz'[i] || 'z' + i}`;
+  const folderRel = `workspace/posts/${name}`;
+  const folder = path.join(brand.dir, folderRel);
+  fs.mkdirSync(folder, { recursive: true });
+
+  const warnings = [];
+  const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
+  if (fs.existsSync(cleaner)) {
+    const r = spawnSync(process.execPath, [cleaner, path.join(dir, 'image.png'), path.join(folder, 'image.png')], { encoding: 'utf8' });
+    if (r.status !== 0) { fs.rmSync(folder, { recursive: true, force: true }); throw new Error(`clean-image.mjs lỗi: ${(r.stderr || r.stdout).trim()}`); }
+  } else { fs.copyFileSync(path.join(dir, 'image.png'), path.join(folder, 'image.png')); warnings.push('skill không có scripts/clean-image.mjs; ảnh chép nguyên'); }
+  const captionFiles = fs.readdirSync(dir).filter((f) => /^content-[a-z]{2}(-[a-z]+)?\.txt$/.test(f));
+  for (const f of captionFiles) fs.copyFileSync(path.join(dir, f), path.join(folder, f));
+  const png = fs.readFileSync(path.join(folder, 'image.png'));
+  const dims = png.subarray(1, 4).toString('latin1') === 'PNG' ? [png.readUInt32BE(16), png.readUInt32BE(20)] : undefined;
+
+  const date = today();
+  const rel = (p) => path.relative(brand.dir, p).split(path.sep).join('/');
+  const entry = {
+    id: postId, folder: folderRel, group: 'standard',
+    sequence: Math.max(0, ...catalog.posts.filter((p) => p.group === 'standard').map((p) => Number(p.sequence) || 0)) + 1,
+    status: 'approved', created: date,
+    image: 'image.png', ...(dims ? { image_dimensions: dims } : {}), image_source: inside(brand.dir, draft.product_image) ? rel(draft.product_image) : draft.product_image,
+    captions: Object.fromEntries(brand.languages.map((l) => [l, `content-${l}.txt`])),
+    caption_status: Object.fromEntries(brand.languages.map((l) => [l, 'approved'])),
+    ...(captionFiles.some((f) => /-[a-z]+\.txt$/.test(f.replace(/^content-[a-z]{2}/, ''))) ? { caption_variants: captionFiles.filter((f) => /^content-[a-z]{2}-/.test(f)) } : {}),
+    channels: draft.networks.map((n) => n.network),
+    language_mode: draft.language_mode,
+    inspiration: { ...(/^https?:\/\//.test(draft.inspiration.post_url || '') ? { url: draft.inspiration.post_url } : {}), source: draft.inspiration.source, source_url: draft.inspiration.source_url, run: draft.inspiration.run, ref: draft.inspiration.ref, idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}` },
+    ai_disclosure: { ai_scene: true, tool: 'codex', label: draft.ai_disclosure?.label || brand.social.product_images?.ai_disclosure_label || '' },
+    approval: { by, date, note },
+    source: `social-autopilot ${draft.id}`,
+  };
+  catalog.posts.push(entry);
+  catalog.updated = date;
+  writeJson(catalogFile, catalog);
+
+  let checkPost = null;
+  const checker = path.join(brand.dir, 'scripts', 'check-post.mjs');
+  if (fs.existsSync(checker)) {
+    const r = spawnSync(process.execPath, [checker, postId], { cwd: brand.dir, encoding: 'utf8' });
+    try { const j = JSON.parse(r.stdout); checkPost = { errors: j.errors, results: j.results.map(({ errors, warnings }) => ({ errors, warnings })) }; } catch { checkPost = { errors: 1, output: (r.stdout || r.stderr).slice(0, 2000) }; }
+  }
+  const brandPost = { id: postId, folder: path.join(brand.dir, folderRel), catalog: catalogFile };
+  setStatus(dir, 'approved', { brand_post: brandPost, problems: [], error: '' });
+  return { id: draft.id, status: 'approved', brand_post: brandPost, check_post: checkPost, warnings, next: 'Publish (later: Metricool) — chưa làm; bài nằm trong workspace/posts của thương hiệu, trạng thái approved.' };
+}
+
+if (isMain(import.meta.url)) main(() => out(writeBack(need(parseArgs(), 'id'))));

@@ -1,0 +1,4 @@
+# Machine-local state: settings override, research runs (competitor images), drafts, logs.
+/workspace/
+node_modules/
+.DS_Store

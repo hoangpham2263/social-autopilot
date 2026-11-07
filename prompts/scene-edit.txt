@@ -1,0 +1,25 @@
+Use your built-in image generation / image editing tool to EDIT the first attached image (the brand's own product photo). Do NOT write code, scripts, or use PIL/canvas to draw anything.
+
+THE PRODUCT (must stay IDENTICAL to the first image):
+{{PRODUCT_DESCRIPTION}}
+Keep it exactly as in the original: same text letter for letter (with the exact accents), same shapes, colors, materials, proportions and size relative to the room. Do not add, remove or restyle any part. Do not add stands, feet, brackets, cables or any part not visible in the original.
+
+BRAND RULES FOR THIS PRODUCT (from the brand's project.md, section 10):
+{{PRODUCT_RULES}}
+
+NEW SCENE (replace everything except the product):
+{{SCENE}}
+Camera: {{ANGLE}}.
+Props: {{PROPS}}. Keep it simple: one or two props that fit how the product is really used.
+
+LOOK:
+Looks like a real photo taken with a good phone or camera, natural and believable, not a glossy advertisement. Natural light for the scene; the product is sharp and in focus. Natural grain and ordinary imperfections are fine.
+
+RULES:
+- Square 1:1 format.
+- No logos, no watermark, no text anywhere other than what is on the product itself. Remove any logo or watermark from the original.
+- No people, no faces.
+
+{{SECOND_IMAGE}}
+
+Save the result in the current working directory as {{OUTPUT}}. Reply with only the file name.

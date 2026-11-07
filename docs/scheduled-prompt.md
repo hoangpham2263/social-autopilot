@@ -1,0 +1,19 @@
+# Prompt cho lịch chạy
+
+Dán nguyên khối dưới đây vào Claude Code scheduled task / routine, hoặc Codex/ChatGPT automation. Gợi ý lịch: mỗi ngày một lần, buổi sáng. Agent cần: quyền chạy `node` và `codex` trong `C:\hoangpq\social-autopilot`, đọc `C:\hoangpq\vaniecom-workspace\skills\`, Playwright MCP gắn Chrome đã đăng nhập Facebook.
+
+```text
+Bạn chạy MỘT vòng social-autopilot.
+
+Thư mục làm việc: C:\hoangpq\social-autopilot. Đọc AGENTS.md rồi làm đúng RUNBOOK.md, từ bước 0 tới bước 6:
+0. node scripts/approve.mjs sync; node scripts/brands.mjs; node scripts/sources.mjs.
+1. Với từng thương hiệu usable, lần lượt (không song song): research.mjs start (tôn trọng giới hạn; bị chặn thì bỏ qua nghiên cứu), duyệt các source của chính thương hiệu đó theo docs/research.md, research.mjs ingest.
+2. ideas.mjs init, điền ý theo prompts/idea-abstract.md, pick tối đa 1 ý cho thương hiệu này trong vòng này.
+3. draft.mjs new với ảnh sản phẩm của chính thương hiệu, hoàn thiện prompt.txt, draft.mjs image, kiểm ảnh, viết caption theo brief.md và skill của thương hiệu, draft.mjs check.
+4. KHÔNG tự duyệt. Không ghi gì vào thư mục thương hiệu. Không đăng bài ở đâu (Metricool chưa làm).
+5. Cuối vòng: node scripts/queue.mjs, rồi gửi tôi báo cáo ngắn bằng tiếng Việt: mỗi thương hiệu, số bài đã nghiên cứu hoặc lý do bị chặn; danh sách chờ duyệt (id, đường dẫn image.png, caption từng ngôn ngữ nguyên văn, link bài tham khảo); lỗi cần tôi xử lý. Nhắc tôi trả lời "duyệt <id>" hoặc "bỏ <id>: lý do".
+
+Mọi script in JSON; ok:false thì ghi lý do và sang việc tiếp theo, không lách giới hạn. Gặp checkpoint/captcha Facebook thì dừng nghiên cứu ngay.
+```
+
+Khi người dùng trả lời trong chat "duyệt <id>": agent chạy `node scripts/approve.mjs approve --id <id> --by "<tên người duyệt>"` (tên phải khớp `approval.owner` trong social.json của thương hiệu) và báo lại POST-xx cùng thư mục bài.

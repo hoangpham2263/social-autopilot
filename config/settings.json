@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "skillsRoot": "../vaniecom-workspace/skills",
+  "research": {
+    "max_sources_per_run": 4,
+    "max_posts_per_source": 5,
+    "max_posts_per_day_all_brands": 30,
+    "delay_seconds": [
+      5,
+      15
+    ]
+  },
+  "approval": {
+    "require_owner_match": true,
+    "require_image": true,
+    "require_all_captions": true,
+    "reject_requires_note": true
+  },
+  "codex": {
+    "command": "codex",
+    "timeout_minutes": 15
+  },
+  "publish": {
+    "provider": "none",
+    "note": "Publish (later: Metricool). Chưa có code đăng bài."
+  }
+}
