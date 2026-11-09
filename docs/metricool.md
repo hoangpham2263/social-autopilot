@@ -88,3 +88,35 @@ Khuyến nghị: dùng MCP làm đường cho agent, gửi bài dạng nháp; CS
 4. `lang: ["vn","en"]` trong social.json: trang FB Mỹ đăng một caption tiếng Anh hay gộp hai thứ tiếng?
 5. Múi giờ: thống nhất America/Los_Angeles (social.json) hay theo múi giờ brand Metricool?
 6. Rate limit của MCP/API: chưa có số công khai.
+
+## 5. CSV test 2026-11-09
+
+Thử 1 lần, được người dùng duyệt, trên brand Fortera Apparel (blogId <blog_id_1>). Tạo 1 bài **nháp**, kiểm tra, rồi xoá. Không đăng, không hẹn giờ thật, không đổi cài đặt, không đụng bài khác.
+
+**Kết quả: chạy được.** Import 1 dòng → Metricool tạo bài `draft:true` đúng ngày 2026-11-11 10:00 (America/New_York), chỉ Facebook, có ảnh và alt text. Đã xoá (id 421284819). Danh sách bài tuần 8–14/11 trước và sau giống hệt (8 bài).
+
+### Template thật
+- File: `docs/metricool-csv-template.csv` (tên gốc `Mtr_calendar_template.csv`). Link tải: `GET /api/v2/scheduler/posts/template?blogId=&userId=&userToken=<token phiên>`.
+- **99 cột**, thứ tự: `Text, Date, Time, Draft, Facebook, Twitter/X, LinkedIn, GBP, Instagram, Pinterest, TikTok, Youtube, Threads, Bluesky, Picture Url 1..10, Alt text picture 1..10, Document title, Shortener, Video Thumbnail Url, Video Cover Frame, Twitter/X ... (7 cột), Pinterest ... (6 cột), Instagram Post Type, Instagram Show Reel On Feed, Instagram Trial Reel Share Automatically, Youtube ... (9 cột), GBP Post Type, Facebook Post Type, Facebook Title, First Comment Text, TikTok ... (18 cột), LinkedIn ... (9 cột), Threads Reply Control, Threads Is Spoiler, Threads Post Type, Brand name`.
+- Khác tài liệu: cột là `Youtube` (không phải `YouTube`), có thêm `Shortener`, `Facebook Post Type` (POST/REEL/STORY), `Facebook Title`, `Threads Post Type`... Boolean trong template viết thường `true`/`false`.
+- File mẫu đã dùng: `docs/examples/metricool-test-draft.csv`.
+
+### Các bước và thời gian
+1. Calendar → nút ⋮ (cạnh bộ lọc) → Import CSV → Download template.
+2. Chọn file CSV → màn Preview (chọn Date format `2026-11-08` và Time format `21:05:00`, mặc định đã đúng YYYY-MM-DD / HH:mm:ss) → bấm vào bài để xem preview FB.
+3. "Import 1 posts" → Result "1 post imported" → Accept.
+Khoảng 5 thao tác, vài giây mỗi bước; cả test (gồm kiểm tra, xoá) khoảng 4 phút.
+
+### Phát hiện
+- **Import chạy ở trình duyệt**: app đọc CSV rồi gọi `POST /api/v2/scheduler/posts` (mỗi dòng một request) với body giống hệt API: `draft:true`, `autoPublish:true`, `providers:[{network:"facebook"}]`, `media`, `mediaAltText`, `publicationDate{dateTime,timezone}`, `facebookData{type:"POST"}`, `targetBrandId`. Không gửi `saveExternalMediaFiles` (trả về `false`).
+- **Ảnh**: URL `cdn.shopify.com` được nhận, preview hiện ảnh ngay. Không có lỗi kiểm tra nào.
+- **Draft**: Preview không hiện chữ "Draft", nhưng request và lịch đều đúng: thẻ lịch ghi "Draft", trang Edit post ghi trạng thái "Draft", nút chính là "Save as draft". Provider vẫn là `PENDING` nhưng `draft:true` nên không tự đăng.
+- **Hạn mức**: `monthPublishedPostsByBrand` là 16 trước và sau (banner "16 out of your 20"). Nháp không tính; chỉ tính khi bài đăng thật.
+- **Brand name** `Fortera Apparel` khớp; preview hiện đúng brand.
+- **Xoá**: nút thùng rác trong Edit post → Confirm → `DELETE /api/v2/scheduler/posts/{id}?isRecoverable=true`. Bài vào tab "Deleted posts" (khôi phục được), không mất hẳn.
+- Playwright: nút Download template là thẻ `<a href>`; sự kiện download không bắt được ở chế độ extension, phải `fetch(href)` để lấy nội dung. Upload: `input[type=file]` có sẵn trong dialog, `setInputFiles` chạy thẳng (file nằm dưới `C:\Users\Admin`).
+
+### Mức tự động hoá
+- Tool xuất CSV đúng 99 cột: dễ, làm hoàn toàn tự động.
+- Bước import cần trình duyệt đã đăng nhập (Playwright gắn Chrome của người dùng): mở calendar → ⋮ → Import CSV → upload → Import → Accept. Agent hẹn giờ làm được nhưng phụ thuộc phiên Chrome đang mở, giao diện có thể đổi, và một trình duyệt chỉ một agent dùng.
+- Vì import chỉ là `POST /api/v2/scheduler/posts` từ phiên web, về kỹ thuật có thể gọi thẳng bằng token phiên, nhưng đó là API nội bộ (gói Free không có API chính thức) → không nên dựa vào. Đường chính vẫn là MCP; CSV + Playwright là dự phòng, hoặc người dùng tự import file do tool xuất ra.
