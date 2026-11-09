@@ -24,7 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, removedBlog, syncMetricoolBrands } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, removedBlog, syncMetricoolBrands, listDrafts } from './lib.mjs';
 import { timesFile, planPosts, findBrand, sentNetworks, toolMade, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
 
 // Networks whose createScheduledPost shape is known (facebookData / instagramData). Others: use the CSV route.
@@ -257,12 +257,14 @@ export function status(args, { root = settings().skillsRoot } = {}) {
     posts.push({ post: p.id, catalog_status: p.status, published: p.status === 'published', networks, audience_time: local ? { ...local, timezone: brand.audience_timezone } : null });
   }
   dates.sort();
+  // Posts a person sent back to review (finalize.mjs unapprove): their old Metricool ids are history, never matched again.
+  const ignore = []; try { for (const d of listDrafts(brand.id)) for (const h of d.status?.reverted || []) for (const v of Object.values(h.metricool || {})) if (v?.id) ignore.push(String(v.id)); } catch {}
   const open = posts.filter((p) => !p.published);
   const query = open.length ? { tool: 'getScheduledPosts', brandId: brand.blog_id, fromDate: `${addDays(dates[0], -1)}T00:00:00`, toDate: `${addDays(dates.at(-1), 1)}T23:59:59`, timezone: tz || brand.timezone } : null;
   return {
-    brand: brand.id, blog_id: brand.blog_id, posts, query,
+    brand: brand.id, blog_id: brand.blog_id, posts, query, ignore_ids: [...new Set(ignore)],
     next: open.length
-      ? 'Gọi getScheduledPosts với query, khớp theo id. PENDING: không làm gì. Bài còn metricool.<network>.draft true (nháp cũ): payload sẽ gửi lại thành bài hẹn giờ thật. ERROR: báo lỗi cho người dùng (id, plannerUrl, lý do). PUBLISHED: chạy node <thư mục skill>/scripts/mark-published.mjs <POST> <yyyy-mm-dd theo audience_time> [link bài] --lang <ngôn ngữ đăng>. Nháp cũ đã được người hẹn giờ trong Metricool (draft false, có giờ): chạy record lại với cùng --id.'
+      ? 'Gọi getScheduledPosts với query, khớp theo id. PENDING: không làm gì. Bài còn metricool.<network>.draft true (nháp cũ): payload sẽ gửi lại thành bài hẹn giờ thật. ERROR: báo lỗi cho người dùng (id, plannerUrl, lý do). PUBLISHED: chạy node <thư mục skill>/scripts/mark-published.mjs <POST> <yyyy-mm-dd theo audience_time> [link bài] --lang <ngôn ngữ đăng>. Nháp cũ đã được người hẹn giờ trong Metricool (draft false, có giờ): chạy record lại với cùng --id. Bài có id trong ignore_ids (đã đưa về To review): bỏ qua, không record/mark-published.'
       : 'Không có bài nào đang chờ trên Metricool.',
   };
 }

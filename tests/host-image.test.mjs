@@ -285,3 +285,56 @@ test('image: Pages link when ready, raw as fallback when Pages is not', { skip: 
     assert.equal(entryOf('POST-90').media_url, r.url);
   });
 });
+
+// Posts tab "Back to review" (finalize.mjs unapprove): a Queued post goes back to To review; never a Posted one.
+test('back to review: archive entry + folder, hosted image removed, draft ready; scheduled needs --metricool-deleted', { skip: !haveReal && 'no brand skill to copy' }, async () => {
+  const mkDraft = (n, postId) => {
+    const id = `dreamyvows-20261109-${n}`, dir = path.join(ws, 'drafts', 'dreamyvows', id);
+    write(path.join(dir, 'draft.json'), JSON.stringify({ id, brand: 'dreamyvows', brand_dir: brandDir, idea: { product_type: 'x', scene: 'y' }, inspiration: {}, captions: { en: 'content-en.txt' } }));
+    write(path.join(dir, 'status.json'), JSON.stringify({ status: 'approved', by: 'user', approved: '2026-11-09', brand_post: { id: postId, folder: path.join(brandDir, `workspace/posts/POST-host-test-${postId.toLowerCase()}`), catalog: catalogFile } }));
+    post(postId, 'approved');
+    const c = JSON.parse(fs.readFileSync(catalogFile, 'utf8')); c.posts.find((p) => p.id === postId).source = `social-autopilot ${id}`; fs.writeFileSync(catalogFile, JSON.stringify(c, null, 2));
+    return { id, dir };
+  };
+  const archiveDir = path.join(brandDir, 'workspace', 'local', 'archive');
+  const inRepo = (rel) => spawnSync('git', ['--git-dir', bare, 'cat-file', '-e', `main:${rel}`]).status === 0;
+
+  const a = mkDraft('95', 'POST-95');
+  assert.equal((await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-95')).ok, true);
+  assert.ok(inRepo('dreamyvows/2026/11/post-95.png'));
+  const r = await run('finalize.mjs', 'unapprove', '--id', a.id);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.status, 'ready');
+  assert.equal(entryOf('POST-95'), undefined, 'catalog entry gone');
+  assert.ok(!fs.existsSync(path.join(brandDir, 'workspace/posts/POST-host-test-post-95')), 'post folder moved');
+  const arch = fs.readdirSync(archiveDir).find((n) => n.startsWith('POST-95-'));
+  assert.ok(arch && fs.existsSync(path.join(archiveDir, arch, 'entry.json')) && fs.existsSync(path.join(archiveDir, arch, 'POST-host-test-post-95', 'image.png')));
+  assert.ok(!inRepo('dreamyvows/2026/11/post-95.png'), 'hosted image removed and pushed');
+  const st = JSON.parse(fs.readFileSync(path.join(a.dir, 'status.json'), 'utf8'));
+  assert.equal(st.status, 'ready');
+  assert.equal(st.brand_post, undefined);
+  assert.equal(st.reverted[0].post, 'POST-95');
+  assert.match((await run('finalize.mjs', 'unapprove', '--id', a.id)).error, /chưa được duyệt/);
+
+  // Scheduled in Metricool: refused until the person says it is deleted there; the old id is then ignored by reconcile.
+  const b = mkDraft('96', 'POST-96');
+  const c = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
+  Object.assign(c.posts.find((p) => p.id === 'POST-96'), { status: 'scheduled', metricool: { facebook: { id: '777', draft: false, publication: '2026-11-12T19:00:00', timezone: 'America/New_York' } } });
+  fs.writeFileSync(catalogFile, JSON.stringify(c, null, 2));
+  const refused = await run('finalize.mjs', 'unapprove', '--id', b.id);
+  assert.equal(refused.ok, false);
+  assert.match(refused.error, /777/);
+  assert.match(refused.error, /2026-11-12 19:00/);
+  assert.ok(entryOf('POST-96'), 'nothing changed');
+  const ok = await run('finalize.mjs', 'unapprove', '--id', b.id, '--metricool-deleted');
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.deepEqual(ok.metricool_ignored, ['777']);
+  const st2 = JSON.parse(fs.readFileSync(path.join(b.dir, 'status.json'), 'utf8'));
+  assert.equal(st2.reverted[0].metricool.facebook.id, '777');
+
+  // Posted: never back.
+  const p = mkDraft('97', 'POST-97');
+  const c2 = JSON.parse(fs.readFileSync(catalogFile, 'utf8')); c2.posts.find((x) => x.id === 'POST-97').status = 'published'; fs.writeFileSync(catalogFile, JSON.stringify(c2, null, 2));
+  assert.match((await run('finalize.mjs', 'unapprove', '--id', p.id)).error, /Posted/);
+  assert.ok(entryOf('POST-97'));
+});

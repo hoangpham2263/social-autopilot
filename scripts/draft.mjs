@@ -146,7 +146,7 @@ export const PLACEHOLDER = /\byour\s+(names?|logo|bar(\s+name)?|business(\s+name
 function sizeTextFill(brand, size, signText) {
   return {
     SIZE: size,
-    SIGN_TEXT_RULE: signText ? `The text on the product must read exactly: "${signText}". Replace any template/placeholder text of the photo (such as "Your Names", "Your Logo") with it; keep the product's font style, colours, layout and number of lines.` : 'Keep the product\'s own text exactly as in the photo.',
+    SIGN_TEXT_RULE: signText ? `The customer's own text on the product (where the photo shows template/placeholder text such as "Your Names", "Your Logo", "Your Bar Name") must read exactly: "${signText}". No placeholder text may remain; fixed words of the design stay as they are; keep the product's font style, colours, layout and number of lines.` : 'Keep the product\'s own text exactly as in the photo.',
     IMAGE_GUIDE: path.join(brand.dir, 'references', 'image-guide.md'),
   };
 }

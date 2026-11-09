@@ -7,12 +7,17 @@
 // A draft that fails stops there with its problems (status "check_failed"). Agents never approve on their own.
 //   node scripts/finalize.mjs approve --id <draft>                   one post a person approved
 //   node scripts/finalize.mjs cancel  --id <draft> [--note ..]       "Drop": drop a draft before it is approved
+//   node scripts/finalize.mjs unapprove --id <draft> [--metricool-deleted]   "Back to review" for a Queued post (never Posted):
+//        the catalog entry and post folder the tool wrote go to the skill's workspace/local/archive/, the hosted image is
+//        removed from the image repo (git rm + push), the draft is To review again; its store item stays used. A post
+//        already scheduled in Metricool needs --metricool-deleted (the person deleted it in Metricool first); the old
+//        Metricool id stays in the draft's history (status.json reverted[]) and the reconcile step ignores it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, withLock, parseArgs, need, settings, loadBrand, stamp, findDraft, setStatus } from './lib.mjs';
+import { main, out, isMain, withLock, parseArgs, need, settings, loadBrand, stamp, findDraft, setStatus, readJson, writeJson } from './lib.mjs';
 import { checkDraft } from './draft-lib.mjs';
 import { writeBack } from './writeback.mjs';
-import { hostAfterWriteback } from './host-image.mjs';
+import { hostAfterWriteback, remove as hostRemove } from './host-image.mjs';
 
 export const APPROVER = 'user';
 
@@ -63,6 +68,74 @@ export function cancel({ id, note = '', by = 'user' }) {
   });
 }
 
+// Metricool posts of a catalog entry that are real scheduled posts (not an old Metricool draft): id, time, network.
+export function scheduledIn(entry) {
+  const mc = entry?.metricool && typeof entry.metricool === 'object' && !Array.isArray(entry.metricool) ? entry.metricool : {};
+  return Object.entries(mc).filter(([, v]) => v && typeof v === 'object' && v.id && v.draft !== true)
+    .map(([network, v]) => ({ network, id: String(v.id), publication: v.publication || entry.schedule?.publication || '', timezone: v.timezone || '', planner_url: v.planner_url || '' }));
+}
+
+// "Back to review": undo the approval of a Queued post. Posted (published) posts never go back.
+export function backToReview({ id, metricoolDeleted = false, by = 'user' }, s = settings()) {
+  const { dir } = findDraft(id);
+  return withLock(path.join(dir, 'finalize'), () => {
+    const { draft, status } = findDraft(id);
+    const bp = status.brand_post;
+    if (!bp?.id) throw new Error(`Bản nháp ${id} chưa được duyệt (không ở Queued): không có gì để đưa về To review.`);
+    const brand = loadBrand(draft.brand, { allowDisabled: true });
+    const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
+    const entry = (readJson(catalogFile, { posts: [] }).posts || []).find((p) => p.id === bp.id);
+    if (entry && entry.source !== `social-autopilot ${draft.id}`) throw new Error(`${bp.id} trong catalog không phải bài tool ghi cho ${draft.id}: không đụng tới.`);
+    if (entry && (entry.status === 'published' || Object.values(entry.metricool || {}).some((v) => v && (v.published || v.status === 'published')))) throw new Error(`${bp.id} đã đăng (Posted): không đưa về To review.`);
+    const scheduled = scheduledIn(entry);
+    if (scheduled.length && !metricoolDeleted) {
+      const e = new Error(`${bp.id} đã hẹn giờ trên Metricool (${scheduled.map((m) => `${m.network} id ${m.id}${m.publication ? `, ${String(m.publication).slice(0, 16).replace('T', ' ')}` : ''}`).join('; ')}). Xoá bài đó trong Metricool trước, rồi chạy lại với --metricool-deleted.`);
+      e.code = 'METRICOOL_SCHEDULED';
+      throw e;
+    }
+    // 1. Hosted image/video out of the image repo (git rm + push), like host-image.mjs remove.
+    let host = null;
+    if (entry) {
+      const hosted = [entry.media_url, entry.video_url, entry.thumbnail_url].flat().filter(Boolean).length > 0;
+      try { host = hostRemove({ brand: brand.id, post: bp.id, force: true }, s); }
+      catch (err) { if (hosted) throw new Error(`Gỡ ảnh khỏi repo ảnh lỗi (chưa đổi gì trong catalog): ${err.message}`); host = { removed: false, skipped: err.message }; }
+    }
+    // 2. Catalog entry + post folder into the skill's workspace/local/archive/ (never deleted).
+    const at = stamp();
+    const archive = path.join(brand.dir, 'workspace', 'local', 'archive', `${bp.id}-${at.replace(/[:.]/g, '-')}`);
+    fs.mkdirSync(archive, { recursive: true });
+    withLock(catalogFile, () => {
+      const catalog = readJson(catalogFile, { posts: [] });
+      const cur = (catalog.posts || []).find((p) => p.id === bp.id);
+      if (cur) {
+        writeJson(path.join(archive, 'entry.json'), { ...cur, reverted: { at, by, draft: draft.id } });
+        catalog.posts = catalog.posts.filter((p) => p.id !== bp.id);
+        writeJson(catalogFile, catalog);
+      }
+    });
+    const folder = entry?.folder ? path.join(brand.dir, entry.folder) : bp.folder;
+    if (folder && fs.existsSync(folder)) fs.renameSync(folder, path.join(archive, path.basename(folder)));
+    // 3. The draft is To review again; the old post id, Metricool ids and hosted links stay in its history.
+    const file = path.join(dir, 'status.json');
+    const next = withLock(file, () => {
+      const cur = readJson(file, {});
+      const { brand_post, image_host, approved, by: _by, note: _note, ...rest } = cur;
+      const history = [...(cur.reverted || []), { at, by, post: bp.id, archive, metricool: entry?.metricool || null, schedule: entry?.schedule || null, media_url: entry?.media_url || null, metricool_deleted: scheduled.length ? true : undefined }];
+      const v = { ...rest, status: 'ready', tool_status: 'ready', reverted: history, problems: [], error: '', updated: at };
+      writeJson(file, v);
+      return v;
+    });
+    return { id, status: next.status, post: bp.id, archive, host, metricool_ignored: scheduled.map((m) => m.id) };
+  });
+}
+
+// Metricool ids of posts sent back to review (drafts' status.json reverted[]): the reconcile step ignores them.
+export function revertedIds(drafts) {
+  const ids = [];
+  for (const d of drafts) for (const r of d.status?.reverted || []) for (const v of Object.values(r.metricool || {})) if (v?.id) ids.push(String(v.id));
+  return [...new Set(ids)];
+}
+
 if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
   const cmd = args._[0];
@@ -70,6 +143,7 @@ if (isMain(import.meta.url)) main(async () => {
     if (args.brand) throw new Error('No bulk approval: a person approves each post (--id <draft>, or the Posts tab).');
     return out(await finalizeAll({ id: args.id && args.id !== true ? String(args.id) : '' }));
   }
+  if (cmd === 'unapprove' || cmd === 'back-to-review') return out(backToReview({ id: need(args, 'id'), metricoolDeleted: args['metricool-deleted'] === true }));
   if (cmd === 'cancel') return out(cancel({ id: need(args, 'id'), note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }));
-  throw new Error('Lệnh: approve --id <draft> | cancel --id <draft>');
+  throw new Error('Lệnh: approve --id <draft> | cancel --id <draft> | unapprove --id <draft> [--metricool-deleted]');
 });

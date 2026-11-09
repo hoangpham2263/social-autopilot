@@ -251,6 +251,17 @@ async function handle(req, res) {
     if (x && !x.ok) throw new Error(x.error || "Not approved.");
     return { id, brand_post: x?.brand_post || null, image_host: x?.image_host || null };
   });
+  // Posts -> Queued -> "Back to review" (finalize.mjs unapprove, hidden child process): the approval is undone, the
+  // hosted image removed from the image repo, the post is To review again. Never for a Posted post. A post already
+  // scheduled in Metricool needs metricool_deleted: true (the person confirmed they deleted it there).
+  if (path === "/api/unapprove" && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    const id = draftId(b);
+    findDraftOrThrow(id);
+    const r = await runScript("finalize.mjs", ["unapprove", "--id", id, ...(b.metricool_deleted === true ? ["--metricool-deleted"] : [])], 10 * 60000);
+    if (!r.ok) throw new Error(r.error || "Not moved back.");
+    return { id, status: r.status, post: r.post, archive: r.archive };
+  });
   // Brand edit page, "Open skill folder": everything beyond the few fields of the app is edited there.
   if (path === "/api/open-skill" && req.method === "POST") return api(res, async () => {
     const id = String((await body(req)).id || "");

@@ -34,7 +34,10 @@ function writeBackInner(id) {
   // The brand's catalog and post folder, as its skill writes them.
   const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
   const catalog = readJson(catalogFile, { updated: '', paths: 'Đường dẫn tính từ gốc skill.', posts: [], covers: [] });
-  const number = Math.max(0, ...catalog.posts.map((p) => Number(/^POST-(\d+)$/.exec(p.id)?.[1] || 0))) + 1;
+  // Posts sent back to review sit in workspace/local/archive/<POST-xx>-<time>/: their numbers are not used again.
+  const archiveDir = path.join(brand.dir, 'workspace', 'local', 'archive');
+  const archived = fs.existsSync(archiveDir) ? fs.readdirSync(archiveDir).map((n) => Number(/^POST-(\d+)-/.exec(n)?.[1] || 0)) : [];
+  const number = Math.max(0, ...archived, ...catalog.posts.map((p) => Number(/^POST-(\d+)$/.exec(p.id)?.[1] || 0))) + 1;
   const postId = `POST-${String(number).padStart(2, '0')}`;
   const taken = new Set(['posts', 'published'].flatMap((d) => { const p = path.join(brand.dir, 'workspace', d); return fs.existsSync(p) ? fs.readdirSync(p) : []; }));
   const base = `POST-${slugify(`${draft.idea.product_type} ${draft.idea.scene}`)}`;

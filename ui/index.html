@@ -925,13 +925,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       return tile({ id: d.id, img: draftThumb(d), title: titleOf(d),
         status: fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : "",
         who: [d.preview?.page_name || d.brand, when !== "-" ? when : ""].filter(Boolean).join(" · "), whoTip: [d.brand, fail || (when !== "-" ? when : drState === "queued" ? "next run" : "")].filter(Boolean).join(" · "),
-        actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : "" });
+        actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : drState === "queued" && d.brand_post && MC(d) !== "published" ? `<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
     wireTiles($("#draftList"), (i) => openPreview(list[i], { list, i }));
     $$("#draftList .tile").forEach((card, i) => {
       for (const btn of $$("[data-act]", card)) btn.onclick = async () => {
         const d = list[i], msg = $(".msg", card);
         if (btn.dataset.act === "drop" && !confirm("Drop this post? It will not be used.")) return;
+        if (btn.dataset.act === "unreview") { const r = await backToReview(d, msg); if (r) loadDrafts(); return; }
         for (const b of $$("[data-act]", card)) b.disabled = true;
         if (btn.dataset.act === "approve") msg.innerHTML = `<span class="meta">Saving and hosting…</span>`;
         const res = btn.dataset.act === "approve" ? await postJson("/api/approve", { id: d.id }).catch(() => offline) : await postJson("/api/cancel", { id: d.id, note: "" }).catch(() => offline);
@@ -1043,7 +1044,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // nav: { list, i } when opened from the list: ‹ Prev / Next › (↑/↓) walk it without closing.
   function openPreview(d, nav = null) {
     const go = nav ? (step) => { const j = nav.i + step; if (nav.list[j]) openPreview(nav.list[j], { list: nav.list, i: j }); } : null;
-    const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", swap = d.image_mode === "scene-swap";
+    const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", canUnreview = !!bp && bp.metricool !== "published", swap = d.image_mode === "scene-swap";
     const p = d.preview || { posts: [], media: [] };
     const initial = p.page_avatar ? `<img class="av-img" src="${esc(p.page_avatar)}" alt="">` : esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
     const whenTxt = plannedOf(d) !== "-" ? esc(plannedOf(d)) : "Draft preview";
@@ -1086,6 +1087,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       ${swap && d.reference_image ? `<div class="row-actions"><button class="btn" type="button" data-orig>Shop's original</button></div>` : ""}
       ${canCancel ? `<div class="row-actions">${d.status === "ready" ? `<button class="btn primary" type="button" data-act="approve" title="Save to the brand and host the image; the next Create &amp; publish run schedules it in Metricool">Approve</button>` : ""}<button class="btn" type="button" data-act="cancel" title="Only before the post is approved">Drop</button></div>
         <div class="reject-box" hidden><input class="note" placeholder="Reason (optional)"><button class="btn" type="button" data-act="cancel-go">Confirm drop</button></div>` : ""}
+      ${canUnreview ? `<div class="row-actions"><button class="btn" type="button" data-act="unreview" title="Undo the approval: the post goes back to To review and its hosted image is removed">Back to review</button></div>` : ""}
       <div class="msg"></div>`;
     const title = `Preview ${esc(bp?.post || "")} <span class="meta">(mock${bp?.metricool === "published" ? "" : ", not posted"})</span>`;
     let lang = null; // the chosen language, kept when switching channel
@@ -1135,6 +1137,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   async function cancelDraft(panel, d, act, nav) {
     const msg = $(".msg", panel), box = $(".reject-box", panel);
     if (act === "cancel") { box.hidden = !box.hidden; if (!box.hidden) $(".note", panel).focus(); return; }
+    if (act === "unreview") {
+      const ok = await backToReview(d, msg, $$("[data-act]", panel));
+      if (!ok) return;
+      await loadDrafts();
+      const j = drList.findIndex((x) => x.id === d.id);
+      if (nav && j >= 0) openPreview(drList[j], { list: drList, i: j }); else closeOverlay();
+      return;
+    }
     for (const b of $$("[data-act]", panel)) b.disabled = true;
     if (act === "approve") msg.innerHTML = `<span class="meta">Saving to the brand and hosting the image…</span>`;
     const r = act === "approve" ? await postJson("/api/approve", { id: d.id }).catch(() => offline)
@@ -1146,6 +1156,20 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (at >= 0) openPreview(drList[at], { list: drList, i: at }); else closeOverlay();
   }
   $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
+  // "Back to review" (Queued, never Posted): undo the approval (finalize.mjs unapprove). A post already scheduled in
+  // Metricool must be deleted there first; the confirm says which one.
+  async function backToReview(d, msg, buttons = []) {
+    const sched = arr(d.brand_post?.metricool_sent).filter((m) => m.id && !m.draft);
+    const text = sched.length
+      ? `This post is scheduled in Metricool (${sched.map((m) => `id ${m.id}, ${String(m.publication || "").slice(0, 16).replace("T", " ")}`).join("; ")}). Delete it in Metricool, then confirm.`
+      : "Move this post back to To review? The approval is undone and its hosted image is removed.";
+    if (!confirm(text)) return false;
+    for (const b of buttons) b.disabled = true;
+    if (msg) msg.innerHTML = `<span class="meta">Moving back to review…</span>`;
+    const r = await postJson("/api/unapprove", { id: d.id, metricool_deleted: sched.length > 0 }).catch(() => offline);
+    if (r.error) { if (msg) msg.innerHTML = errLine(r.error); for (const b of buttons) b.disabled = false; return false; }
+    return true;
+  }
 
   // ----- Settings: Accounts (who is signed in: names only), Requirements (installed tools), then tool settings -----
   const dotRow = (ok, label, value, action = "") => `<dt>${esc(label)}</dt><dd><span class="dot ${ok === null ? "dot-grey" : ok ? "dot-green" : "dot-red"}"></span>${value}${action}</dd>`;
