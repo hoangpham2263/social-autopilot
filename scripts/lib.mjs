@@ -143,7 +143,7 @@ export function saveSettings(input = {}) {
       // Research: only the human-like pause between page actions; there are no run or post limits.
       research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay },
       metricool: Object.fromEntries(Object.entries(cur.metricool || {}).filter(([k]) => k !== 'default_mode')),
-      codex: { command: str(cx.command ?? cur.codex?.command, 'codex.command'), timeout_minutes: int(cx.timeout_minutes ?? cur.codex?.timeout_minutes, 'codex.timeout_minutes', 1) },
+      codex: { command: str(cx.command ?? cur.codex?.command, 'codex.command'), timeout_minutes: int(cx.timeout_minutes ?? cur.codex?.timeout_minutes, 'codex.timeout_minutes', 1), concurrency: int(cx.concurrency ?? cur.codex?.concurrency ?? 3, 'codex.concurrency', 1), retry_wait_seconds: int(cx.retry_wait_seconds ?? cur.codex?.retry_wait_seconds ?? 60, 'codex.retry_wait_seconds', 0) },
       ffmpeg: { command: str(ff.command ?? cur.ffmpeg?.command, 'ffmpeg.command') },
       remove_watermark: { script: str(rw.script ?? cur.remove_watermark?.script, 'remove_watermark.script') },
     };

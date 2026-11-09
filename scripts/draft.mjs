@@ -8,6 +8,10 @@
 //        --size "<real size, e.g. 91 cm (36 in) wide>" (required; from the skill: social.json product_images.size_source)
 //        --sign-text "<text on the product>" (required when product_images.custom_text: a context text, never the template
 //        placeholder; rules in the skill's references/image-guide.md and project.md section 10)
+//   node scripts/draft.mjs image-batch --brand <id|all> [--concurrency 3] [--force]
+//        the image step for every draft waiting for an image, several Codex processes at once (settings
+//        codex.concurrency, default 3; each draft keeps its own codex.log), each cleaned right after; captions can be
+//        written meanwhile. A Codex rate-limit/quota error: wait codex.retry_wait_seconds, retry once, then image_failed.
 //   node scripts/draft.mjs reprompt --id <draft> [--size ..] [--sign-text ..] [--description "<product description>"]
 //        rebuilds prompt.txt from the template (the old description is kept when none is given); then image --force
 //   node scripts/draft.mjs confirm-clean --id <draft> --by <name>   scene-swap: looked at image.png, no shop name/logo left
@@ -19,7 +23,8 @@
 //   node scripts/draft.mjs list  [--brand <id>] [--status s]
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { checkDraft, summary, logoWarnings } from './draft-lib.mjs';
 import { cleanDraftImage } from './image-clean.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
@@ -185,6 +190,40 @@ function codexCommand(s) {
   return { file: cmd, pre: [], shell: false };
 }
 
+const QUOTA = /usage limit|rate[ -]?limit|quota|too many requests|\b429\b/i;
+
+// Drafts waiting for an image: prompt filled, no image.png yet (or every draft with --force), not dropped/approved.
+export function waitingForImage(brand, force = false) {
+  return listDrafts(brand === 'all' ? undefined : brand).filter((d) => {
+    if (d.status.brand_post || ['rejected', 'approved', 'generating'].includes(d.status.status)) return false;
+    if (!force && fs.existsSync(path.join(d.dir, 'image.png'))) return false;
+    return fs.existsSync(path.join(d.dir, 'prompt.txt'));
+  });
+}
+// image-batch: one child process per draft (draft.mjs image), at most <concurrency> at once.
+export async function imageBatch(args, s = settings()) {
+  const brand = need(args, 'brand');
+  const limit = Math.max(1, Number(args.concurrency && args.concurrency !== true ? args.concurrency : s.codex.concurrency || 3));
+  const all = waitingForImage(brand, !!args.force);
+  const todo = [], skipped = [];
+  for (const d of all) {
+    const left = fs.readFileSync(path.join(d.dir, 'prompt.txt'), 'utf8').match(/\{\{\w+\}\}/g);
+    if (left) skipped.push({ id: d.id, reason: `prompt.txt còn ${[...new Set(left)].join(', ')}` }); else todo.push(d);
+  }
+  const results = [];
+  let next = 0;
+  const one = (d) => new Promise((done) => {
+    const p = spawn(process.execPath, [fileURLToPath(import.meta.url), 'image', '--id', d.id, ...(args.force ? ['--force'] : [])], { env: process.env, windowsHide: true });
+    let o = '', e = '';
+    p.stdout.on('data', (x) => { o += x; }); p.stderr.on('data', (x) => { e += x; });
+    p.on('close', () => { let r; try { r = JSON.parse(o); } catch { r = { ok: false, error: (o + e).trim().slice(0, 500) }; } done({ id: d.id, ...r }); });
+  });
+  const worker = async () => { while (next < todo.length) { const d = todo[next++]; results.push(await one(d)); } };
+  await Promise.all(Array.from({ length: Math.min(limit, todo.length) }, worker));
+  return { brand, concurrency: limit, done: results.filter((r) => r.ok !== false).map((r) => r.id), failed: results.filter((r) => r.ok === false).map((r) => ({ id: r.id, error: r.error })), skipped, results,
+    next: 'Xem từng ảnh; ảnh đạt thì viết caption (có thể viết trong lúc ảnh khác đang chạy) rồi draft.mjs check.' };
+}
+
 export function image(args, s = settings()) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const target = path.join(dir, 'image.png');
@@ -207,19 +246,30 @@ export function image(args, s = settings()) {
   const q = (a) => (c.shell ? `"${a}"` : a);
   const before = new Set(fs.readdirSync(dir));
   setStatus(dir, 'generating');
+  const runCodex = () => c.shell
   // A .cmd shim needs the shell; it gets one command string (no args array with shell: true, Node DEP0190).
-  const r = c.shell
     ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
     : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
-  fs.writeFileSync(path.join(dir, 'codex.log'), `$ codex ${codexArgs.join(' ')} < prompt.txt\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}`, 'utf8');
+  // A rate-limit/quota answer: wait (codex.retry_wait_seconds), try once more, then image_failed.
+  const wait = Number(process.env.SA_CODEX_RETRY_WAIT_SECONDS ?? s.codex.retry_wait_seconds ?? 60);
+  let r, log = '', retried = false;
+  for (let attempt = 1; ; attempt++) {
+    r = runCodex();
+    log += `$ codex ${codexArgs.join(' ')} < prompt.txt   (attempt ${attempt})\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}\n`;
+    fs.writeFileSync(path.join(dir, 'codex.log'), log, 'utf8');
+    if (fs.existsSync(target) || attempt > 1 || !QUOTA.test(`${r.stdout}${r.stderr}`)) break;
+    retried = true;
+    log += `\n-- rate limit / quota: waiting ${wait}s, then one retry --\n\n`;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait * 1000);
+  }
   if (!fs.existsSync(target)) {
     // Codex sometimes names the file differently: take the one new PNG it saved.
     const fresh = fs.readdirSync(dir).filter((f) => !before.has(f) && /\.png$/i.test(f));
     if (fresh.length === 1) fs.renameSync(path.join(dir, fresh[0]), target);
   }
   if (!fs.existsSync(target)) {
-    const quota = /usage limit|rate limit|quota|429/i.test(`${r.stdout}${r.stderr}`);
-    setStatus(dir, 'image_failed', { error: quota ? 'Codex hết hạn mức ảnh' : `Codex không tạo được image.png (mã ${r.status})` });
+    const quota = QUOTA.test(`${r.stdout}${r.stderr}`);
+    setStatus(dir, 'image_failed', { error: quota ? `Codex hết hạn mức ảnh${retried ? ' (đã chờ và thử lại 1 lần)' : ''}` : `Codex không tạo được image.png (mã ${r.status})` });
     throw new Error(`${quota ? 'Codex hết hạn mức ảnh.' : 'Codex không tạo được image.png.'} Xem ${path.join(dir, 'codex.log')}`);
   }
   // Codex's file is the original (image-generated.png, never written again); image.png is the metadata-clean copy from
@@ -228,7 +278,7 @@ export function image(args, s = settings()) {
   setStatus(dir, 'needs_caption', { error: '', watermark: null, logo_check: null, metadata_clean: null });
   const cleaned = cleanDraftImage(dir, { generator: 'codex', force: true }, s);
   const st = readJson(path.join(dir, 'status.json'));
-  return ({ id: draft.id, image: target, original: cleaned.original, metadata_removed: cleaned.removed, warnings: logoWarnings(prompt), status: st.status, next: `Xem ảnh; nếu đạt, viết caption theo brief.md rồi chạy draft.mjs check --id ${draft.id}.` });
+  return ({ id: draft.id, image: target, ...(retried ? { retried_after_rate_limit: true } : {}), original: cleaned.original, metadata_removed: cleaned.removed, warnings: logoWarnings(prompt), status: st.status, next: `Xem ảnh; nếu đạt, viết caption theo brief.md rồi chạy draft.mjs check --id ${draft.id}.` });
 }
 
 // Optional post-processing, default off: the brand's logo as a small overlay in one corner of the finished image, never
@@ -281,17 +331,18 @@ export function check(args) {
   return ({ id: draft.id, status: st.status, problems, warnings });
 }
 
-if (isMain(import.meta.url)) main(() => {
+if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
   const s = settings();
   const cmd = args._[0];
   if (cmd === 'new') return out(newDraft(args));
   if (cmd === 'image') return out(image(args, s));
+  if (cmd === 'image-batch') return out(await imageBatch(args, s));
   if (cmd === 'reprompt') return out(reprompt(args));
   if (cmd === 'check') return out(check(args));
   if (cmd === 'watermark') return out(watermark(args, s));
   if (cmd === 'confirm-clean') return out(confirmClean(args));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
-  throw new Error('Lệnh: new | reprompt | image | watermark | confirm-clean | check | show | list');
+  throw new Error('Lệnh: new | reprompt | image | image-batch | watermark | confirm-clean | check | show | list');
 });

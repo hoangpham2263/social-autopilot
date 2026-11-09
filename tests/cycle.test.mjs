@@ -507,3 +507,42 @@ test('clean script strips U+034F and zero-width characters from a CSV', () => {
   assert.equal(r.nbsp_replaced, 1);
   assert.match(fs.readFileSync(path.join(tmp, 'clean.csv'), 'utf8'), /"?Xin chào bạn"?/);
 });
+
+// Mode 2 in parallel: draft.mjs image-batch runs several Codex processes at once; a rate limit waits and retries once.
+test('image-batch: concurrent Codex runs, prompt not filled is skipped, rate limit retried once then image_failed', { skip: !haveReal && 'no brand skills to copy' }, () => {
+  const product = path.join(brandDir, 'project', 'sources', 'inputs', 'test-product', 'product.png');
+  const mk = (n, promptExtra = '') => {
+    const id = `dreamyvows-20261201-${n}`, dir = path.join(ws, 'drafts', 'dreamyvows', id);
+    write(path.join(dir, 'draft.json'), JSON.stringify({ id, brand: 'dreamyvows', brand_dir: brandDir, image_mode: 'brand-image', product_image: product, idea: { product_type: 'x', scene: 'y' }, inspiration: {}, captions: { en: 'content-en.txt' } }));
+    write(path.join(dir, 'status.json'), JSON.stringify({ status: 'needs_prompt' }));
+    write(path.join(dir, 'prompt.txt'), `Edit the image. ${promptExtra}\nSave the result in the current working directory as image.png.`);
+    return { id, dir };
+  };
+  const ok = [mk('01'), mk('02'), mk('03')];
+  const unfilled = mk('04', '{{PRODUCT_DESCRIPTION}}');
+  const once = mk('05', 'QUOTA-ONCE');
+  const always = mk('06', 'QUOTA-ALWAYS');
+  const log = path.join(tmp, 'codex-times.log');
+  const r = spawnSync(process.execPath, [path.join(tool, 'scripts', 'draft.mjs'), 'image-batch', '--brand', 'dreamyvows', '--concurrency', '3'],
+    { env: { ...env, FAKE_CODEX_LOG: log, FAKE_CODEX_DELAY_MS: '600', SA_CODEX_RETRY_WAIT_SECONDS: '0' }, encoding: 'utf8', windowsHide: true });
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.ok, true, r.stdout + r.stderr);
+  assert.equal(out.concurrency, 3);
+  for (const d of [...ok, once]) assert.ok(out.done.includes(d.id), `${d.id} done: ${JSON.stringify(out)}`);
+  assert.ok(out.skipped.some((x) => x.id === unfilled.id && /PRODUCT_DESCRIPTION/.test(x.reason)));
+  assert.deepEqual(out.failed.map((x) => x.id), [always.id]);
+  for (const d of ok) assert.ok(fs.existsSync(path.join(d.dir, 'image.png')) && fs.existsSync(path.join(d.dir, 'codex.log')), 'own image and log');
+  assert.equal(out.results.find((x) => x.id === once.id).retried_after_rate_limit, true);
+  assert.match(fs.readFileSync(path.join(once.dir, 'codex.log'), 'utf8'), /attempt 2/);
+  const failed = JSON.parse(fs.readFileSync(path.join(always.dir, 'status.json'), 'utf8'));
+  assert.equal(failed.status, 'image_failed');
+  assert.match(failed.error, /thử lại 1 lần/);
+  // Parallel: at some moment more than one fake Codex was running, never more than 3.
+  let busy = 0, peak = 0;
+  for (const [kind] of fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => l.split(' ')).sort((a, b) => Number(a[1]) - Number(b[1]) || (a[0] === 'end' ? -1 : 1))) { busy += kind === 'start' ? 1 : -1; peak = Math.max(peak, busy); }
+  assert.ok(peak >= 2 && peak <= 3, `peak ${peak}`);
+  // Nothing left to do: a second batch has no work.
+  const again = JSON.parse(spawnSync(process.execPath, [path.join(tool, 'scripts', 'draft.mjs'), 'image-batch', '--brand', 'all'], { env: { ...env, SA_CODEX_RETRY_WAIT_SECONDS: '0' }, encoding: 'utf8', windowsHide: true }).stdout);
+  assert.deepEqual(again.done, []);
+  assert.deepEqual(again.failed.map((x) => x.id), [always.id]); // an image_failed draft is tried again
+});
