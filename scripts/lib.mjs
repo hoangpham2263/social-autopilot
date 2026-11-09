@@ -216,9 +216,12 @@ export function brandOverview(found = discoverBrands()) {
   const brands = (cfg.brands || []).map((m) => {
     const skill = m.skill_id ? found.brands.find((b) => b.id === m.skill_id) : null;
     if (skill) used.add(skill.id);
-    // Both the skill's metricool.timezone (CSV times are read in it) and its cadence.timezone must match the Metricool brand.
-    const tz_mismatch = !!(skill && m.timezone && [skill.metricool_timezone, skill.timezone].some((tz) => tz && tz !== m.timezone));
-    return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone, metricool_timezone: skill.metricool_timezone || '' } : null, skill_missing: !!(m.skill_id && !skill), tz_mismatch };
+    // tz_mismatch (informational): cadence.timezone (audience, where times are planned) differs from the Metricool brand;
+    // metricool-csv.mjs converts every posting time, so it is not an error. tz_conflict: the skill's metricool.timezone
+    // disagrees with the Metricool brand's timezone (a wrong setting: times would be converted to the wrong zone).
+    const tz_mismatch = !!(skill && m.timezone && skill.timezone && skill.timezone !== m.timezone);
+    const tz_conflict = !!(skill && m.timezone && skill.metricool_timezone && skill.metricool_timezone !== m.timezone);
+    return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone, metricool_timezone: skill.metricool_timezone || '' } : null, skill_missing: !!(m.skill_id && !skill), tz_mismatch, tz_conflict };
   });
   return { account: cfg.account || {}, brands, skills_without_metricool: found.brands.filter((b) => !used.has(b.id)).map((b) => ({ id: b.id, brand: b.brand })) };
 }

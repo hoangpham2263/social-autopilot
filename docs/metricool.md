@@ -68,7 +68,7 @@ Bảng giá trong app (USD, trả theo năm, chưa thuế):
 
 ### Đầu vào social.json/tool cần có
 - `metricool.user_id` (<user_id> nếu dùng tài khoản này) và `metricool.blog_id` riêng cho từng thương hiệu (hiện **chưa có** brand DreamyVows/GRENHEIM).
-- `metricool.timezone` khớp múi giờ brand trong Metricool (brand hiện có dùng America/New_York; social.json đang để America/Los_Angeles).
+- `metricool.timezone` = múi giờ brand trong Metricool (Dreamy Vows, Grenheim: Indian/Christmas, UTC+7). Không có thì tool lấy múi giờ brand trong `config/metricool-brands.json` (theo `skill_id`). `cadence.timezone` là múi giờ khách xem (America/Los_Angeles); hai múi giờ khác nhau được, xem mục "Múi giờ: lên lịch theo khách, ghi theo Metricool".
 - Danh sách mạng bật (`providers[].network`: facebook, instagram, ...) khớp với mạng đã nối trong brand.
 - Mỗi bài: `text` (hoặc text riêng từng mạng), ngày giờ, `media` là **URL công khai** (Shopify CDN như Fortera đang làm, hoặc GitHub raw/R2), `alt text`, `first comment` (tuỳ chọn), loại bài IG (POST/REEL/STORY), cờ `draft`.
 - Với CSV: thêm định dạng ngày giờ đã chọn khi import, và `Brand name` nếu một file chứa nhiều brand.
@@ -76,7 +76,7 @@ Bảng giá trong app (USD, trả theo năm, chưa thuế):
 
 ### Giờ đăng tự động (cadence.slots trống)
 
-`metricool-csv.mjs export` chọn giờ cho bài chưa có `schedule` và không có `--date/--time`. `cadence.slots` có giờ thì dùng giờ đó (ghi đè); trống thì rải `cadence.posts_per_week` (1-7, mặc định 3) vào các ngày tốt nhất của mạng đầu tiên trong kênh bật, giờ theo **múi giờ Metricool của brand** (`metricool.timezone`, không có thì `cadence.timezone`). Mỗi ngày tối đa một bài của thương hiệu; không trùng ngày+giờ đã có trong catalog; bài thêm khi `posts_per_week` lớn hơn số ngày tốt đi theo thứ tự mon, fri, wed, thu, tue, sat, sun. Bảng (`AUTO_TIMES` trong `scripts/metricool-csv.mjs`, giờ thử theo thứ tự):
+`metricool-csv.mjs export` chọn giờ cho bài chưa có `schedule` và không có `--date/--time`. `cadence.slots` có giờ thì dùng giờ đó (ghi đè); trống thì rải `cadence.posts_per_week` (1-7, mặc định 3) vào các ngày tốt nhất của mạng đầu tiên trong kênh bật, giờ theo **múi giờ khách xem** (`cadence.timezone`), rồi quy đổi sang múi giờ Metricool khi ghi Date/Time (mục dưới). Mỗi ngày tối đa một bài của thương hiệu; không trùng ngày+giờ đã có trong catalog; bài thêm khi `posts_per_week` lớn hơn số ngày tốt đi theo thứ tự mon, fri, wed, thu, tue, sat, sun. Bảng (`AUTO_TIMES` trong `scripts/metricool-csv.mjs`, giờ thử theo thứ tự):
 
 | Mạng | Ngày tốt | Giờ |
 |---|---|---|
@@ -91,6 +91,16 @@ Bảng giá trong app (USD, trả theo năm, chưa thuế):
 
 Đây là giờ mặc định chung; khi có số liệu best times của brand thì điền `cadence.slots` để ghi đè.
 
+### Múi giờ: lên lịch theo khách, ghi theo Metricool
+
+Metricool đọc cột Date/Time của CSV theo **múi giờ của brand trong Metricool** (Dreamy Vows, Grenheim: Indian/Christmas, UTC+7), còn khách xem ở Mỹ (`cadence.timezone` America/Los_Angeles). Nếu ghi thẳng "10:00" thì bài lên 10:00 UTC+7, tức tối hôm trước ở LA.
+
+- Mọi giờ đăng được **lên lịch theo `cadence.timezone`**: `cadence.slots`, giờ tự động, `schedule` trong catalog và `--date/--time`.
+- `metricool-csv.mjs export` **quy đổi** từng ngày giờ sang múi giờ Metricool (`metricool.timezone`, không có thì `config/metricool-brands.json`) trước khi ghi Date/Time, dùng Intl nên đúng giờ mùa hè (DST) và lùi/tiến ngày. Giờ lặp khi Mỹ lùi đồng hồ (vd 01:30 ngày 2026-11-01) lấy lần đầu; giờ không tồn tại khi tiến đồng hồ dời tới sau khoảng nhảy.
+- Kết quả export ghi cả hai cho từng bài: `planned` (giờ khách), `metricool` (giờ ghi vào CSV) và `time_note`, vd "2026-11-10 10:00 America/Los_Angeles = 01:00 ngày hôm sau (2026-11-11) Indian/Christmas trong Metricool". `validate` trả `times` tương tự (đổi ngược từ CSV) và xét "đã qua / hôm nay" theo ngày của khách.
+- Hai múi giờ khác nhau chỉ là thông tin ("Giờ đăng được quy đổi tự động sang múi giờ Metricool"), không còn là lỗi. Gọn hơn (không bắt buộc): đặt múi giờ brand trong Metricool = múi giờ khách, khi đó không cần quy đổi.
+- Cảnh báo thật: `social.json metricool.timezone` khác múi giờ brand trong `config/metricool-brands.json` (sai cấu hình), hoặc không biết múi giờ Metricool (khi đó tool không quy đổi).
+
 ### Đường rẻ nhất chạy được
 1. **Free + MCP + draft** chạy được với 1 brand, 20 bài/tháng (3 bài/tuần ≈ 13 bài/tháng là đủ). Nhưng **tài khoản này đã bị Fortera dùng hết** slot brand và gần hết 20 bài/tháng, nên phải dùng một tài khoản Free riêng cho mỗi thương hiệu (cần xem điều khoản), hoặc
 2. **Starter 20 USD/tháng (5 brand, bài không giới hạn)**: gộp Fortera, DreamyVows, GRENHEIM vào một tài khoản, đăng qua MCP và CSV. Không API, không approval.
@@ -103,7 +113,7 @@ Khuyến nghị: dùng MCP làm đường cho agent, gửi bài dạng nháp; CS
 2. Trên Free, MCP có tạo được bài "for review" không, hay chỉ draft? Cần thử 1 bài nháp sau khi nối connector Claude.
 3. MCP nhận link ảnh nào ổn định: Shopify Files CDN của từng store, GitHub raw hay R2?
 4. `lang: ["vn","en"]` trong social.json: trang FB Mỹ đăng một caption tiếng Anh hay gộp hai thứ tiếng?
-5. Múi giờ: thống nhất America/Los_Angeles (social.json) hay theo múi giờ brand Metricool?
+5. ~~Múi giờ~~: đã xử lý, giờ lên lịch theo `cadence.timezone` và tự quy đổi sang múi giờ brand Metricool khi xuất CSV.
 6. Rate limit của MCP/API: chưa có số công khai.
 
 ## 5. CSV test 2026-11-09

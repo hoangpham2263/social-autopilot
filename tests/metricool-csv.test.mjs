@@ -78,7 +78,9 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   assert.equal(r.brand_name, 'Test Brand');
   assert.equal(r.timezone, 'Asia/Ho_Chi_Minh');
   assert.ok(r.warnings.some((w) => /POST-04/.test(w)));
-  assert.ok(r.warnings.some((w) => /khác cadence.timezone/.test(w)));
+  assert.equal(r.audience_timezone, 'America/Los_Angeles');
+  assert.ok(r.notes.some((w) => /quy đổi tự động sang múi giờ Metricool/.test(w)), 'informational note, not a warning');
+  assert.ok(!r.warnings.some((w) => /cadence\.timezone/.test(w)));
   assert.ok(r.warnings.some((w) => /saveExternalMediaFiles/.test(w)));
   const raw = fs.readFileSync(file, 'utf8');
   assert.notEqual(raw.charCodeAt(0), 0xfeff, 'no BOM, as the template');
@@ -93,9 +95,14 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   assert.equal(p1['Facebook Post Type'], 'POST');
   for (const col of lib.AI_LABEL_COLUMNS) assert.equal(p1[col], 'false', col);
   assert.ok(!/AI/i.test(p1.Text), 'no AI disclosure text');
-  assert.match(p1.Time, /^(10:00:00|19:30:00)$/, 'time from cadence slot');
+  // Slots are planned in cadence.timezone (LA) and written in the Metricool timezone (Asia/Ho_Chi_Minh).
+  const m1 = r.posts.find((x) => x.post === 'POST-01');
+  assert.match(m1.planned.time, /^(10:00:00|19:30:00)$/, 'time from cadence slot');
+  assert.equal(m1.planned.timezone, 'America/Los_Angeles');
+  assert.deepEqual({ date: p1.Date, time: p1.Time }, lib.convertZoned(m1.planned.date, m1.planned.time, 'America/Los_Angeles', 'Asia/Ho_Chi_Minh'));
+  assert.match(m1.time_note, /America\/Los_Angeles = .* Asia\/Ho_Chi_Minh trong Metricool/);
   assert.ok(p1.Date > new Date().toISOString().slice(0, 10) || p1.Date >= addDays(0));
-  assert.equal(p2.Date, FUTURE); assert.equal(p2.Time, '08:15:00');
+  assert.deepEqual({ date: p2.Date, time: p2.Time }, lib.convertZoned(FUTURE, '08:15', 'America/Los_Angeles', 'Asia/Ho_Chi_Minh'), 'catalog schedule is in the audience timezone');
   assert.equal(p2['Picture Url 2'], IMG(3));
   // Quoting: booleans bare, text quoted with doubled quotes and real newlines.
   assert.ok(raw.includes('"Xin chào POST-01\n\nHello ""POST-01"",\nsecond line, with comma"'));
@@ -122,7 +129,8 @@ test('export: --lang en, --posts selection, refuses unapproved / missing media /
   setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }, { id: 'POST-02', status: 'awaiting_review', media_url: IMG(2) }, { id: 'POST-03' }, { id: 'POST-04', media_url: many }] });
   const ok = run('export', '--brand', 'testbrand', '--posts', 'POST-01', '--lang', 'en', '--date', FUTURE, '--time', '09:00', '--out', path.join(outDir, 'one.csv'));
   assert.equal(ok.ok, true, JSON.stringify(ok));
-  assert.equal(ok.rows, 1); assert.equal(ok.posts[0].time, '09:00:00');
+  assert.equal(ok.rows, 1); assert.equal(ok.posts[0].planned.time, '09:00:00');
+  assert.deepEqual({ date: ok.posts[0].date, time: ok.posts[0].time }, lib.convertZoned(FUTURE, '09:00', 'America/Los_Angeles', 'Asia/Ho_Chi_Minh'));
   const text = parse(fs.readFileSync(path.join(outDir, 'one.csv'), 'utf8'))[1][0];
   assert.ok(!text.includes('Xin chào'));
   const bad = run('export', '--brand', 'testbrand', '--posts', 'POST-02,POST-03', '--out', path.join(outDir, 'x.csv'));
@@ -152,6 +160,7 @@ test('export: no metricool block falls back to project.md name and cadence timez
   assert.equal(r.timezone, 'America/Los_Angeles');
   assert.ok(r.warnings.some((w) => /metricool\.brand_name/.test(w)));
   assert.ok(r.warnings.some((w) => /metricool\.timezone/.test(w)));
+  assert.equal(r.posts[0].planned.time, r.posts[0].time, 'unknown Metricool timezone: no conversion');
 });
 
 test('validate: catches every row error with a per-row list', () => {
@@ -199,15 +208,17 @@ test('validate: catches every row error with a per-row list', () => {
 
 test('validate: today refused unless --allow-today (and then the time must still be ahead)', () => {
   setup({ posts: [] });
-  const tz = 'Asia/Ho_Chi_Minh';
-  const now = lib.nowIn(tz);
-  const f = csvFile('today.csv', [row({ Date: now.date, Time: '23:59:59' })]);
+  // "Today" is the audience's today (cadence.timezone LA); the CSV holds the same instant in Metricool's Asia/Ho_Chi_Minh.
+  const aud = 'America/Los_Angeles', mc = 'Asia/Ho_Chi_Minh';
+  const now = lib.nowIn(aud);
+  const at = (time) => { const x = lib.convertZoned(now.date, time, aud, mc); return row({ Date: x.date, Time: x.time }); };
+  const f = csvFile('today.csv', [at('23:59:59')]);
   const r = run('validate', f);
   assert.equal(r.ok, false); assert.ok(r.errors.some((e) => /hôm nay/.test(e.error)));
   const late = now.time < '23:59:59';
   const r2 = run('validate', f, '--allow-today');
   assert.equal(r2.ok, late, JSON.stringify(r2));
-  const f2 = csvFile('today-past.csv', [row({ Date: now.date, Time: '00:00:00' })]);
+  const f2 = csvFile('today-past.csv', [at('00:00:00')]);
   const r3 = run('validate', f2, '--allow-today');
   if (now.time > '00:00:00') { assert.equal(r3.ok, false); assert.ok(r3.errors.some((e) => e.field === 'Time')); }
 });
@@ -255,4 +266,63 @@ test('checkUrl: 200 image ok; 404 and text/html refused', async () => {
     const html = await lib.checkUrl(`${base}/page`);
     assert.equal(html.ok, false); assert.match(html.error, /content-type/);
   } finally { server.close(); }
+});
+
+test('convertZoned: LA -> Indian/Christmas (UTC+7) with date rollover', () => {
+  // PST (UTC-8): 10:00 LA = 01:00 next day UTC+7.
+  assert.deepEqual(lib.convertZoned('2026-11-10', '10:00', 'America/Los_Angeles', 'Indian/Christmas'), { date: '2026-11-11', time: '01:00:00' });
+  assert.deepEqual(lib.convertZoned('2026-11-10', '08:00', 'America/Los_Angeles', 'Indian/Christmas'), { date: '2026-11-10', time: '23:00:00' });
+  // Year rollover.
+  assert.deepEqual(lib.convertZoned('2026-12-31', '19:30:00', 'America/Los_Angeles', 'Indian/Christmas'), { date: '2027-01-01', time: '10:30:00' });
+  // Back again.
+  assert.deepEqual(lib.convertZoned('2026-11-11', '01:00:00', 'Indian/Christmas', 'America/Los_Angeles'), { date: '2026-11-10', time: '10:00:00' });
+  assert.equal(lib.describeTimes({ date: '2026-11-10', time: '10:00:00', timezone: 'America/Los_Angeles' }, { date: '2026-11-11', time: '01:00:00', timezone: 'Indian/Christmas' }),
+    '2026-11-10 10:00 America/Los_Angeles = 01:00 ngày hôm sau (2026-11-11) Indian/Christmas trong Metricool');
+});
+
+test('convertZoned: US DST end 2026-11-01 (PDT UTC-7 -> PST UTC-8)', () => {
+  // Saturday before the change is PDT: 10:00 LA = 17:00 UTC = 00:00 Sunday UTC+7.
+  assert.deepEqual(lib.convertZoned('2026-10-31', '10:00', 'America/Los_Angeles', 'Indian/Christmas'), { date: '2026-11-01', time: '00:00:00' });
+  // Sunday after the change is PST: 10:00 LA = 18:00 UTC = 01:00 Monday UTC+7.
+  assert.deepEqual(lib.convertZoned('2026-11-01', '10:00', 'America/Los_Angeles', 'Indian/Christmas'), { date: '2026-11-02', time: '01:00:00' });
+  // 01:30 happens twice that night: the first (PDT, 08:30 UTC) is used.
+  assert.deepEqual(lib.convertZoned('2026-11-01', '01:30', 'America/Los_Angeles', 'UTC'), { date: '2026-11-01', time: '08:30:00' });
+  // DST start 2026-03-08: 02:30 does not exist and moves forward to 03:30 PDT (10:30 UTC).
+  assert.deepEqual(lib.convertZoned('2026-03-08', '02:30', 'America/Los_Angeles', 'UTC'), { date: '2026-03-08', time: '10:30:00' });
+});
+
+test('convertZoned: same timezone is not converted', () => {
+  assert.deepEqual(lib.convertZoned('2026-11-01', '01:30', 'America/Los_Angeles', 'America/Los_Angeles'), { date: '2026-11-01', time: '01:30:00' });
+  assert.match(lib.describeTimes({ date: '2026-11-10', time: '10:00:00', timezone: 'Indian/Christmas' }, { date: '2026-11-10', time: '10:00:00', timezone: 'Indian/Christmas' }), /không quy đổi/);
+});
+
+test('export: Metricool timezone from config/metricool-brands.json converts LA slots to UTC+7; equal zones are not converted', () => {
+  setup({ metricool: { brand_name: 'Test Brand' }, posts: [{ id: 'POST-01', media_url: IMG(1) }] });
+  const cfgFile = path.join(ws, 'metricool-brands.json');
+  write(cfgFile, JSON.stringify({ version: 1, account: {}, brands: [{ name: 'Test Brand', blog_id: '1', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'testbrand' }] }));
+  try {
+    const f = path.join(outDir, 'cfg.csv');
+    const r = run('export', '--brand', 'testbrand', '--date', FUTURE, '--time', '10:00', '--out', f);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.timezone, 'Indian/Christmas'); assert.match(r.timezone_source, /metricool-brands\.json/);
+    const want = lib.convertZoned(FUTURE, '10:00', 'America/Los_Angeles', 'Indian/Christmas');
+    assert.notEqual(want.date, FUTURE, '10:00 LA is the next day in UTC+7');
+    assert.deepEqual({ date: r.posts[0].date, time: r.posts[0].time }, want);
+    const rec = parse(fs.readFileSync(f, 'utf8'))[1];
+    assert.equal(rec[header.indexOf('Date')], want.date); assert.equal(rec[header.indexOf('Time')], want.time);
+    assert.ok(r.notes.some((n) => /quy đổi tự động/.test(n)));
+    // validate shows both times and accepts the converted row.
+    const v = run('validate', f, '--brand', 'testbrand');
+    assert.equal(v.ok, true, JSON.stringify(v));
+    assert.equal(v.times[0].planned.date, FUTURE); assert.equal(v.times[0].planned.time, '10:00:00');
+    assert.match(v.times[0].note, /10:00 America\/Los_Angeles = .* Indian\/Christmas trong Metricool/);
+    // Same zone on both sides: written as planned.
+    setup({ metricool: { brand_name: 'Test Brand', timezone: 'America/Los_Angeles' }, posts: [{ id: 'POST-01', media_url: IMG(1) }] });
+    const same = run('export', '--brand', 'testbrand', '--date', FUTURE, '--time', '10:00', '--out', path.join(outDir, 'same.csv'));
+    assert.equal(same.ok, true, JSON.stringify(same));
+    assert.equal(same.posts[0].date, FUTURE); assert.equal(same.posts[0].time, '10:00:00');
+    assert.equal(same.notes.length, 0);
+    // social.json metricool.timezone disagreeing with the config brand is warned.
+    assert.ok(same.warnings.some((w) => /khác múi giờ brand "Test Brand"/.test(w)));
+  } finally { fs.rmSync(cfgFile, { force: true }); }
 });

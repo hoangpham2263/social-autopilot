@@ -9,7 +9,10 @@
 //
 // Brand fields read from <skill>/project/social.json:
 //   metricool.brand_name  exact Metricool brand label (e.g. "Dreamy Vows"); fallback: project.md "Tên thương hiệu" (warned)
-//   metricool.timezone    the Metricool brand's timezone (CSV times are read in it); fallback: cadence.timezone (warned)
+//   metricool.timezone    the Metricool brand's timezone (Metricool reads CSV Date/Time in it); fallback: the brand's
+//                         timezone in config/metricool-brands.json (skill_id), else cadence.timezone (warned, no conversion)
+//   cadence.timezone      the AUDIENCE timezone: every posting time (cadence.slots, automatic times, catalog schedule,
+//                         --date/--time) is planned in it and converted to the Metricool timezone when Date/Time are written
 //   cadence.slots[]       { day: mon..sun, time: HH:MM } used for posts without catalog schedule {date, time}
 //   channels[] enabled    -> network columns; language_policy.mode + channels[].lang -> Text
 // Catalog post fields: status "approved"; media_url (string or array, max 10) or video_url (+ video_thumbnail_url);
@@ -17,7 +20,7 @@
 //   facebook_post_type (default POST, REEL for a video).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands } from './lib.mjs';
 
 // WebP in any form Metricool refuses ("Unsupported .webp format"): the extension anywhere in the URL, or a CDN format
 // parameter (format=webp, fm=webp, f=webp, output=webp, ...). With --check-urls a content-type image/webp is refused too.
@@ -57,6 +60,38 @@ export function nowIn(tz, now = new Date()) {
     .formatToParts(now).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}:${p.second}` };
 }
+// Offset (ms) of tz at an instant: the wall clock in tz read as UTC, minus the instant.
+function tzOffset(tz, instant) {
+  const w = nowIn(tz, instant);
+  const [y, mo, d] = w.date.split('-').map(Number), [h, mi, se] = w.time.split(':').map(Number);
+  return Date.UTC(y, mo - 1, d, h, mi, se) - Math.floor(instant.getTime() / 1000) * 1000;
+}
+// The instant of a wall-clock date + time in tz, DST-safe (as Temporal "compatible"): a time that happens twice when the
+// clocks go back takes the first (earlier) one; a time skipped when the clocks go forward moves forward by the gap.
+export function zonedToInstant(date, time, tz) {
+  const t = normTime(time);
+  const [y, mo, d] = date.split('-').map(Number), [h, mi, se] = t.split(':').map(Number);
+  const local = Date.UTC(y, mo - 1, d, h, mi, se);
+  const before = tzOffset(tz, new Date(local - 14 * 36e5)), after = tzOffset(tz, new Date(local + 14 * 36e5));
+  const fits = (x) => { const w = nowIn(tz, new Date(x)); return w.date === date && w.time === t; };
+  const ok = [local - before, local - after].filter(fits);
+  return new Date(ok.length ? Math.min(...ok) : local - before);
+}
+// Wall-clock date + time in fromTz -> the same instant's wall clock in toTz (the date rolls over as needed).
+export function convertZoned(date, time, fromTz, toTz) {
+  const t = normTime(time);
+  if (!fromTz || !toTz || fromTz === toTz) return { date, time: t };
+  return nowIn(toTz, zonedToInstant(date, t, fromTz));
+}
+const dayDiff = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
+// "2026-11-10 10:00 America/Los_Angeles = 01:00 ngày hôm sau (2026-11-11) Indian/Christmas trong Metricool"
+export function describeTimes(planned, metricool) {
+  const hm = (t) => String(t).slice(0, 5);
+  if (planned.timezone === metricool.timezone) return `${planned.date} ${hm(planned.time)} ${planned.timezone} (Metricool cùng múi giờ, không quy đổi)`;
+  const dd = dayDiff(planned.date, metricool.date);
+  const rel = dd === 0 ? 'cùng ngày' : dd === 1 ? 'ngày hôm sau' : dd === -1 ? 'ngày hôm trước' : `${dd > 0 ? '+' : ''}${dd} ngày`;
+  return `${planned.date} ${hm(planned.time)} ${planned.timezone} = ${hm(metricool.time)} ${rel} (${metricool.date}) ${metricool.timezone} trong Metricool`;
+}
 const validTz = (tz) => { try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } };
 export function validDate(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
@@ -65,7 +100,7 @@ export function validDate(s) {
   return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
 }
 export const validTime = (s) => /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(s || '');
-const normTime = (s) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(s || '') ? `${s}:00` : String(s || ''));
+function normTime(s) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(s || '') ? `${s}:00` : String(s || ''); }
 const addDays = (date, n) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const weekday = (date) => DAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
 
@@ -82,16 +117,28 @@ export function brandInfo(dir) {
   const mc = social.metricool && typeof social.metricool === 'object' ? social.metricool : {};
   const configured = typeof mc.brand_name === 'string' && mc.brand_name.trim() !== '';
   const display = projectField(project, 'Tên thương hiệu') || social.brand || '';
-  const tzConfigured = typeof mc.timezone === 'string' && mc.timezone.trim() !== '';
+  const id = path.basename(dir).replace(/-skills$/, '');
+  const name = configured ? mc.brand_name.trim() : display;
+  const cadenceTz = social.cadence?.timezone || '';
+  // Metricool brand timezone: social.json metricool.timezone, else config/metricool-brands.json (by skill_id, then name).
+  let cfg = null;
+  try { const list = metricoolBrands().brands || []; cfg = list.find((b) => b.skill_id === id) || list.find((b) => name && b.name === name) || null; } catch {}
+  const ownTz = typeof mc.timezone === 'string' ? mc.timezone.trim() : '';
+  const cfgTz = cfg && typeof cfg.timezone === 'string' ? cfg.timezone.trim() : '';
+  const tz = ownTz || cfgTz || cadenceTz;
   return {
-    id: path.basename(dir).replace(/-skills$/, ''), dir, social, enabled: social.enabled === true,
-    brand_name: configured ? mc.brand_name.trim() : display,
+    id, dir, social, enabled: social.enabled === true,
+    brand_name: name,
     brand_name_source: configured ? 'social.json metricool.brand_name' : 'project.md "Tên thương hiệu" (chưa có metricool.brand_name)',
     brand_name_configured: configured,
-    timezone: tzConfigured ? mc.timezone.trim() : (social.cadence?.timezone || ''),
-    timezone_source: tzConfigured ? 'social.json metricool.timezone' : 'social.json cadence.timezone (chưa có metricool.timezone)',
-    timezone_configured: tzConfigured,
-    cadence_timezone: social.cadence?.timezone || '',
+    // timezone = the Metricool brand's timezone: CSV Date/Time are written in it.
+    timezone: tz,
+    timezone_source: ownTz ? 'social.json metricool.timezone' : cfgTz ? `config metricool-brands.json (brand "${cfg.name}")` : 'social.json cadence.timezone (chưa có metricool.timezone)',
+    timezone_configured: !!(ownTz || cfgTz),
+    config_timezone: cfgTz, config_brand: cfg?.name || '',
+    // audience_timezone = where posting times are planned (cadence.timezone); converted to timezone on export.
+    cadence_timezone: cadenceTz,
+    audience_timezone: cadenceTz && validTz(cadenceTz) ? cadenceTz : tz,
   };
 }
 export function allBrands(root = settings().skillsRoot) { return brandDirs(root).map(brandInfo); }
@@ -127,9 +174,11 @@ export async function checkUrl(url, { timeoutMs = 15000 } = {}) {
 }
 
 // ----- validation of rows (objects keyed by header) -----
-// ctx: { brands: [{brand_name, timezone, brand_name_configured}], brand (expected brand info or null), allowToday, now }
+// ctx: { brands: [{brand_name, timezone, audience_timezone, brand_name_configured}], brand (expected brand info or null),
+// allowToday, now }. Date/Time are read in the brand's Metricool timezone; the past/today rules are applied to the same
+// instant in the audience timezone (where times are planned). times[] shows both for every row of a known brand.
 export function validateRows(rows, ctx) {
-  const errors = [], warnings = [];
+  const errors = [], warnings = [], times = [];
   const err = (row, field, error) => errors.push({ row, field, error });
   const known = ctx.brands.filter((b) => b.brand_name_configured);
   if (!ctx.brand && !known.length) warnings.push('Chưa thương hiệu nào có social.json metricool.brand_name: không kiểm được Brand name với nhãn trong Metricool.');
@@ -138,31 +187,37 @@ export function validateRows(rows, ctx) {
     const n = i + 2; // line number of the row's first line counted as CSV records (header = 1)
     // Brand name
     const name = r['Brand name'] ?? '';
-    let tz = '';
+    let tz = '', aud = '';
     if (!name.trim()) err(n, 'Brand name', 'trống (Metricool không biết đưa bài vào brand nào)');
     else if (name !== name.trim()) err(n, 'Brand name', `có khoảng trắng thừa: "${name}"`);
     else if (ctx.brand) {
       if (name !== ctx.brand.brand_name) err(n, 'Brand name', `"${name}" khác tên brand Metricool của ${ctx.brand.id}: "${ctx.brand.brand_name}" (${ctx.brand.brand_name_source})`);
-      tz = ctx.brand.timezone;
+      tz = ctx.brand.timezone; aud = ctx.brand.audience_timezone || tz;
     } else {
       const b = known.find((x) => x.brand_name === name);
-      if (b) tz = b.timezone;
+      if (b) { tz = b.timezone; aud = b.audience_timezone || tz; }
       else if (known.length) err(n, 'Brand name', `"${name}" không khớp metricool.brand_name nào (${known.map((x) => `"${x.brand_name}"`).join(', ')}); phân biệt hoa thường và dấu cách`);
     }
     if (tz && !validTz(tz)) { err(n, 'Brand name', `timezone "${tz}" của brand không hợp lệ`); tz = ''; }
+    if (!aud || !validTz(aud)) aud = tz;
     if (tz) zones.set(name, tz);
-    if (!tz) tz = 'Pacific/Kiritimati'; // unknown brand timezone: compare with the earliest "today" on Earth (UTC+14)
+    if (!tz) tz = aud = 'Pacific/Kiritimati'; // unknown brand timezone: compare with the earliest "today" on Earth (UTC+14)
     // Date / Time
     const date = r.Date ?? '', time = r.Time ?? '';
     const dateOk = validDate(date), timeOk = validTime(time);
     if (!dateOk) err(n, 'Date', `"${date}" không phải ngày YYYY-MM-DD hợp lệ (Metricool sẽ đặt "hôm nay giờ hiện tại")`);
     if (!timeOk) err(n, 'Time', `"${time}" không phải giờ HH:MM:SS hợp lệ`);
     if (dateOk) {
-      const now = nowIn(tz, ctx.now);
-      if (date < now.date) err(n, 'Date', `${date} đã qua (hôm nay ở ${tz} là ${now.date})`);
-      else if (date === now.date) {
-        if (!ctx.allowToday) err(n, 'Date', `${date} là hôm nay ở ${tz}; chỉ nhận ngày mai trở đi (dùng --allow-today nếu thật sự muốn)`);
-        else if (timeOk && time <= now.time) err(n, 'Time', `${time} hôm nay đã qua ở ${tz} (bây giờ ${now.time})`);
+      // The row's instant on the audience's wall clock (the CSV values themselves when the zones are equal).
+      const conv = timeOk && aud !== tz;
+      const local = conv ? convertZoned(date, time, tz, aud) : { date, time };
+      if (timeOk && zones.has(name)) times.push({ row: n, metricool: { date, time, timezone: tz }, planned: { ...local, timezone: aud }, note: describeTimes({ ...local, timezone: aud }, { date, time, timezone: tz }) });
+      const at = conv ? `${aud} (Metricool ${tz}: ${date} ${time})` : aud;
+      const now = nowIn(aud, ctx.now);
+      if (local.date < now.date) err(n, 'Date', `${local.date} đã qua (hôm nay ở ${at} là ${now.date})`);
+      else if (local.date === now.date) {
+        if (!ctx.allowToday) err(n, 'Date', `${local.date} là hôm nay ở ${at}; chỉ nhận ngày mai trở đi (dùng --allow-today nếu thật sự muốn)`);
+        else if (timeOk && local.time <= now.time) err(n, 'Time', `${local.time} hôm nay đã qua ở ${at} (bây giờ ${now.time})`);
       }
     }
     // Draft
@@ -225,7 +280,7 @@ export function validateRows(rows, ctx) {
     r._media = media;
   });
   if (new Set(zones.values()).size > 1) warnings.push(`File trộn brand khác timezone (${[...zones].map(([b, z]) => `${b}: ${z}`).join(', ')}); chưa kiểm chứng Metricool dùng timezone brand đích hay calendar đang mở (docs/metricool.md mục 6). Nên tách file theo timezone.`);
-  return { errors, warnings };
+  return { errors, warnings, times };
 }
 
 async function checkMedia(rows, errors) {
@@ -261,7 +316,7 @@ function captionText(brand, post, langs, mode, separator) {
   return mode === 'one-post-bilingual' ? texts.join(separator) : texts[0];
 }
 
-// Next free cadence slots, starting tomorrow (or today later than now with allowToday) in the brand timezone.
+// Next free cadence slots, starting tomorrow (or today later than now with allowToday), planned in the audience timezone.
 function slotPicker(slots, tz, taken, { allowToday, now }) {
   const clean = (Array.isArray(slots) ? slots : []).filter((s) => DAYS.includes(s?.day) && /^([01]\d|2[0-3]):[0-5]\d$/.test(s?.time || ''))
     .map((s) => ({ day: s.day, time: `${s.time}:00` })).sort((a, b) => a.time.localeCompare(b.time));
@@ -281,8 +336,8 @@ function slotPicker(slots, tz, taken, { allowToday, now }) {
   };
 }
 
-// Automatic posting times when cadence.slots is empty: good default days and hours per network, in the brand's Metricool
-// timezone (docs/metricool.md "Giờ đăng tự động"). The first network of the brand's enabled channels decides.
+// Automatic posting times when cadence.slots is empty: good default days and hours per network, planned in the audience
+// timezone (cadence.timezone) and converted to the Metricool timezone on export (docs/metricool.md "Giờ đăng tự động"). The first network of the brand's enabled channels decides.
 export const AUTO_TIMES = {
   Facebook: { days: ['tue', 'wed', 'thu'], times: ['09:00', '10:00', '11:00'] },
   Instagram: { days: ['tue', 'wed', 'fri'], times: ['11:00', '13:00', '10:00'] },
@@ -327,8 +382,11 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
   if (!brand.brand_name) throw new Error(`Không có tên brand Metricool: thêm social.json metricool.brand_name cho ${brand.id}.`);
   if (!brand.brand_name_configured) warnings.push(`Brand name "${brand.brand_name}" lấy từ project.md; nhãn trong Metricool có thể khác (vd "Dreamy Vows"). Thêm social.json metricool.brand_name.`);
   if (!brand.timezone || !validTz(brand.timezone)) throw new Error(`Timezone "${brand.timezone}" không hợp lệ (${brand.timezone_source}).`);
-  if (!brand.timezone_configured) warnings.push(`Giờ trong CSV được Metricool đọc theo timezone của brand trong Metricool, không theo cadence.timezone (${brand.timezone}). Thêm social.json metricool.timezone (Dreamy Vows và Grenheim đang là Indian/Christmas, UTC+7).`);
-  else if (brand.cadence_timezone && brand.cadence_timezone !== brand.timezone) warnings.push(`metricool.timezone (${brand.timezone}) khác cadence.timezone (${brand.cadence_timezone}); dùng metricool.timezone. Giờ trong cadence.slots được hiểu theo ${brand.timezone}.`);
+  if (!brand.audience_timezone || !validTz(brand.audience_timezone)) throw new Error(`cadence.timezone "${brand.cadence_timezone}" không hợp lệ.`);
+  if (!brand.timezone_configured) warnings.push(`Không biết múi giờ brand trong Metricool (thêm social.json metricool.timezone hoặc brand trong config/metricool-brands.json): tạm coi là ${brand.timezone} (cadence.timezone), KHÔNG quy đổi giờ. Metricool đọc Date/Time theo múi giờ của brand trong Metricool.`);
+  if (brand.config_timezone && brand.timezone_source === 'social.json metricool.timezone' && brand.config_timezone !== brand.timezone) warnings.push(`social.json metricool.timezone (${brand.timezone}) khác múi giờ brand "${brand.config_brand}" trong config/metricool-brands.json (${brand.config_timezone}); dùng metricool.timezone. Kiểm lại múi giờ thật của brand trong Metricool.`);
+  const notes = [];
+  if (brand.audience_timezone !== brand.timezone) notes.push(`Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${brand.audience_timezone} (cadence.timezone, khách xem), ghi Date/Time theo ${brand.timezone} (${brand.timezone_source}). Gọn hơn (không bắt buộc): đặt múi giờ brand trong Metricool = ${brand.audience_timezone}.`);
 
   // Networks and languages from enabled channels.
   const channels = (social.channels || []).filter((c) => c.enabled);
@@ -379,9 +437,9 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
   // cadence.slots (when the brand lists any) override the automatic times.
   const hasSlots = Array.isArray(social.cadence?.slots) && social.cadence.slots.length > 0;
   const nextSlot = hasSlots
-    ? slotPicker(social.cadence.slots, brand.timezone, taken, { allowToday: !!args['allow-today'], now })
-    : autoPicker(networks[0], social.cadence?.posts_per_week, brand.timezone, taken, { allowToday: !!args['allow-today'], now });
-  const slotSource = hasSlots ? 'cadence.slots' : `tự động (${networks[0]}, ${brand.timezone})`;
+    ? slotPicker(social.cadence.slots, brand.audience_timezone, taken, { allowToday: !!args['allow-today'], now })
+    : autoPicker(networks[0], social.cadence?.posts_per_week, brand.audience_timezone, taken, { allowToday: !!args['allow-today'], now });
+  const slotSource = hasSlots ? 'cadence.slots' : `tự động (${networks[0]}, ${brand.audience_timezone})`;
   const override = args.date && args.date !== true ? { date: String(args.date), time: normTime(args.time === true ? '' : args.time || '') } : null;
 
   const rows = [], map = [];
@@ -390,6 +448,9 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
     if (!when && override) when = { ...override, source: '--date/--time' };
     if (!when) { const s = nextSlot(); if (s) when = { ...s, source: slotSource }; }
     if (!when) { problems.push(`${p.id}: không tìm được giờ đăng (catalog schedule, ${slotSource}, --date/--time).`); continue; }
+    // when is planned in the audience timezone; Metricool reads Date/Time in the brand's Metricool timezone.
+    const planned = { date: when.date, time: when.time, timezone: brand.audience_timezone };
+    const mcWhen = { ...(validDate(when.date) && validTime(when.time) ? convertZoned(when.date, when.time, brand.audience_timezone, brand.timezone) : { date: when.date, time: when.time }), timezone: brand.timezone };
     const images = list(p.media_url), video = list(p.video_url);
     if (images.length && video.length) { problems.push(`${p.id}: có cả media_url và video_url; Metricool không trộn ảnh với video.`); continue; }
     const media = video.length ? video : images;
@@ -399,7 +460,7 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
     const texts = mode === 'separate-posts' ? langs.map((l) => ({ lang: l, text: captionText(brand, p, [l], 'single', separator) })) : [{ lang: langs.join('+'), text: captionText(brand, p, langs, mode, separator) }];
     for (const t of texts) {
       const r = Object.fromEntries(header.map((h) => [h, '']));
-      r.Text = t.text; r.Date = when.date; r.Time = when.time; r.Draft = args.draft ? 'true' : 'false';
+      r.Text = t.text; r.Date = mcWhen.date; r.Time = mcWhen.time; r.Draft = args.draft ? 'true' : 'false';
       for (const col of networks) r[col] = 'true';
       for (const col of AI_LABEL_COLUMNS) r[col] = 'false';
       media.forEach((m, k) => { r[pics(k + 1)] = m; if (altList[k]) r[alts(k + 1)] = altList[k]; });
@@ -408,12 +469,12 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
       if (networks.includes('Instagram')) r['Instagram Post Type'] = video.length ? 'REEL' : 'POST';
       r['Brand name'] = brand.brand_name;
       rows.push(r);
-      map.push({ post: p.id, lang: t.lang, date: when.date, time: when.time, time_source: when.source, media: media.length });
+      map.push({ post: p.id, lang: t.lang, date: mcWhen.date, time: mcWhen.time, time_source: when.source, planned, metricool: mcWhen, time_note: describeTimes(planned, mcWhen), media: media.length });
     }
   }
   if (problems.length) throw Object.assign(new Error(`Không xuất được: ${problems.join(' ')}`), { problems });
   warnings.push('Metricool KHÔNG chép ảnh ngoài về máy chủ của nó (saveExternalMediaFiles false): file ảnh trên repo ảnh phải còn nguyên đến khi bài đã đăng. Không gỡ file (host-image.mjs remove) trước giờ đăng.');
-  return { brand, header, rows, map, networks, langs, mode, warnings };
+  return { brand, header, rows, map, networks, langs, mode, warnings, notes };
 }
 
 async function runExport(args) {
@@ -430,7 +491,7 @@ async function runExport(args) {
   fs.writeFileSync(outFile, toMetricoolCsv(x.header, x.rows), 'utf8');
   out({
     file: outFile, brand: x.brand.id, brand_name: x.brand.brand_name, brand_name_source: x.brand.brand_name_source,
-    timezone: x.brand.timezone, timezone_source: x.brand.timezone_source, draft: !!args.draft, networks: x.networks,
+    timezone: x.brand.timezone, timezone_source: x.brand.timezone_source, audience_timezone: x.brand.audience_timezone, notes: x.notes, draft: !!args.draft, networks: x.networks,
     languages: x.langs, language_mode: x.mode, rows: x.rows.length, posts: x.map, columns: x.header.length,
     url_checks: checks, warnings,
     next: 'Kiểm tra bằng: node scripts/metricool-csv.mjs validate <file> --check-urls. Tool không import; người dùng tự import trong Metricool (Calendar > ⋮ > Import CSV) và KHÔNG bấm Import nếu preview còn dòng lỗi.',
@@ -463,7 +524,7 @@ export async function validateFile(file, { brandId = '', allowToday = false, che
   errors.push(...v.errors); warnings.push(...v.warnings);
   const checks = checkUrls ? await checkMedia(rows, errors) : undefined;
   errors.sort((a, b) => a.row - b.row);
-  return { file, rows: rows.length, brands: [...new Set(rows.map((r) => r['Brand name']))], errors, warnings, url_checks: checks };
+  return { file, rows: rows.length, brands: [...new Set(rows.map((r) => r['Brand name']))], times: v.times, errors, warnings, url_checks: checks };
 }
 
 async function runValidate(args) {

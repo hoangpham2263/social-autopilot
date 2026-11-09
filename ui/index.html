@@ -252,7 +252,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       return `<div class="card ${s?.usable ? "ok" : "todo"}">
         <h3>${esc(b.name)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>
         <div class="meta">Kênh: ${esc((b.networks || []).join(", ") || "-")} · múi giờ Metricool ${esc(b.timezone || "-")}</div>
-        ${b.tz_mismatch ? `<div class="warn-text">Múi giờ lệch: Metricool ${esc(b.timezone)}, skill (cadence.timezone) ${esc(s.timezone)}. Giờ đăng sẽ bị hiểu theo múi giờ của Metricool.</div>` : ""}
+        ${b.tz_conflict ? `<div class="warn-text">social.json metricool.timezone (${esc(s.metricool_timezone)}) khác múi giờ brand trong Metricool (${esc(b.timezone)}): sửa cho khớp.</div>` : ""}${b.tz_mismatch ? `<div class="meta">Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${esc(s.timezone)} (khách xem), ghi theo ${esc(b.timezone)}. Gọn hơn (không bắt buộc): đặt múi giờ brand trong Metricool = ${esc(s.timezone)}.</div>` : ""}
         ${!b.skill_id ? `<div class="warn-text">Chưa có bộ skill: tạo bằng new-skill để chạy tự động.</div>` : !s ? `<div class="bad-text">Không thấy skill "${esc(b.skill_id)}" trong thư mục thương hiệu.</div>` : ""}
         ${s?.problems?.length ? `<ul class="missing">${s.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
         ${s ? `<div class="row-actions"><button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button></div>` : ""}
