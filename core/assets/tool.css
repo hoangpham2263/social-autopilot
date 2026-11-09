@@ -77,3 +77,39 @@ header .config + .update { margin-left: 0; }
 .group.wide { grid-column: 1 / -1; }
 .group > h2 { position: absolute; top: 10px; left: 14px; margin: 0; font-size: 13.33px; font-weight: 400; color: var(--ink); }
 .group > label:first-of-type { margin-top: 0; }
+
+/* ----- One form system for the whole tool -----
+   .fields: a wrapping row of fields (16px between rows, 12px between columns), 24px below each group.
+   .field: label ABOVE the control (12px muted, 4px gap); 180px wide, .wide for text/paths, .auto for segmented buttons.
+   Every control (input of any type, select, the .select multi-select, segmented buttons) has the same height, border and
+   font. .actions: a row of buttons (and a short hint) with the same gap. */
+.fields { display: flex; flex-wrap: wrap; gap: 16px 12px; align-items: flex-end; margin: 0 0 24px; }
+.fields[hidden] { display: none; }
+.field { display: flex; flex-direction: column; gap: 4px; width: 180px; min-width: 0; }
+.field.wide { width: auto; flex: 1 1 360px; }
+.field.auto { width: auto; }
+.field > label, .field > .label { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field input:not([type=checkbox]):not([type=radio]), .field select, .field .select { width: 100%; box-sizing: border-box; }
+input[type=date], input[type=number] { font: inherit; font-size: var(--ctl-font); line-height: normal; }
+.field .checks { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; min-height: var(--ctl-h); }
+.field .checks label { display: flex; gap: 6px; align-items: center; margin: 0; font-size: var(--ctl-font); color: var(--ink); white-space: nowrap; }
+.field .inline-control { display: flex; gap: 8px; align-items: center; }
+.field .inline-control > input, .field .inline-control > select { flex: 1 1 auto; min-width: 0; }
+/* A multi-select that looks like a select: a <details class="select"> with a <summary> and a list of checkboxes. */
+details.select { position: relative; }
+details.select > summary { list-style: none; display: flex; align-items: center; height: var(--ctl-h); box-sizing: border-box; padding: 0 28px 0 12px; border: var(--ctl-border); background: #fff; font-size: var(--ctl-font); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; position: relative; margin: 0; }
+details.select > summary::-webkit-details-marker { display: none; }
+details.select > summary::after { content: ""; position: absolute; right: 10px; top: 50%; margin-top: -2px; border: 4px solid transparent; border-top-color: var(--ink); }
+details.select > summary:hover { border-color: #171717; }
+details.select > .options { position: absolute; z-index: 5; top: calc(var(--ctl-h) - 1px); left: 0; min-width: 100%; max-height: 260px; overflow: auto; background: #fff; border: var(--ctl-border); padding: 4px 0; box-sizing: border-box; }
+details.select > .options label { display: flex; gap: 8px; align-items: center; margin: 0; padding: 4px 10px; white-space: nowrap; font-size: var(--ctl-font); color: var(--ink); }
+details.select > .options label:hover { background: var(--hover); }
+details.select > .options .meta { padding: 4px 10px; }
+/* Segmented buttons: the same height as every control. */
+.seg { display: inline-flex; } .seg .btn { margin-right: -1px; } .seg .btn[aria-pressed="true"] { background: #fff; border-color: var(--accent); position: relative; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 0 24px; }
+.actions .meta { margin: 0; }
+/* Every button (plain, primary, segmented, card actions, header Reload/Update, links styled as buttons, tabs): text
+   centred on both axes at the controls' height. */
+.btn, a.btn, button.btn, nav.tabs button, .seg .btn { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: var(--ctl-h); line-height: 1; padding-top: 0; padding-bottom: 0; vertical-align: middle; }
+.btn > *, nav.tabs button > * { line-height: 1; }

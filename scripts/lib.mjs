@@ -10,8 +10,10 @@ export const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)
 // SA_WORKSPACE lets tests run against a throw-away workspace; normal runs use <tool>/workspace.
 export const workspace = path.resolve(process.env.SA_WORKSPACE || path.join(toolRoot, 'workspace'));
 // Dates are local, never UTC: a brand's date is in its timezone (social.json cadence.timezone), tool-level dates (logs,
-// research-log totals) in Vietnam time. new Date().toISOString() rolled back a day before 07:00 VN.
-export const TOOL_TZ = 'Asia/Ho_Chi_Minh';
+// research-log totals) and every fallback in the default timezone of the tool: America/New_York (US market, user
+// 09/11/2026). new Date().toISOString() is never used for a date.
+export const TOOL_TZ = 'America/New_York';
+export const DEFAULT_TZ = TOOL_TZ;
 export const validTimeZone = (tz) => { if (typeof tz !== 'string' || !tz.trim()) return false; try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } };
 export function today(tz = TOOL_TZ, now = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: validTimeZone(tz) ? tz : TOOL_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map((x) => [x.type, x.value]));
@@ -171,15 +173,16 @@ export function saveSettings(input = {}) {
 // ----- Metricool brands: workspace/metricool-brands.json (this machine and this Metricool account; never in git) -----
 // Refreshed at the start of every Create & publish run from the agent's Metricool getBrandSettings (metricool-mcp.mjs
 // sync-brands), so the tool works with any account. Each brand: name, blog_id, timezone, networks, skill_id/skill_path
-// (link to a brand skill, set on Overview), excluded (never send anything to it), removed (gone from the account).
+// (link to a brand skill, set on Overview), removed (gone from the account). Every brand is included: it gets posts
+// only when it is linked to a usable skill.
 // config/metricool-brands.example.json shows the shape. No file yet = no brands ("Run once to load Metricool brands").
 export const metricoolFile = () => path.join(workspace, 'metricool-brands.json');
 export const metricoolBrands = () => readJson(metricoolFile(), { version: 1, account: {}, brands: [], never_synced: true });
-// A Metricool blog the tool must never create or change posts for: marked excluded, or gone from the account.
-export function excludedBlog(blogId) {
+// A Metricool blog that is gone from the account (removed by sync-brands): never a target.
+export function removedBlog(blogId) {
   let list = [];
   try { list = metricoolBrands().brands || []; } catch {}
-  return list.find((b) => String(b.blog_id) === String(blogId) && (b.excluded === true || b.removed === true)) || null;
+  return list.find((b) => String(b.blog_id) === String(blogId) && b.removed === true) || null;
 }
 export function saveMetricoolBrands(input) {
   const list = Array.isArray(input?.brands) ? input.brands : null;
@@ -205,13 +208,13 @@ export function saveMetricoolBrands(input) {
     if (names.has(key)) throw new Error(`Tên brand "${name}" bị trùng.`);
     names.add(key);
     const timezone = String(b.timezone || '').trim();
-    if (!validTimeZone(timezone)) throw new Error(`Brand "${name}": timezone "${timezone}" không phải múi giờ IANA hợp lệ (vd. Asia/Ho_Chi_Minh).`);
+    if (!validTimeZone(timezone)) throw new Error(`Brand "${name}": timezone "${timezone}" không phải múi giờ IANA hợp lệ (e.g. America/New_York).`);
     const skill_id = b.skill_id ? String(b.skill_id).trim() : null;
     if (skill_id) { if (skills.has(skill_id)) throw new Error(`skill_id "${skill_id}" gắn cho hơn một brand.`); skills.add(skill_id); }
     // skill_path (optional): the linked skill folder when it is not a sub-folder of skillsRoot (Tổng quan, Chọn skill).
     const skill_path = skill_id && typeof b.skill_path === 'string' && b.skill_path.trim() ? b.skill_path.trim() : undefined;
     return { name, blog_id: String(b.blog_id || '').trim(), timezone, networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id, ...(skill_path ? { skill_path } : {}),
-      ...(b.excluded === true ? { excluded: true } : {}), ...(b.removed === true ? { removed: true } : {}), last_checked: String(b.last_checked || '').trim() };
+      ...(b.removed === true ? { removed: true } : {}), last_checked: String(b.last_checked || '').trim() };
   });
   const next = { version: 1, account, brands, ...(input.updated_at || current.updated_at ? { updated_at: String(input.updated_at || current.updated_at) } : {}) };
   const file = path.join(workspace, 'metricool-brands.json');
@@ -219,8 +222,7 @@ export function saveMetricoolBrands(input) {
   return next;
 }
 // sync-brands: the agent's Metricool getBrandSettings answer (any JSON shape it returns: an array, or { data | brands |
-// items: [...] }) rewrites workspace/metricool-brands.json. Kept per blog_id: skill_id/skill_path (the skill links),
-// excluded. A brand gone from the account stays listed with removed: true (and is never sent to); new brands come in
+// items: [...] }) rewrites workspace/metricool-brands.json. Kept per blog_id: skill_id/skill_path (the skill links). A brand gone from the account stays listed with removed: true (and is never sent to); new brands come in
 // unlinked. Only names/ids/timezones/networks are read; nothing that looks like a token is stored.
 const NET_KEYS = ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok', 'youtube', 'pinterest', 'threads', 'bluesky', 'gmb'];
 export function parseBrandSettings(raw) {
@@ -245,9 +247,9 @@ export function syncMetricoolBrands(raw, now = new Date()) {
   const old = new Map((cur.brands || []).map((b) => [String(b.blog_id), b]));
   const brands = found.map((f) => {
     const o = old.get(f.blog_id) || {};
-    const timezone = validTimeZone(f.timezone) ? f.timezone : validTimeZone(o.timezone) ? o.timezone : 'UTC';
+    const timezone = validTimeZone(f.timezone) ? f.timezone : validTimeZone(o.timezone) ? o.timezone : DEFAULT_TZ;
     return { name: f.name, blog_id: f.blog_id, timezone, networks: f.networks.length ? f.networks : (o.networks || []), skill_id: o.skill_id || null,
-      ...(o.skill_path ? { skill_path: o.skill_path } : {}), ...(o.excluded === true ? { excluded: true } : {}), last_checked: today(TOOL_TZ, now) };
+      ...(o.skill_path ? { skill_path: o.skill_path } : {}), last_checked: today(TOOL_TZ, now) };
   });
   const removed = (cur.brands || []).filter((b) => !found.some((f) => f.blog_id === String(b.blog_id))).map((b) => ({ ...b, removed: true, skill_id: b.skill_id || null }));
   const user = found.find((f) => f.user_id)?.user_id;
@@ -268,10 +270,24 @@ const samePath = (x, y) => path.resolve(x).toLowerCase() === path.resolve(y).toL
 // (nothing is copied: the tool reads and writes that folder). skill_path is the source of truth; skill_id (the folder
 // name without -skills) is kept as the brand's id for scripts and stores. skillDir null = unlink (the folder is never
 // touched; the tool stops making and sending posts for that Metricool brand).
-export function linkMetricool(name, skillDir) {
+// Does a skill belong to this Metricool brand? Its social.json metricool.blog_id decides when it has one; otherwise its
+// metricool.brand_name or brand name, compared without case, spaces and punctuation ("GRENHEIM" = "Grenheim").
+const normName = (t) => String(t || '').normalize('NFKD').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+export function skillMatches(social, m) {
+  const blog = String(social?.metricool?.blog_id || '').trim();
+  if (blog) return blog === String(m.blog_id);
+  const names = [social?.metricool?.brand_name, social?.brand].map(normName).filter(Boolean);
+  return names.includes(normName(m.name));
+}
+const socialOf = (dir) => { try { return readJson(path.join(dir, 'project', 'social.json')); } catch { return {}; } };
+
+// confirm: linking a skill that does not match the brand (another blog_id or brand name) must be confirmed; a brand gone
+// from the account (removed) is never linked.
+export function linkMetricool(name, skillDir, { confirm = false } = {}) {
   const cfg = metricoolBrands();
   const b = (cfg.brands || []).find((x) => x.name === name);
   if (!b) throw new Error(`Unknown Metricool brand "${name}".`);
+  if (skillDir && b.removed) throw new Error(`"${name}" is no longer in the Metricool account: no skill can be linked to it.`);
   let skill_id = null, skill_path;
   if (skillDir) {
     const dir = path.resolve(String(skillDir).trim());
@@ -280,6 +296,8 @@ export function linkMetricool(name, skillDir) {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(skill_id)) throw new Error(`Skill folder name "${path.basename(dir)}" is not valid (lowercase letters, digits, hyphens).`);
     const other = cfg.brands.find((x) => x !== b && (x.skill_id === skill_id || (x.skill_path && samePath(x.skill_path, dir))));
     if (other) throw new Error(`Skill "${skill_id}" is already linked to "${other.name}".`);
+    const social = socialOf(dir);
+    if (!confirm && !skillMatches(social, b)) throw Object.assign(new Error(`This skill is for ${social.brand || skill_id}, link it to ${name}?`), { code: 'MISMATCH' });
     skill_path = dir.split(path.sep).join('/');
   }
   return saveMetricoolBrands({ ...cfg, brands: cfg.brands.map((x) => { if (x !== b) return x; const { skill_path: _, ...rest } = x; return { ...rest, skill_id, ...(skill_path ? { skill_path } : {}) }; }) });
@@ -315,11 +333,21 @@ export function brandOverview(found = discoverBrands()) {
     // metricool-csv.mjs converts every posting time, so it is not an error. tz_conflict: the skill's metricool.timezone
     // disagrees with the Metricool brand's timezone (a wrong setting: times would be converted to the wrong zone).
     const tz_mismatch = !!(skill && m.timezone && skill.timezone && skill.timezone !== m.timezone);
-    const tz_conflict = !!(skill && m.timezone && skill.metricool_timezone && skill.metricool_timezone !== m.timezone);
+    // The Metricool timezone comes only from the synced list; a copy in social.json is not compared any more.
+    const tz_conflict = false;
     const skill_path_missing = !!(m.skill_id && !isSkillDir(dir));
     return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone, metricool_timezone: skill.metricool_timezone || '' } : null, skill_missing: !!(m.skill_id && !skill), skill_path_missing, tz_mismatch, tz_conflict };
   });
-  return { account: cfg.account || {}, updated_at: cfg.updated_at || null, never_synced: !cfg.updated_at, brands, skills_without_metricool: found.brands.filter((b) => !used.has(b.id)).map((b) => ({ id: b.id, brand: b.brand })) };
+  // An unlinked skill that matches an unlinked Metricool brand (blog_id or name) is suggested on that brand's card
+  // (suggested_skill) instead of getting a card of its own; matched_to tells which brand.
+  const free = found.brands.filter((b) => !used.has(b.id));
+  for (const m of brands) {
+    if (m.skill || m.removed) continue;
+    const hit = free.find((s) => skillMatches(socialOf(s.dir), m));
+    if (hit) m.suggested_skill = { id: hit.id, brand: hit.brand, dir: hit.dir, ready: hit.ready };
+  }
+  return { account: cfg.account || {}, updated_at: cfg.updated_at || null, never_synced: !cfg.updated_at, brands,
+    skills_without_metricool: free.map((b) => ({ id: b.id, brand: b.brand, dir: b.dir, matched_to: brands.find((m) => m.suggested_skill?.id === b.id)?.name || null })) };
 }
 
 // ----- text cleaning -----

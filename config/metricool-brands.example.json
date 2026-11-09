@@ -1,9 +1,33 @@
 {
   "version": 1,
-  "account": { "user_id": "<metricool user id>", "brand_limit": 5, "synced_at": "<ISO time of the last sync-brands>" },
+  "account": {
+    "user_id": "<metricool user id>",
+    "brand_limit": 5,
+    "synced_at": "<ISO time of the last sync-brands>"
+  },
   "updated_at": "<ISO time of the last sync-brands>",
   "brands": [
-    { "name": "<Metricool brand A>", "blog_id": "<blogId A>", "timezone": "Asia/Ho_Chi_Minh", "networks": ["facebook"], "skill_id": "<skill id>", "skill_path": "<path to <skill id>-skills>", "last_checked": "<yyyy-mm-dd>" },
-    { "name": "<Metricool brand B>", "blog_id": "<blogId B>", "timezone": "America/New_York", "networks": ["facebook", "instagram"], "skill_id": null, "excluded": true, "last_checked": "<yyyy-mm-dd>" }
+    {
+      "name": "<Metricool brand A>",
+      "blog_id": "<blogId A>",
+      "timezone": "America/New_York",
+      "networks": [
+        "facebook"
+      ],
+      "skill_id": "<skill id>",
+      "skill_path": "<path to <skill id>-skills>",
+      "last_checked": "<yyyy-mm-dd>"
+    },
+    {
+      "name": "<Metricool brand B>",
+      "blog_id": "<blogId B>",
+      "timezone": "America/New_York",
+      "networks": [
+        "facebook",
+        "instagram"
+      ],
+      "skill_id": null,
+      "last_checked": "<yyyy-mm-dd>"
+    }
   ]
 }

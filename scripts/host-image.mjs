@@ -2,11 +2,12 @@
 // fetches media by URL; see docs/plan.md section 8) and records it in the brand's catalog entry: `media_url` for an image,
 // `video_url` (+ `video_thumbnail_url` when the post also has an image) for a video (project-skill-standard check-post
 // accepts these fields; scripts/metricool-csv.mjs reads them). Host = settings imageHost:
-//   { type: "github-repo", path: <local clone>, pagesBase: <GitHub Pages URL of the repo>, rawBase: <raw URL of the branch>,
+//   { type: "github-repo", path: <local clone>, rawBase: <raw.githubusercontent.com URL of the branch>, pagesBase: "",
 //     branch: "main", remote: "origin" }
-//   Links use pagesBase: GitHub Pages serves real MIME types (video/mp4, image/png) with Range requests, while
-//   raw.githubusercontent.com answers application/octet-stream for .mp4. rawBase is the base when pagesBase is empty and
-//   a fallback for images only (a video is never linked through raw).
+//   Links are GitHub raw links (rawBase; user, 09/11/2026: no personal domain). raw.githubusercontent.com serves .mp4 as
+//   application/octet-stream: accepted for a video when pagesBase is empty, since Metricool's MCP copies the media to its
+//   own storage (UNTESTED with a real video post). pagesBase (a GitHub Pages URL) stays optional: when set, links use
+//   it and raw is only the fast first link for images.
 //   type "shopify-files" is a placeholder for later (not implemented).
 // Rules (user, 09/11/2026): only media of posts a person has approved (catalog status approved/scheduled/published;
 // never drafts, never competitor reference photos), image metadata stripped (checked here again), files are removed only
@@ -125,7 +126,8 @@ function checkPost(brand, postId) {
 // expected content-type (video/mp4 for a video, image/* for an image).
 async function verifyAt(h, base, rel, hash, kind, { attempts = h.attempts, delayMs = h.delayMs } = {}) {
   const url = `${base}/${encodeURI(rel)}`;
-  const okType = kind === 'video' ? /^video\/mp4\b/i : /^image\//i;
+  // A video through raw (no pagesBase) comes back as application/octet-stream; the bytes are still checked.
+  const okType = kind === 'video' ? (h.pagesBase || h.checkBase ? /^video\/mp4\b/i : /^(video\/mp4|application\/octet-stream)\b/i) : /^image\//i;
   let last = '';
   for (let i = 1; i <= attempts; i++) {
     try {
@@ -144,7 +146,7 @@ async function verifyAt(h, base, rel, hash, kind, { attempts = h.attempts, delay
 // Image with pagesBase: raw first with a short wait (raw is usually live within seconds) and that link is written to
 // the catalog at once (early(url)), so a slow Pages build never leaves the post without a link; then Pages with the
 // full wait, upgrading the link when it serves. fast: stop after the raw link (pages_pending) - the caller upgrades
-// later. Video: Pages only (raw serves .mp4 as application/octet-stream); fast skips the check (pending, no link yet).
+// later. Video: one link (Pages when set, else raw, octet-stream accepted); fast skips the check (pending, no link yet).
 async function verify(h, item, hash, { fast = false, early = () => {} } = {}) {
   const primary = publicBase(h);
   const short = { attempts: Math.min(h.attempts, 5), delayMs: Math.min(h.delayMs, 3000) };

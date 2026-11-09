@@ -17,7 +17,7 @@ Các quyết định của người dùng dưới đây thắng mọi chỗ khá
 ## 2. Thương hiệu
 - Thương hiệu = một brand trong tài khoản Metricool (đồng bộ bằng `sync-brands` vào `workspace/metricool-brands.json`) trỏ tới một thư mục skill chuẩn (`SKILL.md`, `project/project.md`, `project/social.json`). Skill **không bao giờ được chép**: tool đọc/ghi thẳng thư mục đã trỏ (`skill_path`).
 - Overview: Choose skill (tìm trong thư mục nguồn, mặc định `skillsRoot`, sâu 2 tầng, mỗi thư mục kèm trạng thái sẵn sàng), Change skill, Disconnect (chỉ bỏ liên kết). Sẵn sàng = `enabled: true` + `scripts/check-skill.mjs --tool-ready` của skill đạt.
-- Brand `"excluded": true` không bao giờ được gửi bài (vd một brand khác trong cùng tài khoản Metricool mà tool không quản lý).
+- Brand chỉ được gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill thì không.
 - Dữ kiện thương hiệu chỉ nằm trong skill: `research.sources[]`, `research.fb_account`, `channels[]`, `language_policy`, `product_images`, `caption_rules`, `cadence`, `metricool`.
 
 ## 3. Kho nghiên cứu (`workspace/store/<brand>/`)
@@ -52,7 +52,7 @@ Trạng thái bản nháp: `needs_prompt` → `generating` → `needs_caption` /
 |---|---|---|
 | Điều khoản Meta cấm thu thập dữ liệu tự động khi chưa được phép (https://developers.facebook.com/docs/development/terms-and-policies/automated-data-collection/) | Cao | Người dùng chấp nhận. Research chạy riêng, thưa, tăng dần, nhịp như người, dừng ở checkpoint, tài khoản phụ. |
 | Bản quyền ảnh, caption; scene-swap tăng rủi ro bị báo cáo | Cao | Ảnh đối thủ chỉ trong `workspace/`. Ý trừu tượng, chặn chép chữ. Scene-swap tắt mặc định, bắt xác nhận đã xoá logo. |
-| Bài hẹn giờ thật tự đăng | Trung bình | Người dùng duyệt từng bài (Approve); kiểm tra tự động + check-post trước khi gửi; brand `excluded` bị chặn. |
+| Bài hẹn giờ thật tự đăng | Trung bình | Người dùng duyệt từng bài (Approve); kiểm tra tự động + check-post trước khi gửi; brand chưa trỏ skill không được gửi. |
 | Link raw không còn trước giờ đăng | Thấp | Chỉ gỡ file sau khi bài đã đăng. |
 | Hạn mức Codex | Thấp | `image_failed` ghi lý do; lượt sau làm tiếp. |
 

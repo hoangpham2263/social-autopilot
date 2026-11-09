@@ -12,7 +12,7 @@ Trạng thái người dùng thấy: **To review** (chờ duyệt) / **Queued** 
 
 - Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`), **lần lượt từng thương hiệu**, không song song. "all usable brands" = mọi thương hiệu usable.
 - Skill không bao giờ được chép vào tool. Mỗi brand Metricool trỏ tới một thư mục skill (`skill_path` trong `workspace/metricool-brands.json`); tool đọc/ghi thẳng trong thư mục đó. Mọi dữ kiện riêng của thương hiệu đọc từ skill (`SKILL.md`, `project/project.md`, `project/social.json`). Không hard-code thương hiệu, không trộn nguồn hay kho giữa thương hiệu.
-- Brand có `"excluded": true` (hoặc `removed: true`) trong `workspace/metricool-brands.json` **không bao giờ** được gửi hay sửa bài; brand chưa trỏ skill cũng không. Không dùng blogId khác `args.blogId` của payload; không `createScheduledPostForReview`.
+- Brand chỉ được làm và gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill, hoặc `removed: true` (đã mất khỏi tài khoản) trong `workspace/metricool-brands.json`, thì **không bao giờ**. Không dùng blogId khác `args.blogId` của payload; không `createScheduledPostForReview`.
 - Tuỳ chọn của lượt (dòng `Options:` của prompt) ưu tiên hơn mặc định: Research → `--source a,b`, `--since YYYY-MM-DD`, `--max-posts N`, `--backfill` hoặc `--full` cho `research.mjs start`; Create → `--count N` cho `ideas.mjs init` (trống = `cadence.posts_per_week`).
 - Trước khi làm bài cho thương hiệu: đọc `SKILL.md` và `project/project.md` của skill.
 - **Không bao giờ gắn nhãn AI** lên bài (caption, text, alt). **Không logo trên sản phẩm** (logo chỉ là watermark nhỏ ở góc, khi thương hiệu bật).
@@ -38,7 +38,7 @@ node scripts/brands.mjs          # usable = thương hiệu chạy được; pro
 node scripts/sources.mjs         # mỗi thương hiệu: các research.sources đang bật trong social.json của nó
 ```
 
-Thương hiệu usable = brand Metricool đã trỏ tới một thư mục skill hợp lệ (`SKILL.md`, `project/project.md`, `project/social.json`), `social.json` có `enabled: true` và `scripts/check-skill.mjs --tool-ready` của chính skill đạt (exit 0), brand không `excluded`.
+Thương hiệu usable = brand Metricool đã trỏ tới một thư mục skill hợp lệ (`SKILL.md`, `project/project.md`, `project/social.json`), `social.json` có `enabled: true` và `scripts/check-skill.mjs --tool-ready` của chính skill đạt (exit 0).
 
 Trỏ skill (người dùng làm ở tab **Overview**: Choose skill / Change skill / Disconnect; hoặc lệnh):
 ```
@@ -94,7 +94,7 @@ Không mở Facebook. Cần `node`, Codex CLI (tạo ảnh) và MCP Metricool c�
   ```
   node scripts/metricool-mcp.mjs sync-brands --from workspace/tmp/brand-settings.json
   ```
-- Ghi `workspace/metricool-brands.json` (dạng: `config/metricool-brands.example.json`): tên, blogId, múi giờ, mạng đã nối của từng brand. **Giữ** liên kết skill (`skill_id`, `skill_path`) và `excluded` theo blogId; brand không còn trong tài khoản thành `removed: true`. Báo người dùng brand mới (`added`, cần Choose skill ở Overview) và brand đã mất (`removed`).
+- Ghi `workspace/metricool-brands.json` (dạng: `config/metricool-brands.example.json`): tên, blogId, múi giờ, mạng đã nối của từng brand. **Giữ** liên kết skill (`skill_id`, `skill_path`) theo blogId; brand không còn trong tài khoản thành `removed: true`. Báo người dùng brand mới (`added`, cần Choose skill ở Overview) và brand đã mất (`removed`).
 
 2.1. Gửi bài đã duyệt mà chưa gửi (từng thương hiệu usable):
 ```
@@ -166,7 +166,7 @@ https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<brand>/<yyyy>/<mm>/<p
 node scripts/metricool-csv.mjs export --brand <id> [--posts POST-01,POST-02] [--lang en] [--date YYYY-MM-DD --time HH:MM] --out <file.csv>
 node scripts/metricool-csv.mjs validate <file.csv> [--brand <id>] [--allow-today] [--check-urls]
 ```
-Chỉ bài đã duyệt có `media_url`/`video_url`; đúng 99 cột theo `docs/metricool-csv-template.csv`; chỉ ngôn ngữ đăng; nhãn AI và link WebP bị từ chối; brand `excluded` bị chặn; bài đã gửi qua MCP bị bỏ qua. Giờ quy đổi sang múi giờ brand Metricool (CSV không có cột timezone).
+Chỉ bài đã duyệt có `media_url`/`video_url`; đúng 99 cột theo `docs/metricool-csv-template.csv`; chỉ ngôn ngữ đăng; nhãn AI và link WebP bị từ chối; brand `removed` bị chặn; bài đã gửi qua MCP bị bỏ qua. Giờ quy đổi sang múi giờ brand Metricool (CSV không có cột timezone).
 
 ## Phụ lục: lệnh khác
 

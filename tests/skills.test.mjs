@@ -80,3 +80,37 @@ test('after Ngắt kết nối nothing of that brand goes to Metricool', () => {
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test('overview: one card per brand; a matching unlinked skill is suggested on the brand, not its own card', () => {
+  run('skills.mjs', 'unlink', '--brand', 'Beta MC');
+  // beta-skills (blog_id 222) lives outside skillsRoot: put a matching copy-free link candidate inside skillsRoot instead.
+  fakeSkill(path.join(skills, 'gamma-skills'), 'Beta MC', '');
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', "import { brandOverview } from './scripts/lib.mjs'; console.log(JSON.stringify(brandOverview()));"], { cwd: tool, env, encoding: 'utf8', windowsHide: true });
+  const o = JSON.parse(r.stdout);
+  const beta = o.brands.find((b) => b.name === 'Beta MC');
+  assert.equal(beta.skill, null);
+  assert.equal(beta.suggested_skill?.id, 'gamma', 'matched by brand name (case/spacing ignored)');
+  assert.equal(o.skills_without_metricool.find((x) => x.id === 'gamma').matched_to, 'Beta MC');
+  fs.rmSync(path.join(skills, 'gamma-skills'), { recursive: true, force: true });
+});
+
+test('link: a skill made for another brand needs --confirm; a brand gone from the account is never linked', () => {
+  const mcFile = path.join(ws, 'metricool-brands.json');
+  const before = fs.readFileSync(mcFile, 'utf8');
+  try {
+    const j = JSON.parse(before);
+    j.brands.push({ name: 'Other MC', blog_id: '333', timezone: 'Asia/Ho_Chi_Minh', networks: ['facebook'], skill_id: null });
+    j.brands.push({ name: 'Gone MC', blog_id: '444', timezone: 'America/New_York', networks: ['facebook'], skill_id: null, removed: true });
+    fs.writeFileSync(mcFile, JSON.stringify(j));
+    run('skills.mjs', 'unlink', '--brand', 'Beta MC');
+    const no = run('skills.mjs', 'link', '--brand', 'Other MC', '--path', path.join(other, 'beta-skills'));
+    assert.equal(no.ok, false);
+    assert.match(no.error, /This skill is for Beta, link it to Other MC\?/);
+    assert.equal(run('skills.mjs', 'link', '--brand', 'Other MC', '--path', path.join(other, 'beta-skills'), '--confirm').ok, true);
+    run('skills.mjs', 'unlink', '--brand', 'Other MC');
+    const gone = run('skills.mjs', 'link', '--brand', 'Gone MC', '--path', path.join(other, 'beta-skills'), '--confirm');
+    assert.equal(gone.ok, false);
+    assert.match(gone.error, /no longer in the Metricool account/);
+  } finally { fs.writeFileSync(mcFile, before); }
+});
+

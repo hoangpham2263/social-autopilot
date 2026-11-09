@@ -29,6 +29,10 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .card { background: #fff; border: 1px solid var(--line); padding: 10px 12px; }
 .card.ok { border-color: var(--accent); }
 .card.todo { border-color: #b06000; }
+.card .card-msg:empty { display: none; }
+.unlinked { margin-top: 24px; }
+.unlinked .row { display: flex; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.unlinked .row .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card h3 { margin: 0 0 4px; font-size: 15px; }
 .meta { color: var(--muted); font-size: 12px; }
 .muted { color: var(--muted); }
@@ -38,15 +42,16 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .status-tag.c-green { border-color: var(--accent); } .status-tag.c-amber { border-color: #b06000; } .status-tag.c-red { border-color: rgb(176, 0, 0); }
 .card .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .picker { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
-.picker .find-row, .find-row { display: flex; gap: 8px; margin: 0 0 6px; } .find-row input { flex: 1 1 auto; min-width: 0; }
 .picker .found label { display: flex; gap: 6px; align-items: center; margin: 0; padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; flex: 0 0 auto; } .dot-green { background: #006400; } .dot-red { background: rgb(176, 0, 0); } .dot-grey { background: var(--line); }
 .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-/* Toolbar: label and control on one line. */
-.toolbar { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.toolbar > div { display: flex; align-items: center; gap: 8px; }
-.toolbar label { margin: 0; white-space: nowrap; }
-.toolbar select, .toolbar input { width: auto; min-width: 140px; }
+/* Page header row (brand edit): back button and title. */
+.page-head { display: flex; gap: 12px; align-items: center; margin: 0 0 24px; }
+.page-head h2 { margin: 0; font-size: 16px; }
+.missing.flush { margin: 0; }
+.refs.spaced { margin-top: 8px; }
+fieldset.spaced { margin-top: 24px; }
+.placeholder-media { aspect-ratio: 1 / 1; background: #e4e6eb; }
 fieldset { border: 1px solid var(--line); background: #fff; padding: 10px 12px; margin: 0 0 12px; min-width: 0; }
 legend { padding: 0 4px; color: var(--ink); }
 table.edit { width: 100%; border-collapse: collapse; }
@@ -63,24 +68,16 @@ details > summary { cursor: default; color: var(--muted); font-size: 12px; }
 details[open] > summary { margin-bottom: 6px; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; }
-.slot { display: flex; gap: 6px; margin-bottom: 4px; align-items: center; }
-.slot select, .slot input { width: auto; }
+/* Lists inside a field (posting times, sources): one row per entry, controls at the shared height. */
+.slot { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.slot select { width: 120px; } .slot input[type=time], .slot input.time { width: 100px; }
 .slot input[type=text], .src-url { flex: 1 1 auto; min-width: 0; }
 .card .head-row { display: flex; align-items: center; gap: 8px; } .card .head-row h3 { flex: 1 1 auto; margin: 0 0 4px; }
 /* Prompt: one options row, then Copy / Edit / Reset, then the prompt filling the rest of the window. */
 #page-prompt:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
-#page-prompt .toolbar { flex: 0 0 auto; }
-.seg { display: inline-flex; } .seg .btn { margin-right: -1px; } .seg .btn[aria-pressed="true"] { background: #fff; border-color: var(--accent); position: relative; }
-.pr-opts input[type=number] { min-width: 0; width: 90px; } .pr-opts input[type=date] { min-width: 0; width: 140px; }
+#page-prompt .fields, #page-prompt .actions { flex: 0 0 auto; }
 #prText { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prText[readonly] { background: #fafafa; }
-.pr-src { position: relative; }
-.pr-src > summary { list-style: none; min-width: 120px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; color: var(--ink); font-size: var(--ctl-font); }
-.pr-src > summary::-webkit-details-marker { display: none; }
-details.pr-src[open] > summary { margin-bottom: 0; }
-.pr-src-list { position: absolute; z-index: 5; top: calc(var(--ctl-h) - 1px); left: 0; min-width: 220px; max-height: 260px; overflow: auto; background: #fff; border: 1px solid #8a8a8a; padding: 4px 0; }
-.pr-src-list label { display: flex; gap: 8px; align-items: center; margin: 0; padding: 4px 10px; white-space: nowrap; }
-.pr-src-list label:hover { background: var(--hover); }
 pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
 /* Library */
 .refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
@@ -177,15 +174,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 #page-settings .kv { grid-template-columns: 160px minmax(0, 1fr); align-items: center; }
 #page-settings .kv dt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #page-settings .kv dd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: var(--ctl-h); }
-#page-settings .set-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-items: end; }
-#page-settings .set-grid > div { min-width: 0; }
-#page-settings .set-grid .wide { grid-column: 1 / -1; }
-#page-settings .set-grid label { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 0 4px; }
-#page-settings .set-grid label.check { display: flex; gap: 6px; align-items: center; height: var(--ctl-h); margin: 0; }
-#page-settings details > summary { margin: 10px 0 6px; }
+#page-settings details > summary { margin: 0 0 16px; }
 #page-settings legend .btn { margin-left: 8px; height: 24px; }
 @media (max-width: 600px) {
-  #page-settings .kv, #page-settings .set-grid { grid-template-columns: 1fr; }
+  #page-settings .kv { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -202,46 +194,44 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   </nav>
 
   <section class="page" id="page-overview" hidden>
-    <div class="msg" id="ovMsg"></div>
     <div class="cards" id="ovList"><div class="meta">Loading…</div></div>
   </section>
 
   <section class="page" id="page-store" hidden>
-    <div class="toolbar">
-      <div><label for="resBrand">Library</label><select id="resBrand"></select></div>
-      <div><label for="resStatus">Show</label><select id="resStatus">
+    <div class="fields">
+      <div class="field"><label for="resBrand">Brand</label><select id="resBrand"></select></div>
+      <div class="field"><label for="resStatus">Show</label><select id="resStatus">
         <option value="new">New</option><option value="used">Used</option><option value="rejected">Dropped</option><option value="">All</option></select></div>
-      <div><label for="resSource">Source</label><select id="resSource"></select></div>
+      <div class="field"><label for="resSource">Source</label><select id="resSource"></select></div>
     </div>
     <div id="resBody" class="meta">Pick a brand.</div>
   </section>
 
   <section class="page" id="page-posts" hidden>
-    <div class="toolbar">
-      <div><label for="drBrand">Brand</label><select id="drBrand"><option value="">All</option></select></div>
-      <span class="seg" id="drState" role="group" aria-label="Show"></span>
-      <span class="meta" id="drExtra"></span>
+    <div class="fields">
+      <div class="field"><label for="drBrand">Brand</label><select id="drBrand"><option value="">All</option></select></div>
+      <div class="field auto"><span class="label">Show</span><span class="seg" id="drState" role="group" aria-label="Show"></span></div>
+      <div class="field auto"><span class="label">&nbsp;</span><span class="meta inline-control" id="drExtra"></span></div>
     </div>
     <div id="draftList"></div>
   </section>
 
   <section class="page" id="page-prompt" hidden>
-    <!-- One options row: mode, agent, brand, then only the options of the chosen mode. -->
-    <div class="toolbar pr-opts">
-      <span class="seg" id="prMode" role="group" aria-label="Mode"></span>
-      <div><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div><label for="prBrand">Brand</label><select id="prBrand"></select></div>
-      <span id="prResearch" hidden style="display:contents">
-        <div><label>Sources</label><details class="pr-src" id="prSrcBox"><summary class="btn" id="prSrcSum">All</summary><div class="pr-src-list" id="prSrc"></div></details></div>
-        <div><label for="prSince">Since</label><input type="date" id="prSince"></div>
-        <div><label for="prMax" title="Max posts per source">Max posts</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
-        <div><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
-      </span>
-      <span id="prMake" hidden style="display:contents">
-        <div><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
-      </span>
+    <div class="fields">
+      <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
+      <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
+      <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
     </div>
-    <div class="toolbar">
+    <div class="fields" id="prResearch" hidden>
+      <div class="field"><span class="label">Sources</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
+      <div class="field"><label for="prSince">Since</label><input type="date" id="prSince"></div>
+      <div class="field"><label for="prMax" title="Max posts per source">Max posts</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
+      <div class="field"><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
+    </div>
+    <div class="fields" id="prMake" hidden>
+      <div class="field"><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
+    </div>
+    <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
       <button class="btn" type="button" id="prEdit">Edit</button>
       <button class="btn" type="button" id="prReset">Reset</button>
@@ -270,7 +260,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   </section>
 
   <section class="page" id="page-brand" hidden>
-    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Overview</button><h2 id="brandTitle" style="margin:0;font-size:16px"></h2></div>
+    <div class="page-head"><button class="btn" type="button" id="brandBack">← Overview</button><h2 id="brandTitle"></h2></div>
     <div id="brandForm"></div>
     <div class="row-actions"><button class="btn primary" type="button" id="brandSave" title="After saving, the skill's check-skill runs; a broken file is put back">Save</button></div>
     <div class="msg" id="brandMsg"></div>
@@ -282,6 +272,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const arr = (x) => (Array.isArray(x) ? x : []);
+  // Brands are always listed A-Z by name (cards, unlinked skills, every Brand dropdown).
+  const byName = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base" });
+  const az = (list, name) => arr(list).slice().sort((a, b) => byName(name(a), name(b)));
   // Every request of the page goes through call(): GET without data, POST with it.
   // Every write carries the session token the server puts in this page (meta sa-token); without it the server refuses.
   const call = (url, data) => fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", headers: { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" }, body: JSON.stringify(data) }).then((r) => r.json());
@@ -320,7 +313,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!panel.hidden) { panel.hidden = true; return; }
     panel.hidden = false;
     if (!skillSource) { const r = await getJson("/api/skills").catch(() => ({})); skillSource = r.default_source || ""; }
-    panel.innerHTML = `<div class="find-row"><input data-from value="${esc(skillSource)}" title="A folder holding skill folders, or the path of one skill folder" aria-label="Skill folder"><button class="btn" type="button" data-find>Find</button></div>
+    panel.innerHTML = `<div class="fields"><div class="field wide"><label>Skill folder</label><div class="inline-control"><input data-from value="${esc(skillSource)}" title="A folder holding skill folders, or the path of one skill folder"><button class="btn" type="button" data-find>Find</button></div></div></div>
       <div class="found"></div><div class="row-actions" data-go-row hidden><button class="btn primary" type="button" data-link>Link</button></div><div class="msg"></div>`;
     const msg = panel.querySelector(".msg");
     panel.querySelector("[data-find]").onclick = async () => {
@@ -329,26 +322,37 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const r = await postJson("/api/skills/sources", { from: skillSource }).catch(() => offline);
       panel.querySelector("[data-go-row]").hidden = true;
       if (r.error) { panel.querySelector(".found").innerHTML = errLine(r.error); return; }
-      const list = arr(r.sources).filter((x) => x.valid_id && (!x.linked_to || x.linked_to === mcName));
+      const list = arr(r.sources).filter((x) => x.valid_id);
+      const taken = (x) => x.linked_to && x.linked_to !== mcName;
       // Each folder with its readiness (the skill's own check): green Usable, red Missing N (list in the tooltip).
       const state = (x) => x.ready ? `<span class="dot dot-green"></span><span class="ok-text">Usable</span>` : `<span class="dot dot-red"></span><span class="bad-text" title="${esc(arr(x.problems).join("\n"))}">Missing ${arr(x.problems).length || 1}</span>`;
-      panel.querySelector(".found").innerHTML = list.map((x, i) => `<label title="${esc(x.dir)}"><input type="radio" name="pick-${esc(mcName)}" value="${esc(x.dir)}"${i ? "" : " checked"}> ${esc(x.brand || x.id)} <span class="meta">${esc(x.id)}${x.linked_to ? " · linked" : ""}</span> ${state(x)}</label>`).join("")
-        || `<div class="meta">No unlinked skill folders here.</div>`;
-      panel.querySelector("[data-go-row]").hidden = !list.length;
+      const first = list.findIndex((x) => !taken(x));
+      panel.querySelector(".found").innerHTML = list.map((x, i) => `<label title="${esc(x.dir)}"${taken(x) ? ` class="muted"` : ""}><input type="radio" name="pick-${esc(mcName)}" value="${esc(x.dir)}"${taken(x) ? " disabled" : i === first ? " checked" : ""}> ${esc(x.brand || x.id)} <span class="meta">${esc(x.id)}${taken(x) ? ` · linked to ${esc(x.linked_to)}` : ""}</span> ${taken(x) ? "" : state(x)}</label>`).join("")
+        || `<div class="meta">No skill folders here.</div>`;
+      panel.querySelector("[data-go-row]").hidden = first < 0;
     };
     panel.querySelector("[data-link]").onclick = async (e) => {
       const dir = panel.querySelector(".found input:checked")?.value;
       if (!dir) return;
       e.target.disabled = true;
-      const r = await postJson("/api/metricool-link", { name: mcName, skill_path: dir }).catch(() => offline);
+      const r = await linkSkill(mcName, dir);
       e.target.disabled = false;
       if (r.error) { msg.innerHTML = errLine(r.error); return; }
+      if (r.cancelled) return;
       panel.hidden = true;
-      ovMsg({}, `Linked ${mcName}.`);
+      cardMsg(mcName, "Linked.");
     };
     panel.querySelector("[data-find]").click();
   }
-  const ovMsg = (r, ok) => { $("#ovMsg").innerHTML = r.error ? errLine(r.error) : `<span class="ok-text">${esc(ok)}</span>`; if (!r.error) loadOverview(); };
+  // Link a skill folder to a Metricool brand; a skill made for another brand asks first.
+  async function linkSkill(name, dir) {
+    let r = await postJson("/api/metricool-link", { name, skill_path: dir }).catch(() => offline);
+    if (r.needs_confirm) { if (!confirm(r.message)) return { cancelled: true }; r = await postJson("/api/metricool-link", { name, skill_path: dir, confirm: true }).catch(() => offline); }
+    return r;
+  }
+  // An action's result shows inside the card it changed (after the list reloads).
+  let pendingMsg = null;
+  const cardMsg = (key, text, bad = false) => { pendingMsg = { key, html: bad ? errLine(text) : `<span class="ok-text">${esc(text)}</span>` }; loadOverview(); };
   const loadOverview = safely("#ovList", async () => {
     const [q, b] = await Promise.all([getJson("/api/queue"), getJson("/api/brands")]).catch(() => [offline, {}]);
     if (q.error) { $("#ovList").innerHTML = errLine(q.error); return; }
@@ -357,43 +361,36 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const num = (o, k) => o?.[k] || 0;
     const NET = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", linkedin: "LinkedIn", twitter: "X", threads: "Threads", pinterest: "Pinterest", gmb: "Google Business" };
     const net = (n) => NET[n] || n;
-    const mcBrands = arr(b.metricool?.brands).filter((m) => !m.removed);
-    // Every brand in one list: each Metricool brand (with its skill or not), then each skill not linked to a Metricool
-    // brand. "Missing" = everything the brand still needs to run, in plain words; empty = ready.
+    const mcBrands = arr(b.metricool?.brands).filter((m) => !m.removed).sort((x, y) => byName(x.name, y.name));
+    // One card per Metricool brand. A skill linked to none of them: a matching one is suggested on that brand's card
+    // ("Skill found · Link"); the rest are listed in a small "Unlinked skills" list at the bottom.
     const skills = Object.fromEntries(arr(b.brands).map((s) => [s.id, s]));
     const queue = Object.fromEntries(arr(q.brands).map((x) => [x.brand, x]));
-    const rows = [...mcBrands.map((m) => ({ m, id: m.skill_id || "" })),
-      ...arr(b.brands).filter((s) => !mcBrands.some((m) => m.skill_id === s.id)).map((s) => ({ m: null, id: s.id }))];
-    const missingOf = ({ m, id }) => {
-      const s = skills[id], out = [];
-      if (!m) out.push("Not linked to a Metricool brand");
-      if (!s) out.push(m?.skill_id && m.skill_path_missing ? "Skill folder not found (renamed or moved?)" : "No skill");
+    const loose = arr(b.metricool?.skills_without_metricool).filter((x) => !x.matched_to).sort((x, y) => byName(x.brand || x.id, y.brand || y.id));
+    const missingOf = (m) => {
+      const s = skills[m.skill_id || ""], out = [];
+      if (!s) out.push(m.skill_id && m.skill_path_missing ? "Skill folder not found (renamed or moved?)" : "No skill");
       if (s) {
         if (!s.enabled) out.push("Not enabled (Edit, Run automatically)");
         if (!arr(s.sources).length) out.push("No reference sources (Edit, Sources)");
-        if (m) for (const c of arr(s.channels)) if (!arr(m.networks).includes(c)) out.push(`${net(c)} not connected in Metricool`);
-        if (m?.tz_conflict) out.push(`social.json timezone (${s.metricool_timezone}) differs from the Metricool brand (${m.timezone}) (Edit, Advanced: metricool.timezone)`);
+        for (const c of arr(s.channels)) if (!arr(m.networks).includes(c)) out.push(`${net(c)} not connected in Metricool`);
+        // The Metricool brand's timezone (synced) should be the audience timezone the skill plans in (cadence.timezone).
+        if (m.timezone && s.timezone && m.timezone !== s.timezone) out.push(`Metricool timezone differs (${m.timezone} vs ${s.timezone}): change it in Metricool`);
         for (const p of arr(s.problems)) out.push(p);
       }
       return [...new Set(out)];
     };
-    // Card actions (top right): linked skill Edit · Change skill · Unlink; a Metricool brand without a skill Choose skill;
-    // a skill without a Metricool brand Edit · Link. The skill folder itself is never moved or deleted.
-    const mcFree = mcBrands.filter((m) => !m.skill_id || !skills[m.skill_id]);
-    const actions = ({ m, id }) => {
-      const s = skills[id], out = [];
-      const btn = (attr, v, text, tip = "") => `<button class="btn" type="button" ${attr}="${esc(v)}"${tip ? ` title="${esc(tip)}"` : ""}>${text}</button>`;
-      if (s) out.push(btn("data-edit", s.id, "Edit"));
-      if (m && !s && !m.skill_id) out.push(btn("data-pick", m.name, "Choose skill", "Link this brand to a skill folder"));
-      if (m && !s && m.skill_id) out.push(btn("data-pick", m.name, "Change skill", "Point this brand to the skill folder's new place"), btn("data-unlink", m.name, "Unlink", "Remove the link to the skill folder"));
-      if (m && s) out.push(btn("data-pick", m.name, "Change skill", "Link this brand to another skill folder"), btn("data-unlink", m.name, "Unlink", "The tool stops making and sending posts for this brand; the skill folder and library stay"));
-      if (!m && s && mcFree.length) out.push(btn("data-connect", s.dir, "Link", "Link this skill to a Metricool brand"));
-      return `<div class="acts">${out.join("")}</div>`;
+    // Card actions, one group: linked Edit · Change skill · Unlink; unlinked Link skill.
+    const btn = (attr, v, text, tip = "", cls = "") => `<button class="btn${cls}" type="button" ${attr}="${esc(v)}"${tip ? ` title="${esc(tip)}"` : ""}>${text}</button>`;
+    const actions = (m) => {
+      const s = skills[m.skill_id || ""];
+      if (s) return `<div class="acts">${btn("data-edit", s.id, "Edit")}${btn("data-pick", m.name, "Change skill", "Link this brand to another skill folder")}${btn("data-unlink", m.name, "Unlink", "The tool stops making and sending posts for this brand; the skill folder and library stay")}</div>`;
+      if (m.skill_id) return `<div class="acts">${btn("data-pick", m.name, "Change skill", "Point this brand to the skill folder's new place")}${btn("data-unlink", m.name, "Unlink", "Remove the link to the skill folder")}</div>`;
+      return `<div class="acts">${btn("data-pick", m.name, "Link skill", "Link this brand to a skill folder")}</div>`;
     };
-    // Short card: only rows that say something; a counter shows only when > 0. The dot: ready (green) or missing (red).
-    const card = (row) => {
-      const { m, id } = row, s = skills[id], x = queue[id], miss = missingOf(row);
-      const name = m?.name || s?.brand || id;
+    const card = (m) => {
+      const id = m.skill_id || "", s = skills[id], x = s ? queue[id] : null, miss = missingOf(m);
+      const msg = pendingMsg?.key === m.name ? pendingMsg.html : "";
       const r = x?.research, st = x?.store, d = x?.drafts || {}, mc = x?.metricool || {};
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
       const parts = (list) => list.filter(Boolean).join(" · ");
@@ -405,36 +402,53 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const posted = mc.published || 0, review = num(d, "ready");
       const go = (k, n, t) => `<a href="#" data-go="posts" data-state="${k}" data-brand="${esc(id)}">${t} (${n})</a>`;
       const posts = written || review || posted ? [go("review", review, "To review"), go("queued", Math.max(0, written - posted), "Queued"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
-      return `<div class="card ${miss.length ? "todo" : "ok"}">
-        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span>${esc(name)}</h3>${actions(row)}</div>
+      const sug = !s && m.suggested_skill ? `<dt>Skill found</dt><dd>${esc(m.suggested_skill.id)} ${btn("data-suggest", m.suggested_skill.dir, "Link", "Link this skill folder to the brand", " primary")}</dd>` : "";
+      return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
+        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span>${esc(m.name)}</h3>${actions(m)}</div>
         <dl class="kv">
-          <dt>Metricool</dt><dd>${m ? `${esc(m.name)} · ${esc(arr(m.networks).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}` : `<span class="muted">No Metricool brand</span>`}</dd>
-          ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}
+          <dt>Metricool</dt><dd>${esc(arr(m.networks).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}</dd>
+          ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}${sug}
           ${x ? `<dt>Library</dt><dd>${kho}</dd>
           ${research || blocked ? `<dt>Last research</dt><dd>${research}${blocked}</dd>` : ""}
-          <dt>Posts</dt><dd>${posts}</dd>
-` : ""}
-          ${miss.length ? `<dt>Missing</dt><dd><ul class="missing" style="margin:0">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
+          <dt>Posts</dt><dd>${posts}</dd>` : ""}
+          ${miss.length ? `<dt>Missing</dt><dd><ul class="missing flush">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
         </dl>
+        <div class="msg card-msg">${msg}</div>
         <div class="picker" data-panel hidden></div>
       </div>`;
     };
     const acc = b.metricool || {};
-    const synced = acc.updated_at ? `Metricool brands updated ${esc(String(acc.updated_at).slice(0, 16).replace("T", " "))}` : "Run Create &amp; publish once to load the Metricool brands (it refreshes them from Metricool first).";
-    $("#ovList").innerHTML = `<div class="meta">${synced}</div>` + (rows.map(card).join("") || `<div class="meta">No brands yet.</div>`);
-    for (const btn of $$("#ovList [data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
-    for (const btn of $$("#ovList [data-unlink]")) btn.onclick = async () => {
-      if (!confirm(`Unlink "${btn.dataset.unlink}"? The tool stops making and sending posts for this Metricool brand. The skill folder and the library stay.`)) return;
-      ovMsg(await postJson("/api/metricool-link", { name: btn.dataset.unlink, skill_path: null }).catch(() => offline), "Unlinked.");
+    const synced = acc.never_synced ? `<div class="meta">Run Create &amp; publish once to load the Metricool brands (it refreshes them from Metricool first).</div>` : `<div class="meta">Metricool brands updated ${esc(new Date(acc.updated_at).toLocaleString())}</div>`;
+    const free = mcBrands.filter((m) => !skills[m.skill_id || ""]);
+    const unlinked = loose.length ? `<fieldset class="unlinked"><legend>Unlinked skills</legend>${loose.map((x) => `<div class="row" data-card="skill:${esc(x.id)}"><span class="name">${esc(x.brand || x.id)} <span class="meta">${esc(x.id)}</span></span>${btn("data-edit", x.id, "Edit")}${free.length ? btn("data-connect", x.dir, "Link", "Link this skill to a Metricool brand") : ""}<div class="picker" data-panel hidden></div></div>`).join("")}</fieldset>` : "";
+    $("#ovList").innerHTML = synced + (mcBrands.map(card).join("") || `<div class="meta">No Metricool brands yet.</div>`) + unlinked;
+    pendingMsg = null;
+    for (const b2 of $$("#ovList [data-edit]")) b2.onclick = () => openBrand(b2.dataset.edit);
+    const keyOf = (el) => el.closest("[data-card]")?.dataset.card || "";
+    for (const b2 of $$("#ovList [data-unlink]")) b2.onclick = async () => {
+      if (!confirm(`Unlink "${b2.dataset.unlink}"? The tool stops making and sending posts for this Metricool brand. The skill folder and the library stay.`)) return;
+      const r = await postJson("/api/metricool-link", { name: b2.dataset.unlink, skill_path: null }).catch(() => offline);
+      cardMsg(b2.dataset.unlink, r.error || "Unlinked.", !!r.error);
     };
-    const panelOf = (btn) => btn.closest(".card").querySelector("[data-panel]");
-    for (const btn of $$("#ovList [data-pick]")) btn.onclick = () => skillPicker(panelOf(btn), btn.dataset.pick);
-    for (const btn of $$("#ovList [data-connect]")) btn.onclick = () => {
-      const panel = panelOf(btn);
+    for (const b2 of $$("#ovList [data-suggest]")) b2.onclick = async () => {
+      const name = keyOf(b2);
+      const r = await linkSkill(name, b2.dataset.suggest);
+      if (!r.cancelled) cardMsg(name, r.error || "Linked.", !!r.error);
+    };
+    const panelOf = (el) => el.closest("[data-card]").querySelector("[data-panel]");
+    for (const b2 of $$("#ovList [data-pick]")) b2.onclick = () => skillPicker(panelOf(b2), b2.dataset.pick);
+    for (const b2 of $$("#ovList [data-connect]")) b2.onclick = () => {
+      const panel = panelOf(b2);
       if (!panel.hidden) { panel.hidden = true; return; }
       panel.hidden = false;
-      panel.innerHTML = `<div class="find-row"><select aria-label="Metricool brand">${mcFree.map((m) => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join("")}</select><button class="btn primary" type="button">Link</button></div>`;
-      panel.querySelector("button").onclick = async () => ovMsg(await postJson("/api/metricool-link", { name: panel.querySelector("select").value, skill_path: btn.dataset.connect }).catch(() => offline), "Linked.");
+      panel.innerHTML = `<div class="fields"><div class="field wide"><label>Metricool brand</label><div class="inline-control"><select>${az(free, (m) => m.name).map((m) => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join("")}</select><button class="btn primary" type="button">Link</button></div></div></div><div class="msg"></div>`;
+      panel.querySelector("button").onclick = async () => {
+        const name = panel.querySelector("select").value;
+        const r = await linkSkill(name, b2.dataset.connect);
+        if (r.cancelled) return;
+        if (r.error) { panel.querySelector(".msg").innerHTML = errLine(r.error); return; }
+        cardMsg(name, "Linked.");
+      };
     };
     for (const a of $$("#ovList [data-go]")) a.onclick = (e) => {
       e.preventDefault();
@@ -457,14 +471,19 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const slots = arr(cad.slots), sources = arr(s.research?.sources), channels = arr(s.channels);
     $("#brandTitle").textContent = s.brand || id;
     $("#brandForm").innerHTML = `<fieldset>
-      <div class="inline"><label><input type="checkbox" id="fEnabled"${s.enabled ? " checked" : ""}> Run automatically</label>
-        <button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">Open skill folder</button></div>
-      <label>Channels</label><div class="inline" id="fChannels">${channels.map((c, i) => `<label><input type="checkbox" data-c="${i}"${c.enabled ? " checked" : ""}> ${esc(c.network)}</label>`).join("") || `<span class="meta">No channels.</span>`}</div>
-      <div class="grid2"><div><label for="fPpw">Posts per week</label><input type="number" id="fPpw" min="0" step="1" value="${esc(cad.posts_per_week ?? "")}"></div></div>
-      <label>Posting times (${esc(cad.timezone || "-")})</label><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div>
-      <button class="btn" type="button" id="addSlot">+ Time</button>
-      <label>Sources</label><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span><button class="btn" type="button" data-rmsrc="1">Remove</button></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
-      <div class="slot"><input type="text" id="fNewSrc" placeholder="Add a source: paste the page URL"><button class="btn" type="button" id="addSrc">Add</button></div>
+      <div class="fields">
+        <div class="field"><span class="label">Run</span><div class="checks"><label><input type="checkbox" id="fEnabled"${s.enabled ? " checked" : ""}> Automatically</label></div></div>
+        <div class="field auto"><span class="label">Channels</span><div class="checks" id="fChannels">${channels.map((c, i) => `<label><input type="checkbox" data-c="${i}"${c.enabled ? " checked" : ""}> ${esc(c.network)}</label>`).join("") || `<span class="meta">No channels.</span>`}</div></div>
+        <div class="field"><label for="fPpw">Posts per week</label><input type="number" id="fPpw" min="0" step="1" value="${esc(cad.posts_per_week ?? "")}"></div>
+        <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">Open skill folder</button></div>
+      </div>
+      <div class="fields">
+        <div class="field wide"><span class="label">Posting times (${esc(cad.timezone || "-")})</span><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div><div><button class="btn" type="button" id="addSlot">+ Time</button></div></div>
+      </div>
+      <div class="fields">
+        <div class="field wide"><span class="label">Sources</span><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span><button class="btn" type="button" data-rmsrc="1">Remove</button></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
+          <div class="slot"><input type="text" id="fNewSrc" placeholder="Add a source: paste the page URL"><button class="btn" type="button" id="addSrc">Add</button></div></div>
+      </div>
     </fieldset>`;
     $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
     $("#addSlot").onclick = () => $("#fSlots").insertAdjacentHTML("beforeend", slotRow({ day: "mon", time: "10:00" }));
@@ -479,7 +498,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     };
     show("brand");
   }
-  const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" value="${esc(x.time || "")}" placeholder="10:00" style="max-width:80px;flex:0 0 80px"><button class="btn" type="button" data-rm="1">Remove</button></div>`;
+  const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" class="time" value="${esc(x.time || "")}" placeholder="10:00"><button class="btn" type="button" data-rm="1">Remove</button></div>`;
   $("#brandBack").onclick = () => show("overview");
   $("#brandSave").onclick = async () => {
     const msg = $("#brandMsg");
@@ -523,7 +542,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const brand = $("#resBrand").value || store.get("resBrand"), status = $("#resStatus").value, source = $("#resSource").value;
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
-    $("#resBrand").innerHTML = `<option value="">Pick…</option>` + arr(r.brands).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)} (${b.counts?.total ?? 0} posts, ${b.counts?.new ?? 0} new)</option>`).join("");
+    $("#resBrand").innerHTML = `<option value="">Pick…</option>` + az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)} (${b.counts?.total ?? 0} posts, ${b.counts?.new ?? 0} new)</option>`).join("");
     const c = r.current;
     if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
     $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
@@ -533,12 +552,12 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const progress = prog.length ? `<details><summary>Crawl progress by source</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Source</th><th>Last run</th><th>Result</th><th>Reached end</th><th>In library</th><th>Newest</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} new)</td><td>${p.reached_end ? "yes" : "no"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
     const list = items.slice(0, resShown);
     $("#resBody").innerHTML = `<div class="meta">${k.total ?? 0} posts · ${k.new ?? 0} new · ${k.used ?? 0} used · ${k.rejected ?? 0} dropped. Showing ${items.length}.</div>${progress}
-      <div class="refs" style="margin-top:8px">${list.map((it) => `<div class="card ref" data-id="${esc(it.id)}">
+      <div class="refs spaced">${list.map((it) => `<div class="card ref" data-id="${esc(it.id)}">
         ${arr(it.image_paths).length ? `<button class="thumb" type="button" title="View"><img loading="lazy" src="${img(it.image_paths[0])}" alt=""></button>` : `<div class="none">No image</div>`}
         <div class="head"><span class="title">${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : ""}</div>
         <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · ${esc(it.posted_date)}` : ""}</div></div>`).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
       ${items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}
-      <fieldset style="margin-top:12px"><legend>Ideas from the library</legend>${ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Library post</th><th>Status</th><th>Product</th><th>Scene</th><th>Drafts</th></tr></thead><tbody>${ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc(arr(i.drafts).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No ideas yet ("Create & publish" mode).</div>`}</fieldset>`;
+      <fieldset class="spaced"><legend>Ideas from the library</legend>${ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Library post</th><th>Status</th><th>Product</th><th>Scene</th><th>Drafts</th></tr></thead><tbody>${ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc(arr(i.drafts).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No ideas yet ("Create & publish" mode).</div>`}</fieldset>`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
     const cards = $$("#resBody .ref");
     wireCards(cards, (i) => openStoreItem(c.brand, list.slice(), i));
@@ -563,7 +582,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       k = Math.min(k, Math.max(0, imgs.length - 1));
       const nav = itemNav(i, items.length);
       const page = it.store || it.source_id || "?";
-      const media = !imgs.length ? `<div class="video" style="aspect-ratio:1/1;background:#e4e6eb"></div>`
+      const media = !imgs.length ? `<div class="placeholder-media"></div>`
         : imgs.length === 1 ? `<div class="media n1"><img src="${img(imgs[0])}" alt="" data-big="0"></div>`
         : `<div class="car"><img src="${img(imgs[k])}" alt="" data-big><button class="car-nav prev" type="button" data-img="-1" aria-label="Previous image">‹</button><button class="car-nav next" type="button" data-img="1" aria-label="Next image">›</button><span class="car-count">${k + 1}/${imgs.length}</span></div>`;
       const post = `<div class="pv fb"><div class="pv-tag">Source post · ${esc(it.source_id)}</div>
@@ -631,15 +650,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
     const brand = $("#prBrand").value || "";
-    $("#prBrand").innerHTML = `<option value="">All</option>` + brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
+    $("#prBrand").innerHTML = `<option value="">All</option>` + az(brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
     const research = isResearch(prMode);
-    $("#prResearch").hidden = !research; $("#prResearch").style.display = research ? "contents" : "none";
-    $("#prMake").hidden = research; $("#prMake").style.display = research ? "none" : "contents";
+    $("#prResearch").hidden = !research;
+    $("#prMake").hidden = research;
     // Sources: the brand's enabled research sources (social.json); none ticked = all of them.
     const b = brands.find((x) => x.id === brand);
     const ticked = new Set($$("#prSrc input:checked").map((x) => x.value));
-    $("#prSrc").innerHTML = b ? (arr(b.sources).map((s) => `<label><input type="checkbox" value="${esc(s)}"${ticked.has(s) ? " checked" : ""}>${esc(s)}</label>`).join("") || `<div class="meta" style="padding:4px 10px">No enabled sources.</div>`)
-      : `<div class="meta" style="padding:4px 10px">Pick a brand to choose sources.</div>`;
+    $("#prSrc").innerHTML = b ? (arr(b.sources).map((s) => `<label><input type="checkbox" value="${esc(s)}"${ticked.has(s) ? " checked" : ""}>${esc(s)}</label>`).join("") || `<div class="meta">No enabled sources.</div>`)
+      : `<div class="meta">Pick a brand to choose sources.</div>`;
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
     srcLabel();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
@@ -738,7 +757,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const r = await getJson(`/api/drafts?brand=${encodeURIComponent(brand || "")}`).catch(() => offline);
     if (r.error) { $("#draftList").innerHTML = errLine(r.error); return; }
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
-    $("#drBrand").innerHTML = `<option value="">All</option>` + arr(brandData.brands).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
+    $("#drBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
     const drafts = arr(r.drafts);
     const count = (k) => drafts.filter((d) => stateOf(d) === k).length;
     if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : "queued";
@@ -880,7 +899,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const initial = esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
     const media = () => {
       const m = arr(p.media).slice(0, 4);
-      if (!m.length) return `<div class="video" style="aspect-ratio:1/1;background:#e4e6eb"></div>`;
+      if (!m.length) return `<div class="placeholder-media"></div>`;
       return `<div class="media n${m.length}">${m.map((x, i) => (x.type === "video" ? `<div class="video" data-pv="${i}"></div>` : `<img src="${img(x.path)}" alt="" data-pv="${i}">`)).join("")}</div>`;
     };
     const NET = { facebook: "Facebook", instagram: "Instagram" };
@@ -1028,20 +1047,20 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       ${row("Metricool", "Scheduled at each brand's slot time", "The tool always schedules real posts (no drafts)")}
       ${s.imageHost ? row("Auto-host images", s.imageHost.auto_after_writeback !== false ? "Yes" : "No", "Push the image to the image repo right after the post is written into the brand") : ""}
       ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
-    const num = (k, v, label, tip = "") => `<div><label title="${esc(tip || label)}">${esc(label)}</label><input type="number" min="0" step="1" data-s="${k}" value="${esc(v)}"></div>`;
-    const text = (k, v, label, tip) => `<div class="wide"><label title="${esc(tip)}">${esc(label)}</label><input data-s="${k}" value="${esc(v)}" title="${esc(tip)}"></div>`;
-    $("#settingsForm").innerHTML = `<div class="set-grid">
-      ${s.imageHost ? `<div><label class="check" title="Push the image right after the post is written into the brand"><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> Auto-host images</label></div>` : ""}
+    const num = (k, v, label, tip = "") => `<div class="field"><label title="${esc(tip || label)}">${esc(label)}</label><input type="number" min="0" step="1" data-s="${k}" value="${esc(v)}"></div>`;
+    const text = (k, v, label, tip) => `<div class="field wide"><label title="${esc(tip)}">${esc(label)}</label><input data-s="${k}" value="${esc(v)}" title="${esc(tip)}"></div>`;
+    $("#settingsForm").innerHTML = `<div class="fields">
+      ${s.imageHost ? `<div class="field"><span class="label" title="Push the image right after the post is written into the brand">Auto-host images</span><div class="checks"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> On</label></div></div>` : ""}
       </div>
       <details><summary>Advanced</summary>
-        <div class="set-grid">
+        <div class="fields">
         ${num("research.delay_seconds.0", delay[0] ?? 5, "Min pause (s)", "Random pause between page actions while researching")}
         ${num("research.delay_seconds.1", delay[1] ?? 15, "Max pause (s)")}
         ${num("codex.timeout_minutes", cx.timeout_minutes ?? 15, "Codex wait (min)")}
-        <div><label title="Duplicates never enter the library (view only; edit in workspace/settings.json)">Dedupe</label><input disabled value="image ≤${esc(dd.image_distance ?? 20)}/256 · caption ≥${Math.round((dd.caption_similarity ?? 0.9) * 100)}%"></div>
+        <div class="field"><label title="Duplicates never enter the library (view only; edit in workspace/settings.json)">Dedupe</label><input disabled value="image ≤${esc(dd.image_distance ?? 20)}/256 · caption ≥${Math.round((dd.caption_similarity ?? 0.9) * 100)}%"></div>
+        <div class="field"><label title="Command that runs Codex">Codex command</label><input data-s="codex.command" value="${esc(cx.command || "codex")}"></div>
+        <div class="field"><label title="Used for watermarks and reading WebP when deduping">ffmpeg command</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
         ${text("skillsRoot", s.skillsRoot || "", "Skills folder", `Folder of brand skill folders (brands linked by path on Overview work too). Now: ${r.skillsRootResolved || ""}`)}
-        <div><label title="Command that runs Codex">Codex command</label><input data-s="codex.command" value="${esc(cx.command || "codex")}"></div>
-        <div><label title="Used for watermarks and reading WebP when deduping">ffmpeg command</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
         ${text("remove_watermark.script", s.remove_watermark?.script || "", "Metadata script", "Image metadata cleaner (remove-watermark-skill)")}
         ${s.imageHost ? text("imageHost.path", s.imageHost.path || "", "Image repo", "Image repo folder (imageHost.path)") + text("imageHost.rawBase", s.imageHost.rawBase || "", "Public link base", "Public link base of the images (imageHost.rawBase, https)") : ""}
         </div></details>`;

@@ -316,13 +316,13 @@ test('export: Metricool timezone from config/metricool-brands.json converts LA s
     assert.equal(v.ok, true, JSON.stringify(v));
     assert.equal(v.times[0].planned.date, FUTURE); assert.equal(v.times[0].planned.time, '10:00:00');
     assert.match(v.times[0].note, /10:00 America\/Los_Angeles = .* Indian\/Christmas trong Metricool/);
-    // Same zone on both sides: written as planned.
+    // social.json metricool.timezone is ignored while the brand is in the synced list.
     setup({ metricool: { brand_name: 'Test Brand', timezone: 'America/Los_Angeles' }, posts: [{ id: 'POST-01', media_url: IMG(1) }] });
     const same = run('export', '--brand', 'testbrand', '--date', FUTURE, '--time', '10:00', '--out', path.join(outDir, 'same.csv'));
     assert.equal(same.ok, true, JSON.stringify(same));
-    assert.equal(same.posts[0].date, FUTURE); assert.equal(same.posts[0].time, '10:00:00');
-    assert.equal(same.notes.length, 0);
-    // social.json metricool.timezone disagreeing with the config brand is warned.
-    assert.ok(same.warnings.some((w) => /khác múi giờ brand "Test Brand"/.test(w)));
+    assert.deepEqual({ date: same.posts[0].date, time: same.posts[0].time }, want);
+    // the synced Metricool timezone wins over social.json metricool.timezone, without a warning.
+    assert.equal(same.timezone, 'Indian/Christmas');
+    assert.ok(!same.warnings.some((w) => /metricool.timezone/.test(w)));
   } finally { fs.rmSync(cfgFile, { force: true }); }
 });

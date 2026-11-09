@@ -31,7 +31,7 @@ Nguồn: `social.json` = `<skill>/project/social.json`; `catalog` = `<skill>/wor
 
 | Trường Metricool (MCP / CSV) | Bắt buộc | Kiểu, định dạng | Nguồn của tool |
 |---|---|---|---|
-| `blogId` / `Brand name` | Có | id / tên brand chính xác | `brands` (brand đã trỏ tới skill), hoặc `social.json.metricool.blog_id`. Brand `excluded`/`removed` bị chặn |
+| `blogId` / `Brand name` | Có | id / tên brand chính xác | `brands` (brand đã trỏ tới skill), hoặc `social.json.metricool.blog_id`. Brand `removed` bị chặn |
 | `date` (MCP) | Có | ISO kèm offset | Giờ đã lập (`schedule`, `cadence.slots` hoặc giờ tự động) + offset của `cadence.timezone` |
 | `publicationDate.dateTime` / `Date`+`Time` | Có | `YYYY-MM-DDTHH:mm:ss` / `YYYY-MM-DD` + `HH:mm:ss` | Như trên; CSV quy đổi sang múi giờ brand |
 | `publicationDate.timezone` | Có | tên IANA | `cadence.timezone` (múi giờ khách) |
@@ -50,7 +50,7 @@ Nguồn: `social.json` = `<skill>/project/social.json`; `catalog` = `<skill>/wor
 
 ### Điều kiện trước khi gửi
 - Catalog `approved` (người dùng đã Approve trong app), có `media_url`/`video_url`, `check-post.mjs` không lỗi, chưa có `metricool.<network>.id`.
-- `social.json.enabled == true`, brand đã trỏ skill, không `excluded`.
+- `social.json.enabled == true`, brand đã trỏ skill.
 - Giờ đăng sau hôm nay (theo múi giờ khách).
 
 ## 3. Ví dụ (minh hoạ, không gửi)

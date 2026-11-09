@@ -119,12 +119,13 @@ export function brandInfo(dir) {
   const id = path.basename(dir).replace(/-skills$/, '');
   const name = configured ? mc.brand_name.trim() : display;
   const cadenceTz = social.cadence?.timezone || '';
-  // Metricool brand timezone: social.json metricool.timezone, else config/metricool-brands.json (by skill_id, then name).
+  // Metricool brand timezone: ONLY the synced workspace/metricool-brands.json (by skill_id, then name). social.json
+  // metricool.timezone is a fallback for a brand that is not in that list yet; it is never compared or warned about.
   let cfg = null;
   try { const list = metricoolBrands().brands || []; cfg = list.find((b) => b.skill_id === id) || list.find((b) => name && b.name === name) || null; } catch {}
   const ownTz = typeof mc.timezone === 'string' ? mc.timezone.trim() : '';
   const cfgTz = cfg && typeof cfg.timezone === 'string' ? cfg.timezone.trim() : '';
-  const tz = ownTz || cfgTz || cadenceTz;
+  const tz = cfgTz || ownTz || cadenceTz;
   return {
     id, dir, social, enabled: social.enabled === true,
     brand_name: name,
@@ -132,7 +133,7 @@ export function brandInfo(dir) {
     brand_name_configured: configured,
     // timezone = the Metricool brand's timezone: CSV Date/Time are written in it.
     timezone: tz,
-    timezone_source: ownTz ? 'social.json metricool.timezone' : cfgTz ? `config metricool-brands.json (brand "${cfg.name}")` : 'social.json cadence.timezone (chưa có metricool.timezone)',
+    timezone_source: cfgTz ? `metricool-brands.json (brand "${cfg.name}")` : ownTz ? 'social.json metricool.timezone' : 'social.json cadence.timezone (chưa có metricool.timezone)',
     timezone_configured: !!(ownTz || cfgTz),
     config_timezone: cfgTz, config_brand: cfg?.name || '',
     // Metricool blogId: social.json metricool.blog_id, else the config brand matched above; config_skill_id tells whose it is.
@@ -421,7 +422,7 @@ export function assertLinked(brand) {
   let list = [];
   try { list = metricoolBrands().brands || []; } catch {}
   const byBlog = brand.blog_id && list.find((b) => String(b.blog_id) === String(brand.blog_id));
-  if (byBlog && (byBlog.excluded || byBlog.removed)) throw new Error(`Metricool brand "${byBlog.name}" is ${byBlog.excluded ? 'excluded' : 'no longer in the account'}: nothing is sent to it.`);
+  if (byBlog?.removed) throw new Error(`Metricool brand "${byBlog.name}" is no longer in the account: nothing is sent to it.`);
   if (byBlog && (byBlog.skill_id !== brand.id || path.resolve(linkedDir(byBlog)).toLowerCase() !== path.resolve(brand.dir).toLowerCase())) throw new Error(`Brand Metricool "${byBlog.name}" không nối với bộ skill ${brand.id} (Tổng quan: Chọn skill / Ngắt kết nối): không gửi gì lên Metricool.`);
 }
 export function planPosts(args, { now = new Date(), root = settings().skillsRoot, brand = null } = {}) {
@@ -527,7 +528,6 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
   if (!brand.timezone || !validTz(brand.timezone)) throw new Error(`Timezone "${brand.timezone}" không hợp lệ (${brand.timezone_source}).`);
   if (!brand.audience_timezone || !validTz(brand.audience_timezone)) throw new Error(`cadence.timezone "${brand.cadence_timezone}" không hợp lệ.`);
   if (!brand.timezone_configured) warnings.push(`Không biết múi giờ brand trong Metricool (thêm social.json metricool.timezone hoặc brand trong config/metricool-brands.json): tạm coi là ${brand.timezone} (cadence.timezone), KHÔNG quy đổi giờ. Metricool đọc Date/Time theo múi giờ của brand trong Metricool.`);
-  if (brand.config_timezone && brand.timezone_source === 'social.json metricool.timezone' && brand.config_timezone !== brand.timezone) warnings.push(`social.json metricool.timezone (${brand.timezone}) khác múi giờ brand "${brand.config_brand}" trong config/metricool-brands.json (${brand.config_timezone}); dùng metricool.timezone. Kiểm lại múi giờ thật của brand trong Metricool.`);
   const notes = [];
   if (brand.audience_timezone !== brand.timezone) notes.push(`Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${brand.audience_timezone} (cadence.timezone, khách xem), ghi Date/Time theo ${brand.timezone} (${brand.timezone_source}). Gọn hơn (không bắt buộc): đặt múi giờ brand trong Metricool = ${brand.audience_timezone}.`);
 

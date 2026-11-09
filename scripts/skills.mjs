@@ -71,7 +71,7 @@ if (isMain(import.meta.url)) main(async () => {
   const cmd = args._[0];
   if (cmd === 'list-sources') return out(await listSources(args.from && args.from !== true ? String(args.from) : defaultSource()));
   if (cmd === 'validate') return out(validate(need(args, 'path')));
-  if (cmd === 'link') return out({ metricool: linkMetricool(need(args, 'brand'), need(args, 'path')) });
+  if (cmd === 'link') return out({ metricool: linkMetricool(need(args, 'brand'), need(args, 'path'), { confirm: args.confirm === true }) });
   if (cmd === 'unlink') return out({ metricool: linkMetricool(need(args, 'brand'), null) });
-  throw new Error('Lệnh: list-sources [--from <dir>] | validate --path <dir> | link --brand <tên> --path <dir> | unlink --brand <tên>');
+  throw new Error('Lệnh: list-sources [--from <dir>] | validate --path <dir> | link --brand <tên> --path <dir> [--confirm] | unlink --brand <tên>');
 });

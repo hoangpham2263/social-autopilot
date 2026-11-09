@@ -174,7 +174,8 @@ async function handle(req, res) {
   // folder in place (nothing copied); skill_path null = unlink (the folder and the store stay).
   if (path === "/api/metricool-link" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
-    return linkMetricool(String(b.name ?? ""), b.skill_path ? String(b.skill_path) : null);
+    try { return linkMetricool(String(b.name ?? ""), b.skill_path ? String(b.skill_path) : null, { confirm: b.confirm === true }); }
+    catch (e) { if (e.code === "MISMATCH") return { needs_confirm: true, message: e.message }; throw e; }
   });
   if (path === "/api/brand" && req.method === "GET") return api(res, () => {
     if (!get("id")) throw new Error("Missing brand id (id).");

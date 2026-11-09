@@ -32,7 +32,7 @@ const catalog = () => JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
 
 write(path.join(ws, 'metricool-brands.json'), JSON.stringify({ version: 1, brands: [
   { name: 'Test Brand', blog_id: '1111', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'testbrand' },
-  { name: 'Other Brand', blog_id: '2222', timezone: 'America/New_York', networks: ['facebook'], skill_id: null, excluded: true },
+  { name: 'Other Brand', blog_id: '2222', timezone: 'America/New_York', networks: ['facebook'], skill_id: null },
 ] }));
 
 function setup({ posts, metricool = { brand_name: 'Test Brand', blog_id: '1111' }, channels = [{ network: 'facebook', lang: ['en'], enabled: true }], en } = {}) {
@@ -122,7 +122,7 @@ test('payload: draft false; instagram gets instagramData isAiGenerated false; vi
   assert.doesNotMatch(r.items[0].record, /--draft/);
 });
 
-test('payload: refuses an AI label, a past time, an excluded brand and unknown networks', () => {
+test('payload: refuses an AI label, a past time, a blog of another brand and unknown networks', () => {
   setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } }], en: 'Hello\n\n#AIgenerated #TestBrand' });
   let r = run('payload', '--brand', 'testbrand');
   assert.equal(r.ok, false);
@@ -136,7 +136,7 @@ test('payload: refuses an AI label, a past time, an excluded brand and unknown n
   setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }], metricool: { brand_name: 'Other Brand', blog_id: '2222' } });
   r = run('payload', '--brand', 'testbrand');
   assert.equal(r.ok, false);
-  assert.match(r.error, /excluded/);
+  assert.match(r.error, /blogId 2222/);
 
   setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }], channels: [{ network: 'tiktok', lang: ['en'], enabled: true }] });
   r = run('payload', '--brand', 'testbrand');
@@ -223,7 +223,7 @@ test('payload: a failing post is blocked, the others still go; an old settings d
   } finally { fs.rmSync(path.join(ws, 'settings.json'), { force: true }); }
 });
 
-test('sync-brands: getBrandSettings rewrites the brand list, keeps skill links and excluded by blogId, flags removed brands', () => {
+test('sync-brands: getBrandSettings rewrites the brand list, keeps skill links by blogId, flags removed brands', () => {
   const file = path.join(ws, 'metricool-brands.json');
   const before = fs.readFileSync(file, 'utf8');
   try {
@@ -243,7 +243,6 @@ test('sync-brands: getBrandSettings rewrites the brand list, keeps skill links a
     assert.equal(by['3333'].skill_id, null);
     assert.deepEqual(by['3333'].networks, ['facebook', 'instagram']);
     assert.equal(by['2222'].removed, true);
-    assert.equal(by['2222'].excluded, true);
     assert.equal(saved.account.user_id, '42');
     assert.ok(saved.updated_at);
     assert.deepEqual(r.added, ['New Brand']);

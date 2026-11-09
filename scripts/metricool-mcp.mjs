@@ -14,13 +14,13 @@
 // sent again as a scheduled post. A post whose check-post.mjs fails is blocked, the others go.
 // The output is plain JSON for any agent's Metricool tool (Claude connector, ChatGPT connector, Codex MCP server).
 // Text = posted languages only (never language_policy.review_langs), never any AI label. Media must be public https links
-// (MCP copies them to static.metricool.com). A Metricool brand marked excluded (or removed) in
-// workspace/metricool-brands.json is never a target.
+// (MCP copies them to static.metricool.com). A brand gets posts only when it is linked to a usable skill; a brand gone from
+// the account (removed in workspace/metricool-brands.json) is never a target.
 //   node scripts/metricool-mcp.mjs sync-brands --from <file with the getBrandSettings JSON>   (first step of every run)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, excludedBlog, syncMetricoolBrands } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, removedBlog, syncMetricoolBrands } from './lib.mjs';
 import { planPosts, findBrand, sentNetworks, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
 
 // Networks whose createScheduledPost shape is known (facebookData / instagramData). Others: use the CSV route.
@@ -36,12 +36,12 @@ export function offsetOf(date, time, tz) {
 }
 export const isoWithOffset = (date, time, tz) => `${date}T${normTime(time)}${offsetOf(date, time, tz)}`;
 
-// The brand's Metricool blogId, refusing an excluded/removed blog and any blog that belongs to another brand.
+// The brand's Metricool blogId, refusing a blog gone from the account and any blog that belongs to another brand.
 export function targetBlog(brand) {
   const blog = brand.blog_id;
   if (!blog) throw new Error(`${brand.id}: chưa có Metricool blogId (social.json metricool.blog_id hoặc config/metricool-brands.json).`);
-  const ex = excludedBlog(blog);
-  if (ex) throw new Error(`blogId ${blog} ("${ex.name}") is ${ex.excluded ? 'excluded' : 'no longer in the Metricool account'}: never create or change posts for it.`);
+  const gone = removedBlog(blog);
+  if (gone) throw new Error(`blogId ${blog} ("${gone.name}") is no longer in the Metricool account: nothing is sent to it.`);
   let owners = [];
   try { owners = (metricoolBrands().brands || []).filter((b) => String(b.blog_id) === blog); } catch {}
   const other = owners.find((b) => b.skill_id !== brand.id);
@@ -220,7 +220,7 @@ if (isMain(import.meta.url)) main(async () => {
     else if (cmd === 'sync-brands') {
       const file = need(args, 'from');
       const r = syncMetricoolBrands(fs.readFileSync(file, 'utf8'));
-      out({ brands: r.brands.map(({ name, blog_id, skill_id, excluded, removed }) => ({ name, blog_id, skill_id, ...(excluded ? { excluded } : {}), ...(removed ? { removed } : {}) })), added: r.added, removed: r.removed, updated_at: r.updated_at });
+      out({ brands: r.brands.map(({ name, blog_id, skill_id, removed }) => ({ name, blog_id, skill_id, ...(removed ? { removed } : {}) })), added: r.added, removed: r.removed, updated_at: r.updated_at });
     }
     else fail('Lệnh: payload --brand <id> [--posts POST-01,...] | record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url> --publication <dateTime> --tz <tz> | status --brand <id> | sync-brands --from <file>');
   } catch (e) { fail(e.message, e.problems ? { problems: e.problems } : {}); }

@@ -24,7 +24,7 @@ test.before(async () => {
   fs.writeFileSync(path.join(tmp, 'workspace', 'metricool-brands.json'), JSON.stringify({ version: 1, account: { user_id: '1' }, brands: [
     { name: 'Brand A', blog_id: '1001', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'dreamyvows' },
     { name: 'Brand B', blog_id: '1002', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'grenheim' },
-    { name: 'Brand C', blog_id: '1003', timezone: 'America/New_York', networks: ['facebook', 'instagram'], skill_id: null, excluded: true },
+    { name: 'Brand C', blog_id: '1003', timezone: 'America/New_York', networks: ['facebook', 'instagram'], skill_id: null },
   ] }));
   const real = path.resolve(tool, '..', 'vaniecom-workspace', 'skills', 'grenheim-skills');
   if (fs.existsSync(real)) fs.cpSync(real, path.join(tmp, 'skills', 'grenheim-skills'), { recursive: true, filter: (s) => !/[\\/]workspace[\\/]local([\\/]|$)|[\\/]\.git([\\/]|$)/.test(s) });
@@ -55,7 +55,6 @@ test('serves the page, the shell assets and the data APIs', async () => {
   assert.deepEqual(names, ['Brand A', 'Brand B', 'Brand C']);
   const other = brands.metricool.brands.find((b) => b.name === 'Brand C');
   assert.equal(other.skill, null);
-  assert.equal(other.excluded, true);
   assert.equal(other.tz_mismatch, false);
   assert.equal(brands.metricool.never_synced, true);
   assert.ok(Array.isArray(brands.metricool.skills_without_metricool));

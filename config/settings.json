@@ -19,7 +19,7 @@
     "type": "github-repo",
     "path": "../social-autopilot-sources",
     "pagesBase": "",
-    "rawBase": "https://raw.githubusercontent.com/hoangpham2263/social-autopilot-sources/main",
+    "rawBase": "https://raw.githubusercontent.com/<owner>/<image-repo>/main",
     "branch": "main",
     "remote": "origin",
     "auto_after_writeback": true,

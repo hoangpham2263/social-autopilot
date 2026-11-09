@@ -12,7 +12,7 @@ Chi tiết từng bước: `RUNBOOK.md`. Luật cho agent: `AGENTS.md` (Claude C
 
 **App**: nhấp đúp `start-app.cmd` (Windows) hoặc `start-app.command` (macOS). Tab: Overview (mỗi brand Metricool và skill đã trỏ: Choose skill / Change skill / Disconnect, trạng thái sẵn sàng), Library (kho), Posts (xem trước, Approve, Drop), Prompt (chế độ × agent × thương hiệu, nút chép), Settings.
 
-- Skill thương hiệu **không bao giờ được chép** vào tool: mỗi brand Metricool trỏ tới một thư mục skill theo đường dẫn (`workspace/metricool-brands.json`). Choose skill tìm sâu 2 tầng trong thư mục nguồn (mặc định `skillsRoot`, vd `../vaniecom-workspace/skills`). Sẵn sàng = `enabled: true` + `scripts/check-skill.mjs --tool-ready` của skill đạt. Brand `"excluded": true` không bao giờ được gửi bài.
+- Skill thương hiệu **không bao giờ được chép** vào tool: mỗi brand Metricool trỏ tới một thư mục skill theo đường dẫn (`workspace/metricool-brands.json`). Choose skill tìm sâu 2 tầng trong thư mục nguồn (mặc định `skillsRoot`, vd `../vaniecom-workspace/skills`). Sẵn sàng = `enabled: true` + `scripts/check-skill.mjs --tool-ready` của skill đạt. Brand chỉ được làm và gửi bài khi đã trỏ tới một skill dùng được (cổng duy nhất).
 - Ảnh: Codex CLI tạo; không bao giờ logo trên sản phẩm; không bao giờ nhãn AI; metadata bỏ bằng `remove_watermark.script`.
 - Host: repo công khai `social-autopilot-sources`, link `https://raw.githubusercontent.com/<owner>/<repo>/<branch>/...` (không tên miền riêng).
 - Metricool qua MCP của agent (`docs/metricool.md`). Codex: `codex mcp add metricool --url https://ai.metricool.com/mcp` rồi `codex mcp login metricool`. CSV chỉ dự phòng.

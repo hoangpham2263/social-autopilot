@@ -46,7 +46,7 @@ test('list-sources finds skills 2 levels deep, skips node_modules, reports readi
 
 test('link is by path; a renamed folder shows as missing, with no fallback', () => {
   const dir = path.join(skills, 'good-skills');
-  assert.equal(run('skills.mjs', 'link', '--brand', 'Good MC', '--path', dir).ok, true);
+  assert.equal(run('skills.mjs', 'link', '--brand', 'Good MC', '--path', dir, '--confirm').ok, true);
   const m = JSON.parse(fs.readFileSync(path.join(ws, 'metricool-brands.json'), 'utf8')).brands[0];
   assert.equal(path.resolve(m.skill_path), dir);
   assert.equal(run('skills.mjs', 'list-sources', '--from', skills).sources.find((x) => x.id === 'good').linked_to, 'Good MC');
@@ -59,7 +59,7 @@ test('link is by path; a renamed folder shows as missing, with no fallback', () 
   assert.equal(o.skill_path_missing, true);
   assert.equal(o.skill, null);
   // Đổi skill: re-point to the renamed folder (its id is now "good-renamed").
-  assert.equal(run('skills.mjs', 'link', '--brand', 'Good MC', '--path', path.join(skills, 'good-renamed')).ok, true);
+  assert.equal(run('skills.mjs', 'link', '--brand', 'Good MC', '--path', path.join(skills, 'good-renamed'), '--confirm').ok, true);
   assert.ok(run('brands.mjs').brands.some((b) => b.id === 'good-renamed'));
 });
 

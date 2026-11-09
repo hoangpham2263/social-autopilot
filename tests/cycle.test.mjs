@@ -58,6 +58,9 @@ function scratchBrand(name, patch) {
   const file = path.join(dir, 'project', 'social.json');
   const social = JSON.parse(fs.readFileSync(file, 'utf8'));
   fs.writeFileSync(file, JSON.stringify(patch(social), null, 2));
+  // Posts the real tool wrote into the brand ("social-autopilot <draft id>") would collide with this run's draft ids.
+  const cat = path.join(dir, 'workspace', 'catalog.json');
+  if (fs.existsSync(cat)) { const c = JSON.parse(fs.readFileSync(cat, 'utf8')); c.posts = (c.posts || []).filter((p) => !String(p.source || '').startsWith('social-autopilot ')); fs.writeFileSync(cat, JSON.stringify(c, null, 2)); }
   return dir;
 }
 const brandDir = path.join(skills, 'dreamyvows-skills');

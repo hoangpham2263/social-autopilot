@@ -23,8 +23,8 @@ Tài liệu chung cho mọi tài khoản Metricool. Không ghi id người dùng
 
 ### sync-brands
 - Ghi tên, blogId, múi giờ, mạng của từng brand vào `workspace/metricool-brands.json`.
-- Giữ theo blogId: liên kết skill (`skill_id`, `skill_path`) và `excluded`. Brand không còn trong tài khoản: `removed: true`.
-- Brand `"excluded": true` hoặc `removed` không bao giờ là đích của `payload`, `record` hay CSV. Brand chưa trỏ skill: không làm bài, không gửi.
+- Giữ theo blogId: liên kết skill (`skill_id`, `skill_path`). Brand không còn trong tài khoản: `removed: true`.
+- Brand `removed` không bao giờ là đích của `payload`, `record` hay CSV. Brand chưa trỏ skill: không làm bài, không gửi.
 
 ### payload → createScheduledPost → record
 1. `payload --brand <id> [--posts ...]`: mỗi bài đã duyệt (catalog `approved`) có `media_url`/`video_url`, chưa có `metricool.<network>.id`, qua `check-post.mjs` → một item `{ tool: "createScheduledPost", args: { blogId, date, info }, record }`. Bài không qua kiểm vào `blocked`.
@@ -46,7 +46,7 @@ Instagram bật thì thêm `instagramData { type: POST|REEL, isAiGenerated: fals
 - Hệ quả: múi giờ do Metricool lo khi `publicationDate` mang múi giờ khách (`cadence.timezone`); vẫn chỉ gỡ file host sau khi bài đã đăng.
 
 ### Chặn
-blogId của brand `excluded`/`removed` và mọi blogId gắn với skill khác; mạng ngoài facebook/instagram (dùng CSV); `language_policy.mode: separate-posts`; giờ đã qua; link không https hoặc WebP; caption có nhãn AI hoặc ký tự ẩn.
+blogId của brand `removed` và mọi blogId gắn với skill khác; mạng ngoài facebook/instagram (dùng CSV); `language_policy.mode: separate-posts`; giờ đã qua; link không https hoặc WebP; caption có nhãn AI hoặc ký tự ẩn.
 
 ## 2. Media
 - Metricool cần **link công khai** trỏ thẳng tới file. Tool host media của bài đã duyệt trên repo công khai `social-autopilot-sources`, link raw GitHub `https://raw.githubusercontent.com/<owner>/<repo>/<branch>/...`. Không dùng tên miền riêng.
