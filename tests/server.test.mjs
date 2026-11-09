@@ -72,6 +72,7 @@ test('serves the page, the shell assets and the data APIs', async () => {
   // One fixed template: TASK, OPTIONS, numbered STEPS ending with the run log and the report, STOP IF, NEVER.
   const shape = (t) => { const l = t.split('\n'); return /^TASK: /.test(l[0]) && /^OPTIONS: /.test(l[1]) && l[2] === 'TOOL: {{TOOL}}' && l[3] === '{{SKILLS}}' && /^STEPS /.test(l[4]) && /for each SKILL line read that skill's SKILL\.md/.test(l[5]) && l.some((x) => /^\d+\. .*runlog\.mjs add/.test(x)) && /^STOP IF: /.test(l.at(-2)) && /^NEVER: /.test(l.at(-1)); };
   assert.ok(pr.prompts.filter((p) => p.agent !== 'ChatGPT').every((p) => shape(p.text)), 'one fixed template');
+  assert.ok(pr.prompts.filter((p) => p.mode === 'Research only' && p.agent !== 'ChatGPT').every((p) => /^2\. 1\.0 .*node scripts\/crawl-fb\.mjs --check/m.test(p.text)), 'Research: the Chrome check is step 2 (1.0), before research.mjs start');
   assert.ok(pr.prompts.filter((p) => p.mode === 'Publish approved' && p.agent !== 'ChatGPT').every((p) => p.text.split(String.fromCharCode(10)).length <= 14 && /--mode publish/.test(p.text) && /NEVER: make ideas or posts/.test(p.text)), 'Publish approved: short, no new posts');
   assert.ok(pr.prompts.filter((p) => p.agent !== 'ChatGPT').every((p) => p.text.includes('{{OPTIONS}}') && /RUNBOOK.md Mode [123]/.test(p.text)), 'prompts point to the RUNBOOK');
   assert.ok(pr.all_brands);
@@ -88,7 +89,7 @@ test('serves the page, the shell assets and the data APIs', async () => {
   assert.equal(settings.settings.approval, undefined);
   // Prompt tab: Time and Start only for Publish approved (Create & publish keeps Posts only).
   const html = fs.readFileSync(path.join(tool, 'ui', 'index.html'), 'utf8');
-  for (const id of ['prWindow', 'prStart']) assert.match(html, new RegExp(`<div class="field" data-publish-only><label for="${id}"`), id);
+  for (const id of ["prWindow", "prStart"]) assert.match(html, new RegExp(`<div class="field" data-opt="publish" hidden><label for="${id}"`), id);
   assert.match(html, /win = pub \? \$\("#prWindow"\)\.value : ""/);
   assert.ok(settings.times.primary[0] >= 1 && settings.times.backup[0] >= 1, 'Times: primary + backup hours per day'); // Settings summary
   // The Settings form sends only Plan ahead and Auto-host images; everything else stays as saved.

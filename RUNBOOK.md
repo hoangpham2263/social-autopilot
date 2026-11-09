@@ -11,7 +11,7 @@ Trạng thái người dùng thấy: **To review** (chờ duyệt) / **Queued** 
 ## Rules for every run
 
 - Prompt ghi sẵn đường dẫn: `TOOL:` (thư mục tool) và mỗi thương hiệu một dòng `SKILL: <id> → <thư mục skill>`; agent không tự chọn skill, chỉ làm với các skill đó và đọc `SKILL.md`, `project/project.md`, `project/social.json` của từng skill ở bước Setup.
-- **Dừng (STOP) vẫn ghi nhật ký:** lượt nào dừng giữa chừng (bị chặn, Chrome không nối được, lỗi Metricool, hết lượt Codex...) **vẫn luôn** làm bước ghi nhật ký (`runlog.mjs add`, kèm lý do dừng qua `--notes` hoặc file JSON `errors`) rồi báo cáo. Bước ghi nhật ký không bao giờ bị bỏ.
+- **Dừng (STOP) vẫn ghi nhật ký:** lượt nào dừng giữa chừng (bị chặn, Chrome không nối được, lỗi Metricool, hết lượt Codex...) **vẫn luôn** làm bước ghi nhật ký (`runlog.mjs add`, kèm lý do dừng: `--reason "<lý do>"`, vd `--reason "chrome unreachable"`; nhật ký ghi kết quả **stopped** và không lấy số liệu của lượt cũ) rồi báo cáo. `node scripts/runlog.mjs --help` in cách dùng. Bước ghi nhật ký không bao giờ bị bỏ.
 - Mỗi lượt (cả hai chế độ, mọi agent) theo đúng các bước đánh số của chế độ đó, không bỏ bước; **bước gần cuối luôn là ghi nhật ký** (`scripts/runlog.mjs`, 1.5 / 2.9), **bước cuối là báo cáo** với các mục cố định (1.6 / 2.10).
 
 - Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`), **lần lượt từng thương hiệu**, không song song. "all usable brands" = mọi thương hiệu usable.
@@ -61,6 +61,7 @@ Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo khô
 - `npm install` một lần trong thư mục tool (thư viện `playwright-core`; không tải trình duyệt).
 - Chrome mới không cho điều khiển profile mặc định, nên dùng **một profile riêng** cho crawl, đăng nhập Facebook tài khoản phụ (`research.fb_account`) trong profile đó **một lần, bằng tay**. Cookie nằm trong profile Chrome đó (ngoài repo), tool không bao giờ lưu cookie.
 - Lần đầu: chạy **`start-crawl-chrome.cmd`** (Windows) hoặc **`start-crawl-chrome.command`** (macOS) trong thư mục tool, hoặc nút **Start crawl Chrome** ở Settings → Requirements (dòng "Crawl Chrome" xanh khi Chrome đang chạy). Đăng nhập Facebook tài khoản phụ trong cửa sổ đó **một lần**. Các lần sau chỉ cần mở lại bằng launcher trước khi crawl.
+- Nếu một cửa sổ Chrome dùng profile crawl đang mở **không có** cổng điều khiển (mở tay, không qua launcher), lần mở mới chỉ nhập vào cửa sổ đó và cổng 9222 không bao giờ mở: launcher phát hiện việc này và yêu cầu đóng hết cửa sổ Chrome đó trước rồi chạy lại.
 - Launcher làm đúng lệnh sau (Chrome có cổng điều khiển, chỉ nghe ở 127.0.0.1):
   - Windows: `"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%LOCALAPPDATA%\social-autopilot-chrome"`
   - macOS: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/social-autopilot-chrome"`

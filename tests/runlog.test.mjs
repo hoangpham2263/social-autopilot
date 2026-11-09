@@ -21,7 +21,7 @@ write(path.join(brandDir, 'project', 'project.md'), '# rb');
 write(path.join(brandDir, 'project', 'social.json'), { brand: 'RB', enabled: true, channels: [{ network: 'facebook', enabled: true, lang: ['en'], url: 'https://www.facebook.com/rb' }], cadence: { timezone: 'America/New_York' }, research: { sources: [{ id: 'a', name: 'A', url: 'https://x.test/a', enabled: true }] } });
 write(path.join(brandDir, 'scripts', 'check-skill.mjs'), "console.log('ok')");
 write(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [{ id: 'POST-01', source: 'social-autopilot rb-20261109-03', status: 'scheduled', metricool: { facebook: { id: '9', planner_url: 'https://app.metricool.com/planner?x=9', draft: false, publication: '2026-12-01T10:00:00', timezone: 'America/New_York', sent_at: '2099-01-01T00:00:00Z' } } }] });
-const crawl = (date, sources) => write(path.join(ws, 'runs', 'rb', date, 'run.json'), { date, status: 'done', mode: {}, sources });
+const crawl = (date, sources) => write(path.join(ws, 'runs', 'rb', date, 'run.json'), { date, started: new Date().toISOString(), status: 'done', mode: {}, sources });
 
 test('research: per source new / dried up / blocked; dried-up streak across runs', () => {
   crawl('2026-11-01', [{ id: 'a', name: 'A', url: 'https://www.facebook.com/a', new: 5, duplicates: 1, result: { state: 'known' } }, { id: 'b', name: 'B', new: 0, result: { state: 'known' } }]);
@@ -82,4 +82,20 @@ test('publish (Mode 3): reported like create, without "to review"', () => {
   assert.deepEqual(r.log.brands[0].create.scheduled.map((x) => x.post), ['POST-01']);
   assert.doesNotMatch(r.log.headline, /to review/);
   assert.equal(run('list', '--mode', 'publish').logs.length, 1);
+});
+
+test('a run stopped before its crawl: result "stopped" with the reason, no numbers from an older run', () => {
+  spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},1100)']);
+  const r = run('add', '--mode', 'research', '--agent', 'Codex', '--started', '2099-06-01T00:00:00Z', '--reason', 'chrome unreachable');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.log.result, 'stopped');
+  assert.equal(r.log.headline, 'Stopped: chrome unreachable');
+  assert.ok(r.log.brands.every((b) => b.research.not_run && b.research.new === 0 && b.headline === 'not run'));
+  // no reason, but no crawl started in this run either: still "stopped"
+  spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},1100)']);
+  const auto = run('add', '--mode', 'research', '--agent', 'Codex', '--started', '2099-06-02T00:00:00Z');
+  assert.equal(auto.log.result, 'stopped');
+  assert.equal(auto.log.stop_reason, 'no crawl started');
+  const help = spawnSync(process.execPath, [path.join(tool, 'scripts', 'runlog.mjs'), '--help'], { env, encoding: 'utf8' });
+  assert.match(help.stdout, /--reason/);
 });

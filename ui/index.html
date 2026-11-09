@@ -31,6 +31,7 @@ main > header, main > nav, main > .setup-status { flex: 0 0 auto; }
 .dry { color: #b06000; }
 .dot-amber { background: #b06000; }
 .lb .log-detail { flex: 1 1 auto; overflow: auto; padding: 16px; background: #fff; display: grid; gap: 12px; align-content: start; }
+.field[hidden] { display: none; }
 .app-foot { margin-top: auto; }
 h3 .dot.after { margin: 0 0 0 8px; }
 /* Log: one compact row per run; the detail opens in the overlay. */
@@ -250,21 +251,21 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   </section>
 
   <section class="page" id="page-prompt" hidden>
+    <!-- Row 1: Mode. Row 2: Agent, Brand, then the options of the chosen mode (same-width fields). Row 3: sub-agent,
+         Copy prompt and the hint. Then the prompt. -->
     <div class="fields">
       <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
+    </div>
+    <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div class="field"><span class="label">Sub-agent</span><div class="checks"><label id="prSubLabel"><input type="checkbox" id="prSub"> Run in a sub-agent</label></div></div>
+      <div class="field"><label for="prSub" title="Claude Code: hand the whole task to one background sub-agent so the chat stays free">Run in</label><select id="prSub"><option value="main">Main chat</option><option value="sub">Sub-agent</option></select></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
-    </div>
-    <div class="fields" id="prResearch" hidden>
-      <div class="field"><span class="label">Sources</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
-      <div class="field"><label for="prMax" title="At most this many new posts for each brand in this run, shared evenly by its sources">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
-      <div class="field"><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
-    </div>
-    <div class="fields" id="prMake" hidden>
-      <div class="field"><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
-      <div class="field" data-publish-only><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
-      <div class="field" data-publish-only><label for="prStart">Start</label><select id="prStart"><option value="">Tomorrow</option><option value="today">Today (1 h ahead)</option></select></div>
+      <div class="field" data-opt="research" hidden><span class="label">Sources</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
+      <div class="field" data-opt="research" hidden><label for="prMax" title="At most this many new posts for each brand in this run, shared evenly by its sources">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
+      <div class="field" data-opt="research" hidden><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
+      <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
+      <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
+      <div class="field" data-opt="publish" hidden><label for="prStart">Start</label><select id="prStart"><option value="">Tomorrow</option><option value="today">Today (1 h ahead)</option></select></div>
     </div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
@@ -712,10 +713,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#prBrand").innerHTML = `<option value="">All</option>` + az(brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(bc(b.id) !== undefined ? withCount(b.name || b.id, bc(b.id)) : b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
     const research = isResearch(prMode);
     const publishOnly = /publish approved/i.test(prMode);
-    $("#prResearch").hidden = !research;
-    $("#prMake").hidden = research; // Create & publish: Posts; Publish approved: Posts, Time, Start
+    // The options of the chosen mode, in the same row as Agent and Brand: Research = Sources, Max posts, Crawl;
+    // Create & publish = Posts; Publish approved = Posts, Time, Start.
+    for (const el of $$("#page-prompt [data-opt]")) el.hidden = el.dataset.opt === "research" ? !research : el.dataset.opt === "make" ? research : !publishOnly;
     // Time and Start belong to Publish approved only: Create & publish always schedules at Auto (best time), from tomorrow.
-    for (const el of $$("#prMake [data-publish-only]")) el.hidden = !publishOnly;
     // Sources: enabled research sources (social.json) of the chosen brand, or of every brand grouped by brand when
     // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
     const b = brands.find((x) => x.id === brand);
@@ -770,12 +771,13 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const subAllowed = () => /claude code/i.test($("#prAgent").value || "");
   function syncSub() {
     const agent = $("#prAgent").value || "";
-    $("#prSub").checked = subAllowed() && store.get(`prSub:${agent}`) !== "0";
+    // Default Main chat; Sub-agent only when chosen (remembered per agent).
+    $("#prSub").value = subAllowed() && store.get(`prSub:${agent}`) === "1" ? "sub" : "main";
     setDisabled($("#prSub"), !subAllowed(), /codex/i.test(agent) ? "Codex runs it in its own session" : "ChatGPT cannot run the task");
   }
   function buildPrompt() {
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
-    const lead = subAllowed() && $("#prSub").checked ? SUB_LINE + "\n" : "";
+    const lead = subAllowed() && $("#prSub").value === "sub" ? SUB_LINE + "\n" : "";
     return lead + buildTask();
   }
   function buildTask() {
@@ -812,7 +814,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     drawPrompt();
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
-  $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").checked ? "1" : "0"); regenerate(); };
+  $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").value === "sub" ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
   for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart"]) $(id).onchange = regenerate;
   document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
@@ -843,7 +845,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     for (const b of $$("#lgMode button")) b.onclick = () => { lgMode = b.dataset.mode; store.set("lgMode", lgMode); loadLogs(); };
     const logs = allLogs.filter((l) => (!lgMode || l.mode === lgMode) && (!brand || hasBrand(l, brand)));
     $("#lgList").innerHTML = logs.map((l, i) => `<div class="log-row" data-i="${i}" tabindex="0">
-        <span class="dot ${l.result === "error" ? "dot-red" : l.result === "warning" ? "dot-amber" : "dot-green"}" title="${l.result === "error" ? "Errors" : l.result === "warning" ? "Blocked or unfinished" : "OK"}"></span>
+        <span class="dot ${l.result === "error" ? "dot-red" : l.result === "warning" || l.result === "stopped" ? "dot-amber" : "dot-green"}" title="${l.result === "error" ? "Errors" : l.result === "stopped" ? "Stopped" : l.result === "warning" ? "Blocked or unfinished" : "OK"}"></span>
         <span class="when">${esc(when(l.ended))}</span><span class="what">${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(arr(l.brands).map((b) => b.name || b.brand).join(", "))}</span>
         <span class="head" title="${esc(l.headline)}">${esc(l.headline)}</span></div>`).join("") || `<div class="meta">No runs logged yet. The last step of every agent run writes one (scripts/runlog.mjs).</div>`;
     for (const row of $$("#lgList .log-row")) {
