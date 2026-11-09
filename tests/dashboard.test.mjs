@@ -1,4 +1,4 @@
-// The read-only status page: built from a throw-away workspace (one draft waiting, one scene-swap, one approved), it is
+// The read-only status page: built from a throw-away workspace (two drafts waiting, one scene-swap, one approved), it is
 // one self-contained HTML file with the data embedded, images by relative path (no base64) and nothing written to the
 // brand folders. Set SA_DASHBOARD_KEEP=1 to keep the demo folder (for a visual check) instead of deleting it.
 // npm test
@@ -62,7 +62,9 @@ test.before(() => {
   draft('dreamyvows', 'dreamyvows-20261109-02', { status: 'awaiting_approval', mode: 'scene-swap', extra: { logo_check: { by: 'agent', confirmed: '2026-11-09T01:20:00.000Z' } } });
   draft('dreamyvows', 'dreamyvows-20261109-03', { status: 'approved', extra: { by: 'Hoang', approved: '2026-11-09T01:40:00.000Z', brand_post: { id: 'POST-07', folder: 'workspace/posts/POST-07-neon-love' } } });
   draft('dreamyvows', 'dreamyvows-20261109-04', { status: 'image_failed', extra: { error: 'Codex hết lượt' } });
-  write(path.join(ws, 'logs', '2026-11-09.log'), '[2026-11-09T01:05:00.000Z] research.mjs start --brand grenheim -> error: Không mở lượt nghiên cứu cho grenheim: research.max_per_day = 0.\n');
+  // One error now (counted), one long ago (not counted: only the last 24 hours).
+  const now = new Date().toISOString();
+  write(path.join(ws, 'logs', `${now.slice(0, 10)}.log`), `[2020-01-01T00:00:00.000Z] brands.mjs  -> error: old\n[${now}] research.mjs start --brand grenheim -> error: research.max_per_day = 0.\n`);
 });
 test.after(() => { if (process.env.SA_DASHBOARD_KEEP) console.log(`dashboard demo kept: ${outFile}`); else fs.rmSync(tmp, { recursive: true, force: true }); });
 
@@ -93,20 +95,21 @@ test('builds one self-contained, read-only status page', () => {
   assert.equal(swap.source_shop, 'Shop A');
   assert.equal(data.drafts.find((d) => d.brand_post).brand_post.id, 'POST-07');
 
-  const run = data.runs.find((x) => x.brand === 'dreamyvows');
-  assert.equal(run.refs, 2);
-  assert.deepEqual(run.ideas, { drafted: 1, todo: 1, rejected: 1 });
-  assert.equal(data.errors.length, 1);
+  // Only the main sections: no research runs, settings or error table; errors are just a count.
+  assert.deepEqual(Object.keys(data).sort(), ['brands', 'drafts', 'errors', 'generated_at', 'refresh', 'skills_root']);
+  assert.equal(data.errors.count, 1);
+  assert.equal(res.errors_24h, 1);
   if (fs.existsSync(path.join(skills, 'grenheim-skills'))) {
     const g = data.brands.find((b) => b.id === 'grenheim');
     assert.ok(g, 'brand from skillsRoot');
-    if (!g.usable) assert.ok(g.missing.every((m) => m.text && !/^thiếu /.test(m.text)), 'missing items in plain words');
+    assert.equal(typeof g.sources, 'number');
+    assert.ok(g.missing.every((m) => typeof m === 'string' && !/[a-z_]+\.[a-z_]+/.test(m)), `plain words, no field names: ${g.missing}`);
   }
 });
 
-test('missing items read in plain Vietnamese, field kept as a hint', async () => {
+test('missing items read in plain Vietnamese', async () => {
   const { plainProblem } = await import('../scripts/dashboard.mjs');
-  assert.deepEqual(plainProblem('thiếu approval.owner (người duyệt)'), { text: 'Chưa có người duyệt', field: 'approval.owner (người duyệt)' });
-  assert.equal(plainProblem('thiếu cadence.slots: ít nhất 1 giờ đăng').text, 'Chưa có giờ đăng nào');
-  assert.equal(plainProblem('thiếu điều gì đó lạ').text, 'Thiếu điều gì đó lạ');
+  assert.equal(plainProblem('thiếu approval.owner (người duyệt)'), 'Chưa có người duyệt');
+  assert.equal(plainProblem('thiếu cadence.slots: ít nhất 1 giờ đăng'), 'Chưa có giờ đăng');
+  assert.equal(plainProblem('thiếu điều gì đó lạ'), 'Thiếu điều gì đó lạ');
 });
