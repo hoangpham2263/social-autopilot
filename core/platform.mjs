@@ -16,10 +16,10 @@ const extraPath = onWindows
 export const toolEnv = { ...process.env, PATH: [...new Set([...(process.env.PATH || "").split(delimiter), ...extraPath, dirname(process.execPath)])].filter(Boolean).join(delimiter) };
 export const findTool = (name, env = toolEnv) => String(env.PATH || env.Path || "").split(delimiter).filter(Boolean)
   .flatMap((d) => (onWindows ? [".cmd", ".exe", ""] : [""]).map((ext) => join(d, name + ext))).find((p) => existsSync(p));
-// npm and codex are .cmd files on Windows, which Node only starts through the shell.
+// npm and codex are .cmd files on Windows, which Node only starts through the shell. Never a console window.
 export function runTool(cmd, args, options, done) {
-  if (onWindows && /\.cmd$/i.test(cmd)) return execFile(`"${cmd}"`, args, { ...options, shell: true }, done);
-  return execFile(cmd, args, options, done);
+  if (onWindows && /\.cmd$/i.test(cmd)) return execFile(`"${cmd}"`, args, { ...options, shell: true, windowsHide: true }, done);
+  return execFile(cmd, args, { ...options, windowsHide: true }, done);
 }
 
 // Windows PowerShell 5.1 is on every Windows; pwsh 7 on macOS.
@@ -27,10 +27,11 @@ export const PWSH = process.env.PR_PWSH || (onWindows ? "powershell.exe"
   : [...(process.env.PATH || "").split(delimiter).map((d) => join(d, "pwsh")), "/opt/homebrew/bin/pwsh", "/usr/local/bin/pwsh",
     join(homedir(), ".dotnet", "tools", "pwsh"), "/usr/local/microsoft/powershell/7/pwsh"].find((p) => existsSync(p)) || "pwsh");
 // Arguments for a PowerShell command, and for a script with its parameters ("-Name", value, …). On Windows both run
-// past the execution policy and talk UTF-8 on stdin/stdout (5.1 uses the console code page otherwise).
+// past the execution policy, never prompt or show a window (callers also pass windowsHide: true) and talk UTF-8 on
+// stdin/stdout (5.1 uses the console code page otherwise).
 const utf8 = "[Console]::InputEncoding=[Console]::OutputEncoding=New-Object Text.UTF8Encoding $false; ";
 const quote = (s) => `'${String(s).replace(/'/g, "''")}'`;
-export const psCommand = (command) => (onWindows ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", utf8 + command] : ["-NoProfile", "-Command", command]);
+export const psCommand = (command) => (onWindows ? ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", utf8 + command] : ["-NoProfile", "-Command", command]);
 export const psFile = (file, args = []) => (onWindows
   ? psCommand(`& ${quote(file)} ${args.map((a) => (/^-[A-Za-z]+$/.test(a) ? a : quote(a))).join(" ")}; exit $LASTEXITCODE`)
   : ["-NoProfile", "-File", file, ...args]);
@@ -48,7 +49,7 @@ export function openChrome(url = "", { background = false } = {}) {
   return new Promise((resolve) => {
     const done = (err) => resolve(err ? "Không mở được Google Chrome. Cài Google Chrome rồi thử lại." : "");
     if (onWindows) return execFile("cmd", ["/c", "start", "", "chrome", ...(url ? [url] : [])], { windowsHide: true }, done);
-    execFile("open", [...(background ? ["-g"] : []), "-a", "Google Chrome", ...(url ? [url] : [])], done);
+    execFile("open", [...(background ? ["-g"] : []), "-a", "Google Chrome", ...(url ? [url] : [])], { windowsHide: true }, done);
   });
 }
 
@@ -59,7 +60,7 @@ export function appWindow(url, size = "1120,840") {
   if (onWindows) return;
   const args = [`--app=${url}`, `--window-size=${size}`];
   if (existsSync(toolsChrome)) {
-    return spawn(toolsChrome, [`--user-data-dir=${appProfile}`, "--no-first-run", "--no-default-browser-check", "--disable-infobars", ...args], { detached: true, stdio: "ignore" }).unref();
+    return spawn(toolsChrome, [`--user-data-dir=${appProfile}`, "--no-first-run", "--no-default-browser-check", "--disable-infobars", ...args], { detached: true, stdio: "ignore", windowsHide: true }).unref();
   }
-  execFile("open", ["-na", "Google Chrome", "--args", ...args], (err) => { if (err) execFile("open", [url]); });
+  execFile("open", ["-na", "Google Chrome", "--args", ...args], { windowsHide: true }, (err) => { if (err) execFile("open", [url], { windowsHide: true }, () => {}); });
 }

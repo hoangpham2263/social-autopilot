@@ -6,17 +6,18 @@ import { createServer } from "node:http";
 import { spawn, execFile } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, statSync, renameSync, appendFileSync, createReadStream, readdirSync } from "node:fs";
 import { join, dirname, extname, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { Worker } from "node:worker_threads";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
-import { workspace, discoverBrands, listDrafts, latestRun, runDir, readJson, loadRefs, rawSettings, saveSettings, settings, toolRoot, cleanText, brandOverview, metricoolBrands, saveMetricoolBrands } from "../scripts/lib.mjs";
+import { workspace, discoverBrands, listDrafts, findDraft, withLock, writeJson, stamp, latestRun, runDir, readJson, loadRefs, rawSettings, saveSettings, settings, toolRoot, cleanText, brandOverview, metricoolBrands, saveMetricoolBrands } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
 import { approve, reject } from "../scripts/approve.mjs";
 import { readSocial, saveSocial } from "../scripts/social.mjs";
 import { queueReport } from "../scripts/queue.mjs";
-import { publish as hostImage, hostAfterWriteback } from "../scripts/host-image.mjs";
+import { hostConfig, hostAfterWriteback } from "../scripts/host-image.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -65,7 +66,7 @@ function draftsData(brand, status) {
   return listDrafts(brand || undefined).filter((d) => !status || d.status.status === status).map((d) => ({
     ...summary(d), image_exists: existsSync(join(d.dir, "image.png")), languages: d.draft.languages, language_mode: d.draft.language_mode,
     inspiration_url: d.draft.inspiration.post_url || d.draft.inspiration.source_url, product_image: d.draft.product_image,
-    created: d.draft.created, by: d.status.by || "", brand_post: d.status.brand_post ? { ...d.status.brand_post, media_url: mediaUrl(d.status.brand_post) } : null, error: d.status.error || "", metadata_clean: d.status.metadata_clean || null, watermark: d.status.watermark || null, preview: previewOf(d),
+    created: d.draft.created, by: d.status.by || "", image_host: d.status.image_host || null, brand_post: d.status.brand_post ? { ...d.status.brand_post, media_url: mediaUrl(d.status.brand_post) } : null, error: d.status.error || "", metadata_clean: d.status.metadata_clean || null, watermark: d.status.watermark || null, preview: previewOf(d),
   })).sort((a, b) => String(b.created).localeCompare(String(a.created)));
 }
 function scheduledPrompt() {
@@ -138,8 +139,49 @@ const allowedFile = (p) => { const full = resolve(p); return full.startsWith(wor
 function restart() {
   const out = openSync(logFile("server.log"), "a");
   spawn(process.execPath, [join(here, "server.mjs"), "--no-open"], { cwd: root, detached: true, windowsHide: true, stdio: ["ignore", out, out], env: { ...process.env, SA_WAIT_PORT: "1" } }).unref();
-  setTimeout(() => process.exit(0), 300);
+  setTimeout(() => afterJobs(() => process.exit(0)), 300);
 }
+
+// ----- image hosting off the request: git pull/commit/push and the wait for the GitHub Pages link take seconds to
+// minutes, so they run in a worker thread of this process (no child Node, no window; the server keeps answering). The
+// draft's status.json image_host says pending at once; the worker records the outcome there (host-image.mjs) and the
+// window shows it on its next reload. One job per draft at a time; quit/reload wait for running jobs.
+const HOST_WORKER = new URL("data:text/javascript," + encodeURIComponent(`
+import { workerData } from "node:worker_threads";
+const { hostAfterWriteback, publish } = await import(workerData.host);
+const { findDraft, withLock, readJson, writeJson, stamp } = await import(workerData.lib);
+const { mode, result, input, id } = workerData;
+const record = (host) => {
+  const file = findDraft(id).dir + "/status.json";
+  withLock(file, () => writeJson(file, { ...readJson(file, {}), image_host: { ok: !!host.ok, at: stamp(), ...(host.url ? { url: host.url } : {}), ...(host.ok ? {} : { error: host.error || "", next: host.next || "" }) }, updated: stamp() }));
+};
+if (mode === "after") { const h = await hostAfterWriteback(result); await h?.promise; }
+else { try { record({ ok: true, ...(await publish(input)) }); } catch (e) { record({ ok: false, error: e.message, next: "node scripts/host-image.mjs publish --brand " + input.brand + " --post " + input.post }); } }
+`));
+const HOST_MODULES = { host: pathToFileURL(join(root, "scripts", "host-image.mjs")).href, lib: pathToFileURL(join(root, "scripts", "lib.mjs")).href };
+const PENDING = "Đang đưa ảnh lên và chờ link mở được; tải lại sau ít phút.";
+const hostJobs = new Map();
+const setImageHost = (id, image_host) => {
+  const file = join(findDraft(id).dir, "status.json");
+  withLock(file, () => writeJson(file, { ...readJson(file, {}), image_host: { ...image_host, at: stamp() }, updated: stamp() }));
+};
+function hostInBackground(id, data) {
+  const pending = { ok: false, pending: true, background: true, error: PENDING };
+  if (hostJobs.has(id)) return pending;
+  setImageHost(id, { ok: false, pending: true, error: PENDING });
+  const job = new Promise((done) => {
+    const w = new Worker(HOST_WORKER, { workerData: { ...HOST_MODULES, id, ...data } });
+    w.on("error", (e) => {
+      logError(`Đưa ảnh lên (${id})`, e?.stack || e);
+      try { setImageHost(id, { ok: false, error: e.message }); } catch {}
+    });
+    w.on("exit", done);
+  }).finally(() => hostJobs.delete(id));
+  hostJobs.set(id, job);
+  return pending;
+}
+// Quit/reload: running hosting jobs finish first (at most 5 minutes), so no git push is cut halfway.
+const afterJobs = (fn) => Promise.race([Promise.allSettled([...hostJobs.values()]), new Promise((r) => setTimeout(r, 5 * 60000))]).then(fn);
 
 // A page's request: a function from scripts/ that may throw; its message goes back as { error }.
 const api = async (res, fn) => { try { send(res, 200, await fn()); } catch (e) { send(res, 400, { error: e.message }); } };
@@ -187,22 +229,28 @@ async function handle(req, res) {
   });
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
-  // Approve = the same as approve.mjs approve: write-back, then the image goes to the image host (image_host).
+  // Approve = the same as approve.mjs approve: write-back in this process, then the image goes to the image host in
+  // the background (image_host pending in the answer and in status.json; the outcome lands in status.json).
   if (path === "/api/approve" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
     // No named approver: the app's user approves ("user" unless a name is sent).
     const id = draftId(b), by = String(b.by ?? "").trim() || "user";
     const r = approve({ id, by, note: String(b.note ?? "") });
-    const host = await hostAfterWriteback(r);
-    return host ? { ...r, image_host: host } : r;
+    if (!r?.brand_post?.id || r.reused) return r;
+    let h;
+    try { h = hostConfig(); } catch { return { ...r, image_host: await hostAfterWriteback(r) }; } // records the settings error; no git runs
+    if (!h.auto) return r;
+    return { ...r, image_host: hostInBackground(r.id || id, { mode: "after", result: r }) };
   });
-  // "Đưa ảnh lên": host-image.mjs publish for an approved draft's brand post (it refuses anything not approved).
+  // "Đưa ảnh lên": host-image.mjs publish for an approved draft's brand post (it refuses anything not approved), in the
+  // background like an approval: the answer says pending at once.
   if (path === "/api/host-image" && req.method === "POST") return api(res, async () => {
     const id = draftId(await body(req));
     const d = listDrafts().find((x) => x.id === id);
     if (!d) throw new Error(`Không có bản nháp ${id}.`);
     if (d.status.status !== "approved" || !d.status.brand_post?.id) throw new Error("Chỉ đưa ảnh lên cho bài đã duyệt và đã ghi vào thương hiệu.");
-    return hostImage({ brand: d.draft.brand, post: d.status.brand_post.id });
+    hostConfig(); // a settings problem is answered now, not later in the background
+    return { id, pending: true, image_host: hostInBackground(id, { mode: "publish", input: { brand: d.draft.brand, post: d.status.brand_post.id } }) };
   });
   if (path === "/api/reject" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
@@ -232,9 +280,9 @@ async function handle(req, res) {
     return;
   }
   if (path === "/api/reload" && req.method === "POST") { send(res, 200, { ok: true }); setTimeout(() => { server.close(); restart(); }, 300); return; }
-  // Nothing runs in the background here (the scheduled agent does the runs), so closing the window just stops.
+  // The scheduled agent does the runs; closing the window stops the server once any image hosting has finished.
   if (path === "/api/run") return send(res, 200, { running: false });
-  if (path === "/api/quit" && req.method === "POST") { send(res, 200, { ok: true }); setTimeout(() => process.exit(0), 200); return; }
+  if (path === "/api/quit" && req.method === "POST") { send(res, 200, { ok: true }); setTimeout(() => { server.close(); afterJobs(() => process.exit(0)); }, 200); return; }
   if (path === "/icon.svg") return sendFile(res, join(root, "icon.svg"));
   const asset = /^\/core\/assets\/([\w.-]+)$/.exec(path);
   if (asset) return CORE_ASSETS.includes(asset[1]) ? sendFile(res, join(root, "core", "assets", asset[1])) : (res.writeHead(404), res.end());
