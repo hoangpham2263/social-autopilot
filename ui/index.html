@@ -68,8 +68,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .draft { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px; }
 .thumbs { position: relative; align-self: start; }
 .thumbs img { width: 200px; height: 200px; object-fit: cover; display: block; border: 1px solid var(--line); background: var(--control); }
-.thumbs .orig { position: absolute; right: 4px; bottom: 4px; width: 72px; height: 72px; border: 2px solid #fff; outline: 1px solid var(--line); }
-.thumbs .orig img { width: 100%; height: 100%; border: 0; }
 .thumbs .none { width: 200px; height: 120px; display: grid; place-items: center; border: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
 .draft .body { display: grid; gap: 4px; align-content: start; min-width: 0; }
 .draft .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -105,6 +103,22 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .pv.ig .av { background: linear-gradient(45deg, #f9ce34, #ee2a7b, #6228d7); width: 32px; height: 32px; font-size: 13px; }
 .pv.ig .media img { aspect-ratio: 1 / 1; max-height: none; }
 .pv.ig .txt { padding: 8px 12px 10px; }
+/* Thumbnails are buttons that open the in-page lightbox (never a new window). */
+.thumb { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.thumbs .orig { position: absolute; right: 4px; bottom: 4px; width: 72px; height: 72px; border: 2px solid #fff; outline: 1px solid var(--line); }
+.thumbs .orig img { width: 100%; height: 100%; border: 0; }
+/* Overlay: lightbox (image/video, prev/next) or panel (Xem trước); closes with ✕ Đóng, Esc or a click on the backdrop. */
+.lb { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, .85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 56px 16px 16px; }
+.lb[hidden] { display: none; }
+.lb .lb-close { position: absolute; top: 12px; right: 16px; }
+.lb .lb-body { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 0; }
+.lb .lb-stage { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 0; flex: 1 1 auto; }
+.lb .lb-stage img, .lb .lb-stage video { max-width: calc(100vw - 140px); max-height: calc(100vh - 120px); object-fit: contain; background: #111; }
+.lb .lb-nav { font-size: 20px; }
+.lb .lb-cap { color: #fff; font-size: 13px; }
+.lb .lb-panel { background: var(--control); border: 1px solid var(--line); max-width: min(1100px, 100%); max-height: 100%; overflow: auto; padding: 12px; }
+.lb .lb-title { margin-bottom: 8px; }
+.pv [data-pv] { cursor: zoom-in; }
 </style>
 </head>
 <body>
@@ -123,6 +137,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <div class="toolbar">
       <div><label for="drStatus">Hiện</label><select id="drStatus">
         <option value="awaiting_approval">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Đã bỏ</option><option value="">Tất cả</option></select></div>
+      <div><label for="approver">Người duyệt</label><input id="approver" placeholder="tên của bạn" autocomplete="off"></div>
       <button class="btn" type="button" id="drReload">Tải lại</button>
     </div>
     <div class="cards" id="draftList"></div>
@@ -163,8 +178,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const getJson = (url) => fetch(url, { cache: "no-store" }).then((r) => r.json());
-  const postJson = (url, data) => fetch(url, { method: "POST", body: JSON.stringify(data) }).then((r) => r.json());
+  // Every request of the page goes through call(): GET without data, POST with it.
+  const call = (url, data) => fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", body: JSON.stringify(data) }).then((r) => r.json());
+  const getJson = (url) => call(url);
+  const postJson = (url, data) => call(url, data);
   const img = (p) => `/file?path=${encodeURIComponent(p)}`;
   const store = { get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   const offline = { error: "Mất kết nối với app." };
@@ -222,7 +239,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       </div>`;
     };
     const orphan = (m.skills_without_metricool || []).map((s) => `<div class="card todo"><h3>${esc(s.brand || s.id)} <span class="status-tag c-amber">Chưa có brand Metricool</span></h3>
-      <div class="meta">Skill ${esc(s.id)} chưa gắn với brand nào trong tài khoản Metricool (Cài đặt, Nâng cao).</div></div>`).join("");
+      <div class="meta">Skill ${esc(s.id)} chưa gắn với brand nào trong tài khoản Metricool (Cài đặt, Nâng cao).</div>
+      <div class="row-actions"><button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button></div></div>`).join("");
     $("#brandList").innerHTML = m.brands.map(mcard).join("") + orphan + (r.skipped || []).map((s) => `<div class="meta">Bỏ qua ${esc(s.dir)}: ${esc(s.reason)}</div>`).join("");
     for (const btn of $$("[data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
   }
@@ -327,8 +345,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const swap = d.image_mode === "scene-swap";
       const waiting = d.status === "awaiting_approval";
       return `<div class="card draft" data-id="${esc(d.id)}" data-brand="${esc(d.brand)}">
-        <div class="thumbs">${d.image_exists ? `<a href="${img(d.image)}" target="_blank" title="Mở ảnh lớn"><img src="${img(d.image)}" alt="Ảnh mới"></a>` : `<div class="none">Chưa có ảnh</div>`}
-          ${swap && d.reference_image ? `<a class="orig" href="${img(d.reference_image)}" target="_blank" title="Ảnh gốc của shop"><img src="${img(d.reference_image)}" alt="Ảnh gốc"></a>` : ""}</div>
+        <div class="thumbs">${d.image_exists ? `<button class="thumb" type="button" data-lb="0" title="Xem ảnh lớn"><img src="${img(d.image)}" alt="Ảnh mới"></button>` : `<div class="none">Chưa có ảnh</div>`}
+          ${swap && d.reference_image ? `<button class="thumb orig" type="button" data-lb="${d.image_exists ? 1 : 0}" title="Ảnh gốc của shop"><img src="${img(d.reference_image)}" alt="Ảnh gốc"></button>` : ""}</div>
         <div class="body">
           <div class="head"><h3>${esc(d.id)} <span class="status-tag ${STATUS_COLOR[d.status] || ""}">${esc(STATUS_TEXT[d.status] || d.status)}</span>${swap ? `<span class="status-tag">scene-swap</span>` : ""}</h3>
             <div class="acts"><button class="btn" type="button" data-act="preview">Xem trước</button>${waiting ? `<button class="btn primary" type="button" data-act="approve">Duyệt</button><button class="btn" type="button" data-act="reject">Bỏ</button>` : ""}</div></div>
@@ -340,7 +358,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           ${d.brand_post ? hostBlock(d) : ""}
           ${waiting ? `<div class="reject-box" hidden><input class="note" placeholder="Lý do bỏ"><button class="btn" type="button" data-act="reject-go">Xác nhận bỏ</button></div>` : ""}
           <div class="msg"></div>
-          <div class="previews" hidden></div>
           <details><summary>Caption (${caps.length}) và chi tiết</summary><div class="captions">${caps.map(([f, t]) => `<div class="cap"><div class="meta">${esc(f)}</div><pre>${esc(t)}</pre></div>`).join("") || `<div class="meta">Chưa có caption.</div>`}</div>
             <div class="meta">${esc((d.languages || []).join(", "))} (${esc(d.language_mode || "-")})${d.inspiration_url ? ` · <a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">bài tham khảo</a>` : ""} · ${d.metadata_clean ? `metadata đã bỏ, điểm ảnh giữ nguyên: ${d.metadata_clean.pixels_identical ? "có" : "KHÔNG"}` : "chưa làm sạch metadata"}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}${swap ? ` · ${d.logo_check ? `đã xác nhận sạch logo (${esc(d.logo_check.by)})` : "chưa xác nhận sạch logo"}` : ""}</div>
             <div class="meta">${esc(d.dir)}</div></details>
@@ -348,42 +365,84 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       </div>`;
     }).join("") : `<div class="meta">Không có bản nháp nào.</div>`;
     const byId = Object.fromEntries(r.drafts.map((d) => [d.id, d]));
-    for (const card of $("#draftList .draft")) {
-      for (const btn of $("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? togglePreview(card, byId[card.dataset.id], btn) : decide(card, btn.dataset.act));
+    for (const card of $$("#draftList .draft")) {
+      const d = byId[card.dataset.id];
+      for (const btn of $$("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? openPreview(d) : decide(card, btn.dataset.act));
+      for (const t of $$("[data-lb]", card)) t.onclick = () => openLightbox(mediaOf(d), Number(t.dataset.lb));
       const host = $("[data-host]", card);
       if (host) host.onclick = () => hostImage(card, host);
     }
   }
+  // The draft's media for the lightbox: the post's own images/videos ("Ảnh mới"), then the shop's original (scene-swap).
+  function mediaOf(d) {
+    const own = (d.preview?.media?.length ? d.preview.media : d.image_exists ? [{ type: "image", path: d.image }] : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? `Ảnh mới ${i + 1}/${all.length}` : "Ảnh mới" }));
+    return d.image_mode === "scene-swap" && d.reference_image ? [...own, { type: "image", path: d.reference_image, label: "Ảnh gốc của shop" }] : own;
+  }
+
+  // ----- Overlay: an image/video lightbox or a panel (Xem trước), always inside the app window, never a new window -----
+  const overlay = document.createElement("div");
+  overlay.className = "lb";
+  overlay.hidden = true;
+  overlay.innerHTML = `<button class="btn lb-close" type="button">✕ Đóng</button><div class="lb-body"></div>`;
+  document.body.append(overlay);
+  let lbKeys = null;
+  function closeOverlay() { overlay.hidden = true; $(".lb-body", overlay).innerHTML = ""; lbKeys = null; document.body.style.overflow = ""; }
+  function openOverlay(html, keys) {
+    $(".lb-body", overlay).innerHTML = html;
+    lbKeys = keys || null;
+    overlay.hidden = false;
+    document.body.style.overflow = "hidden";
+    $(".lb-close", overlay).focus();
+  }
+  $(".lb-close", overlay).onclick = closeOverlay;
+  overlay.addEventListener("click", (e) => { if (e.target === overlay || e.target.classList.contains("lb-body") || e.target.classList.contains("lb-stage")) closeOverlay(); });
+  document.addEventListener("keydown", (e) => {
+    if (overlay.hidden) return;
+    if (e.key === "Escape") closeOverlay();
+    else if (lbKeys && e.key === "ArrowLeft") lbKeys(-1);
+    else if (lbKeys && e.key === "ArrowRight") lbKeys(1);
+  });
+  function openLightbox(items, start = 0) {
+    if (!items.length) return;
+    let i = Math.min(Math.max(0, start), items.length - 1);
+    const draw = () => {
+      const m = items[i];
+      const media = m.type === "video" ? `<video src="${img(m.path)}" controls autoplay></video>` : `<img src="${img(m.path)}" alt="${esc(m.label)}">`;
+      openOverlay(`<div class="lb-stage">${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="-1" aria-label="Ảnh trước">‹</button>` : ""}${media}${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="1" aria-label="Ảnh sau">›</button>` : ""}</div>
+        <div class="lb-cap">${esc(m.label)}${items.length > 1 ? ` · ${i + 1}/${items.length}` : ""}</div>`, (step) => { i = (i + step + items.length) % items.length; draw(); });
+      for (const b of $$(".lb-nav", overlay)) b.onclick = (e) => { e.stopPropagation(); lbKeys(Number(b.dataset.step)); };
+    };
+    draw();
+  }
+
   // Xem trước: how the post would look on each enabled channel (Facebook feed card, Instagram post), from the server's
-  // preview data (page name, text per language_policy, media). A static mock; nothing loads from outside.
-  function togglePreview(card, d, btn) {
-    const box = $(".previews", card);
-    if (!box.hidden) { box.hidden = true; btn.textContent = "Xem trước"; return; }
+  // preview data (page name, text per language_policy, media), in the overlay panel. A static mock; nothing loads from outside.
+  function openPreview(d) {
     const p = d.preview || { posts: [], media: [] };
     const initial = esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
-    const media = (cls) => {
+    const media = () => {
       const m = (p.media || []).slice(0, 4);
       if (!m.length) return `<div class="video" style="aspect-ratio:1/1;background:#e4e6eb"></div>`;
-      return `<div class="media n${m.length} ${cls}">${m.map((x) => (x.type === "video" ? `<div class="video"></div>` : `<img src="${img(x.path)}" alt="">`)).join("")}</div>`;
+      return `<div class="media n${m.length}">${m.map((x, i) => (x.type === "video" ? `<div class="video" data-pv="${i}"></div>` : `<img src="${img(x.path)}" alt="" data-pv="${i}">`)).join("")}</div>`;
     };
-    const text = (t) => `<div class="txt clamp">${esc(t || "(chưa có caption)")}</div><button class="more" type="button">Xem thêm</button>`;
     const fb = (post, t) => `<div class="pv fb"><div class="pv-tag">Facebook${t.lang ? ` · ${esc(t.lang)}` : ""}</div>
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(p.page_name)}</b><span>Vừa xong · Công khai</span></div></div>
-      ${text(t.text)}${media("")}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
+      <div class="txt clamp">${esc(t.text || "(chưa có caption)")}</div><button class="more" type="button">Xem thêm</button>${media()}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
     const ig = (post, t) => `<div class="pv ig"><div class="pv-tag">Instagram${t.lang ? ` · ${esc(t.lang)}` : ""}</div>
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(post.account || p.page_name)}</b></div></div>
-      ${media("")}<div class="txt clamp"><b>${esc(post.account || p.page_name)}</b> ${esc(t.text || "(chưa có caption)")}</div><button class="more" type="button">Xem thêm</button></div>`;
+      ${media()}<div class="txt clamp"><b>${esc(post.account || p.page_name)}</b> ${esc(t.text || "(chưa có caption)")}</div><button class="more" type="button">Xem thêm</button></div>`;
     const cards = (p.posts || []).flatMap((post) => post.texts.map((t) => (post.network === "instagram" ? ig(post, t) : post.network === "facebook" ? fb(post, t)
       : `<div class="pv"><div class="pv-tag">${esc(post.network)} (chưa có bản xem trước)</div><div class="txt">${esc(t.text)}</div></div>`)));
-    box.innerHTML = cards.join("") || `<div class="meta">Chưa bật kênh nào.</div>`;
-    for (const more of $(".more", box)) {
+    openOverlay(`<div class="lb-panel"><div class="lb-title">Xem trước ${esc(d.id)} <span class="meta">(mô phỏng, chưa đăng)</span></div>
+      <div class="previews">${cards.join("") || `<div class="meta">Chưa bật kênh nào.</div>`}</div></div>`);
+    const box = $(".previews", overlay);
+    for (const more of $$(".more", box)) {
       const txt = more.previousElementSibling;
       // Only when the text is longer than three lines, as Facebook does.
       requestAnimationFrame(() => { if (txt.scrollHeight <= txt.clientHeight + 1) more.remove(); });
       more.onclick = () => { txt.classList.remove("clamp"); more.remove(); };
     }
-    box.hidden = false;
-    btn.textContent = "Ẩn xem trước";
+    for (const m of $$("[data-pv]", box)) m.onclick = () => openLightbox(mediaOf(d), Number(m.dataset.pv));
   }
   function hostBlock(d) {
     const u = d.brand_post?.media_url;
@@ -405,16 +464,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!b) return;
     try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Đã chép"; setTimeout(() => { b.textContent = "Chép"; }, 1500); } catch {}
   });
-  // The approver is the brand's own approval.owner (read from its skill), so there is no name to type.
-  const ownerOf = (brand) => (brandData.brands || []).find((b) => b.id === brand)?.owner || "";
   async function decide(card, act) {
     const msg = $(".msg", card), box = $(".reject-box", card);
     if (act === "reject") { box.hidden = false; $(".note", card).focus(); return; }
-    const note = $(".note", card)?.value.trim() || "";
     const id = act === "approve" ? "approve" : "reject";
+    // The reject reason is only ever sent with Bỏ, never as an approval note.
+    const note = id === "reject" ? ($(".note", card)?.value.trim() || "") : "";
     if (id === "reject" && !note) { msg.innerHTML = `<span class="bad-text">Nhập lý do bỏ.</span>`; return; }
-    let by = ownerOf(card.dataset.brand) || store.get("approver");
-    if (!by) { by = (prompt("Tên người duyệt (phải khớp approval.owner của thương hiệu):") || "").trim(); if (!by) return; store.set("approver", by); }
+    const by = $("#approver").value.trim();
+    if (!by) { msg.innerHTML = `<span class="bad-text">Nhập tên người duyệt ở trên (phải là người duyệt của thương hiệu).</span>`; $("#approver").focus(); return; }
+    store.set("approver", by);
     for (const b of $$("[data-act]", card)) b.disabled = true;
     msg.textContent = id === "approve" ? "Đang duyệt và ghi vào thương hiệu…" : "Đang bỏ…";
     const r = await postJson(`/api/${id}`, { id: card.dataset.id, by, note }).catch(() => offline);
@@ -424,6 +483,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     msg.innerHTML = id === "approve" ? `<span class="ok-text">Đã duyệt: ${esc(r.brand_post?.id)}${ce ? ` · check-post: ${ce} lỗi` : ""}${host}</span>` : `<span>Đã bỏ.</span>`;
     setTimeout(loadDrafts, 1500);
   }
+  $("#approver").value = store.get("approver");
+  $("#approver").onchange = () => store.set("approver", $("#approver").value.trim());
   $("#drStatus").value = store.get("drStatus") || "awaiting_approval";
   $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
   $("#drReload").onclick = loadDrafts;
@@ -459,7 +520,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       ${num("research.delay_seconds.0", s.research.delay_seconds[0], "Nghỉ tối thiểu (giây)")}
       ${num("research.delay_seconds.1", s.research.delay_seconds[1], "Nghỉ tối đa (giây)")}
       ${num("codex.timeout_minutes", s.codex.timeout_minutes, "Codex chờ tối đa (phút)")}
-      <div style="grid-column:1/-1" class="inline"><span class="meta">Luật duyệt:</span>${Object.entries(a).map(([k, v]) => `<label><input type="checkbox" data-s="approval.${k}"${v ? " checked" : ""}> ${esc(k)}</label>`).join("")}</div>
+      <div style="grid-column:1/-1" class="meta">Luật duyệt chỉ xem, không đổi trong app: ${Object.entries(a).map(([k, v]) => `${esc(k)}: ${v ? "có" : "không"}`).join(" · ")}</div>
       ${s.imageHost ? `<div style="grid-column:1/-1" class="inline"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> tự đưa ảnh lên ngay sau khi duyệt</label></div>` : ""}
       <details style="grid-column:1/-1"><summary>Nâng cao (đường dẫn, lệnh, brand Metricool)</summary>
         <div class="grid2"><div style="grid-column:1/-1"><label>Thư mục thương hiệu (skillsRoot)</label><input data-s="skillsRoot" value="${esc(s.skillsRoot)}"></div>
@@ -472,7 +533,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Sửa" : "Đóng"; };
   $("#settingsSave").onclick = async () => {
-    const out = { research: { delay_seconds: [] }, approval: {}, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
+    const out = { research: { delay_seconds: [] }, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
     for (const el of $$("#settingsForm [data-s]")) {
       const parts = el.dataset.s.split(".");
       const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
