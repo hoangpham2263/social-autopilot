@@ -261,6 +261,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     </div>
     <div class="fields" id="prMake" hidden>
       <div class="field"><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
+      <div class="field"><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
+      <div class="field"><label for="prStart">Start</label><select id="prStart"><option value="">Tomorrow</option><option value="today">Today (1 h ahead)</option></select></div>
     </div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
@@ -694,7 +696,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const research = isResearch(prMode);
     const publishOnly = /publish approved/i.test(prMode);
     $("#prResearch").hidden = !research;
-    $("#prMake").hidden = research || publishOnly; // Publish approved: Brand only
+    $("#prMake").hidden = research; // Create & publish and Publish approved: Posts, Time, Start
     // Sources: enabled research sources (social.json) of the chosen brand, or of every brand grouped by brand when
     // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
     const b = brands.find((x) => x.id === brand);
@@ -705,8 +707,12 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
     srcLabel();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
-    $("#prCount").placeholder = "auto";
-    $("#prCount").title = `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
+    $("#prCount").placeholder = publishOnly ? "all" : "auto";
+    $("#prCount").title = publishOnly ? "Empty = every approved post not sent yet; N = at most N per brand, oldest approved first" : `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
+    // The window's hours are in the brand's Metricool timezone (shown short, e.g. ET).
+    const tzName = (tz) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" }).formatToParts(new Date()).find((x) => x.type === "timeZoneName")?.value || tz; } catch { return tz; } };
+    const mcTz = arr(promptData.brands).find((x) => x.id === brand)?.metricool_timezone || promptData.default_tz || "America/New_York";
+    $("#prWindowLabel").textContent = `Time (${tzName(mcTz)})`;
     const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
     prBase = p ? p.text : "";
     $("#prText").value = buildPrompt();
@@ -729,9 +735,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       if (kind === "backfill") lines.push("backfill older posts (--backfill)");
       if (kind === "full") lines.push("full rescan (--full)");
     } else {
-      const count = parseInt($("#prCount").value, 10);
-      const def = 0;
-      if (count > 0 && count !== def) lines.push(`${count} posts (ideas.mjs init --count ${count})`);
+      const count = parseInt($("#prCount").value, 10), win = $("#prWindow").value, start = $("#prStart").value;
+      if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts (ideas.mjs init --count ${count})`);
+      if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
+      if (start) lines.push("start today, at least 1 hour ahead (--start today)");
     }
     return lines.length ? lines.join("; ") : "defaults";
   }
@@ -756,7 +763,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
-  for (const id of ["#prMax", "#prKind", "#prCount"]) $(id).onchange = regenerate;
+  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart"]) $(id).onchange = regenerate;
   document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
   const baseHint = $("#prMsg").textContent;
   let hint = baseHint;

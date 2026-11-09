@@ -206,7 +206,7 @@ async function handle(req, res) {
     return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, sources: b.sources || [], posts_per_week: b.posts_per_week ?? null })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], posts_per_week: b.posts_per_week ?? null })) }));
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));

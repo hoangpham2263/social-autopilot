@@ -52,3 +52,22 @@ test('Metricool best times win when there is enough data; parsed from any shape'
   // a matrix shape
   assert.deepEqual(parseBestTimes({ monday: { 9: 5, 18: 7 } }).map((x) => `${x.day} ${x.time}`), ['mon 18:00', 'mon 09:00']);
 });
+
+test('--window: the best time inside the window, else its midpoint hour; --start today: at least 1 hour ahead', () => {
+  const research = researchTimes();
+  const pick = timePicker({ brandId: 'x', network: 'Facebook', perDay: 1, audienceTz: TZ, taken: new Set(), now: NOW, best: null, research, window: 'evening' });
+  const a = pick();
+  assert.equal(a.source, 'research default in window');
+  const h = Number(a.time.slice(0, 2));
+  assert.ok(h >= 18 && h < 21, a.time);
+  assert.equal(a.time, '19:00:00', 'Tuesday evening: the table has 19:00');
+  // Wednesday's table has 18:00; a window without data: its midpoint (morning 8-11 -> 10:00 on a day with no 8-11 hour)
+  const morning = timePicker({ brandId: 'x', network: 'Facebook', perDay: 1, audienceTz: TZ, taken: new Set(), now: NOW, best: null, research: { networks: { facebook: { timezone: TZ, days: { tue: ['19:00'], wed: ['19:00'], thu: ['19:00'], fri: ['19:00'], sat: ['19:00'], sun: ['19:00'], mon: ['19:00'] } } } }, window: 'morning' });
+  assert.equal(morning().time, '10:00:00');
+  assert.throws(() => timePicker({ brandId: 'x', audienceTz: TZ, taken: new Set(), now: NOW, best: null, research, window: 'night' }), /--window/);
+  // today, now 07:00 in New York: Monday's 09:00 is >= 1 h ahead
+  const today = timePicker({ brandId: 'x', network: 'Facebook', perDay: 1, audienceTz: TZ, taken: new Set(), now: NOW, best: null, research, allowToday: true, leadMinutes: 60 });
+  const t = today();
+  assert.equal(t.date, '2026-11-09');
+  assert.ok(Number(t.time.slice(0, 2)) * 60 >= 8 * 60, t.time);
+});

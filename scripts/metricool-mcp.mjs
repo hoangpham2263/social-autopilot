@@ -2,7 +2,9 @@
 // arguments the AGENT passes to its Metricool MCP tool createScheduledPost (any agent: Claude, ChatGPT, Codex), records what Metricool
 // answered into the brand catalog, and lists sent posts so the agent can reconcile them with getScheduledPosts.
 //   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-01,POST-02] [--lang en]
-//          [--date YYYY-MM-DD --time HH:MM] [--allow-today]
+//          [--date YYYY-MM-DD --time HH:MM] [--allow-today] [--limit N] [--window morning|midday|afternoon|evening] [--start today|tomorrow]
+//        --limit N: at most N approved posts of the brand (oldest approved first); --window: only times in that window of
+//        the day (best first; no data = its midpoint hour); --start today: today too, at least 1 hour ahead.
 //   node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url>
 //          --publication <YYYY-MM-DDTHH:MM[:SS]> --tz <timezone> [--networks facebook] [--force]
 //   node scripts/metricool-mcp.mjs status --brand <id>
@@ -67,7 +69,7 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
   for (const it of plan.items) {
     const p = it.post, { date, time } = it.when;
     if (!validDate(date) || !validTime(time)) { problems.push(`${p.id}: giờ "${date} ${time}" không hợp lệ.`); continue; }
-    if (date < cur.date || (date === cur.date && (!args['allow-today'] || time <= cur.time))) { problems.push(`${p.id}: ${date} ${time} ${tz} đã qua hoặc là hôm nay (hôm nay ${cur.date} ${cur.time}); chỉ ngày mai trở đi (--allow-today cho giờ sau bây giờ).`); continue; }
+    if (date < cur.date || (date === cur.date && (!(args['allow-today'] || args.start === 'today') || time <= cur.time))) { problems.push(`${p.id}: ${date} ${time} ${tz} đã qua hoặc là hôm nay (hôm nay ${cur.date} ${cur.time}); chỉ ngày mai trở đi (--allow-today cho giờ sau bây giờ).`); continue; }
     // The brand skill's check-post.mjs must pass (no human approval step: automatic checks are the gate).
     const cp = checkPost(brand, p.id);
     if (cp?.errors) { problems.push(`${p.id}: check-post.mjs của skill báo ${cp.errors} lỗi.`); continue; }

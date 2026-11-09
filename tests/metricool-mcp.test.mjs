@@ -249,3 +249,19 @@ test('sync-brands: getBrandSettings rewrites the brand list, keeps skill links b
     assert.equal(run('sync-brands', '--from', path.join(ws, 'missing.json')).ok, false);
   } finally { fs.writeFileSync(file, before); }
 });
+
+test('payload --limit N: at most N approved posts, oldest approved first; the rest wait for the next run', () => {
+  setup({ posts: [
+    { id: 'POST-01', media_url: IMG(1), approval: { date: '2026-11-03' } },
+    { id: 'POST-02', media_url: IMG(2), approval: { date: '2026-11-01' } },
+    { id: 'POST-03', media_url: IMG(3), approval: { date: '2026-11-02' } },
+  ] });
+  const r = run('payload', '--brand', 'testbrand', '--limit', '2');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.items.map((i) => i.post).sort(), ['POST-02', 'POST-03']);
+  assert.ok(r.skipped.some((x) => x.post === 'POST-01' && /--limit 2/.test(x.reason)));
+  assert.equal(run('payload', '--brand', 'testbrand', '--limit', '0').ok, false);
+  const w = run('payload', '--brand', 'testbrand', '--window', 'evening');
+  assert.equal(w.ok, true, JSON.stringify(w));
+  assert.ok(w.items.every((i) => /in window/.test(i.time_source)), JSON.stringify(w.items.map((i) => i.time_source)));
+});

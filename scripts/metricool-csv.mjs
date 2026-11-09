@@ -330,22 +330,34 @@ export function dayTimes(day, { best, research, network }) {
   return { times: (net?.days?.[day] || []).map(hhmmss), tz: net?.timezone || '', source: 'research default' };
 }
 
-// Next free posting time (date, time in the audience timezone, and which source chose it).
-export function timePicker({ brandId, network, perDay, audienceTz, taken, allowToday, now, best = bestTimes(brandId), research = researchTimes() }) {
+// Time windows a run may ask for (--window), in the timezone of the times (Metricool's brand timezone / the table's).
+export const WINDOWS = { morning: [8, 11], midday: [11, 14], afternoon: [14, 17], evening: [18, 21] };
+// Next free posting time (date, time in the audience timezone, and which source chose it). window: only times inside
+// [from, to) hours, best first; a day without data in the window takes the window's midpoint hour (rounded).
+// leadMinutes: today's times must be at least this far ahead (--start today: 60).
+export function timePicker({ brandId, network, perDay, audienceTz, taken, allowToday, now, window = '', leadMinutes = 0, best = bestTimes(brandId), research = researchTimes() }) {
   const n = Math.max(1, perDay || 1);
+  const win = window ? WINDOWS[window] : null;
+  if (window && !win) throw new Error(`--window must be one of ${Object.keys(WINDOWS).join(', ')}.`);
   const byDate = {};
   for (const k of taken) (byDate[k.slice(0, 10)] ||= []).push(k.slice(11));
   // The timezone the times are in: Metricool's (brand timezone) or the research table's.
   const net = research.networks?.[String(network || '').toLowerCase()] || research.networks?.facebook;
   const srcTz = best && best.slots.length >= MIN_METRICOOL_SLOTS ? best.timezone : net?.timezone;
   const tz = srcTz && validTz(srcTz) ? srcTz : audienceTz;
+  const inWin = (t) => { const h = minutes(t) / 60; return h >= win[0] && h < win[1]; };
   return () => {
     for (let d = allowToday ? 0 : 1; d < 400; d++) {
       const date = addDays(nowIn(tz, now).date, d);
       const cur = nowIn(tz, now);
-      const { times, source } = dayTimes(weekday(date), { best, research, network });
+      let { times, source } = dayTimes(weekday(date), { best, research, network });
+      if (win) {
+        times = times.filter(inWin);
+        if (!times.length) times = [`${String(Math.round((win[0] + win[1]) / 2)).padStart(2, '0')}:00:00`];
+        source = `${source} in window`;
+      }
       for (const t of times) {
-        if (d === 0 && t <= cur.time) continue;
+        if (d === 0 && minutes(t) < minutes(cur.time) + leadMinutes + (leadMinutes ? 0 : 1)) continue;
         const local = tz === audienceTz ? { date, time: t } : convertZoned(date, t, tz, audienceTz);
         const used = byDate[local.date] || [];
         if (used.length >= n) break;
@@ -477,6 +489,15 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
     posts = posts.filter((p) => !isSent(p));
     for (const p of posts.filter((x) => !list(x.media_url).length && !list(x.video_url).length)) warnings.push(`${p.id}: bỏ qua, chưa có media_url/video_url.`);
     posts = posts.filter((p) => list(p.media_url).length || list(p.video_url).length);
+    // --limit N (Publish approved): at most N posts of the brand this run, oldest approved first.
+    const limit = Number(args.limit);
+    if (args.limit !== undefined && args.limit !== true && !(Number.isInteger(limit) && limit > 0)) throw new Error('--limit must be a positive whole number.');
+    if (limit > 0 && posts.length > limit) {
+      const when = (p) => String(p.approval?.date || p.approved || p.created || p.id);
+      const keep = new Set(posts.slice().sort((a, b) => when(a).localeCompare(when(b))).slice(0, limit).map((p) => p.id));
+      for (const p of posts.filter((x) => !keep.has(x.id))) skipped.push({ post: p.id, reason: `over --limit ${limit} (next run)` });
+      posts = posts.filter((p) => keep.has(p.id));
+    }
   }
   for (const s of skipped) warnings.push(`${s.post}: bỏ qua, ${s.reason}.`);
   if (problems.length) throw Object.assign(new Error(`Không xuất được: ${problems.join(' ')}`), { problems });
@@ -488,7 +509,10 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
     if (t && validDate(t.date) && validTime(t.time)) taken.add(`${t.date} ${t.time}`);
   }
   // Posting times: Metricool's best times, else the research table; posts_per_day a day. cadence.slots is ignored.
-  const nextSlot = timePicker({ brandId: brand.id, network: networks[0], perDay: postsPerDay(social.cadence), audienceTz: brand.audience_timezone, taken, allowToday: !!args['allow-today'], now });
+  // --window morning|midday|afternoon|evening and --start today|tomorrow (today: times at least 1 hour ahead).
+  const start = args.start && args.start !== true ? String(args.start) : 'tomorrow';
+  if (!['today', 'tomorrow'].includes(start)) throw new Error('--start must be today or tomorrow.');
+  const nextSlot = timePicker({ brandId: brand.id, network: networks[0], perDay: postsPerDay(social.cadence), audienceTz: brand.audience_timezone, taken, allowToday: !!args['allow-today'] || start === 'today', leadMinutes: start === 'today' ? 60 : 0, window: args.window && args.window !== true ? String(args.window) : '', now });
   const override = args.date && args.date !== true ? { date: String(args.date), time: normTime(args.time === true ? '' : args.time || '') } : null;
 
   const items = [];
