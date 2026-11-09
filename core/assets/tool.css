@@ -4,6 +4,8 @@
   --control: #f0f0f0; --ink: rgb(30, 30, 30); --muted: rgb(96, 96, 96); --line: rgb(172, 172, 172);
   --accent: rgb(40, 140, 80); --accent-dark: rgb(32, 118, 66); --surface: #fff; --hover: rgb(230, 238, 248);
   --font: "Segoe UI", "Segoe UI Web", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  /* One control size for every input, select and button (primary differs only in colour). */
+  --ctl-h: 32px; --ctl-pad: 0 12px; --ctl-border: 1px solid #8a8a8a; --ctl-font: 13.33px;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -19,15 +21,17 @@ header img { width: 32px; height: 32px; }
 h1 { font-size: 17.33px; font-weight: 400; margin: 0; }
 .muted { color: var(--muted); }
 label { display: block; color: var(--ink); margin: 12px 0 4px; }
-input, textarea, select { width: 100%; font: inherit; color: var(--ink); background: #fff; border: 1px solid #7a7a7a; border-radius: 0; padding: 4px 5px; outline: none; }
+input, textarea, select { width: 100%; font: inherit; font-size: var(--ctl-font); color: var(--ink); background: #fff; border: var(--ctl-border); border-radius: 0; padding: var(--ctl-pad); outline: none; }
+input:not([type=checkbox]):not([type=radio]), select { height: var(--ctl-h); }
+input[type=checkbox], input[type=radio] { width: auto; height: auto; padding: 0; }
 input:hover, textarea:hover, select:hover { border-color: #171717; }
 input:focus, textarea:focus, select:focus { border-color: #0078d7; }
 /* Selects match Product Review's combo: flat, with our own chevron set in from the right edge. */
-select { height: 28px; padding: 0 28px 0 6px; cursor: pointer; background: #e1e1e1 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23444' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center; border-color: #adadad; appearance: none; -webkit-appearance: none; }
+select { padding: 0 28px 0 10px; cursor: pointer; background: #e1e1e1 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23444' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center; border-color: #adadad; appearance: none; -webkit-appearance: none; }
 select:hover { background-color: #e5f1fb; border-color: #0078d7; }
 select:disabled { background-color: #cccccc; border-color: #bfbfbf; color: #838383; cursor: default; }
-textarea { resize: vertical; min-height: 110px; line-height: 1.3; }
-.btn { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 14px; font: inherit; color: #000; background: #e1e1e1; border: 1px solid #adadad; border-radius: 0; cursor: default; text-decoration: none; flex: 0 0 auto; }
+textarea { resize: vertical; min-height: 110px; line-height: 1.3; padding: 6px 10px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); padding: var(--ctl-pad); font: inherit; font-size: var(--ctl-font); line-height: 1; white-space: nowrap; color: #000; background: #e1e1e1; border: var(--ctl-border); border-radius: 0; cursor: default; text-decoration: none; flex: 0 0 auto; }
 .btn:hover { background: #e5f1fb; border-color: #0078d7; }
 .btn:active { background: #cce4f7; border-color: #005499; }
 .btn:disabled { background: #cccccc; border-color: #bfbfbf; color: #838383; }
@@ -54,7 +58,6 @@ header .config + .update { margin-left: 0; }
 .setup-status.ok .mark { color: darkgreen; }
 .setup-status.todo { border-color: #b06000; background: #fff8ef; }
 .setup-status.todo .mark { color: #b06000; }
-.setup-status .btn { height: 28px; }
 /* Cấu hình page (core/setup/page.html): Chép mã beside Codex's one-time code. */
 .copy-code { margin: 0 2px; padding: 1px 8px; font-size: 12px; min-height: 0; height: auto; }
 /* Dialog (Cập nhật), like Product Review's small windows. */
