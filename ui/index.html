@@ -262,8 +262,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     </div>
     <div class="fields" id="prMake" hidden>
       <div class="field"><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
-      <div class="field"><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
-      <div class="field"><label for="prStart">Start</label><select id="prStart"><option value="">Tomorrow</option><option value="today">Today (1 h ahead)</option></select></div>
+      <div class="field" data-publish-only><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
+      <div class="field" data-publish-only><label for="prStart">Start</label><select id="prStart"><option value="">Tomorrow</option><option value="today">Today (1 h ahead)</option></select></div>
     </div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
@@ -712,7 +712,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const research = isResearch(prMode);
     const publishOnly = /publish approved/i.test(prMode);
     $("#prResearch").hidden = !research;
-    $("#prMake").hidden = research; // Create & publish and Publish approved: Posts, Time, Start
+    $("#prMake").hidden = research; // Create & publish: Posts; Publish approved: Posts, Time, Start
+    // Time and Start belong to Publish approved only: Create & publish always schedules at Auto (best time), from tomorrow.
+    for (const el of $$("#prMake [data-publish-only]")) el.hidden = !publishOnly;
     // Sources: enabled research sources (social.json) of the chosen brand, or of every brand grouped by brand when
     // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
     const b = brands.find((x) => x.id === brand);
@@ -751,7 +753,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       if (kind === "backfill") lines.push("backfill older posts (--backfill)");
       if (kind === "full") lines.push("full rescan (--full)");
     } else {
-      const count = parseInt($("#prCount").value, 10), win = $("#prWindow").value, start = $("#prStart").value;
+      const pub = /publish approved/i.test(prMode);
+      const count = parseInt($("#prCount").value, 10), win = pub ? $("#prWindow").value : "", start = pub ? $("#prStart").value : "";
       if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts (ideas.mjs init --count ${count})`);
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today, at least 1 hour ahead (--start today)");

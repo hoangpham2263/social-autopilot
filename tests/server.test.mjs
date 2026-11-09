@@ -82,6 +82,10 @@ test('serves the page, the shell assets and the data APIs', async () => {
   const settings = await (await fetch(`${base}/api/settings`)).json();
   assert.equal(settings.settings.metricool?.default_mode, undefined); // no Metricool draft mode: always scheduled
   assert.equal(settings.settings.approval, undefined);
+  // Prompt tab: Time and Start only for Publish approved (Create & publish keeps Posts only).
+  const html = fs.readFileSync(path.join(tool, 'ui', 'index.html'), 'utf8');
+  for (const id of ['prWindow', 'prStart']) assert.match(html, new RegExp(`<div class="field" data-publish-only><label for="${id}"`), id);
+  assert.match(html, /win = pub \? \$\("#prWindow"\)\.value : ""/);
   assert.ok(settings.times.primary[0] >= 1 && settings.times.backup[0] >= 1, 'Times: primary + backup hours per day'); // Settings summary
   // The Settings form sends only Plan ahead and Auto-host images; everything else stays as saved.
   const small = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: { planning: { ahead_days: 7 }, imageHost: { auto_after_writeback: true } } }) })).json();
