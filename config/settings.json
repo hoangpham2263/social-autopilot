@@ -26,12 +26,13 @@
   "imageHost": {
     "type": "github-repo",
     "path": "C:\\hoangpq\\social-autopilot-sources",
+    "pagesBase": "https://hoangpham.is-a.dev/social-autopilot-sources",
     "rawBase": "https://raw.githubusercontent.com/hoangpham2263/social-autopilot-sources/main",
     "branch": "main",
     "remote": "origin",
     "auto_after_writeback": true,
     "verify": {
-      "attempts": 6,
+      "attempts": 18,
       "delay_seconds": 10
     }
   },

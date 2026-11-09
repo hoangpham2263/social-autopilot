@@ -191,3 +191,7 @@ Lần 2: không có banner lỗi, nút "Import 4 posts".
 - **Carousel tối đa 10 ảnh** = 10 cột Picture Url; 10 ảnh PNG ~2.5 MB mỗi ảnh không bị cảnh báo.
 - Instagram/TikTok/YouTube để false vì Grenheim chỉ kết nối Facebook.
 - Playwright: lần này tab ở trạng thái `visible` sau `bringToFront()`, menu ⋮ (toạ độ ~1313,197) click thường được, không cần hack animation. Ảnh chụp màn hình chỉ lưu được dưới `C:\Users\Admin` (rồi copy sang docs).
+
+## Video hosting (09/11/2026)
+- raw.githubusercontent.com trả `application/octet-stream` cho `.mp4`; jsDelivr trả 403 cho mp4 22 MB. Đã bật GitHub Pages cho `social-autopilot-sources` (main, root, có `.nojekyll`): `https://hoangpham.is-a.dev/social-autopilot-sources/<path>` trả `video/mp4` cho mp4, `image/png` cho ảnh, `Accept-Ranges: bytes` và 206 cho Range.
+- `host-image.mjs` dùng `imageHost.pagesBase` cho mọi link (video bắt buộc Pages, ảnh dùng raw làm dự phòng khi Pages chưa build xong) và ghi `video_url` (+ `video_thumbnail_url`) cho bài video. Mp4 vẫn đặt ở `Picture Url 1` của CSV như trước.

@@ -91,17 +91,19 @@ Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp, 
 
 `approve` tự gọi `writeback.mjs`: làm sạch lại nếu cần (remove-watermark-skill; rồi `scripts/clean-image.mjs` của skill chỉ khi `--check` chưa báo SẠCH), tạo `workspace/posts/POST-<slug>/` (image.png, `content-<lang>.txt`), thêm một mục `approved` vào `workspace/catalog.json`, rồi chạy `scripts/check-post.mjs` của skill. Ghi lỗi thì chạy lại `node scripts/writeback.mjs --id <draft>`.
 
-### Bước 5b. Host ảnh (sau khi duyệt)
+### Bước 5b. Host ảnh/video (sau khi duyệt)
 
-Metricool lấy ảnh qua link công khai, nên ảnh của bài **đã duyệt** được đẩy lên repo công khai `C:\hoangpq\social-autopilot-sources` (settings `imageHost`, `type: "github-repo"`). `approve` / `writeback` tự chạy bước này ngay sau khi ghi vào thương hiệu (`imageHost.auto_after_writeback`); kết quả nằm trong `image_host` của JSON. Chạy tay hoặc chạy lại:
+Metricool lấy ảnh/video qua link công khai, nên media của bài **đã duyệt** được đẩy lên repo công khai `C:\hoangpq\social-autopilot-sources` (settings `imageHost`, `type: "github-repo"`), phục vụ qua GitHub Pages `imageHost.pagesBase` = `https://hoangpham.is-a.dev/social-autopilot-sources` (đúng MIME `video/mp4`, `image/png`, hỗ trợ Range). `rawBase` (raw.githubusercontent.com) chỉ là dự phòng cho ảnh: raw trả `application/octet-stream` cho `.mp4` nên video không bao giờ dùng link raw. `approve` / `writeback` / app tự chạy bước này ngay sau khi ghi vào thương hiệu (`imageHost.auto_after_writeback`). Chạy tay hoặc chạy lại:
 ```
-node scripts/host-image.mjs publish --brand <id> --post POST-xx
+node scripts/host-image.mjs publish --brand <id> --post POST-xx [--video]
 ```
 - Chỉ nhận bài có trạng thái `approved`/`scheduled`/`published` trong `catalog.json` của thương hiệu; không bao giờ bản nháp hay ảnh tham khảo của đối thủ.
-- Kiểm lại ảnh không còn metadata (`image-clean` + `clean-image.mjs --check` của skill), chép vào `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "`<brand> <post-id>`", push, chờ link raw trả HTTP 200 đúng nội dung (thử lại vài lần vì GitHub raw chậm), rồi ghi `media_url` vào mục catalog của bài và chạy `check-post.mjs`.
+- Ảnh: kiểm lại không còn metadata (`image-clean` + `clean-image.mjs --check` của skill), chép vào `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "`<brand> <post-id>`", push; kiểm link raw trước (vài giây) và ghi ngay `media_url` = link raw, rồi chờ Pages (tối đa `verify.attempts` x `delay_seconds`, ~3 phút) trả 200 đúng nội dung + `image/*` thì đổi `media_url` sang link Pages. Pages chưa xong thì giữ link raw (`fallback` trong JSON); chạy lại publish sau để đổi sang Pages.
+- Video (catalog `video`, vd bài `VID-`, hoặc file `.mp4`; `--video` bắt buộc phải có): chép `<post-id>.mp4` (+ ảnh bìa `<post-id>-thumb.png` nếu bài có ảnh), chờ link Pages trả 200 + `Content-Type: video/mp4`, rồi ghi `video_url` (+ `video_thumbnail_url`). `metricool-csv.mjs` đọc các trường này.
+- Sau khi duyệt, bước host trả về nhanh (push + kiểm ngắn): ảnh có ngay link raw; phần chậm (đổi sang Pages, hoặc video) chạy nền. Mọi kết quả, kể cả lỗi (+ lệnh `next` để chạy lại), đều được ghi vào `image_host` trong `status.json` của bản nháp.
 - `image_host.ok: false` không huỷ việc duyệt: ghi lỗi vào báo cáo, chạy lại lệnh trong `image_host.next` sau vài phút.
 - Trong app: bài đã duyệt hiện link ảnh, hoặc "chưa có link" và nút "Đưa ảnh lên" (cùng lệnh publish).
-- Chỉ gỡ file sau khi bài đã đăng (Metricool không chép ảnh ngoài; bài vẫn trỏ về link raw, gỡ sớm là mất ảnh): `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`). Không gỡ ngay sau khi nhập CSV.
+- Chỉ gỡ file khi bài đã ở trạng thái `published` (Metricool không chép media ngoài; bài vẫn trỏ về link host, gỡ sớm là mất ảnh/video): `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`/`video_url`/`video_thumbnail_url`). Bài chưa `published` thì lệnh từ chối; `--force` gỡ bất chấp và in cảnh báo. Không gỡ ngay sau khi nhập CSV.
 - Chỉ đẩy file lên repo ảnh; không đăng, không gửi gì tới Metricool hay mạng xã hội.
 
 **Metricool**: chưa gửi gì; chỉ có phụ lục CSV bên dưới (người nhập thủ công). Không đăng, không hẹn giờ ở đâu.
