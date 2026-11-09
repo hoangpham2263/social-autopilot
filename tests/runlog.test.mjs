@@ -70,3 +70,13 @@ test('create: scheduled this run, to review, failed checks count as errors; agen
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test('publish (Mode 3): reported like create, without "to review"', () => {
+  spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},1100)']);
+  const r = run('add', '--mode', 'publish', '--agent', 'Codex', '--started', '2098-12-31T00:00:00Z');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.log.mode, 'publish');
+  assert.deepEqual(r.log.brands[0].create.scheduled.map((x) => x.post), ['POST-01']);
+  assert.doesNotMatch(r.log.headline, /to review/);
+  assert.equal(run('list', '--mode', 'publish').logs.length, 1);
+});

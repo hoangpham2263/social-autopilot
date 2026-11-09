@@ -96,3 +96,47 @@ TASK: Create & publish — brand: {{BRAND}} — agent: ChatGPT
 Follow the ChatGPT part of RUNBOOK.md ("Công cụ theo agent", folder {{TOOL}}). Without a pasted payload JSON below, reply only: "Creating posts needs Claude Code or Codex in the social-autopilot folder. To send approved posts to Metricool, paste the JSON of node scripts/metricool-mcp.mjs payload --brand <id>."
 With a payload: send each item with createScheduledPost exactly as given (a scheduled post, never a draft, no AI label), then reply in Vietnamese with the filled record commands.
 ```
+
+### Publish approved · Claude Code
+
+```text
+TASK: Publish approved — brand: {{BRAND}} — agent: Claude Code
+OPTIONS: {{OPTIONS}}
+TOOL: {{TOOL}}
+{{SKILLS}}
+STEPS (follow RUNBOOK.md Mode 3; do them in order, do not skip):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; node scripts/brands.mjs.
+2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
+3. 2.1 Schedule every approved post not yet sent at the best times (payload → createScheduledPost → record).
+4. 2.2 Reconcile sent posts (status → getScheduledPosts); 2.8 report data: node scripts/queue.mjs.
+5. 3.1 Write the run log: node scripts/runlog.mjs add --mode publish --agent "Claude Code".
+6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
+STOP IF: a Metricool tool error (record nothing for that post).
+NEVER: make ideas or posts, open a browser, approve posts, make Metricool drafts, set posting times by hand, use another blogId.
+```
+
+### Publish approved · Codex
+
+```text
+TASK: Publish approved — brand: {{BRAND}} — agent: Codex
+OPTIONS: {{OPTIONS}}
+TOOL: {{TOOL}}
+{{SKILLS}}
+STEPS (follow RUNBOOK.md Mode 3; do them in order, do not skip):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; check the Metricool MCP tools; node scripts/brands.mjs.
+2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
+3. 2.1 Schedule every approved post not yet sent at the best times (payload → createScheduledPost → record).
+4. 2.2 Reconcile sent posts (status → getScheduledPosts); 2.8 report data: node scripts/queue.mjs.
+5. 3.1 Write the run log: node scripts/runlog.mjs add --mode publish --agent "Codex".
+6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
+STOP IF: no Metricool MCP tools (tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool).
+NEVER: make ideas or posts, open a browser, approve posts, make Metricool drafts, set posting times by hand, use another blogId.
+```
+
+### Publish approved · ChatGPT
+
+```text
+TASK: Publish approved — brand: {{BRAND}} — agent: ChatGPT
+Follow the ChatGPT part of RUNBOOK.md ("Công cụ theo agent", folder {{TOOL}}). Without a pasted payload JSON below, reply only: "To send approved posts to Metricool, paste the JSON of node scripts/metricool-mcp.mjs payload --brand <id>."
+With a payload: send each item with createScheduledPost exactly as given (a scheduled post, never a draft, no AI label), then reply in Vietnamese with the filled record commands.
+```

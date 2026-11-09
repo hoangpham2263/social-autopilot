@@ -183,6 +183,18 @@ Tool tự lấy số liệu (bài đã hẹn giờ ở lượt này, bài mới 
 - **Lỗi:** bài lỗi Metricool, bài bị chặn, bài không qua kiểm tra, kèm lý do.
 - **Khác:** brand Metricool mới/mất (2.0), bài đã đăng, kho còn bao nhiêu bài Unused.
 
+## Mode 3. Publish approved
+
+Chỉ gửi lên Metricool các bài người dùng đã **Approve** mà chưa gửi. Không làm ý, không tạo bài, không mở trình duyệt. Dùng lại đúng các bước của Mode 2, không lặp lại ở đây:
+- Setup (như mọi lượt), rồi **2.0** (đồng bộ brand và giờ đăng tốt nhất), **2.1** (hẹn giờ thật mọi bài đã duyệt chưa gửi), **2.2** (đối chiếu), **2.8** (số liệu: `node scripts/queue.mjs`).
+
+3.1. Ghi nhật ký lượt chạy: như 2.9 nhưng `--mode publish`:
+```
+node scripts/runlog.mjs add --mode publish --agent "<Claude Code|Codex>"
+```
+
+3.2. Báo cáo cho người dùng, tiếng Việt, **luôn đúng các mục**: **Kết quả chung** (N bài đã hẹn giờ · N lỗi), **Đã hẹn giờ** (POST-xx · giờ đăng · plannerUrl), **Lỗi** (bài lỗi Metricool hoặc bị chặn, kèm lý do), **Khác** (brand Metricool mới/mất, bài đã đăng). Nhắc: bài chờ duyệt (To review) vẫn nằm ở tab **Posts**.
+
 ## Phụ lục: ảnh/video host
 
 `host-image.mjs` (gọi tự động khi Approve) chép ảnh sạch của bài đã duyệt vào clone của repo **công khai** `social-autopilot-sources` (`settings.imageHost.path`, mặc định `../social-autopilot-sources`), đường dẫn `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "<brand> <post-id>", push, chờ HTTP 200, ghi `media_url` dạng link raw GitHub:

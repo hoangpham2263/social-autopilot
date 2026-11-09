@@ -14,7 +14,7 @@ import { researchReport } from './research.mjs';
 import { writtenPost } from './queue.mjs';
 
 export const runsDir = () => path.join(workspace, 'logs', 'runs');
-const MODES = ['research', 'create'];
+const MODES = ['research', 'create', 'publish']; // publish = Mode 3, Publish approved (reported like create)
 // A source that brought nothing new in this many research runs in a row is "dried up" (consider new sources).
 export const DRIED_UP_RUNS = 3;
 
@@ -73,7 +73,7 @@ function lastEnded(mode) {
 }
 
 export function addLog({ mode, agent = '', brands = [], started = '', notes = '', extra = {}, now = new Date() }) {
-  if (!MODES.includes(mode)) throw new Error('--mode must be research or create.');
+  if (!MODES.includes(mode)) throw new Error('--mode must be research, create or publish.');
   const all = discoverBrands().brands.filter((b) => b.usable || brands.includes(b.id));
   const pick = brands.length ? all.filter((b) => brands.includes(b.id)) : all;
   const since = started || lastEnded(mode);
@@ -93,7 +93,10 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
     ? [`+${plural(sum((b) => b.research.new || 0), 'post')}`, sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length) && `${plural(sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length), 'source')} dried up`, sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length) && `${sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length)} blocked`].filter(Boolean).join(' · ')
     : [`${sum((b) => b.create.scheduled.length)} scheduled`, `${sum((b) => b.create.to_review.length)} to review`, (errors.length + sum((b) => b.errors.length + b.create.errors.length + b.create.failed.length)) && plural(errors.length + sum((b) => b.errors.length + b.create.errors.length + b.create.failed.length), 'error')].filter(Boolean).join(' · ');
   const id = `${ended.replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}-${mode}`;
-  const log = { id, mode, agent: String(agent || ''), started: since, ended, duration_s: Math.max(0, Math.round((Date.parse(ended) - Date.parse(since)) / 1000)), result, headline, notes: String(notes || extra.notes || ''), errors, brands: per };
+  // Publish approved makes no posts: its headlines leave out "to review".
+  if (mode === 'publish') for (const x of per) x.headline = x.headline.replace(/ · \d+ to review/, '');
+  const cleanHead = mode === 'publish' ? headline.replace(/ · \d+ to review/, '') : headline;
+  const log = { id, mode, agent: String(agent || ''), started: since, ended, duration_s: Math.max(0, Math.round((Date.parse(ended) - Date.parse(since)) / 1000)), result, headline: cleanHead, notes: String(notes || extra.notes || ''), errors, brands: per };
   writeJson(path.join(runsDir(), `${id}.json`), log);
   return log;
 }

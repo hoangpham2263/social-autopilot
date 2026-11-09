@@ -692,8 +692,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const brand = $("#prBrand").value || "";
     $("#prBrand").innerHTML = `<option value="">All</option>` + az(brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
     const research = isResearch(prMode);
+    const publishOnly = /publish approved/i.test(prMode);
     $("#prResearch").hidden = !research;
-    $("#prMake").hidden = research;
+    $("#prMake").hidden = research || publishOnly; // Publish approved: Brand only
     // Sources: enabled research sources (social.json) of the chosen brand, or of every brand grouped by brand when
     // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
     const b = brands.find((x) => x.id === brand);
@@ -766,7 +767,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   };
 
   // ----- Log: every agent run (scripts/runlog.mjs), newest first; a click opens the per-brand / per-source detail -----
-  const MODE_TEXT = { research: "Research", create: "Create & publish" };
+  const MODE_TEXT = { research: "Research", create: "Create & publish", publish: "Publish" };
   const SRC_STATE = { "new posts": "", "dried up": "dry", "reached end": "", blocked: "bad-text", error: "bad-text", unfinished: "warn-text" };
   let lgMode = store.get("lgMode") || "", dryRuns = 3;
   const when = (t) => (t ? new Date(t).toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-");
@@ -778,7 +779,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
     $("#lgBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
     setDisabled($("#lgBrand"), arr(brandData.brands).length < 2, "Only one brand");
-    $("#lgMode").innerHTML = [["", "All"], ["research", "Research"], ["create", "Create & publish"]].map(([v, t]) => `<button class="btn" type="button" data-mode="${v}" aria-pressed="${v === lgMode}">${t}</button>`).join("");
+    $("#lgMode").innerHTML = [["", "All"], ["research", "Research"], ["create", "Create & publish"], ["publish", "Publish"]].map(([v, t]) => `<button class="btn" type="button" data-mode="${v}" aria-pressed="${v === lgMode}">${t}</button>`).join("");
     for (const b of $$("#lgMode button")) b.onclick = () => { lgMode = b.dataset.mode; store.set("lgMode", lgMode); loadLogs(); };
     const logs = arr(r.logs);
     $("#lgList").innerHTML = logs.map((l, i) => `<div class="log-row" data-i="${i}" tabindex="0">
