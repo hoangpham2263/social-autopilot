@@ -10,6 +10,8 @@ Trạng thái người dùng thấy: **To review** (chờ duyệt) / **Queued** 
 
 ## Rules for every run
 
+- Mỗi lượt (cả hai chế độ, mọi agent) theo đúng các bước đánh số của chế độ đó, không bỏ bước; **bước gần cuối luôn là ghi nhật ký** (`scripts/runlog.mjs`, 1.6 / 2.9), **bước cuối là báo cáo** với các mục cố định (1.7 / 2.10).
+
 - Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`), **lần lượt từng thương hiệu**, không song song. "all usable brands" = mọi thương hiệu usable.
 - Skill không bao giờ được chép vào tool. Mỗi brand Metricool trỏ tới một thư mục skill (`skill_path` trong `workspace/metricool-brands.json`); tool đọc/ghi thẳng trong thư mục đó. Mọi dữ kiện riêng của thương hiệu đọc từ skill (`SKILL.md`, `project/project.md`, `project/social.json`). Không hard-code thương hiệu, không trộn nguồn hay kho giữa thương hiệu.
 - Brand chỉ được làm và gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill, hoặc `removed: true` (đã mất khỏi tài khoản) trong `workspace/metricool-brands.json`, thì **không bao giờ**. Không dùng blogId khác `args.blogId` của payload; không `createScheduledPostForReview`.
@@ -58,7 +60,7 @@ Cần trình duyệt đã đăng nhập Facebook (Playwright MCP + extension tro
 node scripts/research.mjs start --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full | --backfill]
 ```
 - Mặc định: lần đầu lấy **hết** bài (cuộn tới hết trang); lần sau chỉ lấy bài mới ở đầu trang (dừng sau 3 bài liên tiếp đã có trong kho).
-- `--since` / `--max-posts`: giới hạn khi người dùng chọn.
+- `--since`: giới hạn khi người dùng chọn. `--max-posts N`: **tối đa N bài mới cho cả thương hiệu** trong lượt (không phải mỗi nguồn), chia đều cho các nguồn: mỗi nguồn được `ceil(còn lại / số nguồn chưa ingest)` (có trong `stop_rule`); nguồn cạn thì phần còn lại chuyển sang nguồn sau (`ingest` trả `next_source_share`). Brand = tất cả: mỗi thương hiệu được N.
 - `--backfill`: lấy dần các bài **cũ hơn** bài cũ nhất đã có (`oldest_seen`): cuộn nhanh qua bài đã có (không mở), bắt đầu lấy khi đã qua `oldest_seen`, tới hết trang / `--since` / `--max-posts`; nguồn đã `reached_end` thì bỏ qua (`run.skipped`).
 - `--full`: cuộn hết dù đã có (chậm).
 - Tiến độ từng nguồn: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen`, `reached_end`, `last_run`). Mỗi source trong `run.sources` có `stop_rule` và `known_file` (`known.json`: link bài của nguồn + mọi link/mã bài Facebook đã có trong kho: `brand_post_urls`, `brand_post_ids`).
@@ -77,11 +79,22 @@ node scripts/research.mjs result --brand <id> --source <sid> --state end|known|s
 ```
 Lượt `--backfill` không dùng `known`. `end` ghi `reached_end`. Gặp checkpoint, captcha, yêu cầu đăng nhập, "tạm thời bị chặn": dừng ngay, `--state blocked --note "<lý do>"`, không mở thêm source nào.
 
-1.5. Báo cáo:
+1.5. Số liệu báo cáo:
 ```
 node scripts/research.mjs report --brand <id>
 ```
-Báo người dùng: từng nguồn bài mới (`new_on_top`), bài cũ lấy thêm (`backfilled`), đã tới hết trang chưa (`reached_end_text`; còn bài cũ thì nhắc chạy `--backfill`), bài trùng bỏ qua, nguồn bị chặn, nguồn bỏ qua (`skipped`), tổng kho (mới/đã dùng/đã bỏ). Người dùng xem kho ở tab **Library**.
+
+1.6. Ghi nhật ký lượt chạy (bước gần cuối của mọi lượt):
+```
+node scripts/runlog.mjs add --mode research --agent "<Claude Code|Codex>" [--started <giờ bắt đầu ISO>] [--file <ghi chú.json>]
+```
+Tool tự lấy số liệu (từng nguồn: bài mới, trạng thái New posts / Dried up / Blocked / Error) và ghi `workspace/logs/runs/<thời điểm>-research.json`; người dùng xem ở tab **Log**. Agent chỉ thêm ghi chú/lỗi bằng file JSON `{ "notes": "...", "errors": ["..."], "brands": { "<id>": { "notes": "...", "errors": ["..."] } } }`.
+
+1.7. Báo cáo cho người dùng, tiếng Việt, **luôn đúng các mục sau** (giống tab Log):
+- **Kết quả chung:** +N bài mới, số nguồn cạn (Dried up), số nguồn bị chặn.
+- **Theo thương hiệu:** từng nguồn: bài mới · trạng thái (New posts / Dried up / Blocked / Error).
+- **Cần làm:** nguồn bị chặn (lý do), nguồn cạn nhiều lượt liền (gợi ý thêm nguồn mới), còn bài cũ thì nhắc `--backfill`.
+- **Kho:** tổng (Unused / Used / Dropped); xem ở tab **Library**.
 
 Không làm ý, không tạo bài, không gửi Metricool trong chế độ này.
 
@@ -146,11 +159,23 @@ Kiểm: ảnh sạch metadata (điểm ảnh không đổi), đủ caption từn
 
 2.7. **Dừng ở To review.** Agent không duyệt, không ghi vào skill, không host ảnh, không gửi bài mới này. Người dùng xem trong app (tab **Posts** → Preview): **Approve** chạy `node scripts/finalize.mjs approve --id <draft>` (kiểm lại lần nữa, ghi `workspace/posts/POST-<slug>/` + mục `approved` trong `catalog.json` của skill, chạy `check-post.mjs`, host ảnh → `media_url`); không qua → `check_failed` + lý do. **Drop** = `node scripts/finalize.mjs cancel --id <draft> [--note ".."]`. Host lỗi không huỷ bài: chạy lại `node scripts/host-image.mjs publish --brand <id> --post POST-xx` (có trong `image_host.next`). Lượt Create & publish sau gửi bài đã duyệt ở bước 2.1.
 
-2.8. Báo cáo:
+2.8. Số liệu báo cáo:
 ```
 node scripts/queue.mjs
 ```
-Báo người dùng từng thương hiệu: brand Metricool mới/mất (2.0), bài đã hẹn giờ ở lượt này (POST-xx, giờ, plannerUrl), bài lỗi Metricool và lý do, bài đã đăng, bài mới chờ duyệt (ảnh, caption EN nguyên văn, bản VN ghi rõ "chỉ để đọc, không đăng"), bài bị chặn và lý do, kho còn bao nhiêu bài `new`. Nhắc mở app, tab **Posts**, để duyệt bài To review.
+
+2.9. Ghi nhật ký lượt chạy (bước gần cuối của mọi lượt):
+```
+node scripts/runlog.mjs add --mode create --agent "<Claude Code|Codex>" [--started <giờ bắt đầu ISO>] [--file <ghi chú.json>]
+```
+Tool tự lấy số liệu (bài đã hẹn giờ ở lượt này, bài mới chờ duyệt, bài lỗi) và ghi `workspace/logs/runs/<thời điểm>-create.json`; người dùng xem ở tab **Log**. Agent chỉ thêm ghi chú/lỗi bằng file JSON `{ "notes": "...", "errors": ["..."], "brands": { "<id>": { "notes": "...", "errors": ["..."] } } }`.
+
+2.10. Báo cáo cho người dùng, tiếng Việt, **luôn đúng các mục sau** (giống tab Log):
+- **Kết quả chung:** N bài đã hẹn giờ · N bài chờ duyệt · N lỗi.
+- **Đã hẹn giờ:** POST-xx · giờ đăng (múi giờ brand) · plannerUrl.
+- **Chờ duyệt (To review):** từng bài: caption EN nguyên văn, bản VN ghi rõ "chỉ để đọc, không đăng". Nhắc mở tab **Posts** để Approve/Drop.
+- **Lỗi:** bài lỗi Metricool, bài bị chặn, bài không qua kiểm tra, kèm lý do.
+- **Khác:** brand Metricool mới/mất (2.0), bài đã đăng, kho còn bao nhiêu bài Unused.
 
 ## Phụ lục: ảnh/video host
 

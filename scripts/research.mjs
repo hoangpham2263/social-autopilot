@@ -3,6 +3,8 @@
 // (docs/research.md), this script opens the crawl, tells the agent where to stop, ingests what it saved into the brand's
 // STORE (workspace/store/<brand>/, scripts/store.mjs) and reports. No ideas or drafts in this mode.
 //   node scripts/research.mjs start  --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full | --backfill]
+//        --max-posts N = at most N new posts for the BRAND in this run, shared evenly by its sources: each source gets
+//        ceil(left / sources not yet ingested); a source that runs dry leaves its share to the next ones.
 //        open (or reopen) today's crawl; writes <source>/known.json (posts already in the store) and each source's stop rule.
 //        Default: only new posts on top (stop after 3 known in a row). --backfill: the OLDER posts not crawled yet (the
 //        first crawl was cut by --max-posts/--since or stopped early): scroll fast past known posts without opening them,
@@ -25,19 +27,20 @@ import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, 
 
 const logFile = () => path.join(workspace, 'research-log.json');
 const readLog = () => { const l = readJson(logFile(), {}); return { runs: l.runs || [], collected: l.collected || {} }; };
-export const STATES = { end: 'cuộn tới hết trang', known: 'dừng ở bài đã có trong kho', since: 'tới mốc --since', limit: 'đủ --max-posts', blocked: 'bị chặn (checkpoint/captcha/đăng nhập)', partial: 'dừng giữa chừng' };
+export const STATES = { end: 'cuộn tới hết trang', known: 'dừng ở bài đã có trong kho', since: 'tới mốc --since', limit: 'đủ phần --max-posts của nguồn', blocked: 'bị chặn (checkpoint/captcha/đăng nhập)', partial: 'dừng giữa chừng' };
 
 export const crawlMode = (mode = {}) => (mode.backfill ? 'backfill' : mode.full ? 'full' : 'new');
 const seenText = (p) => (p ? [p.date || 'không rõ ngày', p.post_id ? `mã ${p.post_id}` : '', p.post_url || ''].filter(Boolean).join(', ') : 'không rõ');
 
 // Where the crawling agent stops on a source (docs/research.md, "Khi nào dừng").
-export function stopRule(mode, known) {
+// share: this source's part of the brand's --max-posts (start: the even split; ingest gives the exact remainder).
+export function stopRule(mode, known, share = 0) {
   const rules = [];
   if (mode.backfill && known.count) rules.push(`backfill: cuộn NHANH qua các bài đã có trong known.json (không mở, không tải, chỉ đối chiếu link/mã), bắt đầu lấy khi đã qua bài cũ nhất trong kho (oldest_seen: ${seenText(known.oldest_seen)}); từ đó lấy mọi bài chưa có, cuộn tới hết trang`);
   else if (mode.full || !known.count) rules.push(known.count ? 'cuộn tới hết trang (--full: không dừng ở bài đã có; bài đã có vẫn bị bỏ khi ingest)' : 'kho chưa có bài của nguồn này: cuộn tới hết trang');
   else rules.push(`dừng khi gặp 3 bài liên tiếp đã có trong known.json (bài ghim đầu trang có thể cũ: bỏ qua, đi tiếp); bài mới nhất trong kho: ${known.newest_posted_date || 'không rõ ngày'}`);
   if (mode.since) rules.push(`dừng khi tới bài đăng trước ${mode.since}`);
-  if (mode.max_posts) rules.push(`dừng sau ${mode.max_posts} bài mới`);
+  if (mode.max_posts) rules.push(`dừng sau ${share || mode.max_posts} bài mới (phần của nguồn này trong tối đa ${mode.max_posts} bài mới cho cả thương hiệu)`);
   return rules.join('; ');
 }
 
@@ -85,7 +88,7 @@ function start(args, s) {
       writeJson(knownFile, { brand: brand.id, source: x.id, written: stamp(), ...known });
       return { ...x, dir: sdir, raw_file: path.join(sdir, 'raw.json'), downloads: path.join(sdir, 'raw'), known_file: knownFile, known_count: known.count,
         reached_end_before: !!progress[x.id]?.reached_end, newest_seen: known.newest_seen, oldest_seen: known.oldest_seen,
-        stop_rule: stopRule(mode, known), result: null, new: 0, new_on_top: 0, backfilled: 0, duplicates: 0 }; // each start is a new crawl of the source
+        stop_rule: stopRule(mode, known, mode.max_posts ? Math.ceil(mode.max_posts / crawl.length) : 0), result: null, new: 0, new_on_top: 0, backfilled: 0, duplicates: 0 }; // each start is a new crawl of the source
     }),
   };
   delete run.budget;
@@ -177,18 +180,24 @@ function ingest(args) {
       if (!good.length) { dropped.push({ post_url: p.post_url || '', image: [].concat(p.images || p.image || []).join(', '), reason: checked[0]?.bad || 'không có file ảnh' }); continue; }
       posts.push({ ...p, images: good });
     }
-    const left = mode.max_posts ? Math.max(0, mode.max_posts - (src.new || 0)) : 0;
+    // Brand-level cap shared fairly: what is left for the brand, split over this source and the sources not ingested yet.
+    const brandNew = run.sources.reduce((a, x) => a + (x.new || 0), 0);
+    const waiting = run.sources.filter((x) => x === src || !x.ingested).length || 1;
+    const left = mode.max_posts ? Math.min(Math.max(0, mode.max_posts - brandNew), Math.ceil(Math.max(0, mode.max_posts - brandNew) / waiting)) : 0;
     const r = mode.max_posts && !left
       ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0 }
       : addPosts(brand.id, src, posts, { run: run.date, since: mode.since || '', limit: left });
     src.new = (src.new || 0) + r.added.length;
+    src.ingested = true;
     if (mode.backfill) src.backfilled = (src.backfilled || 0) + r.added.length; else src.new_on_top = (src.new_on_top || 0) + r.added.length;
     src.duplicates = (src.duplicates || 0) + r.duplicates.length;
     day[`${brand.id}/${src.id}`] = (day[`${brand.id}/${src.id}`] || 0) + r.added.length;
     const entry = { at: stamp(), raw_posts: raw.length, added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
     const logPath = path.join(src.dir, 'ingest.json');
     writeJson(logPath, { source: src.id, ingests: [...(readJson(logPath, { ingests: [] }).ingests || []), entry] });
-    report.push({ source: src.id, added: r.added.length, new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}) });
+    report.push({ source: src.id, added: r.added.length, new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}),
+      // --max-posts: what is left for the brand and the next source's share (a dry source leaves its share to the others).
+      ...(mode.max_posts ? (() => { const used = run.sources.reduce((a, x) => a + (x.new || 0), 0), rest = run.sources.filter((x) => !x.ingested).length; return { brand_posts_left: Math.max(0, mode.max_posts - used), next_source_share: rest ? Math.ceil(Math.max(0, mode.max_posts - used) / rest) : 0 }; })() : {}) });
   }
   writeJson(logFile(), log);
   Object.assign(run, { ingested: stamp() });

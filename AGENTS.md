@@ -5,6 +5,7 @@ File này là luật chung cho **mọi agent** (Claude Code đọc qua `CLAUDE.m
 ## Hai chế độ
 1. **Research only** (chạy riêng, vd mỗi tuần; cần Chrome đã đăng nhập Facebook qua Playwright MCP): mỗi nguồn bật của thương hiệu → crawl (mặc định hết bài; `--since` / `--max-posts` / `--backfill` / `--full`) → `research.mjs ingest` vào kho `workspace/store/<brand>/`, bỏ trùng → `result` → `report`. Không làm ý/bài.
 2. **Create & publish** (khi người dùng bảo; không mở Facebook): `getBrandSettings` → `metricool-mcp.mjs sync-brands` → gửi bài **đã duyệt** chưa gửi thành bài **hẹn giờ thật** (`payload` → `createScheduledPost` → `record`; không bao giờ nháp) → đối chiếu (`status` → `getScheduledPosts`) → `ideas.mjs` → `draft.mjs new/image` → caption → `draft.mjs check` (`ready` = **To review**) → **dừng** → báo cáo. Người dùng duyệt trong app (Approve = `finalize.mjs approve --id <draft>`: ghi vào skill + host ảnh); lượt sau hẹn giờ các bài đó.
+3. **Nhật ký lượt chạy** (cả hai chế độ, mọi agent): bước gần cuối luôn là `node scripts/runlog.mjs add --mode research|create --agent "<agent>"` (RUNBOOK 1.6 / 2.9), rồi báo cáo với các mục cố định (1.7 / 2.10). Người dùng xem ở tab **Log**.
 
 Trạng thái người dùng thấy: **To review** / **Queued** / **Posted**; bài lỗi có dấu đỏ.
 

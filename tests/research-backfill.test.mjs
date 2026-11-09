@@ -25,7 +25,8 @@ test('stopRule and backfillSkip', () => {
   const rule = stopRule({ backfill: true, max_posts: 20 }, known);
   assert.match(rule, /cuộn NHANH/);
   assert.match(rule, /2026-11-01, mã 50000001/);
-  assert.match(rule, /20 bài mới/);
+  assert.match(rule, /dừng sau 20 bài mới/);
+  assert.match(stopRule({ max_posts: 20 }, known, 7), /dừng sau 7 bài mới \(phần của nguồn này trong tối đa 20 bài mới cho cả thương hiệu\)/);
   assert.doesNotMatch(rule, /3 bài liên tiếp/);
   assert.match(stopRule({ backfill: true }, { count: 0 }), /kho chưa có bài/);
   assert.equal(backfillSkip({}, known, { reached_end: true }), '');

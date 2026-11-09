@@ -32,7 +32,7 @@ export function writtenPost(d) {
     media_url: media.length ? (media.length === 1 ? media[0] : media) : null,
     image_link: media.length ? media.join(', ') : host?.pending ? 'đang đưa ảnh lên' : 'chưa có link',
     ...(!media.length && !host?.pending ? { host_error: host && !host.ok ? host.error || 'lỗi không rõ' : (entry ? 'chưa đưa ảnh lên repo ảnh' : 'không thấy bài trong catalog'), next: host?.next || `node scripts/host-image.mjs publish --brand ${d.draft.brand} --post ${bp.id}` } : {}),
-    metricool: mc.state, metricool_sent: mc.sent.map(({ network, draft, publication, timezone, planner_url, id }) => ({ network, draft, publication, timezone, planner_url, id })),
+    metricool: mc.state, metricool_sent: mc.sent.map(({ network, draft, publication, timezone, planner_url, id, sent_at }) => ({ network, draft, publication, timezone, planner_url, id, sent_at })),
   };
 }
 

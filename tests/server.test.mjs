@@ -68,7 +68,10 @@ test('serves the page, the shell assets and the data APIs', async () => {
   const modes = [...new Set(pr.prompts.map((p) => p.mode))];
   assert.deepEqual(modes, ['Research only', 'Create & publish']);
   for (const m of modes) assert.deepEqual(pr.prompts.filter((p) => p.mode === m).map((p) => p.agent), ['Claude Code', 'Codex', 'ChatGPT'], m);
-  assert.ok(pr.prompts.every((p) => p.text.includes('{{BRAND}}') && p.text.split(String.fromCharCode(10)).length <= 10), 'every prompt is short and has the brand slot');
+  assert.ok(pr.prompts.every((p) => p.text.includes('{{BRAND}}') && p.text.split(String.fromCharCode(10)).length <= 15), 'every prompt is short and has the brand slot');
+  // One fixed template: TASK, OPTIONS, numbered STEPS ending with the run log and the report, STOP IF, NEVER.
+  const shape = (t) => { const l = t.split('\n'); return /^TASK: /.test(l[0]) && /^OPTIONS: /.test(l[1]) && /^STEPS /.test(l[2]) && l.some((x) => /^\d+\. .*runlog\.mjs add/.test(x)) && /^STOP IF: /.test(l.at(-2)) && /^NEVER: /.test(l.at(-1)); };
+  assert.ok(pr.prompts.filter((p) => p.agent !== 'ChatGPT').every((p) => shape(p.text)), 'one fixed template');
   assert.ok(pr.prompts.filter((p) => p.agent !== 'ChatGPT').every((p) => p.text.includes('{{OPTIONS}}') && /RUNBOOK.md Mode [12]/.test(p.text)), 'prompts point to the RUNBOOK');
   assert.ok(pr.all_brands);
   assert.ok(Array.isArray((await (await fetch(`${base}/api/queue`)).json()).brands));

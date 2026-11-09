@@ -2,61 +2,89 @@
 
 The only source of the prompts: the app (**Prompt** tab) and `node scripts/prompts.mjs show --mode "<mode>" --agent "<agent>" [--brand <id>]` read this file. Each prompt is a `### <mode> · <agent>` heading with a `text` block. Placeholders: `{{TOOL}}` = this tool's folder on the machine, `{{BRAND}}` = a brand id (example: `dreamyvows`) or "all usable brands", `{{OPTIONS}}` = this run's options (or "defaults").
 
-Prompts are SHORT on purpose (5-10 lines): mode, brand(s), options, which agent tools, and "follow RUNBOOK.md Mode N". Every step, rule and report format lives in `RUNBOOK.md` (Mode 1 / Mode 2, "Rules for every run", "Công cụ theo agent") and `AGENTS.md`. Change a step in the RUNBOOK, not here.
+Every prompt follows ONE fixed template, so every run is the same: `TASK`, `OPTIONS`, `STEPS` (numbered, one line each, mapping 1:1 to the RUNBOOK.md step numbers of the mode), `STOP IF`, `NEVER`. At most 15 lines. The detail of each step, the rules and the report format live in `RUNBOOK.md`; change a step there and keep the line here in sync. The last two steps of every run are always: write the run log (`scripts/runlog.mjs`), then the report to the user with the fixed headings.
 
 ### Research only · Claude Code
 
 ```text
-Mode: RESEARCH ONLY. Brand: {{BRAND}}.
-Options: {{OPTIONS}}
-Folder: {{TOOL}}. Follow RUNBOOK.md Mode 1 exactly (with AGENTS.md, docs/research.md and "Rules for every run").
-Browser: Playwright MCP on the Chrome signed into Facebook. Stop at any checkpoint, captcha or login prompt.
-No ideas, no posts, nothing sent to Metricool. Report to me in Vietnamese as RUNBOOK 1.5 says.
+TASK: Research only — brand: {{BRAND}} — agent: Claude Code
+OPTIONS: {{OPTIONS}}
+STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; node scripts/brands.mjs.
+2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
+3. 1.2 Crawl each source with Playwright MCP (the Chrome signed into Facebook), as docs/research.md says.
+4. 1.3 Ingest + 1.4 record how each source ended (research.mjs ingest, research.mjs result).
+5. 1.5 Report data: node scripts/research.mjs report.
+6. 1.6 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code".
+7. 1.7 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.7.
+STOP IF: checkpoint, captcha or login prompt (record "blocked", open no other source).
+NEVER: make ideas or posts, send anything to Metricool, sign in for me, store cookies.
 ```
 
 ### Research only · Codex
 
 ```text
-Mode: RESEARCH ONLY. Brand: {{BRAND}}.
-Options: {{OPTIONS}}
-Folder: {{TOOL}}. Follow AGENTS.md and RUNBOOK.md Mode 1 exactly (with docs/research.md and "Rules for every run").
-First check you have a browser MCP (Playwright on the Chrome signed into Facebook); if not, stop and tell me how to add it (RUNBOOK, "Công cụ theo agent").
-No ideas, no posts, nothing sent to Metricool. Report to me in Vietnamese as RUNBOOK 1.5 says.
+TASK: Research only — brand: {{BRAND}} — agent: Codex
+OPTIONS: {{OPTIONS}}
+STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; check you have a browser MCP; node scripts/brands.mjs.
+2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
+3. 1.2 Crawl each source with the browser MCP (the Chrome signed into Facebook), as docs/research.md says.
+4. 1.3 Ingest + 1.4 record how each source ended (research.mjs ingest, research.mjs result).
+5. 1.5 Report data: node scripts/research.mjs report.
+6. 1.6 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex".
+7. 1.7 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.7.
+STOP IF: no browser MCP (tell me how to add it, RUNBOOK "Công cụ theo agent"); checkpoint, captcha or login prompt.
+NEVER: make ideas or posts, send anything to Metricool, sign in for me, store cookies.
 ```
 
 ### Research only · ChatGPT
 
 ```text
-Mode: RESEARCH ONLY. Brand: {{BRAND}}.
+TASK: Research only — brand: {{BRAND}} — agent: ChatGPT
 This mode runs node commands in {{TOOL}} and drives the Chrome signed into Facebook. If you cannot run commands on this machine, do nothing and reply only: "Research only needs Claude Code (Playwright MCP) or Codex with a browser MCP. Open the social-autopilot folder in one of them and paste the matching prompt from the app's Prompt tab."
 ```
 
 ### Create & publish · Claude Code
 
 ```text
-Mode: CREATE & PUBLISH. Brand: {{BRAND}}.
-Options: {{OPTIONS}}
-Folder: {{TOOL}}. Follow RUNBOOK.md Mode 2 exactly (2.0 to 2.8, with AGENTS.md and "Rules for every run").
-Tools: the claude.ai Metricool connector (getBrandSettings, createScheduledPost, getScheduledPosts); Codex CLI for images.
-Sync Metricool brands first, schedule approved posts not yet sent (never drafts), then make new posts and stop at "To review". Never approve posts yourself.
-Report to me in Vietnamese as RUNBOOK 2.8 says.
+TASK: Create & publish — brand: {{BRAND}} — agent: Claude Code
+OPTIONS: {{OPTIONS}}
+STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; node scripts/brands.mjs.
+2. 2.0 Sync Metricool brands: getBrandSettings → metricool-mcp.mjs sync-brands.
+3. 2.1 Schedule approved posts not yet sent (payload → createScheduledPost → record).
+4. 2.2 Reconcile sent posts (status → getScheduledPosts).
+5. 2.3-2.6 Make new posts: ideas → drafts and images (Codex CLI) → captions → automatic checks.
+6. 2.7 Stop at "To review"; 2.8 report data: node scripts/queue.mjs.
+7. 2.9 Write the run log: node scripts/runlog.mjs add --mode create --agent "Claude Code".
+8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
+STOP IF: a Metricool tool error (record nothing for that post), Codex image quota is used up.
+NEVER: approve posts, make Metricool drafts, add AI labels, put logos on products, use another blogId.
 ```
 
 ### Create & publish · Codex
 
 ```text
-Mode: CREATE & PUBLISH. Brand: {{BRAND}}.
-Options: {{OPTIONS}}
-Folder: {{TOOL}}. Follow AGENTS.md and RUNBOOK.md Mode 2 exactly (2.0 to 2.8, with "Rules for every run").
-First check you have the Metricool MCP tools; if not, skip 2.0-2.2, still make the posts, and tell me: codex mcp add metricool --url https://ai.metricool.com/mcp, then codex mcp login metricool.
-Sync Metricool brands first, schedule approved posts not yet sent (never drafts), then make new posts and stop at "To review". Never approve posts yourself.
-Report to me in Vietnamese as RUNBOOK 2.8 says.
+TASK: Create & publish — brand: {{BRAND}} — agent: Codex
+OPTIONS: {{OPTIONS}}
+STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; check the Metricool MCP tools; node scripts/brands.mjs.
+2. 2.0 Sync Metricool brands: getBrandSettings → metricool-mcp.mjs sync-brands.
+3. 2.1 Schedule approved posts not yet sent (payload → createScheduledPost → record).
+4. 2.2 Reconcile sent posts (status → getScheduledPosts).
+5. 2.3-2.6 Make new posts: ideas → drafts and images → captions → automatic checks.
+6. 2.7 Stop at "To review"; 2.8 report data: node scripts/queue.mjs.
+7. 2.9 Write the run log: node scripts/runlog.mjs add --mode create --agent "Codex".
+8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
+STOP IF: no Metricool MCP tools (skip 2.0-2.2, still make posts, tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool).
+NEVER: approve posts, make Metricool drafts, add AI labels, put logos on products, use another blogId.
 ```
 
 ### Create & publish · ChatGPT
 
 ```text
-Mode: CREATE & PUBLISH. Brand: {{BRAND}}.
+TASK: Create & publish — brand: {{BRAND}} — agent: ChatGPT
 Follow the ChatGPT part of RUNBOOK.md ("Công cụ theo agent", folder {{TOOL}}). Without a pasted payload JSON below, reply only: "Creating posts needs Claude Code or Codex in the social-autopilot folder. To send approved posts to Metricool, paste the JSON of node scripts/metricool-mcp.mjs payload --brand <id>."
 With a payload: send each item with createScheduledPost exactly as given (a scheduled post, never a draft, no AI label), then reply in Vietnamese with the filled record commands.
 ```

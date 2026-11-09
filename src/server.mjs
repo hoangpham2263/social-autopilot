@@ -20,6 +20,7 @@ import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, dupli
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
+import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -206,6 +207,9 @@ async function handle(req, res) {
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
   if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, sources: b.sources || [], posts_per_week: b.posts_per_week ?? null })) }));
+  // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
+  if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
+  if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
   // Optional "Bỏ" of a generated post before it is written into the brand (finalize.mjs cancel). Nothing waits for it.

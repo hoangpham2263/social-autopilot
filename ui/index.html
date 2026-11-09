@@ -22,8 +22,26 @@ main > header, main > nav, main > .setup-status { flex: 0 0 auto; }
 .page { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .page[hidden] { display: none; }
 .page:not([hidden]) { display: flex; flex-direction: column; }
-.page > .app-foot { margin-top: auto; }
+.page > /* Log: one compact row per run; the detail opens in the overlay. */
+.log-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); margin-bottom: -1px; cursor: pointer; min-width: 0; }
+.log-row:hover { border-color: #0078d7; position: relative; }
+.log-row .when { flex: 0 0 140px; white-space: nowrap; }
+.log-row .what { flex: 0 0 auto; white-space: nowrap; color: var(--muted); }
+.log-row .head { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dry { color: #b06000; }
+.dot-none { background: transparent; }
+.lb .log-detail { flex: 1 1 auto; overflow: auto; padding: 16px; background: #fff; display: grid; gap: 12px; align-content: start; }
+.app-foot { margin-top: auto; }
 h3 .dot.after { margin: 0 0 0 8px; }
+/* Log: one compact row per run; the detail opens in the overlay. */
+.log-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); margin-bottom: -1px; cursor: pointer; min-width: 0; }
+.log-row:hover { border-color: #0078d7; position: relative; }
+.log-row .when { flex: 0 0 140px; white-space: nowrap; }
+.log-row .what { flex: 0 0 auto; white-space: nowrap; color: var(--muted); }
+.log-row .head { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dry { color: #b06000; }
+.dot-none { background: transparent; }
+.lb .log-detail { flex: 1 1 auto; overflow: auto; padding: 16px; background: #fff; display: grid; gap: 12px; align-content: start; }
 .app-foot { flex: 0 0 auto; padding: 16px 0 4px; text-align: center; font-size: 11px; color: var(--muted); }
 nav.tabs { display: flex; margin: 0 0 12px; }
 nav.tabs button { height: var(--ctl-h); padding: var(--ctl-pad); font: inherit; font-size: var(--ctl-font); background: #e1e1e1; border: var(--ctl-border); margin-right: -1px; cursor: default; }
@@ -194,6 +212,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <button type="button" data-page="overview">Overview</button>
     <button type="button" data-page="store">Library</button>
     <button type="button" data-page="posts">Posts</button>
+    <button type="button" data-page="log">Log</button>
     <button type="button" data-page="prompt">Prompt</button>
     <button type="button" data-page="settings">Settings</button>
   </nav>
@@ -220,6 +239,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <div id="draftList"></div>
   </section>
 
+  <section class="page" id="page-log" hidden>
+    <div class="fields">
+      <div class="field"><label for="lgBrand">Brand</label><select id="lgBrand"><option value="">All</option></select></div>
+      <div class="field auto"><span class="label">Mode</span><span class="seg" id="lgMode" role="group" aria-label="Mode"></span></div>
+    </div>
+    <div id="lgList"><div class="meta">Loading…</div></div>
+  </section>
+
   <section class="page" id="page-prompt" hidden>
     <div class="fields">
       <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
@@ -228,7 +255,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     </div>
     <div class="fields" id="prResearch" hidden>
       <div class="field"><span class="label">Sources</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
-      <div class="field"><label for="prMax" title="Max posts per source">Max posts</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
+      <div class="field"><label for="prMax" title="At most this many new posts for each brand in this run, shared evenly by its sources">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
       <div class="field"><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
     </div>
     <div class="fields" id="prMake" hidden>
@@ -274,6 +301,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const arr = (x) => (Array.isArray(x) ? x : []);
+  // A control a choice makes meaningless is greyed (tool.css disabled styling) with the reason as its tooltip.
+  const setDisabled = (el, on, why = "") => { if (!el) return; el.disabled = !!on; el.classList.toggle("disabled", !!on); el.title = on ? why : ""; const f = el.closest(".field, .slot, label"); if (f) f.title = on ? why : ""; };
   // Brands are always listed A-Z by name (cards, unlinked skills, every Brand dropdown).
   const byName = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base" });
   const az = (list, name) => arr(list).slice().sort((a, b) => byName(name(a), name(b)));
@@ -293,14 +322,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const safely = (where, fn) => async (...a) => { try { return await fn(...a); } catch (e) { postJson("/api/client-error", { message: `${where}: ${e.message}`, stack: e.stack || "" }).catch(() => {}); const box = $(where); if (box) box.innerHTML = `<div class="bad-text" title="${esc(e.message)}">${RESTART}</div>`; } };
 
   // ----- tabs -----
-  const pages = ["overview", "store", "posts", "prompt", "settings", "brand"];
+  const pages = ["overview", "store", "posts", "log", "prompt", "settings", "brand"];
   function show(page) {
     if (!pages.includes(page)) page = "overview";
     for (const p of pages) $(`#page-${p}`).hidden = p !== page;
     $(`#page-${page}`).append($("#appFoot")); // footer sits after the page content, not pinned to the window
     for (const b of $$("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "overview" : page)));
     store.set("page", page === "brand" ? "overview" : page);
-    ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, prompt: loadPrompts, settings: loadSettings })[page]?.();
+    ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, log: loadLogs, prompt: loadPrompts, settings: loadSettings })[page]?.();
   }
   for (const b of $$("#tabs button")) b.onclick = () => show(b.dataset.page);
   // core/assets/hub.js opens Settings when the setup is incomplete (its banner's button too).
@@ -357,7 +386,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   let pendingMsg = null;
   const cardMsg = (key, text, bad = false) => { pendingMsg = { key, html: bad ? errLine(text) : `<span class="ok-text">${esc(text)}</span>` }; loadOverview(); };
   const loadOverview = safely("#ovList", async () => {
-    const [q, b] = await Promise.all([getJson("/api/queue"), getJson("/api/brands")]).catch(() => [offline, {}]);
+    const [q, b, lg] = await Promise.all([getJson("/api/queue"), getJson("/api/brands"), getJson("/api/runlogs?limit=50").catch(() => ({}))]).catch(() => [offline, {}, {}]);
+    const lastRun = (id) => arr(lg?.logs).find((l) => arr(l.brands).some((x) => x.brand === id));
     if (q.error) { $("#ovList").innerHTML = errLine(q.error); return; }
     if (b.error) { $("#ovList").innerHTML = errLine(b.error); return; }
     if (b.brands) brandData = b;
@@ -414,6 +444,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           ${x ? `<dt>Library</dt><dd>${kho}</dd>
           ${research || blocked ? `<dt>Last research</dt><dd>${research}${blocked}</dd>` : ""}
           <dt>Posts</dt><dd>${posts}</dd>` : ""}
+          ${s && lastRun(s.id) ? (() => { const l = lastRun(s.id), x = arr(l.brands).find((y) => y.brand === s.id); return `<dt>Last run</dt><dd><a href="#" data-log="${esc(l.id)}">${esc(when(l.ended))} · ${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(x?.headline || l.headline)}</a></dd>`; })() : ""}
           ${miss.length ? `<dt>Missing</dt><dd><ul class="missing flush">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
         </dl>
         <div class="msg card-msg">${msg}</div>
@@ -453,6 +484,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         cardMsg(name, "Linked.");
       };
     };
+    for (const a of $$("#ovList [data-log]")) a.onclick = (e) => { e.preventDefault(); window.saOpenLog(a.dataset.log); };
     for (const a of $$("#ovList [data-go]")) a.onclick = (e) => {
       e.preventDefault();
       if (a.dataset.go === "store") { $("#resBrand").innerHTML = `<option value="${esc(a.dataset.brand)}" selected></option>`; store.set("resBrand", a.dataset.brand); }
@@ -499,6 +531,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       $("#fSources").insertAdjacentHTML("beforeend", `<div class="slot"><input type="checkbox" checked disabled><span class="src-url">${esc(u)} <span class="meta">(new, Save to keep)</span></span></div>`);
       $("#fNewSrc").value = ""; $("#brandMsg").textContent = "";
     };
+    const syncOff = () => { const off = !$("#fEnabled").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fEnabled" && el.id !== "fOpen") setDisabled(el, off, "Turn on Run automatically to change this"); };
+    $("#fEnabled").onchange = syncOff; syncOff();
     show("brand");
   }
   const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" class="time" value="${esc(x.time || "")}" placeholder="10:00"><button class="btn" type="button" data-rm="1">Remove</button></div>`;
@@ -556,6 +590,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!c && !brand && r.brands?.length) { const first = az(r.brands, (x) => x.name || x.id)[0]; $("#resBrand").value = first.id; store.set("resBrand", first.id); return loadResearch(); } // no brand chosen yet: open the first (A–Z)
     if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
     $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
+    setDisabled($("#resSource"), arr(c.sources).length < 2, "This brand has only one source");
     const k = c.counts || {};
     const SHOW = [["new", "Unused", k.new], ["used", "Used", k.used], ["rejected", "Dropped", k.rejected], ["", "All", k.total]];
     $("#resStatus").innerHTML = SHOW.map(([v, t, n]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}">${t} (${n ?? 0})</button>`).join("");
@@ -696,7 +731,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const per = {}; for (const v of src) { const [bid, s] = v.split(":"); (per[bid] ||= []).push(s); }
       for (const [bid, list] of Object.entries(per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
       if (!brand && src.length) lines.push(`only the brands listed above`);
-      if (max > 0) lines.push(`at most ${max} posts per source (--max-posts ${max})`);
+      if (max > 0) lines.push(`at most ${max} new posts per brand, shared by its sources (--max-posts ${max})`);
       if (kind === "backfill") lines.push("backfill older posts (--backfill)");
       if (kind === "full") lines.push("full rescan (--full)");
     } else {
@@ -734,6 +769,56 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     flash("Copied.");
   };
 
+  // ----- Log: every agent run (scripts/runlog.mjs), newest first; a click opens the per-brand / per-source detail -----
+  const MODE_TEXT = { research: "Research", create: "Create & publish" };
+  const SRC_STATE = { "new posts": "", "dried up": "dry", "reached end": "", blocked: "bad-text", error: "bad-text", unfinished: "warn-text" };
+  let lgMode = store.get("lgMode") || "", dryRuns = 3;
+  const when = (t) => (t ? new Date(t).toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-");
+  const loadLogs = safely("#lgList", async () => {
+    const brand = store.get("lgBrand");
+    const r = await getJson(`/api/runlogs?brand=${encodeURIComponent(brand || "")}&mode=${encodeURIComponent(lgMode)}`).catch(() => offline);
+    if (r.error) { $("#lgList").innerHTML = errLine(r.error); return; }
+    dryRuns = r.dried_up_runs || 3;
+    if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
+    $("#lgBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
+    setDisabled($("#lgBrand"), arr(brandData.brands).length < 2, "Only one brand");
+    $("#lgMode").innerHTML = [["", "All"], ["research", "Research"], ["create", "Create & publish"]].map(([v, t]) => `<button class="btn" type="button" data-mode="${v}" aria-pressed="${v === lgMode}">${t}</button>`).join("");
+    for (const b of $$("#lgMode button")) b.onclick = () => { lgMode = b.dataset.mode; store.set("lgMode", lgMode); loadLogs(); };
+    const logs = arr(r.logs);
+    $("#lgList").innerHTML = logs.map((l, i) => `<div class="log-row" data-i="${i}" tabindex="0">
+        ${l.result === "error" ? `<span class="dot dot-red" title="Errors"></span>` : `<span class="dot dot-none"></span>`}
+        <span class="when">${esc(when(l.ended))}</span><span class="what">${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(arr(l.brands).map((b) => b.name || b.brand).join(", "))}</span>
+        <span class="head" title="${esc(l.headline)}">${esc(l.headline)}</span></div>`).join("") || `<div class="meta">No runs logged yet. The last step of every agent run writes one (scripts/runlog.mjs).</div>`;
+    for (const row of $$("#lgList .log-row")) {
+      const open = () => openLog(logs[Number(row.dataset.i)]);
+      row.onclick = open; row.onkeydown = (e) => { if (e.key === "Enter") open(); };
+    }
+  });
+  // The detail, the same every run: per brand a small table. Research: Source | New | Status. Create: Scheduled |
+  // To review | Errors. Agent and duration only as small text in the header.
+  const STATUS_TEXT_RUN = { "new posts": "New posts", "dried up": "Dried up", "reached end": "New posts", blocked: "Blocked", error: "Error", unfinished: "Error" };
+  function openLog(l) {
+    const brands = arr(l.brands).map((b) => {
+      let body;
+      if (l.mode === "research") {
+        const rows = arr(b.research?.sources).map((x) => { const st = STATUS_TEXT_RUN[x.state] || x.state; return `<tr><td>${esc(x.name || x.id)}</td><td>${x.new}</td><td class="${st === "Dried up" ? "dry" : st === "Blocked" || st === "Error" ? "bad-text" : ""}"${x.dry_runs >= dryRuns ? ` title="No new posts in ${x.dry_runs} runs: consider new sources"` : ""}>${esc(st)}${x.dry_runs >= dryRuns ? " · consider new sources" : ""}</td></tr>`; }).join("");
+        body = rows ? `<table class="edit"><thead><tr><th>Source</th><th>New</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="meta">No crawl.</div>`;
+      } else {
+        const c = b.create || {};
+        const sched = arr(c.scheduled).map((x) => `${esc(x.post)} · ${esc(String(x.publication).replace("T", " ").slice(0, 16))}`);
+        const errs = [...arr(c.failed).map((x) => `${x.id}: ${x.reason}`), ...arr(c.errors), ...arr(b.errors)].map(esc);
+        const n = Math.max(sched.length, arr(c.to_review).length, errs.length, 1);
+        const cell = (list, i, cls = "") => `<td class="${cls}">${list[i] || ""}</td>`;
+        body = `<table class="edit"><thead><tr><th>Scheduled</th><th>To review</th><th>Errors</th></tr></thead><tbody>${Array.from({ length: n }, (_, i) => `<tr>${cell(sched, i)}${cell(arr(c.to_review).map((x) => esc(x.id)), i)}${cell(errs, i, "bad-text")}</tr>`).join("")}</tbody></table>`;
+      }
+      return `<div class="card"><h3>${esc(b.name || b.brand)}</h3>${body}</div>`;
+    }).join("");
+    const sub = [l.agent, l.duration_s ? `${Math.max(1, Math.round(l.duration_s / 60))} min` : ""].filter(Boolean).join(" · ");
+    openOverlay(`${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(when(l.ended))} · ${esc(l.headline)}${sub ? ` <span class="meta">${esc(sub)}</span>` : ""}`, `<div class="log-detail"><div class="cards">${brands}</div></div>`);
+  }
+  $("#lgBrand").onchange = () => { store.set("lgBrand", $("#lgBrand").value); loadLogs(); };
+  window.saOpenLog = (id) => { show("log"); getJson(`/api/runlog?id=${encodeURIComponent(id)}`).then((l) => { if (!l.error) openLog(l); }).catch(() => {}); };
+
   // ----- Posts: image(s), automatic checks, hosted image, Metricool; optional "Drop" before written -----
   const STATUS_TEXT = { ready: "Needs review", approved: "Approved", check_failed: "Failed checks", rejected: "Dropped", needs_prompt: "Making", needs_caption: "Making", generating: "Making", image_failed: "Image failed", preparing: "Making" };
   const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "", image_failed: "c-red", check_failed: "c-red" };
@@ -762,6 +847,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (r.error) { $("#draftList").innerHTML = errLine(r.error); return; }
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
     $("#drBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
+    setDisabled($("#drBrand"), arr(brandData.brands).length < 2, "Only one brand");
     const drafts = arr(r.drafts);
     const count = (k) => drafts.filter((d) => stateOf(d) === k).length;
     if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : "queued";
