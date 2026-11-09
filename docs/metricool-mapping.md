@@ -100,7 +100,7 @@ Nguồn: `social.json` = `<skill>/project/social.json`; `catalog` = `<skill>/wor
 | Kết quả: `id`, `providers[].status`, `detailedStatus`, `publicUrl` | (trả về) | `PENDING`, `PUBLISHED`, `ERROR` | Ghi vào `catalog.schedule{metricool_id, status, public_urls, error}` | **Thiếu**: catalog chưa có khối `schedule` |
 
 ### Điều kiện trước khi gửi
-- `catalog.status == "approved"`, ảnh và caption mỗi ngôn ngữ đã duyệt.
+- `catalog.status == "approved"` (đã qua kiểm tra tự động và ghi vào thương hiệu), có `media_url`, `check-post.mjs` không lỗi.
 - `social.json.enabled == true`.
 
 ## 3. Ví dụ POST-01 (DreamyVows)

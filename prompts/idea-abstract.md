@@ -1,6 +1,6 @@
 # Biến bài tham khảo thành ý trừu tượng
 
-Dùng cho từng ý trong `workspace/runs/<brand>/<date>/ideas.json` (bước 2). Nhìn ảnh `ref_image` và caption trong `<source>/refs.json`, rồi đọc `project/project.md` của thương hiệu (mục 4 khách, 5 sản phẩm, 10 quy tắc riêng).
+Dùng cho từng ý trong `workspace/store/<brand>/ideas.json` (chế độ "Làm bài & đưa lên", bước 2.1). Nhìn ảnh `ref_image` và caption của bài kho (`item`; `node scripts/store.mjs show --brand <id> --id S0001`), rồi đọc `project/project.md` của thương hiệu (mục 4 khách, 5 sản phẩm, 10 quy tắc riêng).
 
 Điền các trường bằng lời của mình, ngắn, ở dạng thương hiệu **có thể tự làm với sản phẩm của chính mình**:
 
@@ -19,4 +19,4 @@ Không bao giờ:
 - mô tả để vẽ lại ảnh, logo, thiết kế hay chữ trên sản phẩm của đối thủ;
 - dùng ảnh tham khảo làm ảnh đưa vào Codex (`draft.mjs new` chặn).
 
-Ý không hợp thương hiệu thì `ideas.mjs reject --note "<lý do>"`.
+Ý không hợp thương hiệu thì `ideas.mjs reject --note "<lý do>"` (thêm `--item rejected` nếu bài kho cũng không nên dùng lại).

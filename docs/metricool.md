@@ -4,13 +4,14 @@ Ngày kiểm tra: 2026-11-07. Chỉ xem, không đổi gì trong tài khoản.
 
 ## 0. Hiện tại (2026-11-09): gói Starter, đăng qua MCP
 
-Mục 1-7 bên dưới là ghi chép lúc tài khoản còn Free; dữ kiện đang đúng là mục này.
+Mục 1-7 bên dưới là ghi chép lúc tài khoản còn Free (lịch sử; các bước "duyệt" trong đó không còn: quy trình hiện tại không có bước duyệt, xem RUNBOOK.md); dữ kiện đang đúng là mục này.
 
 | Mục | Giá trị |
 |---|---|
 | Gói | **Starter**: nhiều brand, bài không giới hạn, **không REST API**, không duyệt bài (team) |
 | Brand | Dreamy Vows `<blog_id_2>`, Grenheim `<blog_id_3>` (cả hai chỉ Facebook, múi giờ brand `Indian/Christmas`); Fortera Apparel `<blog_id_1>` (không phải skill, **không bao giờ đụng**) |
-| Đường chính | Connector claude.ai "Metricool": tool MCP cho **agent Claude** (Node không gọi được) |
+| Đường chính | MCP `https://ai.metricool.com/mcp` qua tool của agent (Node không gọi được): connector claude.ai "Metricool" (Claude Code), connector Metricool của ChatGPT (gửi từ JSON `payload`; `createScheduledPost` của ChatGPT còn nhận `mediaFiles` từ ảnh đính kèm, quy trình dùng link `info.media`), Codex: `codex mcp add metricool --url https://ai.metricool.com/mcp` + `codex mcp login metricool` (hoặc `[mcp_servers.metricool]` với `url` trong `~/.codex/config.toml`) |
+| Mặc định | **Nháp** (`settings.metricool.default_mode`: `draft`; `schedule` = hẹn giờ thật). Chế độ 2 gửi ở cuối lượt và gửi nốt bài chưa gửi ở đầu lượt sau |
 | Đường dự phòng | CSV (`metricool-csv.mjs`, người tự import), mục 5-7 |
 
 ### Tool MCP dùng được
@@ -94,11 +95,11 @@ Bảng giá trong app (USD, trả theo năm, chưa thuế):
 
 | Tính năng Metricool | Dùng thế nào |
 |---|---|
-| Nháp (`draft`) | Bước 8: bài `approved` gửi lên dạng nháp, người duyệt bấm hẹn giờ trong Metricool. Duyệt chính vẫn ở app của mình (Free không có approval) |
+| Nháp (`draft`) | Chế độ 2, bước 2.6: bài đã ghi vào thương hiệu (qua kiểm tra tự động) gửi lên dạng nháp; người dùng tự hẹn giờ trong Metricool, hoặc đổi `metricool.default_mode` sang `schedule` |
 | Best times | Không bắt buộc: `cadence.slots` trống thì tool tự chọn giờ (mục "Giờ đăng tự động" bên dưới); muốn ghi đè thì điền `cadence.slots` (có thể theo best times đọc qua MCP) |
 | Competitors | Thêm 5 trang đối thủ FB làm nguồn nghiên cứu (chọn kỹ vì Free không đổi được) |
 | CSV import | Đường dự phòng: tool xuất CSV đúng template, người dùng tự import |
-| MCP | Đường chính cho agent (Claude Code), không cần gói trả phí |
+| MCP | Đường chính cho mọi agent (Claude Code, Codex, ChatGPT), không cần gói trả phí |
 | REST API | Chỉ khi lên Advanced; `src/metricool.mjs` có thể gọi thẳng |
 | Hashtag Tracker, SmartLinks, Inbox | Không cần cho giai đoạn này |
 
@@ -162,7 +163,7 @@ Thử 1 lần, được người dùng duyệt, trên brand Fortera Apparel (blo
 - File: `docs/metricool-csv-template.csv` (tên gốc `Mtr_calendar_template.csv`). Link tải: `GET /api/v2/scheduler/posts/template?blogId=&userId=&userToken=<token phiên>`.
 - **99 cột**, thứ tự: `Text, Date, Time, Draft, Facebook, Twitter/X, LinkedIn, GBP, Instagram, Pinterest, TikTok, Youtube, Threads, Bluesky, Picture Url 1..10, Alt text picture 1..10, Document title, Shortener, Video Thumbnail Url, Video Cover Frame, Twitter/X ... (7 cột), Pinterest ... (6 cột), Instagram Post Type, Instagram Show Reel On Feed, Instagram Trial Reel Share Automatically, Youtube ... (9 cột), GBP Post Type, Facebook Post Type, Facebook Title, First Comment Text, TikTok ... (18 cột), LinkedIn ... (9 cột), Threads Reply Control, Threads Is Spoiler, Threads Post Type, Brand name`.
 - Khác tài liệu: cột là `Youtube` (không phải `YouTube`), có thêm `Shortener`, `Facebook Post Type` (POST/REEL/STORY), `Facebook Title`, `Threads Post Type`... Boolean trong template viết thường `true`/`false`.
-- File mẫu đã dùng: `docs/examples/metricool-test-draft.csv`.
+- File mẫu đã dùng: `docs/examples/metricool-test-draft.csv` (đã gỡ khỏi repo, còn trong lịch sử git).
 
 ### Các bước và thời gian
 1. Calendar → nút ⋮ (cạnh bộ lọc) → Import CSV → Download template.
@@ -203,7 +204,7 @@ Người dùng duyệt: hẹn giờ **thật** (Draft false) cho thứ Sáu 2026
 | Grenheim | 421308154 | Facebook (POST) | draft:false, provider PENDING (lịch ghi "Pending", nút "Schedule") | 2026-11-13 11:00 Indian/Christmas = 11:00 giờ VN = 04:00 UTC |
 | Dreamy Vows | 421308155 | Facebook (POST) | như trên | 2026-11-13 11:00 Indian/Christmas = 11:00 giờ VN = 04:00 UTC |
 
-Nội dung: Grenheim = caption POST-06 (coffee-table-gathering, đổi "chair" thành "stool") + ảnh `grenheim/2026/11/post-06.png`; Dreamy Vows = POST-01 (birthday-dinner-neon-sign) + ảnh `dreamyvows/2026/11/post-01.png`. File: `docs/examples/metricool-multibrand-test.csv`. Ảnh chụp: `docs/examples/metricool-multibrand-test/`.
+Nội dung: Grenheim = caption POST-06 (coffee-table-gathering, đổi "chair" thành "stool") + ảnh `grenheim/2026/11/post-06.png`; Dreamy Vows = POST-01 (birthday-dinner-neon-sign) + ảnh `dreamyvows/2026/11/post-01.png`. File và ảnh chụp từng ở `docs/examples/` (đã gỡ khỏi repo, còn trong lịch sử git).
 
 Xoá: mở calendar brand → bấm thẻ bài ngày 13/11 → nút thùng rác → Confirm (vào tab Deleted posts, khôi phục được).
 
@@ -221,7 +222,7 @@ Xoá: mở calendar brand → bấm thẻ bài ngày 13/11 → nút thùng rác 
 
 ## 7. Media test (carousel, video) 2026-11-09
 
-Brand Grenheim (blogId <blog_id_3>), chỉ Facebook, mọi dòng `Draft true`, ngày 2026-11-20 10:00:00. File: `docs/examples/metricool-media-test.csv` (99 cột template). Ảnh chụp: `docs/examples/metricool-media-test/`.
+Brand Grenheim (blogId <blog_id_3>), chỉ Facebook, mọi dòng `Draft true`, ngày 2026-11-20 10:00:00. File (99 cột template) và ảnh chụp từng ở `docs/examples/` (đã gỡ khỏi repo, còn trong lịch sử git).
 
 **Trạng thái: dừng ở Preview, CHƯA import.** Bước bấm "Import 4 posts" bị hệ thống quyền của Claude Code chặn (auto mode coi là ghi vào app bên ngoài khi chưa được người dùng duyệt). Đã đóng dialog, không tạo bài nào. Muốn đi tiếp: người dùng tự import file này, hoặc cho phép bước Import cho agent. Phần "cách hiện trong lịch / Edit post / body request" vì vậy chưa có.
 

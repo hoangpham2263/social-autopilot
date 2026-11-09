@@ -1,161 +1,141 @@
-# RUNBOOK: một vòng social-autopilot
+# RUNBOOK: social-autopilot (2 chế độ)
 
-Scripts + RUNBOOK là nguồn duy nhất của quy trình. Người dùng quản lý trong **app** (`start-app.cmd` / `start-app.command`): duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; app gọi đúng các hàm script dưới đây và đọc dữ liệu mới mỗi lần mở. Agent làm cùng việc qua script hoặc chat.
+Scripts + RUNBOOK là nguồn duy nhất của quy trình. Agent nào cũng chạy được (Claude Code, Codex; ChatGPT chỉ phần gửi Metricool): mọi bước là lệnh `node scripts/...` chạy trong `C:\hoangpq\social-autopilot`, in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Chạy lại không sinh trùng. Prompt dán sẵn cho từng chế độ × agent: `docs/scheduled-prompt.md` (tab **Prompt** của app). App chỉ để xem và quản lý (Tổng quan, Kho, Bài đã tạo, Prompt, Cài đặt); việc do agent làm.
 
-Dành cho agent (Claude Code scheduled task/routine, Codex/ChatGPT automation) được gọi theo lịch. Chạy từ thư mục `C:\hoangpq\social-autopilot`. Mọi script in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Script chạy lại không sinh trùng.
+Hai chế độ, **không có bước duyệt** (người dùng, 09/11/2026):
+1. **Chỉ nghiên cứu**: chạy riêng (vd mỗi tuần), cần trình duyệt đã đăng nhập Facebook. Nguồn → **kho** của thương hiệu. Không làm ý/bài.
+2. **Làm bài & đưa lên**: khi người dùng bảo, không mở Facebook. Gửi nốt bài cũ chưa gửi → đối chiếu → kho → ý → ảnh → caption → kiểm tra tự động → ghi vào thương hiệu → host ảnh → Metricool (mặc định nháp) → `record` → báo cáo.
 
-Quy tắc cứng:
-- Thương hiệu chỉ đến từ `config/settings.json` → `skillsRoot` (mặc định `C:\hoangpq\vaniecom-workspace\skills\`). Mọi thứ riêng của thương hiệu (nguồn tham khảo, kênh, ngôn ngữ đăng và ngôn ngữ chỉ để duyệt, giọng, ảnh gốc) đọc từ thư mục skill của nó. Không hard-code thương hiệu, không trộn nguồn giữa thương hiệu.
-- Các thương hiệu chạy **nối tiếp** (một Chrome, một agent).
-- Không ghi gì vào thư mục thương hiệu trước khi được duyệt. Không đăng bài trực tiếp lên mạng xã hội; chỉ gửi bài **đã duyệt** lên Metricool qua MCP ở bước 5c (mặc định nháp).
-- Không dùng ảnh hay câu chữ của đối thủ trong bài; ảnh đưa vào Codex phải là ảnh của chính thương hiệu.
-- Gặp lỗi `ok: false` thì ghi lại và chuyển sang thương hiệu/bước tiếp, không lách luật.
-- Không bao giờ gắn nhãn AI lên bài ("made with AI", "tạo bằng AI", `#AIgenerated`...): `draft.mjs check` và `metricool-csv.mjs validate` chặn.
+Quy tắc cứng (cả hai chế độ):
+- Thương hiệu chỉ đến từ `config/settings.json` → `skillsRoot` (mặc định `C:\hoangpq\vaniecom-workspace\skills\`). Mọi thứ riêng của thương hiệu đọc từ thư mục skill của nó. Không hard-code thương hiệu, không trộn nguồn hay kho giữa thương hiệu. Các thương hiệu chạy **nối tiếp**.
+- Không dùng ảnh hay câu chữ của đối thủ trong bài; ảnh đưa vào Codex là ảnh của chính thương hiệu (trừ scene-swap opt-in).
+- Không bao giờ gắn nhãn AI lên bài; không đăng thẳng lên mạng xã hội; Metricool mặc định **nháp** (`settings.metricool.default_mode`).
+- Gặp `ok: false`: ghi lại, chuyển sang bài/thương hiệu tiếp, không lách luật.
 
-## Bước 0. Thương hiệu và nguồn
+## Bước chung. Thương hiệu và nguồn
 
 ```
 node scripts/brands.mjs          # usable = thương hiệu chạy được; problems/skipped = lý do bỏ qua
 node scripts/sources.mjs         # mỗi thương hiệu: các research.sources đang bật trong social.json của nó
 ```
-`usable` rỗng thì báo cáo (bước 6) và dừng.
 
-Lặp **từng thương hiệu trong `usable`**, mỗi lần một thương hiệu, bước 1-5c.
+## Chế độ 1. Chỉ nghiên cứu
 
-## Bước 1. Nghiên cứu (không giới hạn lượt/bài)
+Cần trình duyệt đã đăng nhập Facebook (Playwright MCP + extension trong Chrome; Claude Code hoặc Codex có MCP trình duyệt). Cách duyệt trang: `docs/research.md`.
 
+1.1. Mở lượt crawl cho một thương hiệu:
 ```
-node scripts/research.mjs start --brand <id>
+node scripts/research.mjs start --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full]
 ```
-- Không có giới hạn lượt hay số bài (người dùng, 09/11/2026); `start` chạy lại trong ngày được (`reused: true`, cùng thư mục ngày theo múi giờ thương hiệu).
-- Với **từng source** trong `run.sources` (chỉ source của thương hiệu này): làm theo `docs/research.md` bằng Playwright, nghỉ `delay_seconds` ngẫu nhiên giữa các thao tác, tải ảnh vào `<source>/raw/`, ghi `<source>/raw.json` (bài của lượt này).
-- Gặp checkpoint, captcha, yêu cầu đăng nhập: dừng nghiên cứu ngay, ghi vào báo cáo.
+Mặc định: lấy **hết** bài (cuộn tới hết trang); lần sau dừng ở bài đã có trong kho. `--since` / `--max-posts` khi người dùng chọn khoảng; `--full` cuộn hết dù đã có. Mỗi source trong `run.sources` có `stop_rule` (khi nào dừng) và `known_file` (`known.json`: link bài của nguồn này + mọi link/mã bài Facebook đã có trong kho của thương hiệu: `brand_post_urls`, `brand_post_ids`).
 
+1.2. Với từng source, theo `docs/research.md`: cuộn trang theo `stop_rule`; bài có link/mã trong `known.json` thì bỏ qua **trước khi tải**; mở bài mới lấy caption đầy đủ, ngày đăng, link bài (+ `alt_urls`), tải ảnh lớn nhất vào `<source>/raw/`, ghi `<source>/raw.json`. Nghỉ ngẫu nhiên `delay_seconds` giữa mọi thao tác.
+
+1.3. Đưa vào kho:
 ```
-node scripts/research.mjs ingest --brand <id>
+node scripts/research.mjs ingest --brand <id> --source <sid>
 ```
-Làm sạch caption (U+034F, ký tự ẩn), nối bài mới vào refs đã có, bỏ trùng (link bài, ảnh), ra `<source>/refs.json`, `refs.csv`, `refs/`. Chỉ nhận file ảnh jpg/png/webp thật nằm trong thư mục source của lượt (`dropped` ghi lý do); file thừa trong `refs/` bị dọn.
+Làm sạch caption (U+034F, ký tự ẩn), chỉ nhận ảnh jpg/png/webp thật trong thư mục source, **bỏ trùng** với cả kho của thương hiệu (mọi nguồn): cùng link/mã bài Facebook, cùng ảnh (SHA-1 hoặc ảnh gần giống, dHash), cùng caption (giống hệt hoặc ≥ 90%). Bài trùng không vào kho, được ghi vào `workspace/store/<brand>/duplicates.json` (khớp bài nào, luật nào); JSON in `duplicates` ("x bài trùng bỏ qua").
 
-## Bước 2. Ý tưởng
-
+1.4. Ghi cách source kết thúc:
 ```
-node scripts/ideas.mjs init --brand <id>
+node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|partial [--note "..."]
 ```
-Với từng ý `todo`: xem `ref_image` + caption, đọc `project/project.md` của thương hiệu, điền theo `prompts/idea-abstract.md`:
+Gặp checkpoint, captcha, yêu cầu đăng nhập, "tạm thời bị chặn": dừng ngay, `--state blocked --note "<lý do>"`, không mở thêm source nào.
+
+1.5. Báo cáo:
 ```
-node scripts/ideas.mjs set --brand <id> --id I01 --json "{\"product_type\":\"...\",\"scene\":\"...\",\"angle\":\"...\",\"props\":\"...\",\"caption_structure\":\"...\",\"hook\":\"...\",\"why\":\"...\"}"
+node scripts/research.mjs report --brand <id>
 ```
-Không hợp thương hiệu: `ideas.mjs reject --id I01 --note "<lý do>"`. Chọn **tối đa 1 ý mỗi vòng** cho thương hiệu mới bật (thử 1 bài trước), tối đa `cadence.posts_per_week` của social.json khi đã quen: `ideas.mjs pick --id I01`.
+Báo người dùng: bài mới từng nguồn, bài trùng bỏ qua, nguồn đã xong, nguồn bị chặn, tổng kho (mới/đã dùng/đã bỏ). Người dùng xem kho ở tab **Kho** của app (lọc theo trạng thái/nguồn, "Bỏ" bài không muốn dùng = `store.mjs reject`).
 
-## Bước 3. Bản nháp
+Không làm ý, không tạo bài, không gửi Metricool trong chế độ này.
 
-Dựng cảnh AI bật mặc định cho mọi thương hiệu (chỉ `product_images.ai_scenes_allowed: false` mới tắt); không bao giờ gắn nhãn AI lên bài. Logo không bao giờ nằm trên sản phẩm (prompt có lệnh NO LOGO; `draft.mjs check` cảnh báo nếu prompt thiếu).
+## Chế độ 2. Làm bài & đưa lên
 
-1. Chọn ảnh sản phẩm. Mặc định (`brand-image`): ảnh **của thương hiệu**, trong thư mục skill hoặc thư mục ở `product_images.sources`. Ảnh không khí (tuỳ chọn) không được là ảnh tham khảo.
-   ```
-   node scripts/draft.mjs new --brand <id> --idea <date>/I01 --product "<ảnh của thương hiệu>" [--scene "<ảnh không khí>"]
-   ```
-   **Scene-swap** (chỉ khi social.json `product_images.reference_redraw.enabled: true`; người dùng đã chấp nhận rủi ro bản quyền/bị báo cáo): ảnh tham khảo của chính thương hiệu này làm ảnh sản phẩm, chỉ đổi cảnh, xoá mọi logo/watermark/nhãn size/số điện thoại của shop. Chỉ với sản phẩm thương hiệu làm được (project.md mục 5):
-   ```
-   node scripts/draft.mjs new --brand <id> --idea <date>/I01 --ref-image "<workspace/runs/<id>/<date>/<source>/refs/R01-....jpg>" --brand-can-produce
-   ```
-2. Mở `prompt.txt` trong thư mục nháp, thay `{{PRODUCT_DESCRIPTION}}` bằng mô tả đúng sản phẩm nhìn thấy trong ảnh (chữ từng ký tự, dấu, font, màu, vật liệu, tỉ lệ). Không xoá các dòng NO LOGO.
-3. Tạo ảnh (Codex CLI, mất vài phút):
-   ```
-   node scripts/draft.mjs image --id <draft>
-   ```
-   Lệnh thật: `codex exec --skip-git-repo-check -s workspace-write - -i <ảnh sản phẩm> [-i <ảnh không khí>] < prompt.txt`. Ngay sau đó tool tự làm sạch metadata bằng **remove-watermark-skill** (provider `chatgpt` cho ảnh Codex): `image-generated.png` là ảnh gốc của Codex (không sửa), `image.png` là bản sạch dùng cho bài, `image-clean-report.json` là report. Chỉ bỏ metadata (C2PA, EXIF, XMP, text); điểm ảnh giữ nguyên; ảnh vẫn là ảnh AI (catalog ghi `ai_disclosure` chỉ để lưu vết, không gắn nhãn AI lên bài). Không bao giờ nói đã qua được nhận diện AI. Chạy lại riêng: `node scripts/image-clean.mjs --id <draft>`. Hết hạn mức Codex thì dừng tạo ảnh, ghi vào báo cáo.
-4. Xem `image.png`: sản phẩm giữ y hệt, đúng chữ, không logo/watermark lạ. Không đạt: sửa prompt, `draft.mjs image --id <draft> --force` (tối đa 2 lần).
-5. Chỉ khi social.json `product_images.watermark.enabled: true`: `node scripts/draft.mjs watermark --id <draft>` (logo nhỏ ở góc, cần ffmpeg; sau đó ảnh được làm sạch lại).
-6. Scene-swap: so `image.png` với ảnh gốc của shop; khi chắc không còn tên shop, logo, watermark, nhãn size, số điện thoại: `node scripts/draft.mjs confirm-clean --id <draft> --by "<tên>"`. Còn thì sửa prompt, tạo lại.
-7. Viết caption theo `brief.md` (dùng SKILL.md mục A và project.md của thương hiệu), mỗi ngôn ngữ một file `content-<lang>.txt` trong thư mục nháp: ngôn ngữ đăng (`channels[].lang`) và ngôn ngữ chỉ để duyệt (`language_policy.review_langs`, vd `content-vn.txt`; không bao giờ đăng). Không nhắc tên shop nguồn, không nhãn AI.
-8. `node scripts/draft.mjs check --id <draft>` → `awaiting_approval`, hoặc sửa theo `problems` rồi check lại. Check không đạt khi ảnh chưa sạch metadata hay điểm ảnh bị đổi, chưa chèn watermark mà thương hiệu bật, scene-swap chưa xác nhận sạch logo hoặc caption có tên shop.
+Không mở Facebook. Cần `node`, Codex CLI (tạo ảnh) và tool MCP Metricool (Claude: connector claude.ai "Metricool"; Codex: `codex mcp add metricool --url https://ai.metricool.com/mcp` + `codex mcp login metricool`). Không có tool Metricool: vẫn làm bài tới bước 2.5, báo rõ "chưa gửi Metricool", bài chờ lượt sau.
 
-## Bước 4. Duyệt (trong chat)
-
-Bước 6 đưa danh sách chờ duyệt cho người. Khi người duyệt nói "duyệt <id>" / "approve <id>":
+2.0. Gửi nốt và đối chiếu (đầu mỗi lượt, từng thương hiệu):
 ```
-node scripts/approve.mjs approve --id <draft> [--by "<tên>"] [--note "..."]
+node scripts/metricool-mcp.mjs payload --brand <id>     # bài đã ghi + có link ảnh mà chưa gửi (bài đã gửi tự bị bỏ)
+node scripts/metricool-mcp.mjs status  --brand <id>     # tham số getScheduledPosts để đối chiếu
 ```
-Không có người duyệt đích danh: người trả lời trong chat/app là người duyệt; `--by` chỉ ghi vết (mặc định `user`). "Bỏ <id>, lý do ..." (bắt buộc có lý do; bản đã bỏ không bỏ lại):
+Gửi `items` như bước 2.6. Với `status`: có `query` thì gọi `getScheduledPosts` đúng tham số, khớp theo `id`: PENDING/nháp → để yên; **ERROR** → báo cáo; **PUBLISHED** → `node <thư mục skill>/scripts/mark-published.mjs <POST-xx> <yyyy-mm-dd> [link] --lang <ngôn ngữ đăng>`; nháp mà người đã hẹn giờ trong Metricool → chạy lại `record` (cùng `--id`, không `--draft`).
+
+2.1. Ý từ kho (chỉ bài `new`; bài được đánh dấu `used`, `used_by` = mã ý, không dùng lại):
 ```
-node scripts/approve.mjs reject --id <draft> --note "<lý do>" [--by "<tên>"]
+node scripts/ideas.mjs init --brand <id> [--count N] [--items S0001,S0002] [--source <sid>]
+node scripts/ideas.mjs set  --brand <id> --id I001 --json "{\"product_type\":\"...\",\"scene\":\"...\",\"angle\":\"...\",\"props\":\"...\",\"caption_structure\":\"...\",\"hook\":\"...\",\"why\":\"...\"}"
+node scripts/ideas.mjs pick --brand <id> --id I001
+node scripts/ideas.mjs reject --brand <id> --id I001 --note "<lý do>" [--item rejected]
 ```
-Người có thể sửa tay `status.json` của bản nháp (`"status": "approved"` hoặc `"rejected"`, kèm `"note"`; bỏ thì phải có lý do); đầu mỗi vòng chạy:
+Mặc định `--count` = `cadence.posts_per_week` (không có thì 3), bài mới nhất trước, xen kẽ các nguồn. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
+
+2.2. Bản nháp và ảnh:
 ```
-node scripts/approve.mjs sync
+node scripts/draft.mjs new --brand <id> --idea I001 --product "<ảnh của thương hiệu>" [--scene "<ảnh không khí>"]
+node scripts/draft.mjs new --brand <id> --idea I001 --ref-image "<workspace/store/<id>/images/S0001-1-....jpg>" --brand-can-produce   # scene-swap, chỉ khi bật
+node scripts/draft.mjs image --id <draft> [--force]
+node scripts/draft.mjs watermark --id <draft>        # chỉ khi product_images.watermark.enabled
+node scripts/draft.mjs confirm-clean --id <draft> --by "<tên>"   # chỉ scene-swap, sau khi xem kỹ
 ```
-Sửa tay sai luật thì bản nháp trở về trạng thái tool đặt lần cuối, kèm `error`.
-Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp; cùng luật, cùng hàm). Không tự duyệt thay người.
+- Ảnh sản phẩm (`brand-image`, mặc định): trong thư mục skill hoặc `product_images.sources`. Ảnh không khí không được là ảnh của kho/đối thủ.
+- Trước `image`: mở `prompt.txt`, thay `{{PRODUCT_DESCRIPTION}}` bằng mô tả đúng sản phẩm (chữ từng ký tự, dấu, font, màu, vật liệu, tỉ lệ); không xoá dòng NO LOGO.
+- `image` chạy `codex exec --skip-git-repo-check -s workspace-write - -i <ảnh> < prompt.txt`, rồi tự làm sạch metadata (remove-watermark-skill): `image-generated.png` (gốc) → `image.png` (sạch) + `image-clean-report.json`. Xem ảnh: sai thì sửa prompt, `--force` (tối đa 2 lần). Hết lượt Codex thì dừng và báo.
+- Scene-swap (opt-in `product_images.reference_redraw.enabled`): ảnh kho của chính thương hiệu, chỉ đổi cảnh, xoá logo/watermark/nhãn size/số điện thoại của shop; bắt buộc `--brand-can-produce` và `confirm-clean`.
 
-## Bước 5. Ghi vào thương hiệu
+2.3. Caption theo `brief.md` (SKILL.md mục A + project.md): `content-<lang>.txt` cho ngôn ngữ đăng (`channels[].lang`, vd `content-en.txt`) và ngôn ngữ chỉ để đọc (`language_policy.review_langs`, vd `content-vn.txt`; không bao giờ đăng). Không nhắc tên shop nguồn, không nhãn AI.
 
-`approve` tự gọi `writeback.mjs`: làm sạch lại nếu cần (remove-watermark-skill; rồi `scripts/clean-image.mjs` của skill chỉ khi `--check` chưa báo SẠCH), tạo `workspace/posts/POST-<slug>/` (image.png, `content-<lang>.txt`), thêm một mục `approved` vào `workspace/catalog.json` (`captions` = ngôn ngữ đăng; `review_captions` = ngôn ngữ chỉ để duyệt), rồi chạy `scripts/check-post.mjs` của skill. Ghi lỗi thì chạy lại `node scripts/writeback.mjs --id <draft>`.
-
-### Bước 5b. Host ảnh/video (sau khi duyệt)
-
-Metricool lấy ảnh/video qua link công khai, nên media của bài **đã duyệt** được đẩy lên repo công khai `C:\hoangpq\social-autopilot-sources` (settings `imageHost`, `type: "github-repo"`), phục vụ qua GitHub Pages `imageHost.pagesBase` = `https://hoangpham.is-a.dev/social-autopilot-sources` (đúng MIME `video/mp4`, `image/png`, hỗ trợ Range). `rawBase` (raw.githubusercontent.com) chỉ là dự phòng cho ảnh: raw trả `application/octet-stream` cho `.mp4` nên video không bao giờ dùng link raw. `approve` / `writeback` / app tự chạy bước này ngay sau khi ghi vào thương hiệu (`imageHost.auto_after_writeback`). Chạy tay hoặc chạy lại:
+2.4. Kiểm tra tự động:
 ```
-node scripts/host-image.mjs publish --brand <id> --post POST-xx [--video]
+node scripts/draft.mjs check --id <draft>        # qua hết → "ready"; không qua → "needs_caption" + problems
 ```
-- Chỉ nhận bài có trạng thái `approved`/`scheduled`/`published` trong `catalog.json` của thương hiệu; không bao giờ bản nháp hay ảnh tham khảo của đối thủ.
-- Ảnh: kiểm lại không còn metadata (`image-clean` + `clean-image.mjs --check` của skill), chép vào `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "`<brand> <post-id>`", push; kiểm link raw trước (vài giây) và ghi ngay `media_url` = link raw, rồi chờ Pages (tối đa `verify.attempts` x `delay_seconds`, ~3 phút) trả 200 đúng nội dung + `image/*` thì đổi `media_url` sang link Pages. Pages chưa xong thì giữ link raw (`fallback` trong JSON); chạy lại publish sau để đổi sang Pages.
-- Video (catalog `video`, vd bài `VID-`, hoặc file `.mp4`; `--video` bắt buộc phải có): chép `<post-id>.mp4` (+ ảnh bìa `<post-id>-thumb.png` nếu bài có ảnh), chờ link Pages trả 200 + `Content-Type: video/mp4`, rồi ghi `video_url` (+ `video_thumbnail_url`). `metricool-csv.mjs` đọc các trường này.
-- Sau khi duyệt, bước host trả về nhanh (push + kiểm ngắn): ảnh có ngay link raw; phần chậm (đổi sang Pages, hoặc video) chạy nền. Mọi kết quả, kể cả lỗi (+ lệnh `next` để chạy lại), đều được ghi vào `image_host` trong `status.json` của bản nháp.
-- `image_host.ok: false` không huỷ việc duyệt: ghi lỗi vào báo cáo, chạy lại lệnh trong `image_host.next` sau vài phút.
-- Trong app: bài đã duyệt hiện link ảnh, hoặc "chưa có link" và nút "Đưa ảnh lên" (cùng lệnh publish).
-- Chỉ gỡ file khi bài đã ở trạng thái `published` (Metricool không chép media ngoài; bài vẫn trỏ về link host, gỡ sớm là mất ảnh/video): `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`/`video_url`/`video_thumbnail_url`). Bài chưa `published` thì lệnh từ chối; `--force` gỡ bất chấp và in cảnh báo. Không gỡ ngay sau khi nhập CSV.
-- Chỉ đẩy file lên repo ảnh; không đăng, không gửi gì tới Metricool hay mạng xã hội.
+Kiểm: ảnh sạch metadata (điểm ảnh không đổi), đủ caption từng ngôn ngữ, dòng Website và hashtag cố định, không Markdown/ký tự ẩn, không chép caption tham khảo, không nhãn AI, prompt có NO LOGO (cảnh báo), watermark nếu bật, scene-swap đã `confirm-clean` và caption không có tên shop.
 
-### Bước 5c. Gửi lên Metricool qua MCP (sau khi duyệt và host)
+2.5. Ghi vào thương hiệu và host ảnh:
+```
+node scripts/finalize.mjs run --brand <id>       # mọi bản "ready" của thương hiệu (hoặc --id <draft>)
+```
+Kiểm lại lần nữa; không qua → `check_failed` + lý do, dừng riêng bài đó; qua → `writeback.mjs` tạo `workspace/posts/POST-<slug>/` + mục `approved` trong `catalog.json` của skill (`approval.by: "auto"`, `captions` = ngôn ngữ đăng, `review_captions` = chỉ để đọc, `inspiration.store_item`), chạy `check-post.mjs` của skill, rồi `host-image.mjs` đẩy ảnh lên repo công khai `C:\hoangpq\social-autopilot-sources` và ghi `media_url` (link raw ngay, đổi sang GitHub Pages khi sẵn sàng). Host lỗi không huỷ bài: chạy lại `node scripts/host-image.mjs publish --brand <id> --post POST-xx` (lệnh có trong `image_host.next`). Muốn bỏ một bài trước khi ghi: `node scripts/finalize.mjs cancel --id <draft> [--note ".."]` (hoặc nút Bỏ ở tab Bài đã tạo).
 
-Gói Metricool là **Starter** (không REST API). Đường chính: connector claude.ai "Metricool" cho agent các tool MCP (`getBrandSettings`, `createScheduledPost`, `getScheduledPosts`, `updateScheduledPost`, `getBestTimeToPostByNetwork`); Node không gọi được Metricool, nên script chỉ chuẩn bị tham số và ghi kết quả. `createScheduledPostForReview` cần gói team: không dùng.
+2.6. Gửi Metricool qua MCP:
+```
+node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-xx,...] [--draft|--schedule]
+```
+- Mỗi `items[]` = một bài `approved` có `media_url`/`video_url`, chưa có `metricool.<network>.id`, qua `check-post.mjs`. Bài không qua kiểm (check-post lỗi, giờ đã qua, nhãn AI...) nằm trong `blocked` với lý do; bài khác vẫn đi.
+- Mặc định theo `settings.metricool.default_mode` (`draft`: nháp, không tự đăng; `schedule`: hẹn giờ thật). `--draft`/`--schedule` ghi đè cho một lần.
+- Với từng item: gọi tool `createScheduledPost` với **đúng** `args.blogId`, `args.date`, `args.info` (chuỗi JSON, không sửa). Rồi ngay:
+  ```
+  node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <plannerUrl> --publication <publicationDate.dateTime> --tz <publicationDate.timezone> [--draft]
+  ```
+  (lệnh có sẵn trong `item.record`). `record` ghi `metricool.<network>` vào catalog; hẹn giờ thật thì thêm `schedule.<network>` + `scheduled`; rồi chạy `check-post.mjs`. Tool lỗi → không `record`, báo cáo; lượt sau `payload` đưa lại bài đó.
+- Không bao giờ tạo hay sửa bài cho Fortera Apparel (blogId `<blog_id_1>`); không `createScheduledPostForReview`.
+- Giờ: `info.publicationDate` mang múi giờ khách (`cadence.timezone`), Metricool tự quy đổi. Text chỉ gồm ngôn ngữ đăng, không `review_langs`, không nhãn AI.
+- Chỉ gỡ file trên repo ảnh khi bài đã `published`: `node scripts/host-image.mjs remove --brand <id> --post POST-xx`.
 
-1. Đầu bước, đối chiếu bài đã gửi ở vòng trước:
-   ```
-   node scripts/metricool-mcp.mjs status --brand <id>
-   ```
-   Có `query` thì gọi `getScheduledPosts` với đúng `brandId`, `fromDate`, `toDate`, `timezone`, khớp theo `id`: PENDING hoặc nháp → không làm gì; **ERROR** → ghi vào báo cáo (POST-xx, id, `planner_url`, lý do); **PUBLISHED** → `node <thư mục skill>/scripts/mark-published.mjs <POST-xx> <yyyy-mm-dd theo audience_time> [link bài] --lang <ngôn ngữ đăng>`; nháp mà người đã hẹn giờ trong Metricool → chạy lại `record` (cùng `--id`, không `--draft`, giờ Metricool trả về).
-2. Tạo tham số cho bài mới:
-   ```
-   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-xx,...] [--draft|--schedule]
-   ```
-   Mỗi `items[]` = một bài `approved` có `media_url`/`video_url` và chưa có `metricool.<network>.id`. Mặc định **nháp** (`draft: true`); `--schedule` chỉ khi người dùng bảo hẹn giờ thật.
-3. Với từng item: gọi tool MCP `createScheduledPost` với **đúng** `args.blogId`, `args.date`, `args.info` (chuỗi JSON, không sửa, không thêm chữ). Rồi ghi kết quả ngay:
-   ```
-   node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <plannerUrl> --publication <publicationDate.dateTime> --tz <publicationDate.timezone> [--draft]
-   ```
-   (lệnh có sẵn trong `item.record`). `record` ghi `metricool.<network>` vào catalog; không phải nháp thì thêm `schedule.<network>` và trạng thái `scheduled`; rồi chạy `check-post.mjs` của skill. Tool lỗi thì không chạy `record`, ghi lỗi vào báo cáo; chạy lại `payload` sẽ đưa lại bài đó.
-- **Không bao giờ** tạo hay sửa bài cho Fortera Apparel (blogId `<blog_id_1>`, không phải skill): script từ chối, agent cũng không gọi tool với blogId nào ngoài `args.blogId`.
-- Giờ: `info.publicationDate` mang múi giờ khách (`cadence.timezone`), Metricool tự quy đổi sang múi giờ brand (Indian/Christmas) — không quy đổi tay như CSV. `date` = cùng giờ kèm offset.
-- Text chỉ gồm ngôn ngữ đăng (`channels[].lang`), không bao giờ `review_langs`, không nhãn AI (payload chặn). MCP chép ảnh về `static.metricool.com`, nhưng vẫn chỉ gỡ file host sau khi bài `published`.
-- Bài đã có `metricool.<network>.id` không bao giờ gửi lại (payload bỏ qua, `skipped`).
-
-## Bước 6. Báo cáo
-
+2.7. Báo cáo:
 ```
 node scripts/queue.mjs
 ```
-Gửi người dùng một tin ngắn, mỗi thương hiệu:
-- nghiên cứu: đã lấy bao nhiêu bài / dừng vì checkpoint;
-- **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption đăng từng ngôn ngữ (`captions`, nguyên văn) và bản chỉ để duyệt (`review_captions`, ghi rõ "không đăng"), ý + link bài tham khảo; bản scene-swap thì kèm đường dẫn ảnh gốc của shop (`reference_image`) để người duyệt xem hai ảnh cạnh nhau; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
-- đã duyệt và ghi vào thương hiệu (POST-xx, thư mục, link ảnh `media_url` hoặc "chưa có link" kèm lỗi host);
-- Metricool: bài đã gửi (POST-xx, nháp hay hẹn giờ, giờ khách, `planner_url`), bài đã đăng (đã mark-published), bài ERROR;
-- lỗi cần người xử lý (Codex hết lượt, ảnh không đạt, host ảnh lỗi, Metricool lỗi).
+Mỗi thương hiệu: kho (`store`), nghiên cứu gần nhất, bài đã ghi (`written`: POST-xx, link ảnh hoặc lỗi host, trạng thái Metricool `draft|scheduled|published|error|not_sent` + `planner_url`), bài lỗi (`failed`), bài đang làm. Báo người dùng: từng bài (POST-xx, ảnh, caption EN nguyên văn, bản VN ghi rõ "chỉ để đọc, không đăng", link ảnh, Metricool), bài cũ đã gửi nốt, bài lỗi và lý do, kho còn bao nhiêu bài `new`. Nhắc mở app (tab Bài đã tạo).
 
-## Bước 7. Kết thúc vòng
-
-Không dựng trang nào: app đọc dữ liệu mới mỗi lần mở. Kể cả khi vòng dừng sớm, nhắc người dùng mở app (nhấp đúp `start-app.cmd`, Mac: `start-app.command`) để duyệt/bỏ, hoặc trả lời trong chat.
-
-## Phụ lục: xuất CSV cho Metricool (dự phòng khi MCP không dùng được; không import)
+## Phụ lục: CSV cho Metricool (chỉ dự phòng khi MCP không dùng được; không tự import)
 
 ```
 node scripts/metricool-csv.mjs export --brand <id> [--posts POST-01,POST-02] [--draft] [--lang en] [--date YYYY-MM-DD --time HH:MM] --out <file.csv>
 node scripts/metricool-csv.mjs validate <file.csv> [--brand <id>] [--allow-today] [--check-urls]
 ```
-- Chỉ bài `approved` có `media_url` (chuỗi hoặc mảng, tối đa 10) hoặc `video_url`. Đúng 99 cột theo `docs/metricool-csv-template.csv`. Không ghi vào thư mục thương hiệu, không gửi gì tới Metricool.
-- `Brand name` = `social.json metricool.brand_name` (nhãn đúng trong Metricool, vd `Dreamy Vows`); giờ theo `metricool.timezone` (timezone của brand trong Metricool), giờ lấy từ catalog `schedule {date, time}`, `--date/--time`, `cadence.slots` (nếu có), hoặc **tự động** khi `slots` trống: rải `posts_per_week` vào ngày/giờ tốt của mạng (bảng ở `docs/metricool.md`), mỗi ngày tối đa một bài của thương hiệu.
-- Chỉ ngôn ngữ đăng vào CSV; `--lang` với ngôn ngữ chỉ để duyệt bị từ chối. Text có nhãn AI bị từ chối.
-- `validate` báo lỗi theo từng dòng và exit 1 khi có bất kỳ lỗi nào (Metricool sẽ nhập tất cả thành nháp, ngày sai thành "hôm nay giờ hiện tại"). Link ảnh WebP (`.webp`, `format=webp`/`fm=webp`...; với `--check-urls` cả content-type `image/webp`) bị từ chối.
-- Metricool không chép ảnh ngoài khi nhập CSV: file trên repo ảnh phải còn đến khi bài đã đăng (xem bước 5b về `remove`).
-- Bài đã gửi qua MCP (`metricool.<network>.id`) bị bỏ qua, không xuất trùng.
+- Chỉ bài `approved` có `media_url` hoặc `video_url`; đúng 99 cột theo `docs/metricool-csv-template.csv`; chỉ ngôn ngữ đăng; nhãn AI và link WebP bị từ chối. Bài đã gửi qua MCP bị bỏ qua.
+- Giờ: catalog `schedule`, `--date/--time`, `cadence.slots`, hoặc tự động (bảng ở `docs/metricool.md`), quy đổi sang múi giờ brand Metricool. Người dùng tự nhập file trong Metricool.
+
+## Phụ lục: lệnh khác
+
+```
+node scripts/store.mjs list|show|reject|restore|known --brand <id> [...]   # kho (app tab Kho dùng cùng hàm)
+node scripts/store.mjs migrate [--brand <id>]                             # dữ liệu cũ workspace/runs/*/refs.json → kho
+node scripts/prompts.mjs list | show --mode "<chế độ>" --agent "<agent>" [--brand <id>]
+node scripts/social.mjs show|set --brand <id> ...                          # social.json an toàn (chặn token, chạy check-skill)
+node scripts/research.mjs clean --in <file> [--out <file>]                 # lọc U+034F / zero-width / NBSP
+node scripts/image-clean.mjs --id <draft>                                  # làm sạch metadata lại
+node scripts/writeback.mjs --id <draft>                                    # chạy lại ghi vào thương hiệu khi lỗi giữa chừng
+```
