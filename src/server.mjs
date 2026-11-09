@@ -7,7 +7,7 @@ import { spawn, execFile } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, statSync, renameSync, appendFileSync, createReadStream, readdirSync } from "node:fs";
 import { join, dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
 import { workspace, discoverBrands, listDrafts, latestRun, runDir, readJson, loadRefs, rawSettings, saveSettings, settings, toolRoot, cleanText, brandOverview, metricoolBrands, saveMetricoolBrands } from "../scripts/lib.mjs";
@@ -75,12 +75,58 @@ function scheduledPrompt() {
 
 // ----- HTTP -----
 const send = (res, status, data) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(JSON.stringify(data)); };
+const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+// A request body: always a JSON object ({} when empty), else a clear message instead of a JavaScript error.
 const body = async (req, limit = 2 * 1024 * 1024) => {
   const chunks = []; let size = 0;
   for await (const c of req) { size += c.length; if (size > limit) throw new Error("Dữ liệu quá lớn."); chunks.push(c); }
-  const text = Buffer.concat(chunks).toString("utf8");
-  return text ? JSON.parse(text) : {};
+  const text = Buffer.concat(chunks).toString("utf8").trim();
+  if (!text) return {};
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error("Dữ liệu gửi lên không phải JSON hợp lệ."); }
+  if (!isObject(data)) throw new Error("Dữ liệu gửi lên phải là một object JSON, ví dụ {\"id\": \"...\"}.");
+  return data;
 };
+const draftId = (b) => {
+  const id = typeof b.id === "string" ? b.id.trim() : "";
+  if (!id) throw new Error("Thiếu mã bản nháp (id).");
+  return id;
+};
+
+// ----- security: only this app's own window may drive it -----
+// DNS rebinding: the Host must be this server's own address. CSRF: every non-GET request needs Content-Type
+// application/json (so a browser preflights it, and nothing here answers CORS), a same-origin or absent Origin and
+// this run's random token (X-SA-Token), which only the pages served here carry (meta sa-token; ui/index.html call(),
+// core/assets/hub.js and core/setup/page.js send it).
+const TOKEN = randomBytes(24).toString("hex");
+const hosts = () => [`127.0.0.1:${PORT}`, `localhost:${PORT}`];
+const BOOT = `<meta name="sa-token" content="${TOKEN}">`;
+const withBoot = (html) => (/<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + BOOT) : BOOT + html);
+const sameToken = (v) => { const a = Buffer.from(String(v || "")), b = Buffer.from(TOKEN); return a.length === b.length && timingSafeEqual(a, b); };
+function refuse(req, path) {
+  if (!hosts().includes(String(req.headers.host || "").toLowerCase())) return "Máy chủ chỉ nhận yêu cầu gửi tới 127.0.0.1 hoặc localhost của app này.";
+  if (req.method === "GET" || req.method === "HEAD") return "";
+  const origin = req.headers.origin;
+  if (origin !== undefined && !hosts().map((h) => `http://${h}`).includes(origin)) return "Yêu cầu từ trang khác bị chặn.";
+  // core/launch.ps1 closes the server with a bare POST /api/quit when the window closes: allowed only from a non-browser
+  // client (browsers always send Origin and Sec-Fetch-Site on a POST).
+  if (path === "/api/quit" && origin === undefined && !req.headers["sec-fetch-site"]) return "";
+  if (!/^application\/json\b/i.test(String(req.headers["content-type"] || ""))) return "Yêu cầu phải gửi Content-Type: application/json.";
+  if (!sameToken(req.headers["x-sa-token"])) return "Thiếu hoặc sai mã phiên (X-SA-Token). Mở lại app rồi thử lại.";
+  return "";
+}
+
+// ----- short cache for the slow reads (discovery runs check-skill per brand); any write clears it -----
+const CACHE_MS = 20000;
+const cache = new Map();
+const cached = (key, fn) => {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  const value = fn();
+  cache.set(key, { at: Date.now(), value });
+  return value;
+};
+const discovered = () => cached("discover", () => discoverBrands());
 const sendFile = (res, file) => {
   if (!existsSync(file) || !statSync(file).isFile()) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { "content-type": TYPES[extname(file).toLowerCase()] || "application/octet-stream", "content-length": statSync(file).size, "cache-control": "no-store" });
@@ -98,52 +144,81 @@ function restart() {
 // A page's request: a function from scripts/ that may throw; its message goes back as { error }.
 const api = async (res, fn) => { try { send(res, 200, await fn()); } catch (e) { send(res, 400, { error: e.message }); } };
 
+const sendHtml = (res, file) => {
+  if (!existsSync(file) || !statSync(file).isFile()) { res.writeHead(404); return res.end(); }
+  const html = withBoot(readFileSync(file, "utf8"));
+  res.writeHead(200, { "content-type": TYPES[".html"], "content-length": Buffer.byteLength(html), "cache-control": "no-store" });
+  res.end(html);
+};
+
 async function handle(req, res) {
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
   const get = (k) => url.searchParams.get(k) || "";
+  const refused = refuse(req, path);
+  if (refused) return send(res, 403, { error: refused });
+  if (req.method !== "GET" && req.method !== "HEAD") { cache.clear(); res.on("finish", () => cache.clear()); }
   if (path === "/api/root") return send(res, 200, { root, service: "social-autopilot", protocol: 1, version: version(), pid: process.pid });
   if (path === "/api/client-error" && req.method === "POST") {
     const { message = "", stack = "" } = await body(req).catch(() => ({}));
     logError("Giao diện Social Autopilot", [message, stack].filter(Boolean).join("\n").slice(0, 4000));
     return send(res, 200, { ok: true });
   }
-  if (path === "/api/brands") return api(res, () => { const found = discoverBrands(); return { ...found, metricool: brandOverview(found) }; });
+  if (path === "/api/brands") return api(res, () => cached("brands", () => { const found = discovered(); return { ...found, metricool: brandOverview(found) }; }));
   if (path === "/api/metricool-brands" && req.method === "GET") return api(res, () => metricoolBrands());
   if (path === "/api/metricool-brands" && req.method === "POST") return api(res, async () => saveMetricoolBrands(await body(req)));
-  if (path === "/api/brand" && req.method === "GET") return api(res, () => readSocial(get("id")));
-  if (path === "/api/brand" && req.method === "POST") return api(res, async () => saveSocial(get("id"), (await body(req)).social));
+  if (path === "/api/brand" && req.method === "GET") return api(res, () => {
+    if (!get("id")) throw new Error("Thiếu mã thương hiệu (id).");
+    return cached(`brand:${get("id")}`, () => readSocial(get("id")));
+  });
+  if (path === "/api/brand" && req.method === "POST") return api(res, async () => {
+    if (!get("id")) throw new Error("Thiếu mã thương hiệu (id).");
+    const b = await body(req);
+    if (!isObject(b.social)) throw new Error("Thiếu nội dung social.json (social phải là một object JSON).");
+    return saveSocial(get("id"), b.social);
+  });
   if (path === "/api/runs") return api(res, () => {
-    const brands = discoverBrands().brands.map((b) => ({ id: b.id, runs: runsOf(b.id) }));
-    const brand = get("brand"), date = get("date") || (brand ? latestRun(brand) : "");
-    return { brands, current: brand && date ? runData(brand, date) : null };
+    const ids = discovered().brands.map((b) => b.id);
+    const brand = get("brand"), date = get("date");
+    if (brand && !ids.includes(brand)) throw new Error(`Không có thương hiệu "${brand}".`);
+    if (date && !/^d{4}-d{2}-d{2}$/.test(date)) throw new Error("Ngày không hợp lệ (cần dạng YYYY-MM-DD).");
+    const day = date || (brand ? latestRun(brand) : "");
+    return { brands: ids.map((id) => ({ id, runs: runsOf(id) })), current: brand && day ? runData(brand, day) : null };
   });
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
   // Approve = the same as approve.mjs approve: write-back, then the image goes to the image host (image_host).
   if (path === "/api/approve" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
-    const r = approve({ id: b.id, by: String(b.by || "").trim(), note: String(b.note || "") });
+    // No named approver: the app's user approves ("user" unless a name is sent).
+    const id = draftId(b), by = String(b.by ?? "").trim() || "user";
+    const r = approve({ id, by, note: String(b.note ?? "") });
     const host = await hostAfterWriteback(r);
     return host ? { ...r, image_host: host } : r;
   });
   // "Đưa ảnh lên": host-image.mjs publish for an approved draft's brand post (it refuses anything not approved).
   if (path === "/api/host-image" && req.method === "POST") return api(res, async () => {
-    const b = await body(req);
-    const d = listDrafts().find((x) => x.id === b.id);
-    if (!d) throw new Error(`Không có bản nháp ${b.id}.`);
+    const id = draftId(await body(req));
+    const d = listDrafts().find((x) => x.id === id);
+    if (!d) throw new Error(`Không có bản nháp ${id}.`);
     if (d.status.status !== "approved" || !d.status.brand_post?.id) throw new Error("Chỉ đưa ảnh lên cho bài đã duyệt và đã ghi vào thương hiệu.");
     return hostImage({ brand: d.draft.brand, post: d.status.brand_post.id });
   });
   if (path === "/api/reject" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
-    if (!String(b.note || "").trim()) throw new Error("Từ chối cần lý do.");
-    return reject({ id: b.id, by: String(b.by || "").trim(), note: String(b.note) });
+    const id = draftId(b);
+    if (!String(b.note ?? "").trim()) throw new Error("Từ chối cần lý do.");
+    return reject({ id, by: String(b.by ?? "").trim() || "user", note: String(b.note) });
   });
   if (path === "/api/settings" && req.method === "GET") return api(res, () => ({ settings: rawSettings(), skillsRootResolved: settings().skillsRoot, scheduledPrompt: scheduledPrompt() }));
-  if (path === "/api/settings" && req.method === "POST") return api(res, async () => ({ settings: saveSettings((await body(req)).settings || {}) }));
+  if (path === "/api/settings" && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    if (!isObject(b.settings)) throw new Error("Thiếu cài đặt (settings phải là một object JSON).");
+    return { settings: saveSettings(b.settings) };
+  });
   if (path === "/file") return allowedFile(get("path")) ? sendFile(res, resolve(get("path"))) : (res.writeHead(404), res.end());
-  // Cấu hình, Cập nhật, Tải lại (core/assets/hub.js).
+  // Cấu hình, Cập nhật, Tải lại (core/assets/hub.js). The Cấu hình page gets the session token like the main page.
+  if (path === "/setup" && req.method === "GET") return sendHtml(res, join(root, "core", "setup", "page.html"));
   if (await configApi(req, res, path)) return;
   if (path === "/api/update-check") {
     const out = await pwshOut(`. '${q(join(root, "core", "update.ps1"))}' -NoRun; [pscustomobject]@{ current = (Get-InstalledVersion '${q(root)}'); next = (Get-AppUpdate '${q(root)}') } | ConvertTo-Json -Compress`, 60000).catch(() => "");
@@ -166,7 +241,7 @@ async function handle(req, res) {
   const rel = path === "/" ? "index.html" : path.slice(1);
   const file = resolve(root, "ui", rel);
   if (!file.startsWith(resolve(root, "ui") + sep)) { res.writeHead(404); return res.end(); }
-  return sendFile(res, file);
+  return extname(file).toLowerCase() === ".html" ? sendHtml(res, file) : sendFile(res, file);
 }
 
 const server = createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })));

@@ -137,7 +137,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <div class="toolbar">
       <div><label for="drStatus">Hiện</label><select id="drStatus">
         <option value="awaiting_approval">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Đã bỏ</option><option value="">Tất cả</option></select></div>
-      <div><label for="approver">Người duyệt</label><input id="approver" placeholder="tên của bạn" autocomplete="off"></div>
       <button class="btn" type="button" id="drReload">Tải lại</button>
     </div>
     <div class="cards" id="draftList"></div>
@@ -179,7 +178,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   // Every request of the page goes through call(): GET without data, POST with it.
-  const call = (url, data) => fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", body: JSON.stringify(data) }).then((r) => r.json());
+  // Every write carries the session token the server puts in this page (meta sa-token); without it the server refuses.
+  const call = (url, data) => fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", headers: { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" }, body: JSON.stringify(data) }).then((r) => r.json());
   const getJson = (url) => call(url);
   const postJson = (url, data) => call(url, data);
   const img = (p) => `/file?path=${encodeURIComponent(p)}`;
@@ -262,8 +262,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#brandForm").innerHTML = `<fieldset id="simple">
       <div class="inline"><label><input type="checkbox" id="fEnabled"${s.enabled ? " checked" : ""}> Bật chạy tự động</label>
         <label><input type="checkbox" id="fRedraw"${rr.enabled ? " checked" : ""}> Cho đổi cảnh ảnh shop (scene-swap)</label></div>
-      <div class="grid2"><div><label>Người duyệt</label><input id="fOwner" value="${esc(s.approval?.owner || "")}"></div>
-        <div><label>Cho dựng cảnh bằng AI</label><select id="fAi"><option value="null"${pi.ai_scenes_allowed == null ? " selected" : ""}>chưa chốt</option><option value="true"${pi.ai_scenes_allowed === true ? " selected" : ""}>có</option><option value="false"${pi.ai_scenes_allowed === false ? " selected" : ""}>không</option></select></div></div>
+      <div class="grid2"><div><label>Cho dựng cảnh bằng AI</label><select id="fAi"><option value="null"${pi.ai_scenes_allowed == null ? " selected" : ""}>chưa chốt</option><option value="true"${pi.ai_scenes_allowed === true ? " selected" : ""}>có</option><option value="false"${pi.ai_scenes_allowed === false ? " selected" : ""}>không</option></select></div></div>
       <label>Giờ đăng (theo múi giờ ${esc(s.cadence?.timezone || "-")})</label><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div>
       <button class="btn" type="button" id="addSlot">+ Giờ</button>
       <label>Nguồn tham khảo</label><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="bật"><span class="src-url">${esc(x.name || x.id)} <span class="meta">${esc(x.url)}</span></span></div>`).join("") || `<div class="meta">Chưa có nguồn.</div>`}</div>
@@ -294,7 +293,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       else {
         social = JSON.parse(JSON.stringify(editing.social));
         social.enabled = $("#fEnabled").checked;
-        (social.approval ||= {}).owner = $("#fOwner").value.trim();
         const pi = (social.product_images ||= {});
         pi.ai_scenes_allowed = { null: null, true: true, false: false }[$("#fAi").value];
         (pi.reference_redraw ||= {}).enabled = $("#fRedraw").checked;
@@ -471,20 +469,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     // The reject reason is only ever sent with Bỏ, never as an approval note.
     const note = id === "reject" ? ($(".note", card)?.value.trim() || "") : "";
     if (id === "reject" && !note) { msg.innerHTML = `<span class="bad-text">Nhập lý do bỏ.</span>`; return; }
-    const by = $("#approver").value.trim();
-    if (!by) { msg.innerHTML = `<span class="bad-text">Nhập tên người duyệt ở trên (phải là người duyệt của thương hiệu).</span>`; $("#approver").focus(); return; }
-    store.set("approver", by);
     for (const b of $$("[data-act]", card)) b.disabled = true;
     msg.textContent = id === "approve" ? "Đang duyệt và ghi vào thương hiệu…" : "Đang bỏ…";
-    const r = await postJson(`/api/${id}`, { id: card.dataset.id, by, note }).catch(() => offline);
+    const r = await postJson(`/api/${id}`, { id: card.dataset.id, note }).catch(() => offline);
     if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; for (const b of $$("[data-act]", card)) b.disabled = false; return; }
     const ce = r.check_post?.errors;
     const host = r.image_host ? (r.image_host.ok ? " · đã có link ảnh" : `</span><br><span class="warn-text">Chưa có link ảnh: ${esc(r.image_host.error)} (bấm "Đưa ảnh lên" để thử lại)`) : "";
     msg.innerHTML = id === "approve" ? `<span class="ok-text">Đã duyệt: ${esc(r.brand_post?.id)}${ce ? ` · check-post: ${ce} lỗi` : ""}${host}</span>` : `<span>Đã bỏ.</span>`;
     setTimeout(loadDrafts, 1500);
   }
-  $("#approver").value = store.get("approver");
-  $("#approver").onchange = () => store.set("approver", $("#approver").value.trim());
+  try { localStorage.removeItem("approver"); } catch {} // no named approver any more: drop the old remembered name
   $("#drStatus").value = store.get("drStatus") || "awaiting_approval";
   $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
   $("#drReload").onclick = loadDrafts;

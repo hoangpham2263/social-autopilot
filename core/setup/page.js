@@ -3,7 +3,9 @@
 // was opened from), so the menu and every tool share this one page.
 (() => {
   const $ = (s) => document.querySelector(s);
-  const post = (path, data, method = "POST") => fetch(path, { method, body: data ? JSON.stringify(data) : undefined }).then((r) => r.json()).catch(() => ({ error: "Không kết nối được." }));
+  // Writes carry the session token the server puts in the page (meta sa-token); without it the server refuses.
+  const headers = { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" };
+  const post = (path, data, method = "POST") => fetch(path, { method, headers, body: data ? JSON.stringify(data) : undefined }).then((r) => r.json()).catch(() => ({ error: "Không kết nối được." }));
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text != null ? { textContent: text } : {});
   // Only a page of this server: a path, never another site.
   const back = new URLSearchParams(location.search).get("back");
@@ -45,7 +47,7 @@
     for (const row of items.values()) { row.mark.textContent = "○"; row.mark.style.color = ""; row.detail.textContent = "Đang kiểm tra…"; row.fix.hidden = true; }
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), 60000);
-    const report = await fetch("/api/setup", { method: "POST", signal: abort.signal, cache: "no-store" }).then((r) => r.json())
+    const report = await fetch("/api/setup", { method: "POST", headers, signal: abort.signal, cache: "no-store" }).then((r) => r.json())
       .catch((e) => ({ error: e.name === "AbortError" ? "Kiểm tra quá thời gian. Bấm Kiểm tra lại." : "Mất kết nối với app. Bấm Kiểm tra lại." }));
     clearTimeout(timer);
     const steps = [].concat(report.Steps || []);
