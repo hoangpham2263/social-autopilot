@@ -1,16 +1,18 @@
 # Ready-to-paste prompts (2 modes, one per agent)
 
-The only source of the prompts: the app (**Prompt** tab) and `node scripts/prompts.mjs show --mode "<mode>" --agent "<agent>" [--brand <id>]` read this file. Each prompt is a `### <mode> · <agent>` heading with a `text` block. Placeholders: `{{TOOL}}` = this tool's folder on the machine, `{{BRAND}}` = a brand id (example: `dreamyvows`) or "all usable brands", `{{OPTIONS}}` = this run's options (or "defaults").
+The only source of the prompts: the app (**Prompt** tab) and `node scripts/prompts.mjs show --mode "<mode>" --agent "<agent>" [--brand <id>]` read this file. Each prompt is a `### <mode> · <agent>` heading with a `text` block. Placeholders: `{{TOOL}}` = this tool's folder on the machine, `{{BRAND}}` = a brand id (example: `dreamyvows`) or "all usable brands", `{{OPTIONS}}` = this run's options (or "defaults"), `{{SKILLS}}` = one line per brand in scope, A-Z: `SKILL: <brand id> → <absolute skill folder> (read its SKILL.md + project/project.md + project/social.json)` (from the brand → skill links, `workspace/metricool-brands.json` `skill_path`).
 
-Every prompt follows ONE fixed template, so every run is the same: `TASK`, `OPTIONS`, `STEPS` (numbered, one line each, mapping 1:1 to the RUNBOOK.md step numbers of the mode), `STOP IF`, `NEVER`. At most 15 lines. The detail of each step, the rules and the report format live in `RUNBOOK.md`; change a step there and keep the line here in sync. The last two steps of every run are always: write the run log (`scripts/runlog.mjs`), then the report to the user with the fixed headings.
+Every prompt follows ONE fixed template, so every run is the same: `TASK`, `OPTIONS`, `TOOL`, `SKILL` (one per brand), `STEPS` (numbered, one line each, mapping 1:1 to the RUNBOOK.md step numbers of the mode), `STOP IF`, `NEVER`. At most 18 lines (one SKILL line counted). The detail of each step, the rules and the report format live in `RUNBOOK.md`; change a step there and keep the line here in sync. The last two steps of every run are always: write the run log (`scripts/runlog.mjs`), then the report to the user with the fixed headings.
 
 ### Research only · Claude Code
 
 ```text
 TASK: Research only — brand: {{BRAND}} — agent: Claude Code
 OPTIONS: {{OPTIONS}}
+TOOL: {{TOOL}}
+{{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; node scripts/brands.mjs.
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; node scripts/brands.mjs.
 2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
 3. 1.2 Crawl each source with Playwright MCP (the Chrome signed into Facebook), as docs/research.md says.
 4. 1.3 Ingest + 1.4 record how each source ended (research.mjs ingest, research.mjs result).
@@ -26,8 +28,10 @@ NEVER: make ideas or posts, send anything to Metricool, sign in for me, store co
 ```text
 TASK: Research only — brand: {{BRAND}} — agent: Codex
 OPTIONS: {{OPTIONS}}
+TOOL: {{TOOL}}
+{{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; check you have a browser MCP; node scripts/brands.mjs.
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; check you have a browser MCP; node scripts/brands.mjs.
 2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
 3. 1.2 Crawl each source with the browser MCP (the Chrome signed into Facebook), as docs/research.md says.
 4. 1.3 Ingest + 1.4 record how each source ended (research.mjs ingest, research.mjs result).
@@ -50,8 +54,10 @@ This mode runs node commands in {{TOOL}} and drives the Chrome signed into Faceb
 ```text
 TASK: Create & publish — brand: {{BRAND}} — agent: Claude Code
 OPTIONS: {{OPTIONS}}
+TOOL: {{TOOL}}
+{{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; node scripts/brands.mjs.
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; node scripts/brands.mjs.
 2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
 3. 2.1 Schedule approved posts not yet sent at the best times (payload → createScheduledPost → record).
 4. 2.2 Reconcile sent posts (status → getScheduledPosts).
@@ -68,8 +74,10 @@ NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI l
 ```text
 TASK: Create & publish — brand: {{BRAND}} — agent: Codex
 OPTIONS: {{OPTIONS}}
+TOOL: {{TOOL}}
+{{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; check the Metricool MCP tools; node scripts/brands.mjs.
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; check the Metricool MCP tools; node scripts/brands.mjs.
 2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
 3. 2.1 Schedule approved posts not yet sent at the best times (payload → createScheduledPost → record).
 4. 2.2 Reconcile sent posts (status → getScheduledPosts).
