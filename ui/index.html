@@ -18,9 +18,10 @@ b, strong, h1, h2, h3, th { font-weight: 400; }
 a { color: #0b57d0; }
 html, body { height: 100%; }
 main { height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
-main > header, main > nav, main > .setup-status { flex: 0 0 auto; }
+main > header, main > nav, main > .setup-status, main > .app-foot { flex: 0 0 auto; }
 .page { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .page[hidden] { display: none; }
+.app-foot { flex: 0 0 auto; padding: 6px 0 0; text-align: center; font-size: 11px; color: var(--muted); }
 nav.tabs { display: flex; margin: 0 0 12px; }
 nav.tabs button { height: var(--ctl-h); padding: var(--ctl-pad); font: inherit; font-size: var(--ctl-font); background: #e1e1e1; border: var(--ctl-border); margin-right: -1px; cursor: default; }
 nav.tabs button:hover { border-color: #0078d7; position: relative; }
@@ -265,6 +266,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <div class="row-actions"><button class="btn primary" type="button" id="brandSave" title="After saving, the skill's check-skill runs; a broken file is put back">Save</button></div>
     <div class="msg" id="brandMsg"></div>
   </section>
+  <footer class="app-foot" id="appFoot">© 2026 Social Autopilot</footer>
 </main>
 <script>
 (() => {
@@ -302,6 +304,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   for (const b of $$("#tabs button")) b.onclick = () => show(b.dataset.page);
   // core/assets/hub.js opens Settings when the setup is incomplete (its banner's button too).
   window.saOpenSettings = () => show("settings");
+  // Footer: the installed version (/api/root).
+  getJson("/api/root").then((r) => { if (r.version) $("#appFoot").textContent = `© 2026 Social Autopilot · v${String(r.version).replace(/^v/, "")}`; }).catch(() => {});
 
   // ----- Overview: per brand, from queue.mjs (library, last research, posts, Metricool) + the skill check -----
   let brandData = { brands: [], metricool: { brands: [] } };
@@ -547,7 +551,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
     $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
     const k = c.counts || {};
-    const items = arr(c.items), ideas = arr(c.ideas);
+    const items = arr(c.items);
     const prog = Object.entries(c.progress || {});
     const progress = prog.length ? `<details><summary>Crawl progress by source</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Source</th><th>Last run</th><th>Result</th><th>Reached end</th><th>In library</th><th>Newest</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} new)</td><td>${p.reached_end ? "yes" : "no"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
     const list = items.slice(0, resShown);
@@ -556,8 +560,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         ${arr(it.image_paths).length ? `<button class="thumb" type="button" title="View"><img loading="lazy" src="${img(it.image_paths[0])}" alt=""></button>` : `<div class="none">No image</div>`}
         <div class="head"><span class="title">${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : ""}</div>
         <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · ${esc(it.posted_date)}` : ""}</div></div>`).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
-      ${items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}
-      <fieldset class="spaced"><legend>Ideas from the library</legend>${ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Library post</th><th>Status</th><th>Product</th><th>Scene</th><th>Drafts</th></tr></thead><tbody>${ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc(arr(i.drafts).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No ideas yet ("Create & publish" mode).</div>`}</fieldset>`;
+      ${items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
     const cards = $$("#resBody .ref");
     wireCards(cards, (i) => openStoreItem(c.brand, list.slice(), i));
