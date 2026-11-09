@@ -68,7 +68,9 @@ test.before(() => {
   draft('dreamyvows', 'dreamyvows-20261109-04', { status: 'image_failed', extra: { error: 'Codex hết lượt' } });
   // One error now (counted), one long ago (not counted: only the last 24 hours).
   const now = new Date().toISOString();
-  write(path.join(ws, 'logs', `${now.slice(0, 10)}.log`), `[2020-01-01T00:00:00.000Z] brands.mjs  -> error: old\n[${now}] research.mjs start --brand grenheim -> error: research.max_per_day = 0.\n`);
+  write(path.join(ws, 'logs', `${now.slice(0, 10)}.log`), `[2020-01-01T00:00:00.000Z] brands.mjs  -> error: old\n[${now}] research.mjs start --brand grenheim -> error: research.max_per_day = 0.\n` +
+    // Mistyped commands and non-pipeline scripts: not counted.
+    `[${now}] draft.mjs nwe --brand x -> error: Lệnh: new | image | watermark | confirm-clean | check | show | list\n[${now}] research.mjs start -> error: Thiếu --brand.\n[${now}] draft.mjs show --id zz -> error: Không có bản nháp zz.\n[${now}] brands.mjs  -> error: something\n`);
 });
 test.after(() => { if (process.env.SA_DASHBOARD_KEEP) console.log(`dashboard demo kept: ${outFile}`); else fs.rmSync(tmp, { recursive: true, force: true }); });
 
@@ -105,15 +107,51 @@ test('builds one self-contained, read-only status page', () => {
   assert.match(html, /chưa có link/);
 
   // Only the main sections: no research runs, settings or error table; errors are just a count.
-  assert.deepEqual(Object.keys(data).sort(), ['brands', 'drafts', 'errors', 'generated_at', 'refresh', 'skills_root']);
+  assert.deepEqual(Object.keys(data).sort(), ['brands', 'drafts', 'errors', 'generated_at', 'metricool', 'refresh', 'skills_root']);
   assert.equal(data.errors.count, 1);
   assert.equal(res.errors_24h, 1);
+  // Xem trước Facebook on each waiting draft: the same preview data as the app (scripts/preview.mjs), media by relative path.
+  assert.ok(waiting.every((d) => d.preview && d.preview.posts.length), 'preview on every waiting draft');
+  const fb = first.preview.posts.find((p) => p.network === 'facebook');
+  assert.ok(fb.texts.some((t) => /Đèn neon "Love"/.test(t.text)), 'caption text in the preview');
+  assert.equal(first.preview.media[0].url, first.image);
+  assert.ok(data.drafts.filter((d) => d.status !== 'awaiting_approval').every((d) => d.preview === null), 'preview only for waiting drafts');
+  assert.match(html, /Xem trước Facebook/);
+  // Metricool brands from config/metricool-brands.json via brandOverview: Fortera has no skill.
+  const fortera = data.metricool.brands.find((b) => /Fortera/.test(b.name));
+  if (fortera) { assert.equal(fortera.skill_id, null); assert.equal(fortera.skill, null); }
+  assert.ok(data.metricool.brands.every((b) => typeof b.tz_mismatch === 'boolean'));
+  assert.ok(data.metricool.brands.filter((b) => b.skill).every((b) => b.skill.missing.every((m) => !/[a-z_]+\.[a-z_]+/.test(m))), 'plain words');
+  assert.match(html, /Chưa có bộ skill/);
   if (fs.existsSync(path.join(skills, 'grenheim-skills'))) {
     const g = data.brands.find((b) => b.id === 'grenheim');
     assert.ok(g, 'brand from skillsRoot');
     assert.equal(typeof g.sources, 'number');
     assert.ok(g.missing.every((m) => typeof m === 'string' && !/[a-z_]+\.[a-z_]+/.test(m)), `plain words, no field names: ${g.missing}`);
   }
+});
+
+test('without --out, a run with SA_WORKSPACE writes inside that workspace, never the tool root', () => {
+  const real = path.join(tool, 'dashboard.html');
+  const before = fs.existsSync(real) ? fs.statSync(real).mtimeMs : null;
+  const r = spawnSync(process.execPath, [path.join(tool, 'scripts', 'dashboard.mjs')], { env: { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: skills }, encoding: 'utf8' });
+  const res = JSON.parse(r.stdout);
+  assert.equal(res.ok, true, r.stdout + r.stderr);
+  assert.equal(path.resolve(res.file), path.resolve(ws, 'dashboard.html'));
+  assert.ok(fs.existsSync(path.join(ws, 'dashboard.html')));
+  assert.equal(fs.existsSync(real) ? fs.statSync(real).mtimeMs : null, before, 'real dashboard.html untouched');
+});
+
+test('error count: only pipeline failures, not mistyped commands', async () => {
+  const { isPipelineError } = await import('../scripts/dashboard.mjs');
+  const t = '[2026-11-09T01:00:00.000Z] ';
+  assert.equal(isPipelineError(t + 'draft.mjs image --id x -> error: Codex hết lượt'), true);
+  assert.equal(isPipelineError(t + 'host-image.mjs publish --post POST-01 -> error: git push lỗi'), true);
+  assert.equal(isPipelineError(t + 'draft.mjs nwe -> error: Lệnh: new | image'), false);
+  assert.equal(isPipelineError(t + 'research.mjs start -> error: Thiếu --brand.'), false);
+  assert.equal(isPipelineError(t + 'draft.mjs image --id zz -> error: Không có bản nháp zz.'), false);
+  assert.equal(isPipelineError(t + 'brands.mjs  -> error: x'), false);
+  assert.equal(isPipelineError(t + 'draft.mjs image -> ok'), false);
 });
 
 test('missing items read in plain Vietnamese', async () => {

@@ -2,12 +2,14 @@
 // miss, approved posts) with the same functions the scheduled agent runs, and writes ONE self-contained dashboard.html
 // (data embedded as JSON, images by relative path, no server). Open it by double-click; refresh by running this again
 // (open-dashboard.cmd does both). It never writes to a brand folder or changes any draft.
-//   node scripts/dashboard.mjs [--out <file>]      default: <tool>/dashboard.html (git-ignored: local data)
+//   node scripts/dashboard.mjs [--out <file>]      default: <tool>/dashboard.html (git-ignored: local data);
+//                                                  with SA_WORKSPACE set: <SA_WORKSPACE>/dashboard.html
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { main, out, isMain, parseArgs, settings, discoverBrands, brandSources, readJson, listDrafts, workspace, toolRoot, stamp } from './lib.mjs';
+import { main, out, isMain, parseArgs, settings, discoverBrands, brandSources, readJson, listDrafts, workspace, toolRoot, stamp, brandOverview } from './lib.mjs';
 import { summary } from './draft-lib.mjs';
+import { previewOf } from './preview.mjs';
 
 const REFRESH = 'node scripts/dashboard.mjs';
 
@@ -44,15 +46,24 @@ function linker(outDir) {
 }
 const langOf = (file) => /^content-(.+)\.txt$/.exec(file)?.[1] || file;
 
-// Errors the scripts logged in the last 24 hours (workspace/logs/<date>.log): only a count for the page.
+// Real pipeline failures only (draft, image, research, image hosting, writeback): a mistyped command (unknown command,
+// missing/wrong flag, unknown id) is the caller's typo, not something the user has to look at.
+const PIPELINE = new Set(['draft.mjs', 'image-clean.mjs', 'research.mjs', 'host-image.mjs', 'writeback.mjs']);
+const USAGE = [/^Lệnh:/, /^Thiếu --/, /cần --/, /^Dùng --/, /^--[a-z]/, /^Mã bản nháp không hợp lệ/, /^Không có (bản nháp|ý|thương hiệu|file) /, /^Source "[^"]*" không có/];
+export function isPipelineError(line) {
+  const m = /^\[[^\]]+\] (\S+)(?: .*?)? -> error: (.*)$/.exec(line);
+  return !!m && PIPELINE.has(m[1]) && !USAGE.some((re) => re.test(m[2]));
+}
+
+// Pipeline errors the scripts logged in the last 24 hours (workspace/logs/<date>.log): only a count for the page.
 function recentErrors(now = Date.now()) {
   const dir = path.join(workspace, 'logs');
   let count = 0;
   if (fs.existsSync(dir)) {
     for (const f of fs.readdirSync(dir).filter((x) => /^\d{4}-\d{2}-\d{2}\.log$/.test(x)).sort().slice(-2)) {
       for (const l of fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/)) {
-        const m = /^\[([^\]]+)\] .* -> error: /.exec(l);
-        if (m && now - Date.parse(m[1]) <= 24 * 3600 * 1000) count++;
+        const m = /^\[([^\]]+)\] /.exec(l);
+        if (m && isPipelineError(l) && now - Date.parse(m[1]) <= 24 * 3600 * 1000) count++;
       }
     }
   }
@@ -62,12 +73,24 @@ function recentErrors(now = Date.now()) {
 export function collect({ outDir = toolRoot } = {}) {
   const s = settings();
   const link = linker(outDir);
-  const { root, brands } = discoverBrands(s);
+  const found = discoverBrands(s);
+  const { root, brands } = found;
   const brandList = brands.map((b) => {
     let social = {};
     try { social = readJson(path.join(b.dir, 'project', 'social.json')); } catch {}
     return { id: b.id, name: b.brand || b.id, enabled: b.enabled, ready: b.ready, usable: b.usable, sources: brandSources(social).length, missing: (b.problems || []).map(plainProblem) };
   });
+  // The Metricool account brands (config/metricool-brands.json) with their skill status, as the app shows them.
+  let metricool;
+  try {
+    const m = brandOverview(found);
+    metricool = {
+      account: { user_id: m.account.user_id || '', brand_limit: m.account.brand_limit || 0 },
+      brands: m.brands.map((b) => ({ name: b.name, timezone: b.timezone || '', networks: b.networks || [], skill_id: b.skill_id || null, skill_missing: b.skill_missing, tz_mismatch: b.tz_mismatch,
+        skill: b.skill ? { id: b.skill.id, enabled: b.skill.enabled, ready: b.skill.ready, usable: b.skill.usable, timezone: b.skill.timezone || '', missing: (b.skill.problems || []).map(plainProblem) } : null })),
+      skills_without_metricool: m.skills_without_metricool,
+    };
+  } catch (e) { metricool = { error: e.message, account: {}, brands: [], skills_without_metricool: [] }; }
   // Hosted image link (media_url, written by host-image.mjs) from the brand catalog of each approved post.
   const catalogs = new Map();
   const mediaUrl = (bp) => {
@@ -84,10 +107,11 @@ export function collect({ outDir = toolRoot } = {}) {
       reference_image: sm.reference_image ? link(sm.reference_image) : '', source_shop: sm.source_shop || '', inspiration: sm.inspiration || '',
       captions: Object.entries(sm.captions).map(([f, text]) => ({ lang: langOf(f), text })),
       problems: sm.problems, dir: d.dir,
+      preview: sm.status === 'awaiting_approval' ? (({ media, ...p }) => ({ ...p, media: media.map((x) => ({ type: x.type, url: link(x.path) })) }))(previewOf(d)) : null,
       brand_post: st.brand_post ? { id: st.brand_post.id, folder: st.brand_post.folder || '', media_url: mediaUrl(st.brand_post) } : null,
     };
   }).sort((a, b) => String(b.created).localeCompare(String(a.created)));
-  return { generated_at: stamp(), refresh: REFRESH, skills_root: root, brands: brandList, drafts, errors: recentErrors() };
+  return { generated_at: stamp(), refresh: REFRESH, skills_root: root, brands: brandList, metricool, drafts, errors: recentErrors() };
 }
 
 const BS = String.fromCharCode(92);
@@ -100,7 +124,11 @@ export function render(data) {
   return tpl.replace('/*__DATA__*/null', () => embed(data));
 }
 
-export function generate({ out: file = path.join(toolRoot, 'dashboard.html') } = {}) {
+// Default output: <tool>/dashboard.html; with SA_WORKSPACE (tests, scratch runs) inside that workspace, so a throw-away
+// run never overwrites the real page.
+export const defaultOut = () => (process.env.SA_WORKSPACE ? path.join(workspace, 'dashboard.html') : path.join(toolRoot, 'dashboard.html'));
+
+export function generate({ out: file = defaultOut() } = {}) {
   const target = path.resolve(file);
   const data = collect({ outDir: path.dirname(target) });
   fs.mkdirSync(path.dirname(target), { recursive: true });

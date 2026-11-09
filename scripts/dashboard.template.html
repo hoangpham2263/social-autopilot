@@ -137,6 +137,25 @@ details.more div { padding-top: 4px; }
 .row.approved { grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; }
 .row.approved a { margin-right: 6px; }
 .ok-text { color: var(--green); }
+.row.mc { grid-template-columns: minmax(120px, 1fr) 150px minmax(0, 2.4fr) 170px; }
+.row .warn-line { flex-basis: 100%; color: var(--amber); font-size: 12.5px; }
+.row .tz { font-size: 12.5px; color: var(--muted-foreground); }
+
+/* Xem trước: a compact static mock of the Facebook post (no external calls; Facebook colours inside the frame only). */
+details.pv-box summary { padding: 6px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); }
+details.pv-box summary:hover { border-color: var(--ring); }
+details.pv-box[open] summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.pv-wrap { display: grid; gap: 8px; padding: 8px; background: #f0f2f5; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 calc(var(--radius) - 2px) calc(var(--radius) - 2px); }
+.pv { width: 100%; max-width: 380px; margin: 0 auto; background: #fff; border: 1px solid #dadde1; border-radius: 8px; font: 13.5px/1.34 "Segoe UI", Helvetica, Arial, sans-serif; color: #050505; overflow: hidden; }
+.pv-tag { font-size: 11px; color: #65676b; padding: 6px 12px 0; }
+.pv-head { display: flex; gap: 8px; align-items: center; padding: 6px 12px 8px; }
+.pv-av { width: 32px; height: 32px; border-radius: 50%; background: #1b74e4; color: #fff; display: grid; place-items: center; font-size: 14px; flex: 0 0 auto; }
+.pv-who { display: grid; line-height: 1.25; } .pv-who span { font-size: 12px; color: #65676b; } .pv-who .pv-name { font-size: 13.5px; color: #050505; }
+.pv-txt { padding: 0 12px 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.4em; overflow: auto; }
+.pv-media img { display: block; width: 100%; max-height: 300px; object-fit: cover; }
+.pv-media .none { aspect-ratio: 16 / 9; background: #e4e6eb; }
+.pv-bar { display: flex; justify-content: space-around; border-top: 1px solid #ced0d4; margin: 0 12px; padding: 5px 0; font-size: 12.5px; color: #65676b; }
+.pv-note { font-size: 12px; color: #65676b; text-align: center; }
 .empty-state { display: grid; justify-items: center; gap: 2px; text-align: center; padding: 22px 16px; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--muted-foreground); }
 .empty-state .t { color: var(--foreground); }
 
@@ -151,6 +170,8 @@ details.more div { padding-top: 4px; }
   .row .miss { grid-column: 1 / -1; }
   .row .num { display: none; }
   .row.approved { grid-template-columns: 1fr; }
+  .row.mc { grid-template-columns: 1fr auto; }
+  .row .tz { grid-column: 1 / -1; }
 }
 </style>
 </head>
@@ -203,10 +224,42 @@ details.more div { padding-top: 4px; }
       pics +
       '<p class="idea">' + esc(d.idea) + "</p>" +
       '<div class="line">' + d.networks.map(function (n) { return '<span class="tag">' + esc(n) + "</span>"; }).join("") + (d.inspiration ? '<a href="' + esc(d.inspiration) + '" target="_blank" rel="noopener">Bài tham khảo</a>' : "") + "</div>" +
-      warn + '<div style="display:grid;gap:6px">' + caps + "</div>" +
+      warn + '<div style="display:grid;gap:6px">' + caps + "</div>" + preview(d) +
       '<details class="more"><summary>Thư mục bản nháp</summary><div><code>' + esc(d.dir) + "</code></div></details>" +
       '<div class="say"><span class="muted">Nhắn agent</span><code>duyệt ' + esc(d.id) + "</code>" + copyBtn("duyệt " + d.id, "Chép") + '<span class="muted">hoặc</span><code>bỏ ' + esc(d.id) + ": lý do</code></div>" +
       "</article>";
+  }
+
+  // Xem trước: the Facebook post as the app shows it (same text joining as the Metricool CSV); other channels only named.
+  function preview(d) {
+    var p = d.preview;
+    if (!p || !p.posts || !p.posts.length) return "";
+    var fb = p.posts.filter(function (x) { return x.network === "facebook"; });
+    var others = p.posts.filter(function (x) { return x.network !== "facebook"; }).map(function (x) { return x.network; });
+    var name = p.page_name || brandName(d.brand), initial = esc(String(name || "?").trim().charAt(0).toUpperCase());
+    var m = (p.media || [])[0];
+    var media = '<div class="pv-media">' + (m && m.url && m.type === "image" ? '<img loading="lazy" src="' + esc(m.url) + '" alt="">' : '<div class="none"></div>') + "</div>";
+    var cards = fb.length ? fb.map(function (post) {
+      return post.texts.map(function (t) {
+        return '<div class="pv"><div class="pv-tag">Facebook' + (p.mode === "separate-posts" && t.lang ? " · " + esc(lang(t.lang)) : "") + "</div>" +
+          '<div class="pv-head"><div class="pv-av">' + initial + '</div><div class="pv-who"><span class="pv-name">' + esc(name) + "</span><span>Vừa xong · Công khai</span></div></div>" +
+          '<div class="pv-txt">' + esc(t.text || "(chưa có caption)") + "</div>" + media + '<div class="pv-bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>';
+      }).join("");
+    }).join("") : '<p class="pv-note">Bản nháp không đăng Facebook.</p>';
+    return '<details class="pv-box"><summary>Xem trước Facebook</summary><div class="pv-wrap">' + cards +
+      (others.length ? '<p class="pv-note">Còn đăng: ' + esc(others.join(", ")) + "</p>" : "") + "</div></details>";
+  }
+
+  // Metricool brands: status of the linked skill, missing items in plain words, timezone check.
+  function mcRow(b) {
+    var s = b.skill;
+    var st = !b.skill_id ? '<span class="status c-amber">Chưa có bộ skill</span>' : !s ? '<span class="status c-red">Không thấy skill</span>'
+      : s.usable ? '<span class="status c-green">Sẵn sàng</span>' : s.enabled ? '<span class="status c-red">Bật nhưng còn thiếu</span>' : s.ready ? '<span class="status c-slate">Đủ, đang tắt</span>' : '<span class="status c-amber">Còn thiếu</span>';
+    var miss = !b.skill_id ? '<span class="muted">Chưa có bộ skill, cần tạo để chạy tự động.</span>'
+      : !s ? '<span class="muted">Không thấy skill "' + esc(b.skill_id) + '" trong thư mục thương hiệu.</span>'
+      : s.missing.length ? s.missing.map(function (x) { return '<span class="tag">' + esc(x) + "</span>"; }).join("") : '<span class="ok-text">Không thiếu gì</span>';
+    var tz = b.tz_mismatch ? '<span class="warn-line">Lệch múi giờ: Metricool ' + esc(b.timezone) + ", bộ skill " + esc(s.timezone) + ". Giờ đăng sẽ bị hiểu theo múi giờ của Metricool.</span>" : "";
+    return '<div class="row mc"><span>' + esc(b.name) + "</span><span>" + st + '</span><span class="miss">' + miss + tz + '</span><span class="tz">' + esc((b.networks || []).join(", ") || "-") + " · " + esc(b.timezone || "-") + "</span></div>";
   }
 
   function brandRow(b) {
@@ -256,6 +309,16 @@ details.more div { padding-top: 4px; }
     h.push('<section class="section">' + head("s-brands", "Thương hiệu", brands.length) +
       (brands.length ? '<div class="list"><div class="row head"><span>Thương hiệu</span><span>Trạng thái</span><span>Còn thiếu</span><span class="num">Nguồn bật</span></div>' + brands.map(brandRow).join("") + "</div>"
         : empty("Không tìm thấy thương hiệu nào", "Kiểm tra skillsRoot: " + D.skills_root)) + "</section>");
+
+    var M = D.metricool || { brands: [] };
+    var mcs = (M.brands || []).filter(function (b) { return !filter || b.skill_id === filter; });
+    var orphans = (M.skills_without_metricool || []).filter(function (x) { return !filter || x.id === filter; });
+    var acc = M.account || {};
+    h.push('<section class="section">' + head("s-metricool", "Brand Metricool", mcs.length) +
+      (M.error ? '<div class="alert">Không đọc được danh sách brand Metricool: ' + esc(M.error) + "</div>" : "") +
+      (acc.user_id ? '<p class="small muted">Tài khoản ' + esc(acc.user_id) + ": " + (M.brands || []).length + (acc.brand_limit ? "/" + acc.brand_limit : "") + " brand (danh sách ghi tay, sửa trong app)</p>" : "") +
+      (mcs.length ? '<div class="list"><div class="row mc head"><span>Brand</span><span>Bộ skill</span><span>Còn thiếu</span><span>Kênh · múi giờ</span></div>' + mcs.map(mcRow).join("") + "</div>" : empty("Chưa khai báo brand Metricool nào", "")) +
+      (orphans.length ? '<p class="warn">Bộ skill chưa gắn brand Metricool: ' + orphans.map(function (x) { return esc(x.brand || x.id); }).join(", ") + "</p>" : "") + "</section>");
 
     app.innerHTML = h.join("");
   }
