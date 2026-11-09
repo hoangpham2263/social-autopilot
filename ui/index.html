@@ -253,6 +253,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <div class="fields">
       <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
+      <div class="field"><span class="label">Sub-agent</span><div class="checks"><label id="prSubLabel"><input type="checkbox" id="prSub"> Run in a sub-agent</label></div></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
     </div>
     <div class="fields" id="prResearch" hidden>
@@ -732,6 +733,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const mcTz = arr(promptData.brands).find((x) => x.id === brand)?.metricool_timezone || promptData.default_tz || "America/New_York";
     $("#prWindowLabel").textContent = `Time (${tzName(mcTz)})`;
     const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
+    syncSub();
     prBase = p ? p.text : "";
     $("#prText").value = buildPrompt();
     fitPrompt();
@@ -761,8 +763,22 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     }
     return lines.length ? lines.join("; ") : "defaults";
   }
+  // "Run in a sub-agent" (Claude Code only; remembered per agent, on by default): one first line hands the whole task to
+  // one background sub-agent so the chat stays free. Codex has no sub-agent tool (it runs in its own session); ChatGPT
+  // runs nothing.
+  const SUB_LINE = "Run this whole task in ONE background sub-agent (Agent tool, general-purpose) with the prompt below; keep this chat free; when it finishes, relay its 'Report' section to me.";
+  const subAllowed = () => /claude code/i.test($("#prAgent").value || "");
+  function syncSub() {
+    const agent = $("#prAgent").value || "";
+    $("#prSub").checked = subAllowed() && store.get(`prSub:${agent}`) !== "0";
+    setDisabled($("#prSub"), !subAllowed(), /codex/i.test(agent) ? "Codex runs it in its own session" : "ChatGPT cannot run the task");
+  }
   function buildPrompt() {
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
+    const lead = subAllowed() && $("#prSub").checked ? SUB_LINE + "\n" : "";
+    return lead + buildTask();
+  }
+  function buildTask() {
     const brandSel = $("#prBrand").value;
     const scope = az(arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)), (x) => x.id);
     const skills = scope.map((x) => `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
@@ -796,6 +812,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     drawPrompt();
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
+  $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").checked ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
   for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart"]) $(id).onchange = regenerate;
   document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });

@@ -75,6 +75,10 @@ test('serves the page, the shell assets and the data APIs', async () => {
   assert.ok(pr.prompts.filter((p) => p.mode === 'Publish approved' && p.agent !== 'ChatGPT').every((p) => p.text.split(String.fromCharCode(10)).length <= 14 && /--mode publish/.test(p.text) && /NEVER: make ideas or posts/.test(p.text)), 'Publish approved: short, no new posts');
   assert.ok(pr.prompts.filter((p) => p.agent !== 'ChatGPT').every((p) => p.text.includes('{{OPTIONS}}') && /RUNBOOK.md Mode [123]/.test(p.text)), 'prompts point to the RUNBOOK');
   assert.ok(pr.all_brands);
+  // "Run in a sub-agent" (Prompt tab, Claude Code): the first line of the prompt hands the task to one background sub-agent.
+  const page = await (await fetch(base + '/')).text();
+  assert.match(page, /Run this whole task in ONE background sub-agent \(Agent tool, general-purpose\) with the prompt below; keep this chat free; when it finishes, relay its 'Report' section to me\./);
+  assert.match(page, /Codex runs it in its own session/);
   // Mode button counts per brand: research (unused library items), create (posts still needed), publish (approved, not sent).
   const pc = await (await fetch(base + '/api/prompt-counts')).json();
   assert.ok(pc.brands && Object.values(pc.brands).every((c) => ['research', 'create', 'publish'].every((k) => Number.isInteger(c[k]))), JSON.stringify(pc));
