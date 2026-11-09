@@ -75,19 +75,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .ref .count { position: absolute; right: 4px; bottom: 4px; background: #fff; border: 1px solid var(--line); padding: 0 6px; font-size: 12px; }
 .ref .head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .ref .head .acts { margin-left: auto; }
-/* Bản nháp: a compact card, thumbnails on the left, the header row carries the actions. */
-.draft { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; }
-.thumbs { position: relative; align-self: start; }
-.thumbs img { width: 300px; height: 300px; object-fit: cover; display: block; border: 1px solid var(--line); background: var(--control); }
-.thumbs .none { width: 300px; height: 160px; display: grid; place-items: center; border: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
-.draft .body { display: grid; gap: 4px; align-content: start; min-width: 0; }
-.draft .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.draft .head h3 { margin: 0; font-size: 14px; flex: 1 1 auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.draft .acts { display: flex; gap: 6px; margin-left: auto; }
-.draft .line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.captions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
-.captions .cap { border: 1px solid var(--line); padding: 6px 8px; }
-@media (max-width: 720px) { .draft { grid-template-columns: 1fr; } .thumbs img { width: 100%; max-width: 300px; height: auto; aspect-ratio: 1 / 1; } }
+.ref .none { aspect-ratio: 1 / 1; display: grid; place-items: center; border: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
+.ref .line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ref .head .status-tag + .status-tag { margin-left: -2px; }
 /* A click on a card (not on its buttons, links or Caption) opens it in the overlay; Enter too. */
 .card.open-card { cursor: pointer; }
 .card.open-card:hover { border-color: #0078d7; }
@@ -119,8 +109,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .pv.ig .txt { padding: 8px 12px 10px; }
 /* Thumbnails open the card's preview (never a new window). */
 .thumb { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; }
-.thumbs .orig { position: absolute; right: 4px; bottom: 4px; width: 110px; height: 110px; border: 2px solid #fff; outline: 1px solid var(--line); }
-.thumbs .orig img { width: 100%; height: 100%; border: 0; }
 /* Overlay: a near-fullscreen window (95vw x 92vh) holding the lightbox (image/video, prev/next) or the Xem trước panel.
    Its header carries the title, channel tabs and ✕ Đóng; Esc or a click on the backdrop also closes. */
 .lb { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, .75); display: grid; place-items: center; }
@@ -138,11 +126,20 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 /* Xem trước: the post at Facebook's feed width (500px) on the left, the draft's facts on the right (below when narrow). */
 .lb .pv-layout { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
 .lb .pv-stage { overflow: auto; background: #f0f2f5; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
-.lb .pv-col { width: 500px; max-width: 100%; flex: 0 0 auto; display: grid; gap: 10px; align-content: start; }
+.lb .pv-col { width: 540px; max-width: 100%; flex: 0 0 auto; display: grid; gap: 10px; align-content: start; }
 .lb .pv-langs { margin: 0; }
 .lb .pv-langs .meta { margin-left: 4px; }
 .lb .pv-stage .pv { width: 100%; font-size: 15px; }
-.lb .pv-stage .pv .media.n1 img { max-height: calc(92vh - 250px); object-fit: contain; background: #f0f2f5; }
+/* In the overlay the post's image takes the full post width (the column scrolls), as in the feed. */
+.lb .pv-stage .pv .media.n1 img { max-height: none; height: auto; object-fit: contain; background: #f0f2f5; }
+.pv .txt a { color: #385898; text-decoration: none; } .pv .txt a:hover { text-decoration: underline; }
+.pv .txt .tag { color: #385898; }
+/* Several images of a store post: one at a time at full width, ‹ › and n/m over it (like a carousel). */
+.pv .car { position: relative; background: #f0f2f5; }
+.pv .car img { width: 100%; height: auto; display: block; cursor: zoom-in; }
+.pv .car .car-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; border: 1px solid #ced0d4; background: #fff; font-size: 20px; line-height: 1; cursor: pointer; color: #050505; }
+.pv .car .car-nav.prev { left: 8px; } .pv .car .car-nav.next { right: 8px; }
+.pv .car .car-count { position: absolute; right: 8px; top: 8px; background: rgba(0, 0, 0, .6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 10px; }
 .lb .pv-side { overflow: auto; padding: 12px; border-left: 1px solid var(--line); background: #fff; display: grid; gap: 10px; align-content: start; }
 .lb .pv-side .kv dd { overflow-wrap: anywhere; }
 .lb .pv-side pre { max-height: none; }
@@ -150,14 +147,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .lb .item-nav { display: flex; align-items: center; gap: 6px; }
 /* Kho item: the post's images (‹ › between them) on the left, its facts, caption and actions on the right. */
 .lb .sp-layout { grid-template-columns: minmax(0, 1fr) 380px; }
-.lb .sp-stage { display: flex; align-items: center; justify-content: center; gap: 12px; min-width: 0; min-height: 0; padding: 12px; background: #111; }
-.lb .sp-stage img { max-width: calc(95vw - 380px - 140px); max-height: calc(92vh - 90px); object-fit: contain; min-width: 0; }
-.lb .sp-stage .meta { color: #ccc; }
-.lb .pv-side pre.sp-cap { max-height: 45vh; overflow: auto; border: 1px solid var(--line); padding: 6px 8px; margin: 0; }
-.lb .sp-dups { margin: 0; padding-left: 18px; font-size: 12px; }
+.lb .sp-dups {.lb .sp-dups { margin: 0; padding-left: 18px; font-size: 12px; }
 .lb .sp-dups a { overflow-wrap: anywhere; }
 @media (max-width: 900px) {
-  .lb .sp-stage img { max-width: calc(95vw - 140px); max-height: 60vh; }
   .lb .pv-layout { grid-template-columns: 1fr; overflow: auto; }
   .lb .pv-stage { overflow: visible; }
   .lb .pv-side { border-left: 0; border-top: 1px solid var(--line); }
@@ -178,7 +170,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   </nav>
 
   <section class="page" id="page-overview" hidden>
-    <div class="toolbar"><div class="meta">Việc do agent làm theo prompt (tab Prompt); app chỉ để xem và quản lý.</div><button class="btn" type="button" id="ovReload">Tải lại</button></div>
     <div class="cards" id="ovList"><div class="meta">Đang đọc…</div></div>
   </section>
 
@@ -188,7 +179,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div><label for="resStatus">Hiện</label><select id="resStatus">
         <option value="new">Mới</option><option value="used">Đã dùng</option><option value="rejected">Đã bỏ</option><option value="">Tất cả</option></select></div>
       <div><label for="resSource">Nguồn</label><select id="resSource"></select></div>
-      <button class="btn" type="button" id="resReload">Tải lại</button>
     </div>
     <div id="resBody" class="meta">Chọn thương hiệu.</div>
   </section>
@@ -198,9 +188,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div><label for="drBrand">Thương hiệu</label><select id="drBrand"><option value="">Tất cả</option></select></div>
       <div><label for="drStatus">Hiện</label><select id="drStatus">
         <option value="">Tất cả</option><option value="working">Đang làm</option><option value="ready">Sẵn sàng</option><option value="failed">Lỗi kiểm tra</option><option value="mc_draft">Đã gửi nháp</option><option value="scheduled">Đã hẹn giờ</option><option value="published">Đã đăng</option><option value="mc_error">Lỗi Metricool</option><option value="rejected">Đã bỏ</option></select></div>
-      <button class="btn" type="button" id="drReload">Tải lại</button>
     </div>
-    <div class="cards" id="draftList"></div>
+    <div id="draftList"></div>
   </section>
 
   <section class="page" id="page-prompt" hidden>
@@ -282,23 +271,49 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (q.error) { $("#ovList").innerHTML = `<div class="bad-text">${esc(q.error)}</div>`; return; }
     if (b.brands) brandData = b;
     const num = (o, k) => o?.[k] || 0;
-    const card = (x) => {
-      const tag = x.usable ? ["Sẵn sàng", "c-green"] : x.enabled ? ["Bật nhưng còn thiếu", "c-red"] : ["Đang tắt", ""];
-      const r = x.research, st = x.store, d = x.drafts || {}, mc = x.metricool || {};
+    const NET = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", linkedin: "LinkedIn", twitter: "X", threads: "Threads", pinterest: "Pinterest", gmb: "Google Business" };
+    const net = (n) => NET[n] || n;
+    // Every brand in one list, all equal: each Metricool brand (with its skill or not), then each skill not linked to
+    // a Metricool brand. "Còn thiếu" = everything the brand still needs to run, in plain words; empty = Sẵn sàng.
+    const skills = Object.fromEntries((b.brands || []).map((s) => [s.id, s]));
+    const queue = Object.fromEntries((q.brands || []).map((x) => [x.brand, x]));
+    const rows = [...(b.metricool?.brands || []).map((m) => ({ m, id: m.skill_id || "" })),
+      ...(b.brands || []).filter((s) => !(b.metricool?.brands || []).some((m) => m.skill_id === s.id)).map((s) => ({ m: null, id: s.id }))];
+    const missingOf = ({ m, id }) => {
+      const s = skills[id], out = [];
+      if (!m) out.push("Chưa nối với brand Metricool nào (Cài đặt tool, Nâng cao)");
+      if (!id) out.push("Chưa có bộ skill (tạo bằng new-skill)");
+      else if (!s) out.push(`Không thấy bộ skill "${id}" trong thư mục thương hiệu`);
+      if (s) {
+        if (!s.enabled) out.push("Chưa bật (social.json: enabled)");
+        if (!s.sources?.length) out.push("Chưa có nguồn tham khảo (social.json: research.sources)");
+        if (m) for (const c of s.channels || []) if (!(m.networks || []).includes(c)) out.push(`Chưa nối ${net(c)} trong Metricool`);
+        if (m?.tz_conflict) out.push(`Múi giờ social.json (${s.metricool_timezone}) khác múi giờ brand trong Metricool (${m.timezone})`);
+        for (const p of s.problems || []) out.push(p);
+      }
+      return [...new Set(out)];
+    };
+    const card = (row) => {
+      const { m, id } = row, s = skills[id], x = queue[id], miss = missingOf(row);
+      const name = m?.name || s?.brand || id;
+      const tag = miss.length ? ["Còn thiếu", "c-red"] : ["Sẵn sàng", "c-green"];
+      const r = x?.research, st = x?.store, d = x?.drafts || {}, mc = x?.metricool || {};
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption");
-      return `<div class="card ${x.usable ? "ok" : "todo"}">
-        <h3>${esc(x.name || x.brand)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>
+      return `<div class="card ${miss.length ? "todo" : "ok"}">
+        <h3>${esc(name)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>
         <dl class="kv">
-          <dt>Kho</dt><dd><a href="#" data-go="store" data-brand="${esc(x.brand)}">${st.total} bài</a> · ${st.new} mới · ${st.used} đã dùng · ${st.rejected} đã bỏ</dd>
-          <dt>Nghiên cứu gần nhất</dt><dd>${r.latest ? `${esc(r.latest)} · ${r.new_last_crawl} bài mới · ${r.duplicates_last_crawl} bài trùng bỏ qua · xong: ${esc(r.done.join(", ") || "-")}${r.pending.length ? ` · chưa xong: ${esc(r.pending.join(", "))}` : ""}` : "chưa có"}${r.blocked.length ? `<div class="bad-text">Bị chặn: ${esc(r.blocked.join("; "))}</div>` : ""}</dd>
-          <dt>Bài đã tạo</dt><dd><a href="#" data-go="posts" data-brand="${esc(x.brand)}">${x.written.length} đã ghi vào thương hiệu</a> · ${num(d, "ready")} qua kiểm tra chưa ghi · ${working} đang làm${num(d, "check_failed") + num(d, "image_failed") ? ` · <span class="bad-text">${num(d, "check_failed") + num(d, "image_failed")} lỗi</span>` : ""}</dd>
-          <dt>Metricool</dt><dd>${Object.keys(MC_TEXT).filter((k) => mc[k]).map((k) => `<span class="${k === "error" ? "bad-text" : ""}">${mc[k]} ${MC_TEXT[k]}</span>`).join(" · ") || "-"}</dd>
+          <dt>Metricool</dt><dd>${m ? `${esc(m.name)} · ${esc((m.networks || []).map(net).join(", ") || "chưa nối kênh nào")} · múi giờ ${esc(m.timezone || "-")}` : `<span class="muted">Chưa có brand Metricool</span>`}</dd>
+          <dt>Bộ skill</dt><dd>${s ? `${esc(s.id)}${s.channels?.length ? ` · kênh ${esc(s.channels.map(net).join(", "))}` : ""}` : `<span class="muted">Chưa có bộ skill</span>`}</dd>
+          <dt>Bật</dt><dd>${s ? (s.enabled ? "có" : "không") : "-"}</dd>
+          ${x ? `<dt>Kho</dt><dd><a href="#" data-go="store" data-brand="${esc(id)}">${st.total} bài</a> · ${st.new} mới · ${st.used} đã dùng · ${st.rejected} đã bỏ</dd>
+          <dt>Nghiên cứu gần nhất</dt><dd>${r.latest ? `${esc(r.latest)} · ${r.new_last_crawl} bài mới · ${r.duplicates_last_crawl} bài trùng bỏ qua${r.pending.length ? ` · chưa xong: ${esc(r.pending.join(", "))}` : ""}` : "chưa có"}${r.blocked.length ? `<div class="bad-text">Bị chặn: ${esc(r.blocked.join("; "))}</div>` : ""}</dd>
+          <dt>Bài đã tạo</dt><dd><a href="#" data-go="posts" data-brand="${esc(id)}">${x.written.length} đã ghi vào thương hiệu</a> · ${num(d, "ready")} qua kiểm tra chưa ghi · ${working} đang làm${num(d, "check_failed") + num(d, "image_failed") ? ` · <span class="bad-text">${num(d, "check_failed") + num(d, "image_failed")} lỗi</span>` : ""}</dd>
+          <dt>Đã gửi</dt><dd>${Object.keys(MC_TEXT).filter((k) => mc[k]).map((k) => `<span class="${k === "error" ? "bad-text" : ""}">${mc[k]} ${MC_TEXT[k]}</span>`).join(" · ") || "-"}</dd>` : ""}
+          <dt>Còn thiếu</dt><dd>${miss.length ? `<ul class="missing" style="margin:0">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : `<span class="ok-text">Không thiếu gì</span>`}</dd>
         </dl>
-        ${x.problems?.length && x.enabled ? `<ul class="missing">${x.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
       </div>`;
     };
-    const orphan = (b.metricool?.brands || []).filter((m) => !m.skill_id).map((m) => `<div class="meta">${esc(m.name)}: brand Metricool chưa có skill (tool không đụng tới).</div>`).join("");
-    $("#ovList").innerHTML = (q.brands.map(card).join("") || `<div class="meta">Chưa có thương hiệu nào.</div>`) + orphan;
+    $("#ovList").innerHTML = rows.map(card).join("") || `<div class="meta">Chưa có thương hiệu nào.</div>`;
     for (const a of $$("#ovList [data-go]")) a.onclick = (e) => {
       e.preventDefault();
       if (a.dataset.go === "store") { $("#resBrand").innerHTML = `<option value="${esc(a.dataset.brand)}" selected></option>`; store.set("resBrand", a.dataset.brand); }
@@ -306,7 +321,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       show(a.dataset.go);
     };
   }
-  $("#ovReload").onclick = loadOverview;
 
   // ----- Cài đặt, Thương hiệu: every brand of the Metricool account, with its skill; Sửa opens social.json -----
   async function loadBrands() {
@@ -463,8 +477,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const it = items[i], imgs = it.image_paths || [];
       k = Math.min(k, Math.max(0, imgs.length - 1));
       const nav = itemNav(i, items.length);
-      const step = (s, label) => (imgs.length > 1 ? `<button class="btn lb-nav" type="button" data-img="${s}" aria-label="${label}">${s < 0 ? "‹" : "›"}</button>` : "");
-      const stage = `<div class="sp-stage">${step(-1, "Ảnh trước")}${imgs.length ? `<img src="${img(imgs[k])}" alt="${esc(it.id)}">` : `<div class="meta">Không có ảnh</div>`}${step(1, "Ảnh sau")}</div>`;
+      const page = it.store || it.source_id || "?";
+      const media = !imgs.length ? `<div class="video" style="aspect-ratio:1/1;background:#e4e6eb"></div>`
+        : imgs.length === 1 ? `<div class="media n1"><img src="${img(imgs[0])}" alt="" data-big="0"></div>`
+        : `<div class="car"><img src="${img(imgs[k])}" alt="" data-big><button class="car-nav prev" type="button" data-img="-1" aria-label="Ảnh trước">‹</button><button class="car-nav next" type="button" data-img="1" aria-label="Ảnh sau">›</button><span class="car-count">${k + 1}/${imgs.length}</span></div>`;
+      const post = `<div class="pv fb"><div class="pv-tag">Bài của nguồn · ${esc(it.source_id)}</div>
+        <div class="pv-head"><div class="av">${esc(String(page).trim().charAt(0).toUpperCase())}</div><div class="who"><b>${esc(page)}</b><span>${esc(it.posted_date || `lấy ${String(it.captured || "").slice(0, 10)}`)} · Công khai</span></div></div>
+        <div class="txt">${it.caption ? postText(it.caption) : `<span class="muted">(không có caption)</span>`}</div>${media}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
+      const stage = `<div class="pv-stage"><div class="pv-col">${post}</div></div>`;
       const dups = it.duplicates || [];
       const merged = (it.post_keys || []).length;
       const link = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>`;
@@ -475,20 +495,21 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           <dt>Bài gốc</dt><dd>${it.post_url ? link(it.post_url, "Mở bài gốc ↗") : "-"}</dd>
           <dt>Ngày đăng</dt><dd>${esc(it.posted_date || "-")}</dd>
           <dt>Ngày lấy</dt><dd>${esc(String(it.captured || "-").slice(0, 16).replace("T", " "))}</dd>
-          <dt>Ảnh</dt><dd>${imgs.length ? `${k + 1}/${imgs.length}` : "0"}</dd>
+          <dt>Ảnh</dt><dd>${imgs.length}</dd>
           ${it.main_product ? `<dt>Sản phẩm</dt><dd>${esc(it.main_product)}</dd>` : ""}${it.price_seen ? `<dt>Giá thấy</dt><dd>${esc(it.price_seen)}</dd>` : ""}
           ${it.used_by?.length ? `<dt>Dùng cho</dt><dd>${esc(it.used_by.join(", "))}</dd>` : ""}
         </dl>
-        <div><div class="meta">Caption</div><pre class="sp-cap">${esc(it.caption) || `<span class="muted">(không có caption)</span>`}</pre></div>
         <div><div class="meta">Trùng lặp</div>${dups.length || merged > 1 ? `<ul class="sp-dups">${merged > 1 ? `<li>Một bài, ${merged} link (gộp khi lấy)</li>` : ""}${dups.map((x) => `<li>${esc(x.reason)}${x.detail ? ` (${esc(x.detail)})` : ""} · ${esc(x.source)} · ${esc(String(x.at).slice(0, 10))}${x.post_url ? ` · ${link(x.post_url, "bài trùng")}` : ""}</li>`).join("")}</ul>` : `<div class="meta">Không có bài trùng.</div>`}</div>
         <div class="row-actions">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Khôi phục</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Bỏ</button>` : `<span class="meta">Đã dùng cho bài, không bỏ được.</span>`}</div>
         <div class="reject-box" hidden><input type="text" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-confirm>Xác nhận bỏ</button></div>
         <div class="msg">${msg}</div>`;
       openOverlay(`Kho ${esc(brand)} · ${esc(it.id)}`, `<div class="pv-layout sp-layout">${stage}<div class="pv-side">${side}</div></div>`,
-        imgs.length > 1 ? (s) => { k = (k + s + imgs.length) % imgs.length; draw(); } : null, nav, go);
+        imgs.length > 1 ? (s) => { k = (k + s + imgs.length) % imgs.length; $(".car img", overlay).src = img(imgs[k]); $(".car-count", overlay).textContent = `${k + 1}/${imgs.length}`; } : null, nav, go);
       lbOnClose = () => focusCard("#resBody .ref", it.id);
       for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
       for (const b of $$("[data-img]", overlay)) b.onclick = () => lbKeys(Number(b.dataset.img));
+      // The image large (lightbox); closing it comes back to this post.
+      for (const m of $$("[data-big]", overlay)) m.onclick = () => { openLightbox(imgs.map((x, j) => ({ type: "image", path: x, label: `${it.id} ${j + 1}/${imgs.length}` })), k); lbOnClose = draw; };
       const box = $(".pv-side", overlay);
       const setStatus = async (status, note = "") => {
         for (const b of $$(".btn", box)) b.disabled = true;
@@ -510,7 +531,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; resShown = 60; loadResearch(); };
   $("#resStatus").onchange = () => { store.set("resStatus", $("#resStatus").value); resShown = 60; loadResearch(); };
   $("#resSource").onchange = () => { resShown = 60; loadResearch(); };
-  $("#resReload").onclick = () => loadResearch();
 
   // ----- Prompt: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent), brand filled in -----
   let promptData = { prompts: [], brands: [] };
@@ -615,29 +635,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     drList = list;
     const n = (g) => r.drafts.filter(GROUP[g]).length;
     const counts = `<div class="meta">${r.drafts.length} bài · ${n("working")} đang làm · ${n("ready")} sẵn sàng · ${n("failed")} lỗi kiểm tra · ${n("mc_draft")} đã gửi nháp · ${n("scheduled")} đã hẹn giờ · ${n("published")} đã đăng · ${n("mc_error")} lỗi Metricool · ${n("rejected")} đã bỏ. Đang hiện ${list.length} bài.</div>`;
-    $("#draftList").innerHTML = counts + (list.length ? list.map((d) => {
-      const caps = Object.entries(d.captions || {});
-      const swap = d.image_mode === "scene-swap";
-      const bp = d.brand_post;
-      const canCancel = !bp && d.status !== "rejected";
-      return `<div class="card draft" data-id="${esc(d.id)}">
-        <div class="thumbs">${d.image_exists ? `<button class="thumb" type="button" title="Xem lớn"><img src="${img(d.image)}" alt="Ảnh mới"></button>` : `<div class="none">Chưa có ảnh</div>`}
-          ${swap && d.reference_image ? `<button class="thumb orig" type="button" title="Ảnh gốc của shop"><img src="${img(d.reference_image)}" alt="Ảnh gốc"></button>` : ""}</div>
-        <div class="body">
-          <div class="head"><h3>${esc(bp?.post ? `${bp.post} · ` : "")}${esc(d.id)} ${draftTags(d)}</h3>
-            <div class="acts"><button class="btn" type="button" data-act="preview">Xem trước</button>${canCancel ? `<button class="btn" type="button" data-act="cancel">Bỏ</button>` : ""}</div></div>
-          <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)} · ${esc((d.networks || []).join(", "))} · ${esc(d.idea)}${plannedOf(d) !== "-" ? ` · đăng ${esc(plannedOf(d))}` : ""}</div>
-          ${d.problems?.length ? `<ul class="missing">${d.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
-          ${d.error ? `<div class="bad-text">${esc(d.error)}</div>` : ""}
-          ${d.status === "rejected" ? `<div class="bad-text">Đã bỏ${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
-          ${bp ? hostBlock(d) + mcBlock(bp) : ""}
-          ${canCancel ? `<div class="reject-box" hidden><input class="note" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-act="cancel-go">Xác nhận bỏ</button></div>` : ""}
-          <div class="msg"></div>
-          <details><summary>Caption đăng (${caps.length}) và chi tiết</summary><div class="captions">${caps.map(([f, t]) => `<div class="cap"><div class="meta">${esc(f)}</div><pre>${esc(t)}</pre></div>`).join("") || `<div class="meta">Chưa có caption.</div>`}</div>
-            <div class="meta">${esc(d.dir)}${bp?.folder ? `<br>${esc(bp.folder)}` : ""}</div></details>
-        </div>
+    $("#draftList").innerHTML = counts + (list.length ? `<div class="refs" style="margin-top:8px">${list.map((d) => {
+      const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", thumb = draftThumb(d), nMedia = (d.preview?.media || []).length;
+      return `<div class="card ref draft" data-id="${esc(d.id)}">
+        ${thumb ? `<button class="thumb" type="button" title="Xem trước"><img loading="lazy" src="${img(thumb)}" alt="">${nMedia > 1 ? `<span class="count">${nMedia} ảnh</span>` : ""}</button>` : `<div class="none">Chưa có ảnh</div>`}
+        <div class="head"><span title="${esc(d.id)}">${esc(bp?.post || d.id)}</span>${draftTags(d)}
+          <span class="acts"><button class="btn" type="button" data-act="preview">Xem trước</button>${canCancel ? `<button class="btn" type="button" data-act="cancel">Bỏ</button>` : ""}</span></div>
+        ${canCancel ? `<div class="reject-box" hidden><input class="note" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-act="cancel-go">Bỏ</button></div>` : ""}
+        <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)}${plannedOf(d) !== "-" ? ` · đăng ${esc(plannedOf(d))}` : ""} · ${esc(d.idea)}</div>
+        <div class="msg"></div>
       </div>`;
-    }).join("") : `<div class="meta">Không có bài nào ở bộ lọc này.</div>`);
+    }).join("")}</div>` : `<div class="meta">Không có bài nào ở bộ lọc này.</div>`);
     const cards = $$("#draftList .draft");
     wireCards(cards, (i) => openPreview(list[i], { list, i }));
     cards.forEach((card, i) => {
@@ -715,14 +723,22 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // A static mock; nothing loads from outside.
   const LANG_NAME = (l) => String(l || "").split("+").map((x) => x.toUpperCase()).join(" + ");
   // Facebook-like "… Xem thêm": past 5 lines or ~250 characters the text is cut; the rest opens in place.
-  function clampText(text) {
+  const linkify = (t) => esc(t).replace(/(https?:\/\/[^\s<]+)|(^|\s)(#[\p{L}\p{N}_]+)/gu, (m, url, sp, tag) => (url ? `<a href="${url}" target="_blank" rel="noopener">${url}</a>` : `${sp}<span class="tag">${tag}</span>`));
+  function postText(text) {
     const t = String(text || "");
     let cut = t.length > 250 ? t.lastIndexOf(" ", 250) : -1;
     const nl = t.split("\n").slice(0, 5).join("\n").length;
     if (nl < t.length && (cut < 0 || nl < cut)) cut = nl;
-    if (cut <= 0 || cut >= t.length) return esc(t);
-    return `<span class="cut">${esc(t.slice(0, cut).trimEnd())}… <button class="more" type="button">Xem thêm</button></span><span class="rest" hidden>${esc(t)}</span>`;
+    if (cut <= 0 || cut >= t.length) return linkify(t);
+    return `<span class="rest">${linkify(t)} <button class="more" type="button" data-fold="1">Thu gọn</button></span><span class="cut" hidden>${linkify(t.slice(0, cut).trimEnd())}… <button class="more" type="button" data-fold="0">Xem thêm</button></span>`;
   }
+  // "Thu gọn" / "Xem thêm" of any post mock in the overlay.
+  overlay.addEventListener("click", (e) => {
+    const b = e.target.closest(".pv .more");
+    if (!b) return;
+    const t = b.closest(".txt"), fold = b.dataset.fold === "1";
+    $(".rest", t).hidden = fold; $(".cut", t).hidden = !fold;
+  });
   // nav: { list, i } when opened from the list: ‹ Trước / Sau › (↑/↓) walk it without closing.
   function openPreview(d, nav = null) {
     const go = nav ? (step) => { const j = nav.i + step; if (nav.list[j]) openPreview(nav.list[j], { list: nav.list, i: j }); } : null;
@@ -739,10 +755,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const empty = "(chưa có caption)";
     const fb = (post, o) => `<div class="pv fb${o.review ? " review" : ""}">${tag(post, o)}
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(p.page_name)}</b><span>Vừa xong · Công khai</span></div></div>
-      <div class="txt">${clampText(o.text || empty)}</div>${media()}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
+      <div class="txt">${postText(o.text || empty)}</div>${media()}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
     const ig = (post, o) => `<div class="pv ig${o.review ? " review" : ""}">${tag(post, o)}
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(post.account || p.page_name)}</b></div></div>
-      ${media()}<div class="txt"><b>${esc(post.account || p.page_name)}</b> ${clampText(o.text || empty)}</div></div>`;
+      ${media()}<div class="txt"><b>${esc(post.account || p.page_name)}</b> ${postText(o.text || empty)}</div></div>`;
     const card = (post, o) => (post.network === "instagram" ? ig(post, o) : post.network === "facebook" ? fb(post, o)
       : `<div class="pv">${tag(post, o)}<div class="txt">${esc(o.text)}</div></div>`);
     // Reviewer-only texts (never posted). Accepts [{lang,text}], {lang:text} or a plain string.
@@ -794,7 +810,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       for (const b of $$("[data-tab]", overlay)) b.onclick = () => draw(Number(b.dataset.tab));
       for (const b of $$("[data-lang]", overlay)) b.onclick = () => { lang = keyOf(opts[Number(b.dataset.lang)]); draw(k); };
       const box = $(".pv-stage", overlay);
-      for (const more of $$(".more", box)) more.onclick = () => { const t = more.closest(".txt"); $(".cut", t).hidden = true; $(".rest", t).hidden = false; };
       for (const m of $$("[data-pv]", box)) m.onclick = () => big(Number(m.dataset.pv));
     };
     // The large image: the lightbox in the same overlay; closing it comes back to this preview.
@@ -833,7 +848,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#drStatus").value = store.get("drStatus") || "";
   $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
   $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
-  $("#drReload").onclick = loadDrafts;
 
   // ----- Cài đặt: brands (skill status, Sửa social.json) + tool settings (summary; "Sửa" opens the form) -----
   let mbText = "";
@@ -887,6 +901,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   };
 
   show(store.get("page") || "overview");
+  // No "Tải lại" per tab: a tab reloads when opened and when a filter changes, and every 45 s while it is visible,
+  // except while the preview is open, the window is hidden or something is being typed (a Bỏ reason).
+  setInterval(() => {
+    if (document.hidden || !overlay.hidden || document.activeElement?.matches?.("input, textarea, select")) return;
+    if ($$("#resBody .reject-box, #draftList .reject-box").some((b) => !b.hidden)) return;
+    if (!$("#page-overview").hidden) loadOverview();
+    else if (!$("#page-store").hidden) loadResearch();
+    else if (!$("#page-posts").hidden) loadDrafts();
+  }, 45000);
 })();
 </script>
 </body>
