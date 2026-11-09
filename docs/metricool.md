@@ -2,6 +2,42 @@
 
 Ngày kiểm tra: 2026-11-07. Chỉ xem, không đổi gì trong tài khoản.
 
+## 0. Hiện tại (2026-11-09): gói Starter, đăng qua MCP
+
+Mục 1-7 bên dưới là ghi chép lúc tài khoản còn Free; dữ kiện đang đúng là mục này.
+
+| Mục | Giá trị |
+|---|---|
+| Gói | **Starter**: nhiều brand, bài không giới hạn, **không REST API**, không duyệt bài (team) |
+| Brand | Dreamy Vows `<blog_id_2>`, Grenheim `<blog_id_3>` (cả hai chỉ Facebook, múi giờ brand `Indian/Christmas`); Fortera Apparel `<blog_id_1>` (không phải skill, **không bao giờ đụng**) |
+| Đường chính | Connector claude.ai "Metricool": tool MCP cho **agent Claude** (Node không gọi được) |
+| Đường dự phòng | CSV (`metricool-csv.mjs`, người tự import), mục 5-7 |
+
+### Tool MCP dùng được
+- `getBrandSettings`: brand, blogId, múi giờ, mạng đã nối.
+- `createScheduledPost(blogId, date, info)`: tạo bài (nháp hoặc hẹn giờ). `date` = ISO kèm offset; `info` = **chuỗi JSON**.
+- `getScheduledPosts(brandId, fromDate, toDate, timezone)`: đọc bài đã hẹn để đối chiếu trạng thái (PENDING / ERROR / PUBLISHED).
+- `updateScheduledPost`: sửa bài đã tạo (chưa dùng trong quy trình).
+- `getBestTimeToPostByNetwork`: giờ tốt; muốn dùng thì ghi vào `cadence.slots`.
+- `createScheduledPostForReview`: cần gói team, **không dùng được**.
+
+### Test thật 2026-11-09 (phiên chính)
+`createScheduledPost(blogId "<blog_id_2>", date "2026-11-17T10:00:00-08:00", info)` với `info`:
+```json
+{"draft":true,"autoPublish":true,"media":["<link Pages>"],"mediaAltText":["..."],"providers":[{"network":"facebook"}],
+ "publicationDate":{"dateTime":"2026-11-17T10:00:00","timezone":"America/Los_Angeles"},"text":"...",
+ "facebookData":{"type":"POST"},"shortener":false,"smartLinkData":{"ids":[]},"descendants":[],"firstCommentText":"","hasNotReadNotes":false}
+```
+Kết quả: id `421362711`, uuid `3757973938339334504`, `draft: true`, có `plannerUrl`; Metricool tự đổi `publicationDate` sang múi giờ brand (`2026-11-18T01:00` Indian/Christmas) và **chép ảnh về `static.metricool.com`** (khác CSV, không chép).
+
+Hệ quả: **múi giờ do Metricool lo** khi `publicationDate` mang múi giờ khách (`cadence.timezone`); không quy đổi tay như CSV. Vẫn chỉ gỡ file host sau khi bài `published`.
+
+### Quy trình (RUNBOOK bước 5c, `scripts/metricool-mcp.mjs`)
+1. `status --brand <id>` → `query` cho `getScheduledPosts`; agent khớp theo id: ERROR báo người dùng, PUBLISHED chạy `mark-published.mjs` của skill.
+2. `payload --brand <id> [--posts ...] [--draft|--schedule]` → mỗi bài `approved` có `media_url`/`video_url` và chưa có `metricool.<network>.id` một item `{ tool: "createScheduledPost", args: { blogId, date, info } }`. Giờ: catalog `schedule`, `--date/--time`, `cadence.slots` hoặc giờ tự động (cùng bộ lập lịch `planPosts` với CSV), theo `cadence.timezone`. Text chỉ ngôn ngữ đăng (không `review_langs`), không nhãn AI; `facebookData.type` POST/REEL; `instagramData { type, isAiGenerated: false }` chỉ khi bật Instagram. Mặc định `draft: true`.
+3. Agent gọi `createScheduledPost` với đúng `args` (không sửa `info`), rồi `record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <plannerUrl> --publication <publicationDate.dateTime> --tz <publicationDate.timezone> [--draft]` → catalog `metricool.<network>` `{ blog_id, id, uuid, planner_url, publication, timezone, draft, sent_at }`; không nháp thì `schedule.<network>` + trạng thái `scheduled`. Trường tuỳ chọn của chuẩn, `check-post.mjs` kiểm.
+- Chặn: blogId Fortera `<blog_id_1>` và mọi blogId gắn với skill khác trong `config/metricool-brands.json`; mạng ngoài facebook/instagram (dùng CSV); `language_policy.mode: separate-posts`; giờ đã qua; link không https hoặc WebP.
+
 ## 1. Tài khoản (đọc trực tiếp từ app.metricool.com)
 
 | Mục | Giá trị |

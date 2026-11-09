@@ -7,7 +7,7 @@ Dành cho agent (Claude Code scheduled task/routine, Codex/ChatGPT automation) �
 Quy tắc cứng:
 - Thương hiệu chỉ đến từ `config/settings.json` → `skillsRoot` (mặc định `C:\hoangpq\vaniecom-workspace\skills\`). Mọi thứ riêng của thương hiệu (nguồn tham khảo, kênh, ngôn ngữ đăng và ngôn ngữ chỉ để duyệt, giọng, ảnh gốc) đọc từ thư mục skill của nó. Không hard-code thương hiệu, không trộn nguồn giữa thương hiệu.
 - Các thương hiệu chạy **nối tiếp** (một Chrome, một agent).
-- Không ghi gì vào thư mục thương hiệu trước khi được duyệt. Không đăng bài ở đâu cả.
+- Không ghi gì vào thư mục thương hiệu trước khi được duyệt. Không đăng bài trực tiếp lên mạng xã hội; chỉ gửi bài **đã duyệt** lên Metricool qua MCP ở bước 5c (mặc định nháp).
 - Không dùng ảnh hay câu chữ của đối thủ trong bài; ảnh đưa vào Codex phải là ảnh của chính thương hiệu.
 - Gặp lỗi `ok: false` thì ghi lại và chuyển sang thương hiệu/bước tiếp, không lách luật.
 - Không bao giờ gắn nhãn AI lên bài ("made with AI", "tạo bằng AI", `#AIgenerated`...): `draft.mjs check` và `metricool-csv.mjs validate` chặn.
@@ -20,7 +20,7 @@ node scripts/sources.mjs         # mỗi thương hiệu: các research.sources 
 ```
 `usable` rỗng thì báo cáo (bước 6) và dừng.
 
-Lặp **từng thương hiệu trong `usable`**, mỗi lần một thương hiệu, bước 1-5.
+Lặp **từng thương hiệu trong `usable`**, mỗi lần một thương hiệu, bước 1-5c.
 
 ## Bước 1. Nghiên cứu (không giới hạn lượt/bài)
 
@@ -107,7 +107,29 @@ node scripts/host-image.mjs publish --brand <id> --post POST-xx [--video]
 - Chỉ gỡ file khi bài đã ở trạng thái `published` (Metricool không chép media ngoài; bài vẫn trỏ về link host, gỡ sớm là mất ảnh/video): `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`/`video_url`/`video_thumbnail_url`). Bài chưa `published` thì lệnh từ chối; `--force` gỡ bất chấp và in cảnh báo. Không gỡ ngay sau khi nhập CSV.
 - Chỉ đẩy file lên repo ảnh; không đăng, không gửi gì tới Metricool hay mạng xã hội.
 
-**Metricool**: chưa gửi gì; chỉ có phụ lục CSV bên dưới (người nhập thủ công). Không đăng, không hẹn giờ ở đâu.
+### Bước 5c. Gửi lên Metricool qua MCP (sau khi duyệt và host)
+
+Gói Metricool là **Starter** (không REST API). Đường chính: connector claude.ai "Metricool" cho agent các tool MCP (`getBrandSettings`, `createScheduledPost`, `getScheduledPosts`, `updateScheduledPost`, `getBestTimeToPostByNetwork`); Node không gọi được Metricool, nên script chỉ chuẩn bị tham số và ghi kết quả. `createScheduledPostForReview` cần gói team: không dùng.
+
+1. Đầu bước, đối chiếu bài đã gửi ở vòng trước:
+   ```
+   node scripts/metricool-mcp.mjs status --brand <id>
+   ```
+   Có `query` thì gọi `getScheduledPosts` với đúng `brandId`, `fromDate`, `toDate`, `timezone`, khớp theo `id`: PENDING hoặc nháp → không làm gì; **ERROR** → ghi vào báo cáo (POST-xx, id, `planner_url`, lý do); **PUBLISHED** → `node <thư mục skill>/scripts/mark-published.mjs <POST-xx> <yyyy-mm-dd theo audience_time> [link bài] --lang <ngôn ngữ đăng>`; nháp mà người đã hẹn giờ trong Metricool → chạy lại `record` (cùng `--id`, không `--draft`, giờ Metricool trả về).
+2. Tạo tham số cho bài mới:
+   ```
+   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-xx,...] [--draft|--schedule]
+   ```
+   Mỗi `items[]` = một bài `approved` có `media_url`/`video_url` và chưa có `metricool.<network>.id`. Mặc định **nháp** (`draft: true`); `--schedule` chỉ khi người dùng bảo hẹn giờ thật.
+3. Với từng item: gọi tool MCP `createScheduledPost` với **đúng** `args.blogId`, `args.date`, `args.info` (chuỗi JSON, không sửa, không thêm chữ). Rồi ghi kết quả ngay:
+   ```
+   node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <plannerUrl> --publication <publicationDate.dateTime> --tz <publicationDate.timezone> [--draft]
+   ```
+   (lệnh có sẵn trong `item.record`). `record` ghi `metricool.<network>` vào catalog; không phải nháp thì thêm `schedule.<network>` và trạng thái `scheduled`; rồi chạy `check-post.mjs` của skill. Tool lỗi thì không chạy `record`, ghi lỗi vào báo cáo; chạy lại `payload` sẽ đưa lại bài đó.
+- **Không bao giờ** tạo hay sửa bài cho Fortera Apparel (blogId `<blog_id_1>`, không phải skill): script từ chối, agent cũng không gọi tool với blogId nào ngoài `args.blogId`.
+- Giờ: `info.publicationDate` mang múi giờ khách (`cadence.timezone`), Metricool tự quy đổi sang múi giờ brand (Indian/Christmas) — không quy đổi tay như CSV. `date` = cùng giờ kèm offset.
+- Text chỉ gồm ngôn ngữ đăng (`channels[].lang`), không bao giờ `review_langs`, không nhãn AI (payload chặn). MCP chép ảnh về `static.metricool.com`, nhưng vẫn chỉ gỡ file host sau khi bài `published`.
+- Bài đã có `metricool.<network>.id` không bao giờ gửi lại (payload bỏ qua, `skipped`).
 
 ## Bước 6. Báo cáo
 
@@ -118,13 +140,14 @@ Gửi người dùng một tin ngắn, mỗi thương hiệu:
 - nghiên cứu: đã lấy bao nhiêu bài / dừng vì checkpoint;
 - **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption đăng từng ngôn ngữ (`captions`, nguyên văn) và bản chỉ để duyệt (`review_captions`, ghi rõ "không đăng"), ý + link bài tham khảo; bản scene-swap thì kèm đường dẫn ảnh gốc của shop (`reference_image`) để người duyệt xem hai ảnh cạnh nhau; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
 - đã duyệt và ghi vào thương hiệu (POST-xx, thư mục, link ảnh `media_url` hoặc "chưa có link" kèm lỗi host);
-- lỗi cần người xử lý (Codex hết lượt, ảnh không đạt, host ảnh lỗi).
+- Metricool: bài đã gửi (POST-xx, nháp hay hẹn giờ, giờ khách, `planner_url`), bài đã đăng (đã mark-published), bài ERROR;
+- lỗi cần người xử lý (Codex hết lượt, ảnh không đạt, host ảnh lỗi, Metricool lỗi).
 
 ## Bước 7. Kết thúc vòng
 
 Không dựng trang nào: app đọc dữ liệu mới mỗi lần mở. Kể cả khi vòng dừng sớm, nhắc người dùng mở app (nhấp đúp `start-app.cmd`, Mac: `start-app.command`) để duyệt/bỏ, hoặc trả lời trong chat.
 
-## Phụ lục: xuất CSV cho Metricool (không import)
+## Phụ lục: xuất CSV cho Metricool (dự phòng khi MCP không dùng được; không import)
 
 ```
 node scripts/metricool-csv.mjs export --brand <id> [--posts POST-01,POST-02] [--draft] [--lang en] [--date YYYY-MM-DD --time HH:MM] --out <file.csv>
@@ -134,4 +157,5 @@ node scripts/metricool-csv.mjs validate <file.csv> [--brand <id>] [--allow-today
 - `Brand name` = `social.json metricool.brand_name` (nhãn đúng trong Metricool, vd `Dreamy Vows`); giờ theo `metricool.timezone` (timezone của brand trong Metricool), giờ lấy từ catalog `schedule {date, time}`, `--date/--time`, `cadence.slots` (nếu có), hoặc **tự động** khi `slots` trống: rải `posts_per_week` vào ngày/giờ tốt của mạng (bảng ở `docs/metricool.md`), mỗi ngày tối đa một bài của thương hiệu.
 - Chỉ ngôn ngữ đăng vào CSV; `--lang` với ngôn ngữ chỉ để duyệt bị từ chối. Text có nhãn AI bị từ chối.
 - `validate` báo lỗi theo từng dòng và exit 1 khi có bất kỳ lỗi nào (Metricool sẽ nhập tất cả thành nháp, ngày sai thành "hôm nay giờ hiện tại"). Link ảnh WebP (`.webp`, `format=webp`/`fm=webp`...; với `--check-urls` cả content-type `image/webp`) bị từ chối.
-- Metricool không chép ảnh ngoài: file trên repo ảnh phải còn đến khi bài đã đăng (xem bước 5b về `remove`).
+- Metricool không chép ảnh ngoài khi nhập CSV: file trên repo ảnh phải còn đến khi bài đã đăng (xem bước 5b về `remove`).
+- Bài đã gửi qua MCP (`metricool.<network>.id`) bị bỏ qua, không xuất trùng.

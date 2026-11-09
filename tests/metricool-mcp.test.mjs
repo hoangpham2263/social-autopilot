@@ -1,0 +1,189 @@
+// metricool-mcp.mjs payload/record/status against a throw-away brand (temp skills root + temp workspace with its own
+// metricool-brands.json). Nothing is sent to Metricool: the script only prints the tool arguments and edits the temp catalog.
+// npm test
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'social-autopilot-mmcp-'));
+const skills = path.join(tmp, 'skills');
+const ws = path.join(tmp, 'workspace');
+const brandDir = path.join(skills, 'testbrand-skills');
+const catalogFile = path.join(brandDir, 'workspace', 'catalog.json');
+process.env.SA_SKILLS_ROOT = skills;
+process.env.SA_WORKSPACE = ws;
+const env = { ...process.env };
+const mcp = await import('../scripts/metricool-mcp.mjs');
+
+const write = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); };
+const run = (...args) => {
+  const r = spawnSync(process.execPath, [path.join(tool, 'scripts', 'metricool-mcp.mjs'), ...args], { env, encoding: 'utf8' });
+  try { return { code: r.status, ...JSON.parse(r.stdout) }; } catch { throw new Error(`${args.join(' ')}: ${r.stdout}${r.stderr}`); }
+};
+const addDays = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const FUTURE = addDays(30);
+const IMG = (n) => `https://hoangpham.is-a.dev/social-autopilot-sources/testbrand/2026/11/post-${n}.png`;
+const catalog = () => JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
+
+write(path.join(ws, 'metricool-brands.json'), JSON.stringify({ version: 1, brands: [
+  { name: 'Test Brand', blog_id: '1111', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'testbrand' },
+  { name: 'Fortera Apparel', blog_id: '<blog_id_1>', timezone: 'America/New_York', networks: ['facebook'], skill_id: null },
+] }));
+
+function setup({ posts, metricool = { brand_name: 'Test Brand', blog_id: '1111' }, channels = [{ network: 'facebook', lang: ['en'], enabled: true }], en } = {}) {
+  fs.rmSync(skills, { recursive: true, force: true });
+  write(path.join(brandDir, 'SKILL.md'), '# test\n');
+  write(path.join(brandDir, 'project', 'project.md'), '# Test\n\n## 1. Nhận diện\n- Tên thương hiệu (*): TestBrand\n');
+  write(path.join(brandDir, 'project', 'social.json'), JSON.stringify({
+    version: 1, brand: 'TestBrand', enabled: true, channels,
+    language_policy: { mode: 'single', review_langs: ['vn'] },
+    cadence: { timezone: 'America/Los_Angeles', posts_per_week: 3, slots: [] },
+    metricool,
+  }));
+  const folder = (id) => `workspace/posts/${id}`;
+  for (const p of posts) {
+    write(path.join(brandDir, folder(p.id), 'content-en.txt'), en ?? `Hello from ${p.id}\n\n#TestBrand`);
+    write(path.join(brandDir, folder(p.id), 'content-vn.txt'), `Xin chào ${p.id} (chỉ để duyệt)`);
+  }
+  write(catalogFile, JSON.stringify({ posts: posts.map((p) => ({ folder: folder(p.id), captions: { en: 'content-en.txt' }, review_captions: { vn: 'content-vn.txt' }, caption_status: { en: 'approved' }, status: 'approved', ...p })) }, null, 2));
+}
+
+test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test('isoWithOffset: audience timezone offset (PST/PDT) and +07:00', () => {
+  assert.equal(mcp.isoWithOffset('2026-11-17', '10:00', 'America/Los_Angeles'), '2026-11-17T10:00:00-08:00');
+  assert.equal(mcp.isoWithOffset('2026-07-01', '10:00:00', 'America/Los_Angeles'), '2026-07-01T10:00:00-07:00');
+  assert.equal(mcp.isoWithOffset('2026-11-17', '01:00', 'Indian/Christmas'), '2026-11-17T01:00:00+07:00');
+});
+
+test('payload: exact createScheduledPost shape, posted language only, no AI label, draft by default, skips sent posts', () => {
+  setup({ posts: [
+    { id: 'POST-01', media_url: IMG(1), media_alt: 'A pink neon sign', schedule: { facebook: { date_time: `${FUTURE}T10:00`, timezone: 'America/Los_Angeles' } } },
+    { id: 'POST-02', media_url: IMG(2), metricool: { facebook: { blog_id: '1111', id: '999', publication: `${FUTURE}T09:00:00`, timezone: 'America/Los_Angeles', draft: true } } },
+    { id: 'POST-03' }, // no media: skipped with a warning
+    { id: 'POST-04', status: 'awaiting_review', media_url: IMG(4) },
+  ] });
+  const before = fs.readFileSync(catalogFile, 'utf8');
+  const r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(fs.readFileSync(catalogFile, 'utf8'), before, 'payload writes nothing');
+  assert.equal(r.items.length, 1);
+  assert.deepEqual(r.skipped.map((s) => s.post), ['POST-02']);
+  assert.ok(r.warnings.some((w) => /POST-03/.test(w)));
+  const it = r.items[0];
+  assert.equal(it.post, 'POST-01');
+  assert.equal(it.tool, 'createScheduledPost');
+  assert.deepEqual(Object.keys(it.args).sort(), ['blogId', 'date', 'info']);
+  assert.equal(it.args.blogId, '1111');
+  assert.equal(it.args.date, mcp.isoWithOffset(FUTURE, '10:00', 'America/Los_Angeles'));
+  assert.equal(typeof it.args.info, 'string');
+  const info = JSON.parse(it.args.info);
+  assert.deepEqual(Object.keys(info).sort(), ['autoPublish', 'descendants', 'draft', 'facebookData', 'firstCommentText', 'hasNotReadNotes', 'media', 'mediaAltText', 'providers', 'publicationDate', 'shortener', 'smartLinkData', 'text']);
+  assert.equal(info.draft, true);
+  assert.equal(info.autoPublish, true);
+  assert.deepEqual(info.media, [IMG(1)]);
+  assert.deepEqual(info.mediaAltText, ['A pink neon sign']);
+  assert.deepEqual(info.providers, [{ network: 'facebook' }]);
+  assert.deepEqual(info.publicationDate, { dateTime: `${FUTURE}T10:00:00`, timezone: 'America/Los_Angeles' });
+  assert.deepEqual(info.facebookData, { type: 'POST' });
+  assert.equal(info.instagramData, undefined);
+  assert.equal(info.shortener, false);
+  assert.deepEqual(info.smartLinkData, { ids: [] });
+  assert.deepEqual(info.descendants, []);
+  assert.equal(info.firstCommentText, '');
+  assert.equal(info.text, 'Hello from POST-01\n\n#TestBrand');
+  assert.doesNotMatch(info.text, /Xin chào|chỉ để duyệt/, 'reviewer-only language is never posted');
+  assert.doesNotMatch(it.args.info, /isAiGenerated":true|made with AI|AIgenerated/i);
+  assert.match(it.record, /record --brand testbrand --post POST-01 .* --draft$/);
+  // the automatic time never reuses the day taken by the sent post
+  const r2 = run('payload', '--brand', 'testbrand', '--posts', 'POST-02');
+  assert.equal(r2.ok, true);
+  assert.equal(r2.items.length, 0);
+});
+
+test('payload: --schedule sends draft false; instagram gets instagramData isAiGenerated false; video is a REEL', () => {
+  setup({
+    channels: [{ network: 'facebook', lang: ['en'], enabled: true }, { network: 'instagram', lang: ['en'], enabled: true }],
+    posts: [{ id: 'POST-01', video_url: 'https://hoangpham.is-a.dev/social-autopilot-sources/testbrand/2026/11/post-01.mp4', schedule: { facebook: { date_time: `${FUTURE}T18:30`, timezone: 'America/Los_Angeles' } } }],
+  });
+  const r = run('payload', '--brand', 'testbrand', '--schedule');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const info = JSON.parse(r.items[0].args.info);
+  assert.equal(info.draft, false);
+  assert.deepEqual(info.providers, [{ network: 'facebook' }, { network: 'instagram' }]);
+  assert.deepEqual(info.facebookData, { type: 'REEL' });
+  assert.deepEqual(info.instagramData, { type: 'REEL', isAiGenerated: false });
+  assert.doesNotMatch(r.items[0].record, /--draft/);
+});
+
+test('payload: refuses an AI label, a past time, Fortera and unknown networks', () => {
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } }], en: 'Hello\n\n#AIgenerated #TestBrand' });
+  let r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /nhãn AI/);
+
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { date: '2020-01-01', time: '10:00' } }] });
+  r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /đã qua/);
+
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }], metricool: { brand_name: 'Fortera Apparel', blog_id: '<blog_id_1>' } });
+  r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /Fortera/);
+
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }], channels: [{ network: 'tiktok', lang: ['en'], enabled: true }] });
+  r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /chưa hỗ trợ mạng tiktok/);
+});
+
+test('record: draft keeps approved; scheduled writes schedule.<network> + status; payload then skips; status lists the query', () => {
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { facebook: { date_time: `${FUTURE}T10:00`, timezone: 'America/Los_Angeles' } } }, { id: 'POST-02', media_url: IMG(2) }] });
+  let r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '421362711', '--uuid', '3757973938339334504', '--planner-url', 'https://app.metricool.com/planner?x=1', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles', '--draft');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  let p = catalog().posts.find((x) => x.id === 'POST-01');
+  assert.equal(p.status, 'approved');
+  const rec = p.metricool.facebook;
+  assert.deepEqual({ ...rec, sent_at: undefined }, { blog_id: '1111', id: '421362711', uuid: '3757973938339334504', planner_url: 'https://app.metricool.com/planner?x=1', publication: `${FUTURE}T10:00:00`, timezone: 'America/Los_Angeles', draft: true, sent_at: undefined });
+  assert.ok(!Number.isNaN(Date.parse(rec.sent_at)));
+
+  // already sent: payload skips it and plans only POST-02
+  const pay = run('payload', '--brand', 'testbrand');
+  assert.equal(pay.ok, true, JSON.stringify(pay));
+  assert.deepEqual(pay.items.map((i) => i.post), ['POST-02']);
+  assert.deepEqual(pay.skipped.map((s) => s.post), ['POST-01']);
+
+  // another id for the same network is refused without --force
+  r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '5', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /--force/);
+
+  // scheduled (not draft), as Metricool answered it in the brand's Metricool timezone
+  r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '421362711', '--publication', '2026-12-18T01:00', '--tz', 'Indian/Christmas');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  p = catalog().posts.find((x) => x.id === 'POST-01');
+  assert.equal(p.status, 'scheduled');
+  assert.deepEqual(p.schedule, { facebook: { date_time: '2026-12-18T01:00:00', timezone: 'Indian/Christmas' } });
+  assert.equal(p.metricool.facebook.draft, false);
+  assert.equal(p.metricool.facebook.uuid, '3757973938339334504', 'kept from the first record');
+
+  const st = run('status', '--brand', 'testbrand');
+  assert.equal(st.ok, true);
+  assert.deepEqual(st.posts.map((x) => x.post), ['POST-01']);
+  assert.deepEqual(st.posts[0].audience_time, { date: '2026-12-17', time: '10:00:00', timezone: 'America/Los_Angeles' });
+  assert.equal(st.query.tool, 'getScheduledPosts');
+  assert.equal(st.query.brandId, '1111');
+  assert.equal(st.query.fromDate, '2026-12-17T00:00:00');
+  assert.equal(st.query.toDate, '2026-12-19T23:59:59');
+  assert.equal(st.query.timezone, 'Indian/Christmas');
+
+  // record refuses posts that are not approved/scheduled and Fortera
+  r = run('record', '--brand', 'testbrand', '--post', 'POST-09', '--id', '1', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
+  assert.equal(r.ok, false);
+});

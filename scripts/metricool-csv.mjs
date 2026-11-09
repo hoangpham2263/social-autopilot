@@ -136,13 +136,15 @@ export function brandInfo(dir) {
     timezone_source: ownTz ? 'social.json metricool.timezone' : cfgTz ? `config metricool-brands.json (brand "${cfg.name}")` : 'social.json cadence.timezone (chưa có metricool.timezone)',
     timezone_configured: !!(ownTz || cfgTz),
     config_timezone: cfgTz, config_brand: cfg?.name || '',
+    // Metricool blogId: social.json metricool.blog_id, else the config brand matched above; config_skill_id tells whose it is.
+    blog_id: String(mc.blog_id || cfg?.blog_id || '').trim(), config_blog_id: String(cfg?.blog_id || ''), config_skill_id: cfg ? cfg.skill_id ?? null : undefined,
     // audience_timezone = where posting times are planned (cadence.timezone); converted to timezone on export.
     cadence_timezone: cadenceTz,
     audience_timezone: cadenceTz && validTz(cadenceTz) ? cadenceTz : tz,
   };
 }
 export function allBrands(root = settings().skillsRoot) { return brandDirs(root).map(brandInfo); }
-function findBrand(id, root) {
+export function findBrand(id, root = settings().skillsRoot) {
   const dir = brandDirs(root).find((d) => [path.basename(d), path.basename(d).replace(/-skills$/, '')].includes(id));
   if (!dir) throw new Error(`Không có thương hiệu "${id}" trong ${root}.`);
   return brandInfo(dir);
@@ -299,23 +301,7 @@ async function checkMedia(rows, errors) {
   return results;
 }
 
-// ----- export -----
-const list = (v) => (v === undefined || v === null || v === '' ? [] : [].concat(v)).map((x) => String(x).trim()).filter(Boolean);
-
-function captionText(brand, post, langs, mode, separator) {
-  const texts = [];
-  for (const lang of langs) {
-    const fileName = post.captions?.[lang];
-    if (!fileName) throw new Error(`${post.id}: catalog không có caption "${lang}".`);
-    const st = post.caption_status?.[lang];
-    if (st && st !== 'approved') throw new Error(`${post.id}: caption "${lang}" chưa duyệt (caption_status ${st}).`);
-    const file = path.join(brand.dir, post.folder || '', fileName);
-    if (!fs.existsSync(file)) throw new Error(`${post.id}: không có file ${file}.`);
-    texts.push(cleanText(fs.readFileSync(file, 'utf8')).text);
-  }
-  return mode === 'one-post-bilingual' ? texts.join(separator) : texts[0];
-}
-
+// ----- posting times -----
 // Next free cadence slots, starting tomorrow (or today later than now with allowToday), planned in the audience timezone.
 function slotPicker(slots, tz, taken, { allowToday, now }) {
   const clean = (Array.isArray(slots) ? slots : []).filter((s) => DAYS.includes(s?.day) && /^([01]\d|2[0-3]):[0-5]\d$/.test(s?.time || ''))
@@ -373,28 +359,78 @@ export function autoPicker(network, postsPerWeek, tz, taken, { allowToday, now }
   };
 }
 
-export function buildExport(args, { now = new Date(), root = settings().skillsRoot } = {}) {
-  const brand = findBrand(need(args, 'brand'), root);
+// ----- shared planning (CSV export and Metricool MCP payload) -----
+const list = (v) => (v === undefined || v === null || v === '' ? [] : [].concat(v)).map((x) => String(x).trim()).filter(Boolean);
+export const mediaList = list;
+
+function captionText(brand, post, langs, mode, separator) {
+  const texts = [];
+  for (const lang of langs) {
+    const fileName = post.captions?.[lang];
+    if (!fileName) throw new Error(`${post.id}: catalog không có caption "${lang}".`);
+    const st = post.caption_status?.[lang];
+    if (st && st !== 'approved') throw new Error(`${post.id}: caption "${lang}" chưa duyệt (caption_status ${st}).`);
+    const file = path.join(brand.dir, post.folder || '', fileName);
+    if (!fs.existsSync(file)) throw new Error(`${post.id}: không có file ${file}.`);
+    texts.push(cleanText(fs.readFileSync(file, 'utf8')).text);
+  }
+  return mode === 'one-post-bilingual' ? texts.join(separator) : texts[0];
+}
+
+// Networks of a post already sent to Metricool through MCP (catalog metricool.<network>.id, written by metricool-mcp.mjs record).
+export function sentNetworks(post) {
+  const mc = post?.metricool;
+  if (!mc || typeof mc !== 'object' || Array.isArray(mc)) return [];
+  return Object.entries(mc).filter(([, r]) => r && typeof r === 'object' && r.id !== undefined && r.id !== null && String(r.id) !== '').map(([n]) => n);
+}
+
+// Wall-clock date_time ("YYYY-MM-DDTHH:MM[:SS]", optional Z/offset) read in tz -> { date, time } in toTz.
+export function wallIn(dateTime, tz, toTz) {
+  const s = String(dateTime || '').trim();
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.exec(s);
+  if (!m || !validDate(m[1])) return null;
+  if (m[3]) { const d = new Date(s.replace(' ', 'T')); return Number.isNaN(d.getTime()) ? null : nowIn(toTz, d); }
+  return tz && validTz(tz) ? convertZoned(m[1], m[2], tz, toTz) : { date: m[1], time: normTime(m[2]) };
+}
+// A post's own posting time in the audience timezone: legacy flat schedule { date, time } (audience time), or the
+// standard's schedule.<network> { date_time, timezone } of the first enabled network that has one.
+export function catalogSchedule(post, networkKeys, audienceTz) {
+  const s = post?.schedule;
+  if (!s || typeof s !== 'object') return null;
+  if (s.date) return { date: String(s.date), time: normTime(s.time) };
+  for (const n of networkKeys) {
+    const r = s[n];
+    if (r && typeof r === 'object' && r.date_time) { const w = wallIn(r.date_time, r.timezone || audienceTz, audienceTz); if (w) return w; }
+  }
+  return null;
+}
+// Time already taken by a post sent to Metricool (its publication in the record's timezone), in the audience timezone.
+function sentTime(post, audienceTz) {
+  for (const n of sentNetworks(post)) {
+    const r = post.metricool[n];
+    if (r.publication) { const w = wallIn(r.publication, r.timezone || audienceTz, audienceTz); if (w) return w; }
+  }
+  return null;
+}
+
+// Plans the approved posts of a brand: networks and posted languages from enabled channels (never review_langs), caption
+// text, media, alt text and a posting time in the audience timezone (catalog schedule, --date/--time, cadence.slots or the
+// automatic table). Posts already sent through MCP (metricool.<network>.id) are skipped and keep their time taken.
+// Shared by metricool-csv.mjs export and metricool-mcp.mjs payload; nothing is written.
+export function planPosts(args, { now = new Date(), root = settings().skillsRoot, brand = null } = {}) {
+  brand = brand || findBrand(need(args, 'brand'), root);
   const social = brand.social;
-  const header = templateHeader();
-  const warnings = [];
-  if (!brand.enabled) warnings.push(`social.json enabled: false (${brand.id}). Chỉ xuất file, không gửi gì.`);
-  if (!brand.brand_name) throw new Error(`Không có tên brand Metricool: thêm social.json metricool.brand_name cho ${brand.id}.`);
-  if (!brand.brand_name_configured) warnings.push(`Brand name "${brand.brand_name}" lấy từ project.md; nhãn trong Metricool có thể khác (vd "Dreamy Vows"). Thêm social.json metricool.brand_name.`);
-  if (!brand.timezone || !validTz(brand.timezone)) throw new Error(`Timezone "${brand.timezone}" không hợp lệ (${brand.timezone_source}).`);
+  const warnings = [], skipped = [];
   if (!brand.audience_timezone || !validTz(brand.audience_timezone)) throw new Error(`cadence.timezone "${brand.cadence_timezone}" không hợp lệ.`);
-  if (!brand.timezone_configured) warnings.push(`Không biết múi giờ brand trong Metricool (thêm social.json metricool.timezone hoặc brand trong config/metricool-brands.json): tạm coi là ${brand.timezone} (cadence.timezone), KHÔNG quy đổi giờ. Metricool đọc Date/Time theo múi giờ của brand trong Metricool.`);
-  if (brand.config_timezone && brand.timezone_source === 'social.json metricool.timezone' && brand.config_timezone !== brand.timezone) warnings.push(`social.json metricool.timezone (${brand.timezone}) khác múi giờ brand "${brand.config_brand}" trong config/metricool-brands.json (${brand.config_timezone}); dùng metricool.timezone. Kiểm lại múi giờ thật của brand trong Metricool.`);
-  const notes = [];
-  if (brand.audience_timezone !== brand.timezone) notes.push(`Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${brand.audience_timezone} (cadence.timezone, khách xem), ghi Date/Time theo ${brand.timezone} (${brand.timezone_source}). Gọn hơn (không bắt buộc): đặt múi giờ brand trong Metricool = ${brand.audience_timezone}.`);
 
   // Networks and languages from enabled channels.
   const channels = (social.channels || []).filter((c) => c.enabled);
   const unknown = channels.filter((c) => !NETWORKS[String(c.network).toLowerCase()]).map((c) => c.network);
   if (unknown.length) throw new Error(`Mạng không có cột trong template Metricool: ${unknown.join(', ')}.`);
-  const networks = [...new Set(channels.map((c) => NETWORKS[String(c.network).toLowerCase()]))];
+  const networkKeys = [...new Set(channels.map((c) => String(c.network).toLowerCase()))];
+  const networks = [...new Set(networkKeys.map((k) => NETWORKS[k]))];
   if (!networks.length) throw new Error(`${brand.id}: social.json không có kênh nào enabled.`);
-  // Reviewer-only languages (language_policy.review_langs) are never exported: they are for the approver to read.
+  // Reviewer-only languages (language_policy.review_langs) are never posted: they are for the approver to read.
   const reviewOnly = reviewLanguages(social);
   const chanLangs = [...new Set(channels.flatMap((c) => [].concat(c.lang || [])))].filter((l) => !reviewOnly.includes(l));
   let mode = social.language_policy?.mode || 'single';
@@ -411,6 +447,8 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
   // Posts.
   const catalog = readJson(path.join(brand.dir, 'workspace', 'catalog.json'));
   const all = catalog.posts || [];
+  const isSent = (p) => networkKeys.some((n) => sentNetworks(p).includes(n));
+  const sentReason = (p) => `đã gửi lên Metricool (metricool.${sentNetworks(p).join('/')}.id)`;
   const wanted = args.posts && args.posts !== true ? String(args.posts).split(',').map((s) => s.trim()).filter(Boolean) : null;
   const problems = [];
   let posts;
@@ -419,21 +457,27 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
     for (const id of wanted) {
       const p = all.find((x) => x.id === id);
       if (!p) problems.push(`${id}: không có trong catalog.`);
+      else if (isSent(p)) skipped.push({ post: id, reason: sentReason(p) });
       else if (p.status !== 'approved') problems.push(`${id}: trạng thái "${p.status}", chỉ xuất bài approved.`);
       else if (!list(p.media_url).length && !list(p.video_url).length) problems.push(`${id}: chưa có media_url/video_url (chạy host-image.mjs publish).`);
       else posts.push(p);
     }
   } else {
     posts = all.filter((p) => p.status === 'approved');
+    for (const p of posts.filter(isSent)) skipped.push({ post: p.id, reason: sentReason(p) });
+    posts = posts.filter((p) => !isSent(p));
     for (const p of posts.filter((x) => !list(x.media_url).length && !list(x.video_url).length)) warnings.push(`${p.id}: bỏ qua, chưa có media_url/video_url.`);
     posts = posts.filter((p) => list(p.media_url).length || list(p.video_url).length);
   }
+  for (const s of skipped) warnings.push(`${s.post}: bỏ qua, ${s.reason}.`);
   if (problems.length) throw Object.assign(new Error(`Không xuất được: ${problems.join(' ')}`), { problems });
-  if (!posts.length) throw new Error(`${brand.id}: không có bài approved nào có media_url.`);
 
-  // Times: catalog schedule, --date/--time, else next cadence slot.
+  // Times: catalog schedule, --date/--time, else next cadence slot. Times of other posts (scheduled or sent) stay taken.
   const taken = new Set();
-  for (const p of posts) if (p.schedule?.date && p.schedule?.time) taken.add(`${p.schedule.date} ${normTime(p.schedule.time)}`);
+  for (const p of all) {
+    const t = catalogSchedule(p, networkKeys, brand.audience_timezone) || sentTime(p, brand.audience_timezone);
+    if (t && validDate(t.date) && validTime(t.time)) taken.add(`${t.date} ${t.time}`);
+  }
   // cadence.slots (when the brand lists any) override the automatic times.
   const hasSlots = Array.isArray(social.cadence?.slots) && social.cadence.slots.length > 0;
   const nextSlot = hasSlots
@@ -442,41 +486,69 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
   const slotSource = hasSlots ? 'cadence.slots' : `tự động (${networks[0]}, ${brand.audience_timezone})`;
   const override = args.date && args.date !== true ? { date: String(args.date), time: normTime(args.time === true ? '' : args.time || '') } : null;
 
-  const rows = [], map = [];
+  const items = [];
   for (const p of posts) {
-    let when = p.schedule?.date ? { date: String(p.schedule.date), time: normTime(p.schedule.time), source: 'catalog schedule' } : null;
+    const own = catalogSchedule(p, networkKeys, brand.audience_timezone);
+    let when = own ? { ...own, source: 'catalog schedule' } : null;
     if (!when && override) when = { ...override, source: '--date/--time' };
     if (!when) { const s = nextSlot(); if (s) when = { ...s, source: slotSource }; }
     if (!when) { problems.push(`${p.id}: không tìm được giờ đăng (catalog schedule, ${slotSource}, --date/--time).`); continue; }
-    // when is planned in the audience timezone; Metricool reads Date/Time in the brand's Metricool timezone.
     const planned = { date: when.date, time: when.time, timezone: brand.audience_timezone };
-    const mcWhen = { ...(validDate(when.date) && validTime(when.time) ? convertZoned(when.date, when.time, brand.audience_timezone, brand.timezone) : { date: when.date, time: when.time }), timezone: brand.timezone };
     const images = list(p.media_url), video = list(p.video_url);
     if (images.length && video.length) { problems.push(`${p.id}: có cả media_url và video_url; Metricool không trộn ảnh với video.`); continue; }
     const media = video.length ? video : images;
     if (media.length > MAX_MEDIA) { problems.push(`${p.id}: ${media.length} ảnh, Metricool nhận tối đa ${MAX_MEDIA}.`); continue; }
-    const altList = list(p.media_alt ?? p.image_alt);
-    if (!altList.length) warnings.push(`${p.id}: chưa có alt text (catalog media_alt).`);
+    const alt = list(p.media_alt ?? p.image_alt);
+    if (!alt.length) warnings.push(`${p.id}: chưa có alt text (catalog media_alt).`);
     const texts = mode === 'separate-posts' ? langs.map((l) => ({ lang: l, text: captionText(brand, p, [l], 'single', separator) })) : [{ lang: langs.join('+'), text: captionText(brand, p, langs, mode, separator) }];
-    for (const t of texts) {
+    items.push({ post: p, when, planned, media, video: video.length > 0, alt, texts, facebook_post_type: p.facebook_post_type || (video.length ? 'REEL' : 'POST') });
+  }
+  if (problems.length) throw Object.assign(new Error(`Không xuất được: ${problems.join(' ')}`), { problems });
+  return { brand, social, channels, networkKeys, networks, langs, mode, items, warnings, skipped };
+}
+
+export function buildExport(args, { now = new Date(), root = settings().skillsRoot } = {}) {
+  const brand = findBrand(need(args, 'brand'), root);
+  const header = templateHeader();
+  const warnings = [];
+  if (!brand.enabled) warnings.push(`social.json enabled: false (${brand.id}). Chỉ xuất file, không gửi gì.`);
+  if (!brand.brand_name) throw new Error(`Không có tên brand Metricool: thêm social.json metricool.brand_name cho ${brand.id}.`);
+  if (!brand.brand_name_configured) warnings.push(`Brand name "${brand.brand_name}" lấy từ project.md; nhãn trong Metricool có thể khác (vd "Dreamy Vows"). Thêm social.json metricool.brand_name.`);
+  if (!brand.timezone || !validTz(brand.timezone)) throw new Error(`Timezone "${brand.timezone}" không hợp lệ (${brand.timezone_source}).`);
+  if (!brand.audience_timezone || !validTz(brand.audience_timezone)) throw new Error(`cadence.timezone "${brand.cadence_timezone}" không hợp lệ.`);
+  if (!brand.timezone_configured) warnings.push(`Không biết múi giờ brand trong Metricool (thêm social.json metricool.timezone hoặc brand trong config/metricool-brands.json): tạm coi là ${brand.timezone} (cadence.timezone), KHÔNG quy đổi giờ. Metricool đọc Date/Time theo múi giờ của brand trong Metricool.`);
+  if (brand.config_timezone && brand.timezone_source === 'social.json metricool.timezone' && brand.config_timezone !== brand.timezone) warnings.push(`social.json metricool.timezone (${brand.timezone}) khác múi giờ brand "${brand.config_brand}" trong config/metricool-brands.json (${brand.config_timezone}); dùng metricool.timezone. Kiểm lại múi giờ thật của brand trong Metricool.`);
+  const notes = [];
+  if (brand.audience_timezone !== brand.timezone) notes.push(`Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${brand.audience_timezone} (cadence.timezone, khách xem), ghi Date/Time theo ${brand.timezone} (${brand.timezone_source}). Gọn hơn (không bắt buộc): đặt múi giờ brand trong Metricool = ${brand.audience_timezone}.`);
+
+  const plan = planPosts(args, { now, root, brand });
+  warnings.push(...plan.warnings);
+  if (!plan.items.length) throw new Error(`${brand.id}: không có bài approved nào có media_url${plan.skipped.length ? ' chưa gửi lên Metricool' : ''}.`);
+  const { networks } = plan;
+  const rows = [], map = [];
+  for (const it of plan.items) {
+    const { when, planned, media, alt } = it;
+    // when is planned in the audience timezone; Metricool reads Date/Time in the brand's Metricool timezone.
+    const mcWhen = { ...(validDate(when.date) && validTime(when.time) ? convertZoned(when.date, when.time, brand.audience_timezone, brand.timezone) : { date: when.date, time: when.time }), timezone: brand.timezone };
+    for (const t of it.texts) {
       const r = Object.fromEntries(header.map((h) => [h, '']));
       r.Text = t.text; r.Date = mcWhen.date; r.Time = mcWhen.time; r.Draft = args.draft ? 'true' : 'false';
       for (const col of networks) r[col] = 'true';
       for (const col of AI_LABEL_COLUMNS) r[col] = 'false';
-      media.forEach((m, k) => { r[pics(k + 1)] = m; if (altList[k]) r[alts(k + 1)] = altList[k]; });
-      if (video.length && p.video_thumbnail_url) r['Video Thumbnail Url'] = String(p.video_thumbnail_url);
-      if (networks.includes('Facebook')) r['Facebook Post Type'] = p.facebook_post_type || (video.length ? 'REEL' : 'POST');
-      if (networks.includes('Instagram')) r['Instagram Post Type'] = video.length ? 'REEL' : 'POST';
+      media.forEach((m, k) => { r[pics(k + 1)] = m; if (alt[k]) r[alts(k + 1)] = alt[k]; });
+      if (it.video && it.post.video_thumbnail_url) r['Video Thumbnail Url'] = String(it.post.video_thumbnail_url);
+      if (networks.includes('Facebook')) r['Facebook Post Type'] = it.facebook_post_type;
+      if (networks.includes('Instagram')) r['Instagram Post Type'] = it.video ? 'REEL' : 'POST';
       r['Brand name'] = brand.brand_name;
       rows.push(r);
-      map.push({ post: p.id, lang: t.lang, date: mcWhen.date, time: mcWhen.time, time_source: when.source, planned, metricool: mcWhen, time_note: describeTimes(planned, mcWhen), media: media.length });
+      map.push({ post: it.post.id, lang: t.lang, date: mcWhen.date, time: mcWhen.time, time_source: when.source, planned, metricool: mcWhen, time_note: describeTimes(planned, mcWhen), media: media.length });
     }
   }
-  if (problems.length) throw Object.assign(new Error(`Không xuất được: ${problems.join(' ')}`), { problems });
-  warnings.push('Metricool KHÔNG chép ảnh ngoài về máy chủ của nó (saveExternalMediaFiles false): file ảnh trên repo ảnh phải còn nguyên đến khi bài đã đăng. Không gỡ file (host-image.mjs remove) trước giờ đăng.');
-  return { brand, header, rows, map, networks, langs, mode, warnings, notes };
+  warnings.push('Đường CSV: Metricool KHÔNG chép ảnh ngoài về máy chủ của nó (saveExternalMediaFiles false): file ảnh trên repo ảnh phải còn nguyên đến khi bài đã đăng. Không gỡ file (host-image.mjs remove) trước giờ đăng.');
+  return { brand, header, rows, map, networks, langs: plan.langs, mode: plan.mode, warnings, notes };
 }
 
+// ----- export -----
 async function runExport(args) {
   const outFile = path.resolve(need(args, 'out'));
   const root = settings().skillsRoot;
