@@ -672,6 +672,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#prSrc").innerHTML = b ? (arr(b.sources).map((s) => `<label><input type="checkbox" value="${esc(s)}"${ticked.has(s) ? " checked" : ""}>${esc(s)}</label>`).join("") || `<div class="meta">No enabled sources.</div>`)
       : `<div class="meta">Pick a brand to choose sources.</div>`;
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
+    // Sources need one brand: with "All" brands the picker is disabled (and cleared).
+    const box = $("#prSrcBox"); box.classList.toggle("disabled", !b); box.title = b ? "" : "Pick one brand to choose sources"; if (!b) { box.open = false; for (const c of $$("#prSrc input")) c.checked = false; srcLabel(); }
     srcLabel();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
     $("#prCount").placeholder = b?.posts_per_week ? String(b.posts_per_week) : "cadence";

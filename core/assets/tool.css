@@ -83,7 +83,7 @@ header .config + .update { margin-left: 0; }
    .field: label ABOVE the control (12px muted, 4px gap); 180px wide, .wide for text/paths, .auto for segmented buttons.
    Every control (input of any type, select, the .select multi-select, segmented buttons) has the same height, border and
    font. .actions: a row of buttons (and a short hint) with the same gap. */
-.fields { display: flex; flex-wrap: wrap; gap: 16px 12px; align-items: flex-end; margin: 0 0 24px; }
+.fields { display: flex; flex-wrap: wrap; gap: 16px 12px; align-items: flex-start; margin: 0 0 24px; }
 .fields[hidden] { display: none; }
 .field { display: flex; flex-direction: column; gap: 4px; width: 180px; min-width: 0; }
 .field.wide { width: auto; flex: 1 1 360px; }
@@ -96,7 +96,9 @@ input[type=date], input[type=number] { font: inherit; font-size: var(--ctl-font)
 .field .inline-control { display: flex; gap: 8px; align-items: center; }
 .field .inline-control > input, .field .inline-control > select { flex: 1 1 auto; min-width: 0; }
 /* A multi-select that looks like a select: a <details class="select"> with a <summary> and a list of checkboxes. */
-details.select { position: relative; }
+details.select { position: relative; height: var(--ctl-h); } /* fixed: opening it must not push the row down */
+/* Disabled controls (a choice that does not apply right now): greyed and not clickable, same look everywhere. */
+details.select.disabled > summary, input:disabled, select:disabled, textarea:disabled { background: #f3f3f3; color: #9a9a9a; border-color: #c8c8c8; pointer-events: none; }
 details.select > summary { list-style: none; display: flex; align-items: center; height: var(--ctl-h); box-sizing: border-box; padding: 0 28px 0 12px; border: var(--ctl-border); background: #fff; font-size: var(--ctl-font); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; position: relative; margin: 0; }
 details.select > summary::-webkit-details-marker { display: none; }
 details.select > summary::after { content: ""; position: absolute; right: 10px; top: 50%; margin-top: -2px; border: 4px solid transparent; border-top-color: var(--ink); }
