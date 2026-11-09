@@ -44,13 +44,29 @@ code { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
 [hidden] { display: none !important; }
 :focus-visible { outline: none; }
 
-.container { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 16px; }
-@media (min-width: 640px) { .container { padding: 0 24px; } }
-.main { padding-top: 20px; padding-bottom: 48px; display: grid; gap: 24px; }
+/* shadcn/ui container (tailwind: center, padding 2rem, 2xl 1400px; breakpoints 640/768/1024/1280); 1rem gutter on phones. */
+.container { width: 100%; margin-right: auto; margin-left: auto; padding-right: 1rem; padding-left: 1rem; }
+@media (min-width: 640px) { .container { max-width: 640px; padding-right: 2rem; padding-left: 2rem; } }
+@media (min-width: 768px) { .container { max-width: 768px; } }
+@media (min-width: 1024px) { .container { max-width: 1024px; } }
+@media (min-width: 1280px) { .container { max-width: 1280px; } }
+@media (min-width: 1400px) { .container { max-width: 1400px; } }
+/* Spacing as ui.shadcn.com dashboard: sections gap-4 / md:gap-6, page py-4 / md:py-6, card grids gap-4. */
+.main { padding-top: 1rem; padding-bottom: 1.5rem; display: grid; gap: 1rem; }
+@media (min-width: 768px) { .main { padding-top: 1.5rem; padding-bottom: 3rem; gap: 1.5rem; } }
 
-.top { display: grid; gap: 4px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
-.top .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12.5px; color: var(--muted-foreground); }
-.top .meta.stale .when { color: var(--amber); }
+/* Sticky header, full width with a bottom border; its row uses the same container (h-14 like ui.shadcn.com). */
+.site-header { position: sticky; top: 0; z-index: 50; width: 100%; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--background) 95%, transparent); backdrop-filter: blur(8px); }
+.header-inner { height: 3.5rem; display: flex; align-items: center; gap: 10px; }
+.logo { width: 24px; height: 24px; border-radius: 6px; background: var(--primary); color: var(--primary-foreground); display: grid; place-content: center; flex-shrink: 0; }
+.logo svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.site-header h1 { font-size: 15px; letter-spacing: -.01em; white-space: nowrap; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12.5px; color: var(--muted-foreground); }
+.site-header .meta { margin-left: auto; flex-wrap: nowrap; min-width: 0; white-space: nowrap; }
+.meta.stale .when { color: var(--amber); }
+.refresh-group { display: inline-flex; align-items: center; gap: 8px; }
+.phone-only { display: none; }
+@media (max-width: 767px) { .site-header .refresh-part { display: none; } .phone-only { display: flex; } }
 .warn { padding: 6px 10px; border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border)); border-radius: calc(var(--radius) - 2px); color: var(--amber); font-size: 12.5px; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; height: 28px; padding: 0 10px; border-radius: calc(var(--radius) - 2px);
@@ -64,7 +80,7 @@ code { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
 .tabs-list button:hover { border-color: var(--border); color: var(--foreground); }
 .tabs-list button.active { background: var(--background); color: var(--foreground); border-color: var(--border); }
 
-.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .stat { display: grid; gap: 2px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); text-decoration: none; transition: border-color .15s; }
 .stat:hover { border-color: var(--ring); }
 .stat .k { font-size: 12.5px; color: var(--muted-foreground); display: flex; align-items: center; gap: 6px; }
@@ -82,7 +98,7 @@ code { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
 .c-green { --c: var(--green); } .c-amber { --c: var(--amber); } .c-red { --c: var(--destructive); } .c-slate { --c: var(--slate); }
 .tag { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: 4px; background: var(--muted); font-size: 12px; white-space: nowrap; }
 
-.cards { display: grid; gap: 12px; grid-template-columns: 1fr; }
+.cards { display: grid; gap: 1rem; grid-template-columns: 1fr; }
 @media (min-width: 860px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 12px; display: grid; gap: 10px; align-content: start; min-width: 0; }
 .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -136,6 +152,7 @@ details.more div { padding-top: 4px; }
 </style>
 </head>
 <body>
+<header class="site-header"><div class="container header-inner"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 16l5-5 4 4 7-8"/></svg></span><h1>Social Autopilot</h1><div class="meta" id="meta"></div></div></header>
 <main class="container main" id="app">
   <noscript><div class="alert">Trang cần JavaScript để hiện dữ liệu.</div></noscript>
 </main>
@@ -203,7 +220,11 @@ details.more div { padding-top: 4px; }
     var stale = (Date.now() - new Date(D.generated_at)) / 36e5 > 24;
     var h = [];
 
-    h.push('<header class="top"><h1>Social Autopilot</h1><div class="meta' + (stale ? " stale" : "") + '"><span class="when">Cập nhật ' + fmt(D.generated_at) + (stale ? " (cũ hơn 1 ngày)" : "") + '</span><span>·</span><span>Làm mới: <code>open-dashboard.cmd</code> hoặc <code>' + esc(D.refresh) + "</code></span>" + copyBtn(D.refresh, "Chép lệnh") + "</div></header>");
+    var refresh = '<span>Làm mới: <code>open-dashboard.cmd</code> hoặc <code>' + esc(D.refresh) + "</code></span>" + copyBtn(D.refresh, "Chép lệnh");
+    var meta = document.getElementById("meta");
+    meta.className = "meta" + (stale ? " stale" : "");
+    meta.innerHTML = '<span class="when">Cập nhật ' + fmt(D.generated_at) + (stale ? " (cũ hơn 1 ngày)" : "") + '</span><span class="refresh-part">·</span><span class="refresh-part refresh-group">' + refresh + "</span>";
+    h.push('<div class="meta phone-only">' + refresh + "</div>");
     if (D.errors && D.errors.count) h.push('<p class="warn">' + D.errors.count + " lỗi trong 24 giờ qua, xem <code>" + esc(D.errors.dir) + "</code></p>");
 
     if (showTabs) {
@@ -228,7 +249,7 @@ details.more div { padding-top: 4px; }
     app.innerHTML = h.join("");
   }
 
-  app.addEventListener("click", function (e) {
+  document.addEventListener("click", function (e) {
     var tab = e.target.closest("[role=tab]");
     if (tab) { filter = tab.getAttribute("data-brand") || ""; try { localStorage.setItem(KEY, filter); } catch (err) {} render(); return; }
     var btn = e.target.closest(".copy");
