@@ -1,5 +1,5 @@
 // One whole cycle against a throw-away brand skill and workspace (never the real brand folders):
-// brands -> sources -> research start/ingest (limits, cleaning) -> ideas -> draft (fake Codex) -> check -> approve -> write-back.
+// brands -> sources -> research start/ingest (append, dedupe, cleaning) -> ideas -> draft (fake Codex) -> check -> approve -> write-back.
 // npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,9 +18,9 @@ const ws = path.join(tmp, 'workspace');
 // goes to a closed local port, so hosting after approval fails softly (image_host.ok false) and the approval stands.
 const hostRepo = path.join(tmp, 'host'), hostBare = path.join(tmp, 'host.git');
 const env = { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: skills, SA_CODEX: path.join(tool, 'tests', 'fake-codex.mjs'), SA_IMAGE_HOST_CHECK_BASE: 'http://127.0.0.1:9/main' };
-const git = (cwd, ...args) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`); return r.stdout.trim(); };
+const git = (cwd, ...args) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }); if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`); return r.stdout.trim(); };
 const run = (script, ...args) => {
-  const r = spawnSync(process.execPath, [path.join(tool, 'scripts', script), ...args], { env, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(tool, 'scripts', script), ...args], { env, encoding: 'utf8', windowsHide: true });
   try { return JSON.parse(r.stdout); } catch { throw new Error(`${script} ${args.join(' ')}: ${r.stdout}${r.stderr}`); }
 };
 const write = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
@@ -49,11 +49,14 @@ const brandDir = path.join(skills, 'dreamyvows-skills');
 
 test.before(() => {
   if (!haveReal) return;
+  // Posted language en only; vn is reviewer-only (language_policy.review_langs).
   const on = (s, sources) => ({ ...s, enabled: true,
-    research: { ...s.research, max_per_day: 1, sources },
+    research: { ...s.research, sources },
+    channels: (s.channels || []).map((c) => ({ ...c, lang: ['en'] })),
+    language_policy: { ...s.language_policy, mode: 'single', review_langs: ['vn'] },
     product_images: { ...s.product_images, ai_scenes_allowed: true },
     cadence: { ...s.cadence, slots: [{ day: 'tue', time: '19:00' }] },
-    approval: { ...s.approval, owner: 'Hoang' } });
+    approval: (({ owner, ...rest }) => rest)(s.approval || {}) });
   scratchBrand('dreamyvows-skills', (s) => on(s, [
     { id: 'shop-a', name: 'Shop A', platform: 'facebook', url: 'https://www.facebook.com/shopa', enabled: true, what_to_take: 'neon để bàn', notes: '' },
     { id: 'shop-b', name: 'Shop B', platform: 'facebook', url: 'https://www.facebook.com/shopb', enabled: true, what_to_take: '', notes: '' },
@@ -66,8 +69,7 @@ test.before(() => {
   git(hostRepo, 'config', 'user.name', 'test'); git(hostRepo, 'config', 'user.email', 'test@example.invalid');
   write(path.join(hostRepo, 'README.md'), '# test host\n');
   git(hostRepo, 'add', 'README.md'); git(hostRepo, 'commit', '--quiet', '-m', 'init'); git(hostRepo, 'remote', 'add', 'origin', hostBare); git(hostRepo, 'push', '--quiet', '-u', 'origin', 'main');
-  write(path.join(ws, 'settings.json'), JSON.stringify({ research: { max_posts_per_source: 2, max_posts_per_day_all_brands: 3 },
-    imageHost: { type: 'github-repo', path: hostRepo, rawBase: 'https://raw.example.invalid/sources/main', verify: { attempts: 1, delay_seconds: 0 } } }));
+  write(path.join(ws, 'settings.json'), JSON.stringify({ imageHost: { type: 'github-repo', path: hostRepo, rawBase: 'https://raw.example.invalid/sources/main', verify: { attempts: 1, delay_seconds: 0 } } }));
   // Not a brand: no social.json.
   write(path.join(skills, 'other-skills', 'SKILL.md'), '---\nname: other-skills\n---\n');
 });
@@ -86,23 +88,37 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(run('research.mjs', 'start', '--brand', 'dreamyvows').reused, true);
   const [a, b] = start.run.sources;
 
-  // shop-a: 3 posts, cap 2 per source; Facebook's U+034F removed.
+  // shop-a: 3 posts, no limits; Facebook's U+034F removed.
   const posts = [1, 2, 3].map((n) => ({ post_url: `https://fb/p${n}`, caption: `Đèn neon͏͏ số ${n}​ giá 600k`, image: `raw/${n}.png` }));
   posts.forEach((p, i) => write(path.join(a.dir, p.image), png(8, 8, [i * 40, 10, 10])));
-  write(a.raw_file, JSON.stringify(posts));
-  // shop-b: 3 posts, but only 1 left of the 3 a day for all brands.
+  // Only real images inside the source folder: a text file named .png, a .txt and a file outside the run are dropped.
+  write(path.join(a.dir, 'raw', 'fake.png'), 'not an image');
+  write(path.join(a.dir, 'raw', 'note.txt'), 'x');
+  const outsideImg = path.join(tmp, 'elsewhere.png'); write(outsideImg, png(8, 8, [1, 2, 3]));
+  write(a.raw_file, JSON.stringify([...posts, { post_url: 'https://fb/fake', image: 'raw/fake.png' }, { post_url: 'https://fb/txt', image: 'raw/note.txt' }, { post_url: 'https://fb/out', image: outsideImg }]));
+  // A leftover file in refs/ from an earlier ingest is removed.
+  write(path.join(a.dir, 'refs', 'R09-stale.png'), png());
   posts.forEach((p, i) => write(path.join(b.dir, p.image), png(8, 8, [10, i * 40 + 5, 10])));
   write(b.raw_file, JSON.stringify(posts));
   const ingest = run('research.mjs', 'ingest', '--brand', 'dreamyvows');
   assert.equal(ingest.ok, true, JSON.stringify(ingest));
-  assert.deepEqual(ingest.sources.map((s) => s.refs), [2, 1]);
+  assert.deepEqual(ingest.sources.map((s) => s.refs), [3, 3]);
+  assert.deepEqual(ingest.sources[0].dropped.map((d) => d.post_url).sort(), ['https://fb/fake', 'https://fb/out', 'https://fb/txt']);
+  assert.ok(!fs.existsSync(path.join(a.dir, 'refs', 'R09-stale.png')), 'stale ref file removed');
   const refs = JSON.parse(fs.readFileSync(path.join(a.dir, 'refs.json'), 'utf8')).refs;
   assert.ok(!/[͏​]/.test(refs[0].caption));
-  // Idempotent: ingesting again gives the same.
-  assert.deepEqual(run('research.mjs', 'ingest', '--brand', 'dreamyvows').sources.map((s) => s.refs), [2, 1]);
+  // A second run the same day: start again is allowed, the new post is appended, duplicates dropped.
+  assert.equal(run('research.mjs', 'start', '--brand', 'dreamyvows').reused, true);
+  write(path.join(a.dir, 'raw', '4.png'), png(8, 8, [200, 200, 10]));
+  write(a.raw_file, JSON.stringify([...posts, { post_url: 'https://fb/p4', caption: 'mới', image: 'raw/4.png' }]));
+  const again = run('research.mjs', 'ingest', '--brand', 'dreamyvows');
+  assert.deepEqual(again.sources.map((s) => s.refs), [4, 3]);
+  assert.equal(again.sources[0].added, 1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(a.dir, 'refs.json'), 'utf8')).refs.map((r) => r.id), ['R01', 'R02', 'R03', 'R04']);
+  assert.equal(fs.readdirSync(path.join(a.dir, 'refs')).length, 4);
 
   const init = run('ideas.mjs', 'init', '--brand', 'dreamyvows');
-  assert.equal(init.total, 3);
+  assert.equal(init.total, 7);
   const copied = run('ideas.mjs', 'set', '--brand', 'dreamyvows', '--id', 'I01', '--json', JSON.stringify({ product_type: 'đèn neon số 1 giá 600k', scene: 'x', angle: 'y', caption_structure: 'z' }));
   assert.ok(copied.problems.length >= 1);
   assert.equal(run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', 'I01').ok, false);
@@ -141,19 +157,33 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   for (const l of ['vn', 'en']) write(path.join(draft.dir, `content-${l}.txt`), `Bảng neon "Love" cho bữa tối kỷ niệm (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows #neon\n`);
   const checked = run('draft.mjs', 'check', '--id', draft.id);
   assert.equal(checked.status, 'awaiting_approval', JSON.stringify(checked.problems));
-  assert.equal(run('queue.mjs').brands[0].awaiting_approval.length, 1);
+  const waiting = run('queue.mjs').brands[0].awaiting_approval;
+  assert.equal(waiting.length, 1);
+  // vn is reviewer-only: shown apart, never in the posted captions.
+  assert.deepEqual(Object.keys(waiting[0].captions), ['content-en.txt']);
+  assert.deepEqual(Object.keys(waiting[0].review_captions), ['content-vn.txt']);
+  assert.deepEqual(waiting[0].review_languages, ['vn']);
+  // An AI label in any caption (posted or reviewer-only) blocks it.
+  const vnFile = path.join(draft.dir, 'content-vn.txt'), vnText = fs.readFileSync(vnFile, 'utf8');
+  fs.writeFileSync(vnFile, vnText.replace('#DreamyVows', 'Ảnh tạo bằng AI\n#DreamyVows'));
+  const labelled = run('draft.mjs', 'check', '--id', draft.id);
+  assert.ok(labelled.problems.some((p) => /nhãn AI/.test(p) && /content-vn/.test(p)), JSON.stringify(labelled.problems));
+  fs.writeFileSync(vnFile, vnText);
+  assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'awaiting_approval');
 
-  // Nothing in the brand before approval; wrong approver refused.
-  assert.equal(JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.filter((p) => String(p.source || '').startsWith('social-autopilot')).length, 0);
-  assert.equal(run('approve.mjs', 'approve', '--id', draft.id, '--by', 'someone').ok, false);
+  // Nothing in the brand before approval; write-back refuses a draft not approved. No named approver: --by is free text.
+  assert.equal(JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.filter((p) => p.source === `social-autopilot ${draft.id}`).length, 0);
   assert.equal(run('writeback.mjs', '--id', draft.id).ok, false);
-  const ok = run('approve.mjs', 'approve', '--id', draft.id, '--by', 'hoang', '--note', 'đẹp');
+  const ok = run('approve.mjs', 'approve', '--id', draft.id, '--by', '  someone   else ', '--note', 'đẹp');
   assert.equal(ok.ok, true, JSON.stringify(ok));
   const catalog = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'));
   const post = catalog.posts.find((p) => p.id === ok.brand_post.id);
   assert.match(post.id, /^POST-\d+$/);
   assert.equal(catalog.posts.filter((p) => p.id === post.id).length, 1); // a new number, after the brand's own posts
   assert.equal(post.status, 'approved');
+  assert.equal(post.approval.by, 'someone else');
+  assert.deepEqual(Object.keys(post.captions), ['en']); // posted captions only
+  assert.deepEqual(post.review_captions, { vn: 'content-vn.txt' });
   assert.equal(post.ai_disclosure.label, undefined); // never an AI label on a post
   assert.equal(post.ai_disclosure.ai_scene, true);
   assert.ok(fs.existsSync(path.join(brandDir, post.folder, 'image.png')));
@@ -165,13 +195,22 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.ok(ok.image_host.next.endsWith(`host-image.mjs publish --brand dreamyvows --post ${post.id}`), ok.image_host.next);
   assert.equal(git(tmp, '--git-dir', hostBare, 'log', '-1', '--format=%s', 'main'), `dreamyvows ${post.id}`);
   assert.equal(post.media_url, undefined);
-  assert.equal(run('approve.mjs', 'approve', '--id', draft.id, '--by', 'hoang').reused, true);
+  assert.equal(run('approve.mjs', 'approve', '--id', draft.id).reused, true);
+  // Queue (RUNBOOK step 6): the approved post with "chưa có link" and the host error + command.
+  const done = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').approved.find((x) => x.id === draft.id);
+  assert.equal(done.media_url, null);
+  assert.equal(done.image_link, 'chưa có link');
+  assert.ok(done.host_error, JSON.stringify(done));
+  assert.ok(done.next.includes(`--post ${post.id}`));
 
   // Reject needs a note.
   run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', 'I01');
   const second = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--product', product, '--again');
   assert.equal(run('approve.mjs', 'reject', '--id', second.id).ok, false);
-  assert.equal(run('approve.mjs', 'reject', '--id', second.id, '--note', 'không hợp').status, 'rejected');
+  const rejected = run('approve.mjs', 'reject', '--id', second.id, '--note', 'không hợp');
+  assert.equal(rejected.status, 'rejected');
+  assert.equal(rejected.by, 'user');
+  assert.match(run('approve.mjs', 'reject', '--id', second.id, '--note', 'lại').error, /không từ chối lại/);
 
   // Scene-swap: off by default (brand images only), opt-in per brand in social.json.
   const socialFile = path.join(brandDir, 'project', 'social.json');
@@ -199,7 +238,7 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(run('draft.mjs', 'check', '--id', swap.id).status, 'awaiting_approval');
   const shown = run('queue.mjs').brands.find((b) => b.brand === 'dreamyvows').awaiting_approval.find((d) => d.id === swap.id);
   assert.equal(shown.reference_image, refPath); // the approver sees the shop's original beside the result
-  const swapOk = run('approve.mjs', 'approve', '--id', swap.id, '--by', 'Hoang');
+  const swapOk = run('approve.mjs', 'approve', '--id', swap.id);
   assert.equal(swapOk.ok, true, JSON.stringify(swapOk));
   const swapPost = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.find((p) => p.id === swapOk.brand_post.id);
   assert.equal(swapPost.image_mode, 'scene-swap');
@@ -209,11 +248,12 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   setRedraw(undefined);
 });
 
-test('research limit: another brand cannot start once the all-brand day cap is used', { skip: !haveReal && 'no brand skills to copy' }, () => {
+test('research has no limits: another brand starts after a big run, the same brand restarts', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const r = run('research.mjs', 'start', '--brand', 'grenheim');
-  assert.equal(r.ok, false, JSON.stringify(r));
-  assert.match(r.error, /hạn mức/);
-  assert.equal(run('research.mjs', 'start', '--brand', 'dreamyvows').reused, true);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.run.budget, undefined);
+  assert.equal(run('research.mjs', 'start', '--brand', 'grenheim').reused, true);
+  assert.equal(run('research.mjs', 'limits').ok, false); // the command is gone
 });
 
 test('clean script strips U+034F and zero-width characters from a CSV', () => {
