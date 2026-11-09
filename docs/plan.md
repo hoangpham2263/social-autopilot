@@ -5,16 +5,15 @@ Tool độc lập ở `C:/hoangpq/social-autopilot`. File này thay bản kế h
 
 Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý → làm ảnh và caption riêng của thương hiệu → người duyệt duyệt → lưu bài đã duyệt vào `workspace/posts/` và `catalog.json` của thương hiệu. **Metricool**: chưa đăng; chỉ xuất CSV cho người nhập (mục 8).
 
-## 1. Script headless + app + dashboard tĩnh
+## 1. Script headless + app
 
 | Phần | Ai dùng | Gồm |
 |---|---|---|
 | **Headless (nguồn duy nhất)** | Agent theo lịch: Claude Code scheduled task/routine, Codex/ChatGPT automation; agent trong chat | `RUNBOOK.md` + `scripts/*.mjs` (mỗi lệnh in một JSON, chạy lại không trùng) + `docs/scheduled-prompt.md` |
-| **App (giao diện chính)** | Người dùng | `start-app.cmd` / `start-app.command` → `src/server.mjs` (127.0.0.1) + `ui/index.html`; vỏ `core/` (launch, Cấu hình, webview2, Cập nhật). Gọi đúng hàm của `scripts/`: duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; đọc dữ liệu mới mỗi lần mở trang |
-| **Dashboard (chỉ xem, tuỳ chọn)** | Người dùng | `scripts/dashboard.mjs` → `dashboard.html` tĩnh, nhấp đúp là mở (`open-dashboard.cmd`). Không server, không nút thao tác |
+| **App (cách chạy duy nhất)** | Người dùng | `start-app.cmd` (Windows, cửa sổ WebView2) / `start-app.command` (macOS) → `src/server.mjs` (127.0.0.1) + `ui/index.html`; vỏ `core/` (launch, Cấu hình, webview2, Cập nhật). Gọi đúng hàm của `scripts/`: duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; đọc dữ liệu mới mỗi lần mở trang |
 
-- App khôi phục từ commit 0db4530 (người dùng chọn 09/11/2026: chạy như app như trước) và nối với mọi thứ thêm sau (scene-swap, làm sạch metadata, host ảnh); giao diện giữ kiểu cũ (`core/assets/tool.css`), dashboard tĩnh giữ kiểu shadcn riêng, hai bên không dùng chung CSS. Quản lý cũng làm được qua chat với agent hoặc script.
-- Cuối mỗi vòng (và sau mỗi lần duyệt/bỏ) agent chạy `node scripts/dashboard.mjs`.
+- App khôi phục từ commit 0db4530 (người dùng chọn 09/11/2026: chạy như app như trước) và nối với mọi thứ thêm sau (scene-swap, làm sạch metadata, host ảnh); giao diện giữ kiểu cũ (`core/assets/tool.css`). Quản lý cũng làm được qua chat với agent hoặc script.
+- 09/11/2026 người dùng chốt một cách chạy: bỏ dashboard tĩnh (`dashboard.html`, `open-dashboard.cmd`); app chạy trên Windows và macOS. Vòng chạy không dựng trang nào; app hiện dữ liệu sống.
 - Agent theo lịch và lệnh chạy tay có thể chồng nhau: mọi đọc-sửa-ghi file chung có khoá (`<file>.lock`) và ghi nguyên tử.
 
 ## 2. Thương hiệu
@@ -48,11 +47,11 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
    6. `confirm-clean`, chỉ với scene-swap;
    7. viết caption theo skill của thương hiệu;
    8. `draft.mjs check` → `awaiting_approval`.
-4. **Duyệt:** nút Duyệt/Bỏ trong app hoặc chat (`approve.mjs approve|reject`), cùng hàm; dashboard tĩnh chỉ để xem. Người duyệt phải khớp `approval.owner`; bỏ thì phải ghi lý do.
+4. **Duyệt:** nút Duyệt/Bỏ trong app hoặc chat (`approve.mjs approve|reject`), cùng hàm. Người duyệt phải khớp `approval.owner`; bỏ thì phải ghi lý do.
 5. **Ghi vào thương hiệu:** `writeback.mjs` tạo `workspace/posts/POST-<slug>/` và một mục `approved` trong `catalog.json` (`inspiration`, `image_mode`, `ai_disclosure`, `approval`), rồi chạy `check-post.mjs` của skill.
 5b. **Host ảnh:** `host-image.mjs publish` (tự chạy sau write-back): ảnh bài đã duyệt lên repo công khai `social-autopilot-sources` (`<brand>/<yyyy>/<mm>/<post-id>.<ext>`), push, chờ HTTP 200, ghi `media_url` vào catalog. Xem mục 4, "Host ảnh".
 6. **Báo cáo:** `queue.mjs` liệt kê bản chờ duyệt (ảnh, caption, link tham khảo; scene-swap kèm ảnh gốc của shop), bài đã ghi, lỗi.
-7. **Dashboard:** `dashboard.mjs` dựng lại `dashboard.html` (bài đã duyệt hiện link ảnh hoặc "chưa có link").
+7. **Kết thúc:** nhắc người dùng mở app để duyệt; app hiện bài đã duyệt với link ảnh hoặc "chưa có link".
 8. **Metricool:** chưa đăng tự động; `metricool-csv.mjs` xuất CSV từ bài đã duyệt có `media_url` (xem mục 8).
 
 ## 4. Luật ảnh
@@ -91,24 +90,24 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 ```text
 social-autopilot/
 ├── README.md, AGENTS.md, CLAUDE.md, RUNBOOK.md, package.json
-├── start-app.cmd, start-app.command        mở app (nhấp đúp)
+├── start-app.cmd, start-app.command        mở app (nhấp đúp; Windows / macOS)
+├── icon.svg                                biểu tượng app
 ├── src/server.mjs, ui/index.html           app: máy chủ cục bộ + trang
 ├── core/                                   vỏ app: launch, setup (Node.js, Codex), webview2, update
-├── open-dashboard.cmd                      mở dashboard.html (nhấp đúp)
-├── dashboard.html (git bỏ qua)             dashboard tĩnh, chỉ xem, do scripts/dashboard.mjs dựng
+├── .github/workflows/release.yml           tag v* → ZIP release cho nút Cập nhật
 ├── config/metricool-brands.json            các brand trong tài khoản Metricool (ghi tay), gắn với skill
 ├── config/settings.json                    chung: skillsRoot, giới hạn, codex, ffmpeg, remove_watermark, luật duyệt
 ├── scripts/                                brands, sources, social, research, ideas, draft (+draft-lib), image-clean,
-│                                           queue, approve, writeback, host-image, metricool-csv, dashboard, lib
+│                                           queue, approve, writeback, host-image, metricool-csv, preview, lib
 ├── prompts/                                scene-edit.txt, scene-swap.txt, caption-brief.md, idea-abstract.md
 ├── docs/                                   plan.md, research.md, scheduled-prompt.md, metricool*.md/csv, examples/
-├── tests/                                  cycle, dashboard, host-image, server, metricool-csv tests, fake-codex.mjs
+├── tests/                                  cycle, host-image, server, server-security, metricool-csv tests, fake-codex.mjs
 └── workspace/ (git bỏ qua)                 settings.json, research-log.json, runs/, drafts/, logs/
 Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<brand>/project/social.json (+ project.md).
 ```
 
 ## 6. Còn lại
-- Publish qua Metricool (mục 8), làm sau; app (và dashboard) có thể thêm lịch đăng khi đó.
+- Publish qua Metricool (mục 8), làm sau; app có thể thêm lịch đăng khi đó.
 - Bật từng thương hiệu: điền `approval.owner`, `ai_scenes_allowed`, `cadence.slots`, nguồn tham khảo (GRENHEIM), rồi đặt `enabled: true`.
 - Watermark cần ffmpeg trên máy; lúc xây, ffmpeg chưa có trên PATH.
 - `research.max_per_day` > 1 chưa có tác dụng, vì mỗi ngày chỉ có một thư mục lượt.

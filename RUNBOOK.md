@@ -1,6 +1,6 @@
 # RUNBOOK: một vòng social-autopilot
 
-Scripts + RUNBOOK là nguồn duy nhất của quy trình. Người dùng quản lý trong **app** (`start-app.cmd` / `start-app.command`): duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; app gọi đúng các hàm script dưới đây. Agent làm cùng việc qua script hoặc chat. `dashboard.html` tĩnh (bước 7) là trang chỉ xem, tuỳ chọn.
+Scripts + RUNBOOK là nguồn duy nhất của quy trình. Người dùng quản lý trong **app** (`start-app.cmd` / `start-app.command`): duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; app gọi đúng các hàm script dưới đây và đọc dữ liệu mới mỗi lần mở. Agent làm cùng việc qua script hoặc chat.
 
 Dành cho agent (Claude Code scheduled task/routine, Codex/ChatGPT automation) được gọi theo lịch. Chạy từ thư mục `C:\hoangpq\social-autopilot`. Mọi script in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Script chạy lại không sinh trùng.
 
@@ -85,7 +85,7 @@ Người có thể sửa tay `status.json` của bản nháp (`"status": "approv
 ```
 node scripts/approve.mjs sync
 ```
-Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp, nhập tên người duyệt; cùng luật, cùng hàm). Dashboard tĩnh chỉ để xem. Không tự duyệt thay người.
+Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp, nhập tên người duyệt; cùng luật, cùng hàm). Không tự duyệt thay người.
 
 ## Bước 5. Ghi vào thương hiệu
 
@@ -117,12 +117,9 @@ Gửi người dùng một tin ngắn, mỗi thương hiệu:
 - đã duyệt và ghi vào thương hiệu (POST-xx, thư mục, link ảnh `media_url` hoặc "chưa có link" kèm lỗi host);
 - lỗi cần người xử lý (thiếu owner, Codex hết lượt, ảnh không đạt).
 
-## Bước 7. Dựng lại dashboard (tuỳ chọn, trang chỉ xem)
+## Bước 7. Kết thúc vòng
 
-```
-node scripts/dashboard.mjs
-```
-Ghi lại `dashboard.html` (tĩnh, chỉ xem) từ `workspace/` và thư mục skill; không sửa gì khác. Chạy cả khi vòng dừng sớm, và sau mỗi lần duyệt/bỏ trong chat. Nhắc người dùng nhấp đúp `dashboard.html` (hoặc `open-dashboard.cmd`) để xem.
+Không dựng trang nào: app đọc dữ liệu mới mỗi lần mở. Kể cả khi vòng dừng sớm, nhắc người dùng mở app (nhấp đúp `start-app.cmd`, Mac: `start-app.command`) để duyệt/bỏ, hoặc trả lời trong chat.
 
 ## Phụ lục: xuất CSV cho Metricool (không import)
 

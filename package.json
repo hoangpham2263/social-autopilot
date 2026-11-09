@@ -3,11 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Per-brand social research, drafts, approval and image hosting: local app (src/server.mjs + ui/), scheduled-agent scripts, static read-only dashboard.",
+  "description": "Per-brand social research, drafts, approval and image hosting: local app (src/server.mjs + ui/), scheduled-agent scripts.",
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/server.mjs",
-    "test": "node --test \"tests/*.test.mjs\"",
-    "dashboard": "node scripts/dashboard.mjs"
+    "test": "node --test \"tests/*.test.mjs\""
   }
 }
