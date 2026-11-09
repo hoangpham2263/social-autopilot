@@ -60,7 +60,11 @@ test.before(() => {
   json(path.join(ws, 'runs', 'dreamyvows', '2026-11-09', 'ideas.json'), { ideas: [{ id: 'I01', status: 'drafted' }, { id: 'I02', status: 'todo' }, { id: 'I03', status: 'rejected' }] });
   draft('dreamyvows', 'dreamyvows-20261109-01', { status: 'awaiting_approval', captions: { vn: 'Đèn neon "Love" </script><b>x</b>\n🌐 Website: https://dreamyvows.com/\n#DreamyVows', en: 'Neon "Love".\n#DreamyVows' } });
   draft('dreamyvows', 'dreamyvows-20261109-02', { status: 'awaiting_approval', mode: 'scene-swap', extra: { logo_check: { by: 'agent', confirmed: '2026-11-09T01:20:00.000Z' } } });
-  draft('dreamyvows', 'dreamyvows-20261109-03', { status: 'approved', extra: { by: 'Hoang', approved: '2026-11-09T01:40:00.000Z', brand_post: { id: 'POST-07', folder: 'workspace/posts/POST-07-neon-love' } } });
+  // Approved: one with a hosted image link (media_url in its catalog), one without.
+  const catalog = path.join(tmp, 'catalog.json');
+  json(catalog, { posts: [{ id: 'POST-07', status: 'approved', media_url: 'https://raw.githubusercontent.com/x/y/main/dreamyvows/2026/11/post-07.png' }, { id: 'POST-08', status: 'approved' }] });
+  draft('dreamyvows', 'dreamyvows-20261109-03', { status: 'approved', extra: { by: 'Hoang', approved: '2026-11-09T01:40:00.000Z', brand_post: { id: 'POST-07', folder: 'workspace/posts/POST-07-neon-love', catalog } } });
+  draft('dreamyvows', 'dreamyvows-20261109-05', { status: 'approved', extra: { by: 'Hoang', approved: '2026-11-09T01:50:00.000Z', brand_post: { id: 'POST-08', folder: 'workspace/posts/POST-08-neon', catalog } } });
   draft('dreamyvows', 'dreamyvows-20261109-04', { status: 'image_failed', extra: { error: 'Codex hết lượt' } });
   // One error now (counted), one long ago (not counted: only the last 24 hours).
   const now = new Date().toISOString();
@@ -93,7 +97,12 @@ test('builds one self-contained, read-only status page', () => {
   const swap = waiting.find((d) => d.image_mode === 'scene-swap');
   assert.match(swap.reference_image, /refs\/R01-abc\.png$/);
   assert.equal(swap.source_shop, 'Shop A');
-  assert.equal(data.drafts.find((d) => d.brand_post).brand_post.id, 'POST-07');
+  const approved = data.drafts.filter((d) => d.brand_post);
+  assert.equal(approved.find((d) => d.brand_post.id === 'POST-07').brand_post.media_url, 'https://raw.githubusercontent.com/x/y/main/dreamyvows/2026/11/post-07.png');
+  assert.equal(approved.find((d) => d.brand_post.id === 'POST-08').brand_post.media_url, '');
+  assert.equal(res.approved, 2);
+  assert.equal(res.hosted, 1);
+  assert.match(html, /chưa có link/);
 
   // Only the main sections: no research runs, settings or error table; errors are just a count.
   assert.deepEqual(Object.keys(data).sort(), ['brands', 'drafts', 'errors', 'generated_at', 'refresh', 'skills_root']);

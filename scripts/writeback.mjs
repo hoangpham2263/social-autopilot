@@ -2,11 +2,12 @@
 // (image cleaned by the skill's scripts/clean-image.mjs, content-<lang>.txt) and one entry in workspace/catalog.json,
 // in the format the skill already uses; then runs the skill's scripts/check-post.mjs on it. Refuses anything that is
 // not approved. approve.mjs calls it; run it alone only to retry a write-back that failed.
-//   node scripts/writeback.mjs --id <draft>
+//   node scripts/writeback.mjs --id <draft>      (then host-image.mjs publish, see the end of this file)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { cleanDraftImage } from './image-clean.mjs';
+import { hostAfterWriteback } from './host-image.mjs';
 import { main, out, parseArgs, need, isMain, settings, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus } from './lib.mjs';
 
 export function slugify(text) {
@@ -100,4 +101,10 @@ function writeBackInner(id) {
   return { id: draft.id, status: 'approved', brand_post: brandPost, check_post: checkPost, warnings, next: 'Publish (later: Metricool) — chưa làm; bài nằm trong workspace/posts của thương hiệu, trạng thái approved.' };
 }
 
-if (isMain(import.meta.url)) main(() => out(writeBack(need(parseArgs(), 'id'))));
+// Then the image goes to the image host (host-image.mjs, settings imageHost.auto_after_writeback); a hosting error is
+// reported in image_host and never undoes the write-back.
+if (isMain(import.meta.url)) main(async () => {
+  const r = writeBack(need(parseArgs(), 'id'));
+  const host = await hostAfterWriteback(r);
+  out(host ? { ...r, image_host: host } : r);
+});

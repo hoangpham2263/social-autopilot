@@ -69,6 +69,13 @@ export function collect({ outDir = toolRoot } = {}) {
     try { social = readJson(path.join(b.dir, 'project', 'social.json')); } catch {}
     return { id: b.id, name: b.brand || b.id, enabled: b.enabled, ready: b.ready, usable: b.usable, sources: brandSources(social).length, missing: (b.problems || []).map(plainProblem) };
   });
+  // Hosted image link (media_url, written by host-image.mjs) from the brand catalog of each approved post.
+  const catalogs = new Map();
+  const mediaUrl = (bp) => {
+    if (!bp.catalog) return '';
+    if (!catalogs.has(bp.catalog)) { try { catalogs.set(bp.catalog, readJson(bp.catalog).posts || []); } catch { catalogs.set(bp.catalog, []); } }
+    return catalogs.get(bp.catalog).find((p) => p.id === bp.id)?.media_url || '';
+  };
   const drafts = listDrafts().map((d) => {
     const sm = summary(d);
     const st = d.status;
@@ -78,7 +85,7 @@ export function collect({ outDir = toolRoot } = {}) {
       reference_image: sm.reference_image ? link(sm.reference_image) : '', source_shop: sm.source_shop || '', inspiration: sm.inspiration || '',
       captions: Object.entries(sm.captions).map(([f, text]) => ({ lang: langOf(f), text })),
       problems: sm.problems, dir: d.dir,
-      brand_post: st.brand_post ? { id: st.brand_post.id, folder: st.brand_post.folder || '' } : null,
+      brand_post: st.brand_post ? { id: st.brand_post.id, folder: st.brand_post.folder || '', media_url: mediaUrl(st.brand_post) } : null,
     };
   }).sort((a, b) => String(b.created).localeCompare(String(a.created)));
   return { generated_at: stamp(), refresh: REFRESH, skills_root: root, brands: brandList, drafts, errors: recentErrors() };
@@ -101,7 +108,7 @@ export function generate({ out: file = path.join(toolRoot, 'dashboard.html') } =
   fs.writeFileSync(target, render(data), 'utf8');
   return {
     file: target, generated_at: data.generated_at, brands: data.brands.length, usable: data.brands.filter((b) => b.usable).length,
-    awaiting_approval: data.drafts.filter((d) => d.status === 'awaiting_approval').length, approved: data.drafts.filter((d) => d.brand_post).length,
+    awaiting_approval: data.drafts.filter((d) => d.status === 'awaiting_approval').length, approved: data.drafts.filter((d) => d.brand_post).length, hosted: data.drafts.filter((d) => d.brand_post?.media_url).length,
     errors_24h: data.errors.count, open: `start "" "${target}"`,
   };
 }

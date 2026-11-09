@@ -15,6 +15,32 @@ import { main, out, isMain, parseArgs, need, settings, readJson, findDraft, setS
 
 // Chunks that draw the picture (the skill's KEEP list); anything else left in the output is metadata.
 const PICTURE = new Set(['IHDR', 'PLTE', 'IDAT', 'IEND', 'tRNS', 'iCCP', 'sRGB', 'gAMA', 'cHRM', 'sBIT', 'cICP', 'mDCV', 'cLLI']);
+// Metadata left in an image file (PNG chunks outside PICTURE; JPEG APPn/COM segments except JFIF and the ICC profile).
+// [] = clean. host-image.mjs uses it before an image leaves the machine. `allow` adds harmless PNG chunks.
+export function metadataChunks(buf, { allow = [] } = {}) {
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    const left = [];
+    for (let i = 8; i + 8 <= buf.length;) {
+      const len = buf.readUInt32BE(i), type = buf.toString('latin1', i + 4, i + 8);
+      if (!PICTURE.has(type) && !allow.includes(type)) left.push(type);
+      i += 12 + len;
+    }
+    return left;
+  }
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    const left = [];
+    for (let i = 2; i + 4 <= buf.length && buf[i] === 0xff;) {
+      const m = buf[i + 1];
+      if (m === 0xda) break;
+      const len = buf.readUInt16BE(i + 2), id = buf.toString('latin1', i + 4, i + 4 + 12);
+      const keep = (m === 0xe0 && id.startsWith('JFIF')) || (m === 0xe2 && id.startsWith('ICC_PROFILE')) || (m < 0xe0 && m !== 0xfe);
+      if (!keep) left.push(m === 0xfe ? 'COM' : `APP${m - 0xe0}`);
+      i += 2 + len;
+    }
+    return left;
+  }
+  throw new Error('Không phải PNG/JPEG.');
+}
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 export const REPORT = 'image-clean-report.json';
 

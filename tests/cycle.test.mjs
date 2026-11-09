@@ -14,7 +14,11 @@ const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'social-autopilot-test-'));
 const skills = path.join(tmp, 'skills');
 const ws = path.join(tmp, 'workspace');
-const env = { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: skills, SA_CODEX: path.join(tool, 'tests', 'fake-codex.mjs') };
+// Image host: a temp git repo whose origin is a local bare repo (never the real social-autopilot-sources); the link check
+// goes to a closed local port, so hosting after approval fails softly (image_host.ok false) and the approval stands.
+const hostRepo = path.join(tmp, 'host'), hostBare = path.join(tmp, 'host.git');
+const env = { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: skills, SA_CODEX: path.join(tool, 'tests', 'fake-codex.mjs'), SA_IMAGE_HOST_CHECK_BASE: 'http://127.0.0.1:9/main' };
+const git = (cwd, ...args) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`); return r.stdout.trim(); };
 const run = (script, ...args) => {
   const r = spawnSync(process.execPath, [path.join(tool, 'scripts', script), ...args], { env, encoding: 'utf8' });
   try { return JSON.parse(r.stdout); } catch { throw new Error(`${script} ${args.join(' ')}: ${r.stdout}${r.stderr}`); }
@@ -57,7 +61,13 @@ test.before(() => {
   ]));
   scratchBrand('grenheim-skills', (s) => on(s, [{ id: 'wood-a', name: 'Wood A', platform: 'facebook', url: 'https://www.facebook.com/wooda', enabled: true, what_to_take: '', notes: '' }]));
   write(path.join(brandDir, 'project', 'sources', 'inputs', 'test-product', 'product.png'), png());
-  write(path.join(ws, 'settings.json'), JSON.stringify({ research: { max_posts_per_source: 2, max_posts_per_day_all_brands: 3 } }));
+  git(tmp, 'init', '--quiet', '--bare', '-b', 'main', hostBare);
+  git(tmp, 'init', '--quiet', '-b', 'main', hostRepo);
+  git(hostRepo, 'config', 'user.name', 'test'); git(hostRepo, 'config', 'user.email', 'test@example.invalid');
+  write(path.join(hostRepo, 'README.md'), '# test host\n');
+  git(hostRepo, 'add', 'README.md'); git(hostRepo, 'commit', '--quiet', '-m', 'init'); git(hostRepo, 'remote', 'add', 'origin', hostBare); git(hostRepo, 'push', '--quiet', '-u', 'origin', 'main');
+  write(path.join(ws, 'settings.json'), JSON.stringify({ research: { max_posts_per_source: 2, max_posts_per_day_all_brands: 3 },
+    imageHost: { type: 'github-repo', path: hostRepo, rawBase: 'https://raw.example.invalid/sources/main', verify: { attempts: 1, delay_seconds: 0 } } }));
   // Not a brand: no social.json.
   write(path.join(skills, 'other-skills', 'SKILL.md'), '---\nname: other-skills\n---\n');
 });
@@ -148,6 +158,12 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.ok(fs.existsSync(path.join(brandDir, post.folder, 'image.png')));
   assert.ok(ok.check_post, "check-post.mjs of the skill must run");
   assert.equal(ok.check_post.errors, 0, JSON.stringify(ok.check_post));
+  // Wired after write-back: the approved image is committed and pushed to the host; the link check fails here (closed
+  // port), so no media_url yet and the command to run again is given.
+  assert.equal(ok.image_host.ok, false, JSON.stringify(ok.image_host));
+  assert.ok(ok.image_host.next.endsWith(`host-image.mjs publish --brand dreamyvows --post ${post.id}`), ok.image_host.next);
+  assert.equal(git(tmp, '--git-dir', hostBare, 'log', '-1', '--format=%s', 'main'), `dreamyvows ${post.id}`);
+  assert.equal(post.media_url, undefined);
   assert.equal(run('approve.mjs', 'approve', '--id', draft.id, '--by', 'hoang').reused, true);
 
   // Reject needs a note.

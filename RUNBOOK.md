@@ -91,6 +91,18 @@ Dashboard chỉ để xem, không có nút duyệt; người duyệt trả lời
 
 `approve` tự gọi `writeback.mjs`: làm sạch lại nếu cần (remove-watermark-skill; rồi `scripts/clean-image.mjs` của skill chỉ khi `--check` chưa báo SẠCH), tạo `workspace/posts/POST-<slug>/` (image.png, `content-<lang>.txt`), thêm một mục `approved` vào `workspace/catalog.json`, rồi chạy `scripts/check-post.mjs` của skill. Ghi lỗi thì chạy lại `node scripts/writeback.mjs --id <draft>`.
 
+### Bước 5b. Host ảnh (sau khi duyệt)
+
+Metricool lấy ảnh qua link công khai, nên ảnh của bài **đã duyệt** được đẩy lên repo công khai `C:hoangpqsocial-autopilot-sources` (settings `imageHost`, `type: "github-repo"`). `approve` / `writeback` tự chạy bước này ngay sau khi ghi vào thương hiệu (`imageHost.auto_after_writeback`); kết quả nằm trong `image_host` của JSON. Chạy tay hoặc chạy lại:
+```
+node scripts/host-image.mjs publish --brand <id> --post POST-xx
+```
+- Chỉ nhận bài có trạng thái `approved`/`scheduled`/`published` trong `catalog.json` của thương hiệu; không bao giờ bản nháp hay ảnh tham khảo của đối thủ.
+- Kiểm lại ảnh không còn metadata (`image-clean` + `clean-image.mjs --check` của skill), chép vào `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "`<brand> <post-id>`", push, chờ link raw trả HTTP 200 đúng nội dung (thử lại vài lần vì GitHub raw chậm), rồi ghi `media_url` vào mục catalog của bài và chạy `check-post.mjs`.
+- `image_host.ok: false` không huỷ việc duyệt: ghi lỗi vào báo cáo, chạy lại lệnh trong `image_host.next` sau vài phút.
+- Khi Metricool đã lưu bản riêng của ảnh, có thể gỡ file: `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`).
+- Chỉ đẩy file lên repo ảnh; không đăng, không gửi gì tới Metricool hay mạng xã hội.
+
 **Publish (later: Metricool)**: chưa làm. Không đăng, không hẹn giờ ở đâu.
 
 ## Bước 6. Báo cáo
@@ -101,7 +113,7 @@ node scripts/queue.mjs
 Gửi người dùng một tin ngắn, mỗi thương hiệu:
 - nghiên cứu: đã lấy bao nhiêu bài / bị chặn vì giới hạn / dừng vì checkpoint;
 - **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption từng ngôn ngữ (nguyên văn), ý + link bài tham khảo; bản scene-swap thì kèm đường dẫn ảnh gốc của shop (`reference_image`) để người duyệt xem hai ảnh cạnh nhau; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
-- đã duyệt và ghi vào thương hiệu (POST-xx, thư mục);
+- đã duyệt và ghi vào thương hiệu (POST-xx, thư mục, link ảnh `media_url` hoặc "chưa có link" kèm lỗi host);
 - lỗi cần người xử lý (thiếu owner, Codex hết lượt, ảnh không đạt).
 
 ## Bước 7. Dựng lại dashboard

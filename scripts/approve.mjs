@@ -1,6 +1,7 @@
 // Step 4: approval (in chat; nothing is published). A draft is approved only when it is in awaiting_approval, passes
 // every check again (image, a caption per language of social.json, the brand's footer/hashtag rules, no copied words)
-// and the approver is the brand's approval.owner (social.json). Then writeback.mjs writes it into the brand folder.
+// and the approver is the brand's approval.owner (social.json). Then writeback.mjs writes it into the brand folder and
+// the CLI hosts the post image (host-image.mjs publish -> media_url in the brand catalog).
 // Reject needs a note. A person may also set "status": "approved"|"rejected" with "by" (and "note") in the draft's
 // status.json by hand; sync applies those with the same rules.
 //   node scripts/approve.mjs approve --id <draft> --by <name> [--note ..]
@@ -11,6 +12,7 @@ import path from 'node:path';
 import { main, out, isMain, withLock, parseArgs, need, settings, loadBrand, readJson, writeJson, today, stamp, findDraft, setStatus, listDrafts } from './lib.mjs';
 import { checkDraft } from './draft-lib.mjs';
 import { writeBack } from './writeback.mjs';
+import { hostAfterWriteback } from './host-image.mjs';
 
 const owners = (brand) => [].concat(brand.social.approval?.owner || []).map((o) => String(o).trim().toLowerCase()).filter(Boolean);
 
@@ -63,12 +65,15 @@ export function sync(s = settings()) {
     return { results };
 }
 
-if (isMain(import.meta.url)) main(() => {
+// After a write-back the CLI hosts the image (host-image.mjs publish); errors land in image_host, the approval stays.
+const withHost = async (r, s) => { const host = await hostAfterWriteback(r, s); return host ? { ...r, image_host: host } : r; };
+
+if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
   const s = settings();
   const cmd = args._[0];
-  if (cmd === 'approve') return out(approve({ id: need(args, 'id'), by: need(args, 'by'), note: args.note ? String(args.note) : '', s }));
+  if (cmd === 'approve') return out(await withHost(approve({ id: need(args, 'id'), by: need(args, 'by'), note: args.note ? String(args.note) : '', s }), s));
   if (cmd === 'reject') return out(reject({ id: need(args, 'id'), by: args.by ? String(args.by) : '', note: args.note === true ? '' : args.note, s }));
-  if (cmd === 'sync') return out(sync(s));
+  if (cmd === 'sync') { const r = sync(s); for (let i = 0; i < r.results.length; i++) if (r.results[i].brand_post) r.results[i] = await withHost(r.results[i], s); return out(r); }
   throw new Error('Lệnh: approve | reject | sync');
 });

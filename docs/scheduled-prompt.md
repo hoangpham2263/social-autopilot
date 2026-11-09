@@ -17,4 +17,4 @@ Thư mục làm việc: C:\hoangpq\social-autopilot. Đọc AGENTS.md rồi làm
 Mọi script in JSON; ok:false thì ghi lý do và sang việc tiếp theo, không lách giới hạn. Gặp checkpoint/captcha Facebook thì dừng nghiên cứu ngay.
 ```
 
-Khi người dùng trả lời trong chat "duyệt <id>": agent chạy `node scripts/approve.mjs approve --id <id> --by "<tên người duyệt>"` (tên phải khớp `approval.owner` trong social.json của thương hiệu) và báo lại POST-xx cùng thư mục bài, rồi chạy `node scripts/dashboard.mjs` để dashboard cập nhật.
+Khi người dùng trả lời trong chat "duyệt <id>": agent chạy `node scripts/approve.mjs approve --id <id> --by "<tên người duyệt>"` (tên phải khớp `approval.owner` trong social.json của thương hiệu) và báo lại POST-xx cùng thư mục bài và link ảnh đã host (`image_host.url`, hoặc lỗi + lệnh `image_host.next` nếu chưa có link), rồi chạy `node scripts/dashboard.mjs` để dashboard cập nhật.

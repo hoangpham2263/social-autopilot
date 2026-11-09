@@ -49,9 +49,10 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
    8. `draft.mjs check` → `awaiting_approval`.
 4. **Duyệt:** trong chat (`approve.mjs approve|reject`); dashboard chỉ để xem. Người duyệt phải khớp `approval.owner`; bỏ thì phải ghi lý do.
 5. **Ghi vào thương hiệu:** `writeback.mjs` tạo `workspace/posts/POST-<slug>/` và một mục `approved` trong `catalog.json` (`inspiration`, `image_mode`, `ai_disclosure`, `approval`), rồi chạy `check-post.mjs` của skill.
+5b. **Host ảnh:** `host-image.mjs publish` (tự chạy sau write-back): ảnh bài đã duyệt lên repo công khai `social-autopilot-sources` (`<brand>/<yyyy>/<mm>/<post-id>.<ext>`), push, chờ HTTP 200, ghi `media_url` vào catalog. Xem mục 4, "Host ảnh".
 6. **Báo cáo:** `queue.mjs` liệt kê bản chờ duyệt (ảnh, caption, link tham khảo; scene-swap kèm ảnh gốc của shop), bài đã ghi, lỗi.
-7. **Dashboard:** `dashboard.mjs` dựng lại `dashboard.html`.
-8. **Publish (later: Metricool):** chưa làm.
+7. **Dashboard:** `dashboard.mjs` dựng lại `dashboard.html` (bài đã duyệt hiện link ảnh hoặc "chưa có link").
+8. **Publish (later: Metricool):** chưa làm; khi làm, `media[]` của Metricool dùng `media_url`.
 
 ## 4. Luật ảnh
 
@@ -79,6 +80,12 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 - Theo quy tắc của skill đó: chỉ bỏ metadata, không thêm EXIF giả, chỉ chạy trên máy, không tuyên bố đã qua được nhận diện AI. Khai báo AI giữ nguyên.
 - `clean-image.mjs` của skill thương hiệu chỉ chạy khi `--check` chưa báo SẠCH.
 
+**Host ảnh** (người dùng chốt 09/11/2026)
+- Repo công khai `C:/hoangpq/social-autopilot-sources` (https://github.com/hoangpham2263/social-autopilot-sources, nhánh main; README ghi luật). Settings `imageHost`: `type: "github-repo"`, `path`, `rawBase`; `"shopify-files"` là chỗ giữ, chưa làm.
+- Chỉ ảnh của bài đã được người duyệt (catalog `approved`/`scheduled`/`published`); không bao giờ bản nháp hay ảnh tham khảo của đối thủ. Metadata đã bỏ (kiểm lại trước khi đẩy).
+- `host-image.mjs publish`: chép, commit "<brand> <post-id>", push, chờ link raw trả 200 đúng nội dung (thử lại), ghi `media_url` (trường tuỳ chọn trong chuẩn, `check-post` kiểm là link https). Lỗi host không huỷ duyệt.
+- `host-image.mjs remove`: xoá file (commit + push) và bỏ `media_url`, khi Metricool đã lưu bản riêng.
+
 ## 5. Cấu trúc
 ```text
 social-autopilot/
@@ -87,10 +94,10 @@ social-autopilot/
 ├── dashboard.html (git bỏ qua)             dashboard tĩnh, chỉ xem, do scripts/dashboard.mjs dựng
 ├── config/settings.json                    chung: skillsRoot, giới hạn, codex, ffmpeg, remove_watermark, luật duyệt
 ├── scripts/                                brands, sources, social, research, ideas, draft (+draft-lib), image-clean,
-│                                           queue, approve, writeback, dashboard, lib
+│                                           queue, approve, writeback, host-image, dashboard, lib
 ├── prompts/                                scene-edit.txt, scene-swap.txt, caption-brief.md, idea-abstract.md
 ├── docs/                                   plan.md, research.md, scheduled-prompt.md, metricool.md, metricool-mapping.md
-├── tests/                                  cycle.test.mjs, dashboard.test.mjs, fake-codex.mjs
+├── tests/                                  cycle.test.mjs, dashboard.test.mjs, host-image.test.mjs, fake-codex.mjs
 └── workspace/ (git bỏ qua)                 settings.json, research-log.json, runs/, drafts/, logs/
 Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<brand>/project/social.json (+ project.md).
 ```
@@ -144,3 +151,4 @@ Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<bra
 - Điền khối `metricool` trong `social.json`.
 - Chỉ đăng bài `approved`; mặc định tạo nháp.
 - Catalog thêm `schedule.<network>` và trạng thái `scheduled`; `check-post` đã nhận các trường này.
+- Ảnh: dùng `media_url` của catalog (host-image.mjs đã làm), `saveExternalMediaFiles: true`; sau khi Metricool lưu bản riêng thì `host-image.mjs remove`.

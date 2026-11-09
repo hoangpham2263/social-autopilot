@@ -24,6 +24,20 @@
     "provider": "none",
     "note": "Publish (later: Metricool). Chưa có code đăng bài."
   },
+  "imageHost": {
+    "type": "github-repo",
+    "path": "C:\\hoangpq\\social-autopilot-sources",
+    "rawBase": "https://raw.githubusercontent.com/hoangpham2263/social-autopilot-sources/main",
+    "branch": "main",
+    "remote": "origin",
+    "auto_after_writeback": true,
+    "verify": {
+      "attempts": 6,
+      "delay_seconds": 10
+    },
+    "note": "Chỉ ảnh bài đã được người duyệt; type \"shopify-files\" là chỗ giữ cho sau (chưa làm).",
+    "shopify_files": {}
+  },
   "ffmpeg": {
     "command": "ffmpeg"
   },

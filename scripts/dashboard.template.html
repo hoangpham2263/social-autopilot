@@ -134,6 +134,8 @@ details.more div { padding-top: 4px; }
 .row.head { font-size: 12.5px; color: var(--muted-foreground); padding-top: 8px; padding-bottom: 8px; }
 .row .miss { display: flex; flex-wrap: wrap; gap: 4px; }
 .row .num { text-align: right; font-family: "Geist Mono", monospace; font-size: 12.5px; }
+.row.approved { grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; }
+.row.approved a { margin-right: 6px; }
 .ok-text { color: var(--green); }
 .empty-state { display: grid; justify-items: center; gap: 2px; text-align: center; padding: 22px 16px; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--muted-foreground); }
 .empty-state .t { color: var(--foreground); }
@@ -148,6 +150,7 @@ details.more div { padding-top: 4px; }
   .row.head { display: none; }
   .row .miss { grid-column: 1 / -1; }
   .row .num { display: none; }
+  .row.approved { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -236,11 +239,19 @@ details.more div { padding-top: 4px; }
     h.push('<section class="stats" aria-label="Tổng quan">' +
       stat("s-waiting", "Chờ duyệt", waiting.length, "bản nháp đợi bạn xem", "amber") +
       stat("s-brands", "Thương hiệu sẵn sàng", ready + "<small>/" + brands.length + "</small>", "chạy được trong lịch", "green") +
-      stat("s-waiting", "Đã duyệt", approved.length, "chưa đăng (Metricool làm sau)", "slate") +
+      stat(approved.length ? "s-approved" : "s-waiting", "Đã duyệt", approved.length, "chưa đăng (Metricool làm sau)", "slate") +
       "</section>");
 
     h.push('<section class="section">' + head("s-waiting", "Chờ duyệt", waiting.length) +
       (waiting.length ? '<div class="cards">' + waiting.map(draftCard).join("") + "</div>" : empty("Không có bản nháp nào chờ duyệt", "Vòng chạy theo lịch sẽ thêm bản nháp mới ở đây.")) + "</section>");
+
+    // Approved posts: only a short list with the hosted image link (media_url) or "chưa có link".
+    if (approved.length) h.push('<section class="section">' + head("s-approved", "Đã duyệt", approved.length) + '<div class="list">' +
+      approved.map(function (d) {
+        var u = d.brand_post.media_url;
+        return '<div class="row approved"><span>' + esc(d.brand_post.id) + '</span><span class="muted small">' + esc(brandName(d.brand)) + " · " + esc(d.id) + "</span><span>" +
+          (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener">Link ảnh</a> ' + copyBtn(u, "Chép link") : '<span class="muted">chưa có link</span>') + "</span></div>";
+      }).join("") + "</div></section>");
 
     h.push('<section class="section">' + head("s-brands", "Thương hiệu", brands.length) +
       (brands.length ? '<div class="list"><div class="row head"><span>Thương hiệu</span><span>Trạng thái</span><span>Còn thiếu</span><span class="num">Nguồn bật</span></div>' + brands.map(brandRow).join("") + "</div>"
