@@ -2,11 +2,14 @@
 // crawl (new, duplicates skipped, blocked sources), ideas, drafts by status, posts written into the brand with their
 // hosted image and Metricool state (draft / scheduled / published / error as last recorded). Read-only.
 // node scripts/queue.mjs [--brand <id>]
+import fs from 'node:fs';
 import path from 'node:path';
 import { main, out, isMain, parseArgs, discoverBrands, readJson, listDrafts, workspace, today } from './lib.mjs';
 import { summary } from './draft-lib.mjs';
 import { readStore, counts, storeIdeasFile } from './store.mjs';
 import { researchReport } from './research.mjs';
+import { sentNetworks, toolMade } from './metricool-csv.mjs';
+import { postsNeeded } from './ideas.mjs';
 
 // Metricool state of a catalog entry, from what metricool-mcp.mjs record / mark-published wrote.
 export function metricoolState(entry) {
@@ -36,6 +39,30 @@ export function writtenPost(d) {
   };
 }
 
+// The tool's own posts in the brand's skill catalog (workspace/catalog.json): entries writeback.mjs wrote (source
+// "social-autopilot <draft>"). The skill's own posts are its private data: never counted, listed or sent.
+// unsent = approved, hosted image, not sent yet on the brand's channels: exactly what Publish approved sends.
+export function catalogPosts(b, drafts = listDrafts(b.id)) {
+  const linked = new Set(drafts.filter((d) => d.status.brand_post).map((d) => d.status.brand_post.id));
+  let posts = [];
+  try { posts = (readJson(path.join(b.dir, 'workspace', 'catalog.json'), { posts: [] }).posts || []).filter(toolMade); } catch {}
+  const channels = (b.channels || []).map((n) => String(n).toLowerCase());
+  return posts.filter((p) => p && p.id).map((p) => {
+    const mc = metricoolState(p);
+    const media = [].concat(p.media_url || [], p.video_url || []).filter(Boolean);
+    const folder = p.folder ? path.join(b.dir, p.folder) : '';
+    const image = folder && p.image && fs.existsSync(path.join(folder, p.image)) ? path.join(folder, p.image) : '';
+    const sent = sentNetworks(p).some((n) => channels.includes(n));
+    const state = mc.state === 'published' ? 'posted' : ['approved', 'scheduled'].includes(p.status) ? 'queued' : 'other';
+    return {
+      post: p.id, group: p.group || '', status: p.status || '', in_app: linked.has(p.id), state, metricool: mc.state,
+      metricool_sent: mc.sent.map(({ network, draft, publication, timezone, planner_url, id, sent_at, time_source }) => ({ network, draft, publication, timezone, planner_url, id, sent_at, time_source })),
+      media_url: media.length ? media[0] : null, image, folder, captions: p.captions || {}, created: p.created || '',
+      unsent: p.status === 'approved' && !!media.length && !sent,
+    };
+  });
+}
+
 export function queueReport(args = {}) {
   const { root, brands } = discoverBrands();
   const log = readJson(path.join(workspace, 'research-log.json'), {});
@@ -46,6 +73,7 @@ export function queueReport(args = {}) {
     const drafts = listDrafts(b.id);
     const count = (list, key) => list.reduce((o, x) => { const k = key(x); o[k] = (o[k] || 0) + 1; return o; }, {});
     const written = drafts.filter((d) => d.status.brand_post).map(writtenPost);
+    const catalog = catalogPosts(b, drafts);
     return {
       brand: b.id, name: b.brand, enabled: b.enabled, usable: b.usable, problems: b.problems,
       store: counts(readStore(b.id).items),
@@ -58,6 +86,10 @@ export function queueReport(args = {}) {
       in_progress: drafts.filter((d) => ['needs_prompt', 'generating', 'needs_caption'].includes(d.status.status)).map((d) => ({ id: d.id, status: d.status.status, dir: d.dir, error: d.status.error || '', problems: d.status.problems || [] })),
       written,
       metricool: count(written, (w) => w.metricool),
+      // The tool's approved posts Publish approved would send (metricool-mcp.mjs payload).
+      // Plan ahead: days x posts per day, how many the tool's posts already cover, how many Create & publish still makes.
+      plan: postsNeeded({ id: b.id, social: { cadence: { posts_per_day: b.posts_per_day } } }),
+      unsent_approved: catalog.filter((c) => c.unsent).map((c) => c.post),
     };
   });
   return { skillsRoot: root, date: today(), brands: report };

@@ -61,6 +61,23 @@ Tool không chép skill, chỉ trỏ tới thư mục skill. Brand chưa nối s
 - Ảnh được host ở repo công khai `social-autopilot-sources` (link raw GitHub).
 - Agent không bao giờ tự duyệt bài.
 
+## Settings file
+
+Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**. Các cài đặt chuẩn khác không hiện trên app; ai cần đổi thì sửa tay `workspace/settings.json` của máy (ghi đè lên mặc định `config/settings.json`, cùng khoá):
+
+| Khoá | Ý nghĩa |
+|---|---|
+| `research.delay_seconds` | `[min, max]` giây nghỉ ngẫu nhiên giữa các thao tác khi crawl |
+| `research.dedupe` | ngưỡng trùng: `image_distance` (/256), `caption_similarity` (0–1) |
+| `research.browser` | Chrome cho crawl: `cdp`, `channel`, `fallback_tabs`, `stall_posts`, `max_scroll_steps` |
+| `codex.command`, `codex.timeout_minutes` | lệnh chạy Codex, thời gian chờ tối đa |
+| `ffmpeg.command` | lệnh ffmpeg (watermark, đọc WebP khi dedupe) |
+| `skillsRoot` | thư mục chứa các skill thương hiệu |
+| `remove_watermark.script` | script xoá metadata ảnh |
+| `imageHost.path`, `imageHost.rawBase` | repo ảnh trên máy và link công khai (https) của ảnh |
+
+Sửa xong bấm Reload (hoặc mở lại app).
+
 ## Cấu trúc
 
 ```

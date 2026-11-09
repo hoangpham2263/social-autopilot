@@ -82,6 +82,11 @@ test('serves the page, the shell assets and the data APIs', async () => {
   const settings = await (await fetch(`${base}/api/settings`)).json();
   assert.equal(settings.settings.metricool?.default_mode, undefined); // no Metricool draft mode: always scheduled
   assert.equal(settings.settings.approval, undefined);
+  assert.ok(settings.times.primary[0] >= 1 && settings.times.backup[0] >= 1, 'Times: primary + backup hours per day'); // Settings summary
+  // The Settings form sends only Plan ahead and Auto-host images; everything else stays as saved.
+  const small = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: { planning: { ahead_days: 7 }, imageHost: { auto_after_writeback: true } } }) })).json();
+  assert.equal(small.error, undefined, JSON.stringify(small));
+  assert.deepEqual(small.settings.research.delay_seconds, settings.settings.research.delay_seconds);
   assert.equal((await fetch(`${base}/file?path=${encodeURIComponent(path.join(tool, 'icon.svg'))}`)).status, 404); // only workspace images
   // Image host: settings shown and saved with the rest. Approve exists again (review step); no hosting button.
   assert.match(settings.settings.imageHost.rawBase, /^https:\/\//);

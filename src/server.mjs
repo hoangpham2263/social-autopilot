@@ -21,7 +21,7 @@ import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
-import { postsNeeded } from "../scripts/ideas.mjs";
+import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -57,6 +57,7 @@ function draftsData(brand, status) {
     created: d.draft.created, by: d.status.by || "", image_host: d.status.image_host || null, brand_post: d.status.brand_post ? { ...d.status.brand_post, ...writtenPost(d) } : null, error: d.status.error || "", metadata_clean: d.status.metadata_clean || null, watermark: d.status.watermark || null, preview: previewOf(d),
   })).sort((a, b) => String(b.created).localeCompare(String(a.created)));
 }
+const arr = (v) => (Array.isArray(v) ? v : []);
 // The research store (kho) of one brand for the Nghiên cứu tab: items (newest first), counts, crawl progress, ideas.
 function storeData(brand, status, source) {
   const r = listItems(brand, { status, source });
@@ -210,17 +211,19 @@ async function handle(req, res) {
     return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
-  // Prompt tab, the counts on the Mode buttons per brand: research = library items not used yet; create = posts still
-  // needed to fill Plan ahead (days x posts per day, minus approved-not-published and drafts in work); publish = approved
-  // posts not sent to Metricool yet (an old Metricool draft counts as not sent).
+  // Prompt tab, the counts on the Mode buttons per brand, each the number of items IN that state now: research = library
+  // items not used yet; create = the tool's posts to review (made, waiting for Approve; failed checks included, like the
+  // Posts tab); publish = the tool's approved posts not sent to Metricool yet. (Posts still needed for Plan ahead: Overview.)
   if (path === "/api/prompt-counts" && req.method === "GET") return api(res, () => {
     const q = queueReport({});
     return { brands: Object.fromEntries(discovered().brands.map((b) => {
       const qb = q.brands.find((x) => x.brand === b.id) || {};
       return [b.id, {
         research: listItems(b.id).counts.new || 0,
-        create: postsNeeded({ id: b.id, social: { cadence: { posts_per_day: b.posts_per_day } } }).need,
-        publish: (qb.written || []).filter((w) => ["not_sent", "draft"].includes(w.metricool) && w.media_url).length,
+        create: listDrafts(b.id).filter((d) => !d.status.brand_post && ["ready", "check_failed", "image_failed"].includes(d.status.status)).length,
+        // The same posts metricool-mcp.mjs payload sends: the tool's own approved posts with a hosted image, not sent yet
+        // on the brand's channels (skill-owned catalog posts never count); a paused brand sends nothing.
+        publish: b.enabled ? (qb.unsent_approved || []).length : 0,
         // Unused library items per source (Prompt Sources list).
         sources: listItems(b.id).items.filter((i) => i.status === "new").reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
       }];
@@ -256,7 +259,14 @@ async function handle(req, res) {
     spawn(process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open", [b.dir], { detached: true, stdio: "ignore", windowsHide: false }).unref();
     return { ok: true };
   });
-  if (path === "/api/settings" && req.method === "GET") return api(res, () => ({ settings: rawSettings(), skillsRootResolved: settings().skillsRoot }));
+  // Settings summary "Times": primary and backup hours per day of the research table (config/best-times.json, Facebook).
+  if (path === "/api/settings" && req.method === "GET") return api(res, () => {
+    const fb = researchTimes().networks?.facebook || {};
+    const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].filter((d) => fb.days?.[d]);
+    const table = days.map((d) => { const t = dayTimes(d, { best: null, research: researchTimes(), network: "facebook" }); return { day: d, primary: t.times.map((x) => x.slice(0, 5)), backup: t.backup.map((x) => x.time.slice(0, 5)), acceptable: t.acceptable.map((x) => x.time.slice(0, 5)) }; });
+    const sp = (k) => { const n = table.map((r) => r[k].length); return n.length ? [Math.min(...n), Math.max(...n)] : [0, 0]; };
+    return { settings: rawSettings(), skillsRootResolved: settings().skillsRoot, times: { primary: sp("primary"), backup: sp("backup"), acceptable: sp("acceptable"), table } };
+  });
   if (path === "/api/settings" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
     if (!isObject(b.settings)) throw new Error("Missing settings (settings must be a JSON object).");
