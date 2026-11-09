@@ -144,6 +144,38 @@ export function saveSettings(input) {
   return next;
 }
 
+// ----- Metricool brands: config/metricool-brands.json (defaults, in git) or workspace/metricool-brands.json (this machine) -----
+// The plan has no API, so the account's brands are listed by hand (name, blog_id, timezone, networks, skill_id or null).
+export const metricoolFile = () => { const own = path.join(workspace, 'metricool-brands.json'); return fs.existsSync(own) ? own : path.join(toolRoot, 'config', 'metricool-brands.json'); };
+export const metricoolBrands = () => readJson(metricoolFile());
+export function saveMetricoolBrands(input) {
+  const list = Array.isArray(input?.brands) ? input.brands : null;
+  if (!list) throw new Error('Thiếu danh sách brands.');
+  const brands = list.map((b, i) => {
+    const name = String(b.name || '').trim();
+    if (!name) throw new Error(`Brand thứ ${i + 1} thiếu tên.`);
+    if (/token|secret|password/i.test(JSON.stringify(b))) throw new Error('Không lưu token/mật khẩu.');
+    return { name, blog_id: String(b.blog_id || '').trim(), timezone: String(b.timezone || '').trim(), networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id: b.skill_id ? String(b.skill_id).trim() : null, last_checked: String(b.last_checked || '').trim() };
+  });
+  const next = { version: 1, account: input.account || {}, brands };
+  const file = path.join(workspace, 'metricool-brands.json');
+  withLock(file, () => writeJson(file, next));
+  return next;
+}
+// Every brand of the Metricool account with its skill (status, missing items, timezone check), plus the skills that have no
+// Metricool brand yet.
+export function brandOverview(found = discoverBrands()) {
+  const cfg = metricoolBrands();
+  const used = new Set();
+  const brands = (cfg.brands || []).map((m) => {
+    const skill = m.skill_id ? found.brands.find((b) => b.id === m.skill_id) : null;
+    if (skill) used.add(skill.id);
+    const tz_mismatch = !!(skill && skill.timezone && m.timezone && skill.timezone !== m.timezone);
+    return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone } : null, skill_missing: !!(m.skill_id && !skill), tz_mismatch };
+  });
+  return { account: cfg.account || {}, brands, skills_without_metricool: found.brands.filter((b) => !used.has(b.id)).map((b) => ({ id: b.id, brand: b.brand })) };
+}
+
 // ----- text cleaning -----
 // Facebook pads captions with U+034F (combining grapheme joiner) and zero-width characters; the brand's check-post
 // also rejects bidi marks, U+FEFF, U+FFFD and U+00A0.
@@ -186,7 +218,9 @@ export function projectSection(md, n) {
   const m = md.match(new RegExp(`^## ${n}\\.[^\\n]*\\n([\\s\\S]*?)(?=^## \\d+\\.|$(?![\\s\\S]))`, 'm'));
   return m ? m[1].trim() : '';
 }
-export const projectField = (md, label) => md.match(new RegExp(`^- ${label}(?: \\(\\*\\))?:\\s*(.+)$`, 'm'))?.[1]?.trim() || '';
+// The value only: a trailing note in parentheses or an HTML comment is cut ("#DreamyVows (người dùng chốt ...)" -> "#DreamyVows").
+export const projectField = (md, label) => (md.match(new RegExp(`^- ${label}(?: \\(\\*\\))?:\\s*(.+)$`, 'm'))?.[1] || '')
+  .replace(/\s*<!--.*?-->/g, '').replace(/\s+\([^()]*\)\s*$/, '').trim();
 
 // Languages to write: every lang of the enabled channels (social.json channels[]).
 export function brandLanguages(social) {
@@ -211,6 +245,7 @@ export function inspectBrand(dir) {
   result.languages = brandLanguages(social);
   result.language_mode = social.language_policy?.mode || '';
   result.owner = social.approval?.owner || '';
+  result.timezone = social.cadence?.timezone || '';
   result.sources = brandSources(social).map((x) => x.id);
   result.ai_scenes_allowed = social.product_images?.ai_scenes_allowed ?? null;
   const checker = path.join(dir, 'scripts', 'check-skill.mjs');

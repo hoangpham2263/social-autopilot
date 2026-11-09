@@ -39,6 +39,14 @@ test('serves the page, the shell assets and the data APIs', async () => {
   for (const p of ['/', '/core/assets/tool.css', '/core/assets/hub.js', '/icon.svg', '/setup']) assert.equal((await fetch(base + p)).status, 200, p);
   const brands = await (await fetch(`${base}/api/brands`)).json();
   assert.ok(Array.isArray(brands.brands));
+  // Every brand of the Metricool account is listed, with its skill (or none: Fortera Apparel has no skill yet).
+  const names = brands.metricool.brands.map((b) => b.name);
+  assert.deepEqual(names, ['Dreamy Vows', 'Grenheim', 'Fortera Apparel']);
+  const fortera = brands.metricool.brands.find((b) => b.name === 'Fortera Apparel');
+  assert.equal(fortera.skill, null);
+  assert.equal(fortera.tz_mismatch, false);
+  assert.ok(Array.isArray(brands.metricool.skills_without_metricool));
+  assert.equal((await (await fetch(`${base}/api/metricool-brands`)).json()).brands.length, 3);
   assert.equal((await (await fetch(`${base}/api/drafts`)).json()).drafts.length, 0);
   assert.ok((await (await fetch(`${base}/api/runs`)).json()).brands);
   const settings = await (await fetch(`${base}/api/settings`)).json();
@@ -69,4 +77,11 @@ test('brand settings: a token is never written; a bad file is put back', { skip:
   const good = JSON.parse(JSON.stringify(social)); good.approval.owner = 'Tester';
   assert.equal((await post(good)).saved, true);
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).approval.owner, 'Tester');
+});
+
+test('projectField keeps the value only (no trailing note)', async () => {
+  const { projectField } = await import('../scripts/lib.mjs');
+  const md = '- Hashtag cố định: #DreamyVows (người dùng chốt 2026-11-06)\n- Website (*): https://x.com <!-- ghi chú -->\n';
+  assert.equal(projectField(md, 'Hashtag cố định'), '#DreamyVows');
+  assert.equal(projectField(md, 'Website'), 'https://x.com');
 });

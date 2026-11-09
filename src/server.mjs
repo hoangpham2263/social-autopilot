@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
-import { workspace, discoverBrands, listDrafts, latestRun, runDir, readJson, loadRefs, rawSettings, saveSettings, settings, toolRoot } from "../scripts/lib.mjs";
+import { workspace, discoverBrands, listDrafts, latestRun, runDir, readJson, loadRefs, rawSettings, saveSettings, settings, toolRoot, brandOverview, metricoolBrands, saveMetricoolBrands } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { approve, reject } from "../scripts/approve.mjs";
 import { readSocial, saveSocial } from "../scripts/social.mjs";
@@ -107,7 +107,9 @@ async function handle(req, res) {
     logError("Giao diện Social Autopilot", [message, stack].filter(Boolean).join("\n").slice(0, 4000));
     return send(res, 200, { ok: true });
   }
-  if (path === "/api/brands") return api(res, () => discoverBrands());
+  if (path === "/api/brands") return api(res, () => { const found = discoverBrands(); return { ...found, metricool: brandOverview(found) }; });
+  if (path === "/api/metricool-brands" && req.method === "GET") return api(res, () => metricoolBrands());
+  if (path === "/api/metricool-brands" && req.method === "POST") return api(res, async () => saveMetricoolBrands(await body(req)));
   if (path === "/api/brand" && req.method === "GET") return api(res, () => readSocial(get("id")));
   if (path === "/api/brand" && req.method === "POST") return api(res, async () => saveSocial(get("id"), (await body(req)).social));
   if (path === "/api/runs") return api(res, () => {

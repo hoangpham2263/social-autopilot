@@ -96,6 +96,7 @@ social-autopilot/
 ├── core/                                   vỏ app: launch, setup (Node.js, Codex), webview2, update
 ├── open-dashboard.cmd                      mở dashboard.html (nhấp đúp)
 ├── dashboard.html (git bỏ qua)             dashboard tĩnh, chỉ xem, do scripts/dashboard.mjs dựng
+├── config/metricool-brands.json            các brand trong tài khoản Metricool (ghi tay), gắn với skill
 ├── config/settings.json                    chung: skillsRoot, giới hạn, codex, ffmpeg, remove_watermark, luật duyệt
 ├── scripts/                                brands, sources, social, research, ideas, draft (+draft-lib), image-clean,
 │                                           queue, approve, writeback, host-image, metricool-csv, dashboard, lib
