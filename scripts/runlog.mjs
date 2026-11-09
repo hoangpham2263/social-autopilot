@@ -30,7 +30,7 @@ export function sourceState(x) {
 function researchPart(brandId) {
   const r = researchReport(brandId);
   if (!r.date) return { date: null, sources: [], new: 0, duplicates: 0 };
-  const sources = r.sources.map((x) => ({ id: x.id, name: x.name || x.id, new: x.new, duplicates: x.duplicates, backfilled: x.backfilled, reached_end: x.reached_end, state: sourceState(x), note: x.note || '' }));
+  const sources = r.sources.map((x) => ({ id: x.id, name: x.name || x.id, url: x.url || '', new: x.new, duplicates: x.duplicates, backfilled: x.backfilled, reached_end: x.reached_end, state: sourceState(x), note: x.note || '' }));
   return { date: r.date, crawl_mode: r.crawl_mode, sources, new: r.new_total || 0, duplicates: r.duplicates_total || 0, store: r.store };
 }
 
@@ -40,7 +40,7 @@ function createPart(brandId, since) {
   const scheduled = [], errors = [];
   for (const d of drafts.filter((x) => x.status.brand_post)) {
     const w = writtenPost(d);
-    for (const m of w.metricool_sent || []) if (!m.draft && after(m.sent_at)) scheduled.push({ post: w.post, network: m.network, publication: m.publication || '', timezone: m.timezone || '', source: m.time_source || '' });
+    for (const m of w.metricool_sent || []) if (!m.draft && after(m.sent_at)) scheduled.push({ post: w.post, network: m.network, publication: m.publication || '', timezone: m.timezone || '', source: m.time_source || '', planner_url: m.planner_url || '' });
     if (w.metricool === 'error') errors.push(`${w.post}: Metricool error`);
   }
   const fresh = drafts.filter((d) => after(d.draft.created));
@@ -80,7 +80,9 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
   const ended = now.toISOString();
   const per = pick.map((b) => {
     const x = extra.brands?.[b.id] || {};
-    const entry = { brand: b.id, name: b.brand || b.id, notes: String(x.notes || ''), errors: [].concat(x.errors || []).map(String) };
+    // The brand's Facebook page (its enabled facebook channel's url), linked from the Log.
+    const page = (readJson(path.join(b.dir, 'project', 'social.json'), {}).channels || []).find((c) => c?.enabled && c.network === 'facebook' && /^https:\/\//.test(c.url || ''))?.url || '';
+    const entry = { brand: b.id, name: b.brand || b.id, page_url: page, notes: String(x.notes || ''), errors: [].concat(x.errors || []).map(String) };
     if (mode === 'research') entry.research = researchPart(b.id); else entry.create = createPart(b.id, since);
     entry.headline = brandHeadline(mode, entry);
     entry.result = resultOf(mode, entry);

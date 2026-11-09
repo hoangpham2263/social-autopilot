@@ -18,18 +18,19 @@ const run = (...args) => { const r = spawnSync(process.execPath, [path.join(tool
 
 write(path.join(brandDir, 'SKILL.md'), '# rb');
 write(path.join(brandDir, 'project', 'project.md'), '# rb');
-write(path.join(brandDir, 'project', 'social.json'), { brand: 'RB', enabled: true, channels: [{ network: 'facebook', enabled: true, lang: ['en'] }], cadence: { timezone: 'America/New_York' }, research: { sources: [{ id: 'a', name: 'A', url: 'https://x.test/a', enabled: true }] } });
+write(path.join(brandDir, 'project', 'social.json'), { brand: 'RB', enabled: true, channels: [{ network: 'facebook', enabled: true, lang: ['en'], url: 'https://www.facebook.com/rb' }], cadence: { timezone: 'America/New_York' }, research: { sources: [{ id: 'a', name: 'A', url: 'https://x.test/a', enabled: true }] } });
 write(path.join(brandDir, 'scripts', 'check-skill.mjs'), "console.log('ok')");
-write(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [{ id: 'POST-01', status: 'scheduled', metricool: { facebook: { id: '9', draft: false, publication: '2026-12-01T10:00:00', timezone: 'America/New_York', sent_at: '2099-01-01T00:00:00Z' } } }] });
+write(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [{ id: 'POST-01', status: 'scheduled', metricool: { facebook: { id: '9', planner_url: 'https://app.metricool.com/planner?x=9', draft: false, publication: '2026-12-01T10:00:00', timezone: 'America/New_York', sent_at: '2099-01-01T00:00:00Z' } } }] });
 const crawl = (date, sources) => write(path.join(ws, 'runs', 'rb', date, 'run.json'), { date, status: 'done', mode: {}, sources });
 
 test('research: per source new / dried up / blocked; dried-up streak across runs', () => {
-  crawl('2026-11-01', [{ id: 'a', name: 'A', new: 5, duplicates: 1, result: { state: 'known' } }, { id: 'b', name: 'B', new: 0, result: { state: 'known' } }]);
+  crawl('2026-11-01', [{ id: 'a', name: 'A', url: 'https://www.facebook.com/a', new: 5, duplicates: 1, result: { state: 'known' } }, { id: 'b', name: 'B', new: 0, result: { state: 'known' } }]);
   let r = run('add', '--mode', 'research', '--agent', 'Claude Code', '--started', '2026-11-01T00:00:00Z');
   assert.equal(r.ok, true, JSON.stringify(r));
   const b = r.log.brands[0];
   assert.deepEqual(b.research.sources.map((x) => [x.id, x.new, x.state]), [['a', 5, 'new posts'], ['b', 0, 'dried up']]);
   assert.equal(r.log.headline, '+5 posts · 1 source dried up');
+  assert.equal(b.research.sources[0].url, 'https://www.facebook.com/a', 'the Log links the source page');
   assert.equal(r.log.result, 'ok');
   // two more runs where B brings nothing and A is blocked
   for (const d of ['2026-11-02', '2026-11-03']) {
@@ -60,11 +61,13 @@ test('create: scheduled this run, to review, failed checks count as errors; agen
   assert.equal(r.ok, true, JSON.stringify(r));
   const c = r.log.brands[0].create;
   assert.deepEqual(c.scheduled.map((x) => x.post), ['POST-01']);
+  assert.equal(c.scheduled[0].planner_url, 'https://app.metricool.com/planner?x=9');
   assert.deepEqual(c.to_review.map((x) => x.id), ['rb-20261109-01']);
   assert.equal(c.failed[0].reason, 'caption has an AI label');
   assert.equal(r.log.headline, '1 scheduled · 1 to review · 2 errors');
   assert.equal(r.log.result, 'error');
   assert.equal(r.log.notes, 'all good');
+  assert.equal(r.log.brands[0].page_url, 'https://www.facebook.com/rb');
   assert.equal(run('add', '--mode', 'nope').ok, false);
   assert.equal(run('show', '--id', '../x').ok, false);
 });

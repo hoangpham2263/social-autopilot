@@ -304,6 +304,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const arr = (x) => (Array.isArray(x) ? x : []);
+  // Every "Label (N)" in the app (Mode, Posts, Library, Log, Overview): one format, a no-break space before the count.
+  const withCount = (label, n) => `${label}\u00a0(${n ?? 0})`;
   // A control a choice makes meaningless is greyed (tool.css disabled styling) with the reason as its tooltip.
   const setDisabled = (el, on, why = "") => { if (!el) return; el.disabled = !!on; el.classList.toggle("disabled", !!on); el.title = on ? why : ""; const f = el.closest(".field, .slot, label"); if (f) f.title = on ? why : ""; };
   // Brands are always listed A-Z by name (cards, unlinked skills, every Brand dropdown).
@@ -438,7 +440,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
       const written = arr(x?.written).length;
       const posted = mc.published || 0, review = num(d, "ready");
-      const go = (k, n, t) => `<a href="#" data-go="posts" data-state="${k}" data-brand="${esc(id)}">${t} (${n})</a>`;
+      const go = (k, n, t) => `<a href="#" data-go="posts" data-state="${k}" data-brand="${esc(id)}">${esc(withCount(t, n))}</a>`;
       const posts = written || review || posted ? [go("review", review, "To review"), go("queued", Math.max(0, written - posted), "Queued"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
       const sug = !s && m.suggested_skill ? `<dt>Skill found</dt><dd>${esc(m.suggested_skill.id)} ${btn("data-suggest", m.suggested_skill.dir, "Link", "Link this skill folder to the brand", " primary")}</dd>` : "";
       return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
@@ -588,7 +590,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     setDisabled($("#resSource"), arr(c.sources).length < 2, "This brand has only one source");
     const k = c.counts || {};
     const SHOW = [["new", "Unused", k.new], ["used", "Used", k.used], ["rejected", "Dropped", k.rejected], ["", "All", k.total]];
-    $("#resStatus").innerHTML = SHOW.map(([v, t, n]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}">${t} (${n ?? 0})</button>`).join("");
+    $("#resStatus").innerHTML = SHOW.map(([v, t, n]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}">${esc(withCount(t, n))}</button>`).join("");
     for (const b of $$("#resStatus button")) b.onclick = () => { resStatus = b.dataset.show; store.set("resStatus", resStatus); resShown = 60; loadResearch(); };
     const items = arr(c.items);
     const prog = Object.entries(c.progress || {});
@@ -686,7 +688,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const prompts = arr(promptData.prompts), brands = arr(promptData.brands);
     const modes = [...new Set(prompts.map((p) => p.mode))];
     prMode = modes.includes(prMode) ? prMode : modes.includes(store.get("prMode")) ? store.get("prMode") : modes[0] || "";
-    $("#prMode").innerHTML = modes.map((m) => `<button class="btn" type="button" data-mode="${esc(m)}" aria-pressed="${m === prMode}">${esc(m)}</button>`).join("");
+    $("#prMode").innerHTML = modes.map((m) => `<button class="btn" type="button" data-mode="${esc(m)}" aria-pressed="${m === prMode}" title="${esc(MODE_TIP[modeKey(m)] || "")}">${esc(m)}</button>`).join("");
+    showModeCounts();
     for (const b of $$("#prMode button")) b.onclick = () => { prMode = b.dataset.mode; store.set("prMode", prMode); drawPrompt(); };
     const agents = prompts.filter((p) => p.mode === prMode).map((p) => p.agent);
     const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
@@ -753,7 +756,22 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
   // An option changed: the prompt is rebuilt (read-only; no hand edits).
   function regenerate() { $("#prText").value = buildPrompt(); }
+  // Mode button counts (selected brand, or all brands): Research = unused library items; Create = posts still needed for
+  // Plan ahead; Publish = approved posts not sent yet.
+  const modeKey = (m) => (/research/i.test(m) ? "research" : /publish approved/i.test(m) ? "publish" : "create");
+  const MODE_TIP = { research: "Unused posts in the library", create: "Posts still needed to fill Plan ahead (days × posts per day − queued − to review − in progress)", publish: "Approved posts not sent to Metricool yet" };
+  let modeCounts = {};
+  function showModeCounts() {
+    const brand = $("#prBrand").value;
+    const sum = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c[k] || 0), 0);
+    for (const b of $$("#prMode button")) b.textContent = Object.keys(modeCounts).length ? withCount(b.dataset.mode, sum(modeKey(b.dataset.mode))) : b.dataset.mode;
+  }
+  async function loadModeCounts() {
+    const r = await getJson("/api/prompt-counts").catch(() => ({}));
+    if (r.brands) { modeCounts = r.brands; showModeCounts(); }
+  }
   const loadPrompts = safely("#prMsg", async () => {
+    loadModeCounts();
     const r = await getJson("/api/prompts").catch(() => offline);
     if (r.error) { $("#prText").value = r.error; return; }
     if (!Array.isArray(r.prompts)) throw new Error("prompts missing");
@@ -801,21 +819,23 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // The detail, the same every run: per brand a small table. Research: Source | New | Status. Create: Scheduled |
   // To review | Errors. Agent and duration only as small text in the header.
   const STATUS_TEXT_RUN = { "new posts": "New posts", "dried up": "Dried up", "reached end": "New posts", blocked: "Blocked", error: "Error", unfinished: "Error" };
+  // An external link (opens like every other external link of the app); plain text when there is none.
+  const ext = (url, text) => (/^https:\/\//.test(url || "") ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text));
   function openLog(l) {
     const brands = arr(l.brands).map((b) => {
       let body;
       if (l.mode === "research") {
-        const rows = arr(b.research?.sources).map((x) => { const st = STATUS_TEXT_RUN[x.state] || x.state; return `<tr><td>${esc(x.name || x.id)}</td><td>${x.new}</td><td class="${st === "Dried up" ? "dry" : st === "Blocked" || st === "Error" ? "bad-text" : ""}"${x.dry_runs >= dryRuns ? ` title="No new posts in ${x.dry_runs} runs: consider new sources"` : ""}>${esc(st)}${x.dry_runs >= dryRuns ? " · consider new sources" : ""}</td></tr>`; }).join("");
+        const rows = arr(b.research?.sources).map((x) => { const st = STATUS_TEXT_RUN[x.state] || x.state; return `<tr><td>${ext(x.url, x.name || x.id)}</td><td>${x.new}</td><td class="${st === "Dried up" ? "dry" : st === "Blocked" || st === "Error" ? "bad-text" : ""}"${x.dry_runs >= dryRuns ? ` title="No new posts in ${x.dry_runs} runs: consider new sources"` : ""}>${esc(st)}${x.dry_runs >= dryRuns ? " · consider new sources" : ""}</td></tr>`; }).join("");
         body = rows ? `<table class="edit"><thead><tr><th>Source</th><th>New</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="meta">No crawl.</div>`;
       } else {
         const c = b.create || {};
-        const sched = arr(c.scheduled).map((x) => `${esc(x.post)} · ${esc(String(x.publication).replace("T", " ").slice(0, 16))}${x.source ? ` <span class="meta">${esc(x.source)}</span>` : ""}`);
+        const sched = arr(c.scheduled).map((x) => `${ext(x.planner_url, x.post)} · ${esc(String(x.publication).replace("T", " ").slice(0, 16))}${x.source ? ` <span class="meta">${esc(x.source)}</span>` : ""}`);
         const errs = [...arr(c.failed).map((x) => `${x.id}: ${x.reason}`), ...arr(c.errors), ...arr(b.errors)].map(esc);
         const n = Math.max(sched.length, arr(c.to_review).length, errs.length, 1);
         const cell = (list, i, cls = "") => `<td class="${cls}">${list[i] || ""}</td>`;
         body = `<table class="edit"><thead><tr><th>Scheduled</th><th>To review</th><th>Errors</th></tr></thead><tbody>${Array.from({ length: n }, (_, i) => `<tr>${cell(sched, i)}${cell(arr(c.to_review).map((x) => esc(x.id)), i)}${cell(errs, i, "bad-text")}</tr>`).join("")}</tbody></table>`;
       }
-      return `<div class="card"><h3>${esc(b.name || b.brand)}</h3>${body}</div>`;
+      return `<div class="card"><h3>${ext(b.page_url, b.name || b.brand)}</h3>${body}</div>`;
     }).join("");
     const sub = [l.agent, l.duration_s ? `${Math.max(1, Math.round(l.duration_s / 60))} min` : ""].filter(Boolean).join(" · ");
     openOverlay(`${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(when(l.ended))} · ${esc(l.headline)}${sub ? ` <span class="meta">${esc(sub)}</span>` : ""}`, `<div class="log-detail"><div class="cards">${brands}</div></div>`);
@@ -855,7 +875,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const drafts = arr(r.drafts);
     const count = (k) => drafts.filter((d) => stateOf(d) === k).length;
     if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : "queued";
-    $("#drState").innerHTML = STATES.map(([k, t]) => `<button class="btn" type="button" data-state="${k}" aria-pressed="${k === drState}">${t} (${count(k)})</button>`).join("");
+    $("#drState").innerHTML = STATES.map(([k, t]) => `<button class="btn" type="button" data-state="${k}" aria-pressed="${k === drState}">${esc(withCount(t, count(k)))}</button>`).join("");
     for (const b of $$("#drState button")) b.onclick = () => { drState = b.dataset.state; store.set("drState", drState); loadDrafts(); };
     const making = drafts.filter((d) => !stateOf(d) && d.status !== "rejected").length, failed = drafts.filter((d) => stateOf(d) && failedOf(d)).length;
     $("#drExtra").innerHTML = [failed ? `<span class="count-bad">${failed} failed</span>` : "", making ? `${making} in progress` : ""].filter(Boolean).join(" · ");
@@ -1183,6 +1203,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!$("#page-overview").hidden) loadOverview();
     else if (!$("#page-store").hidden) loadResearch();
     else if (!$("#page-posts").hidden) loadDrafts();
+    else if (!$("#page-prompt").hidden) loadModeCounts();
   }, 45000);
 })();
 </script>
