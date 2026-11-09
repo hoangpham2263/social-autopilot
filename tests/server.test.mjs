@@ -52,17 +52,33 @@ test('serves the page, the shell assets and the data APIs', async () => {
   assert.ok(Array.isArray(brands.metricool.skills_without_metricool));
   assert.equal((await (await fetch(`${base}/api/metricool-brands`)).json()).brands.length, 3);
   assert.equal((await (await fetch(`${base}/api/drafts`)).json()).drafts.length, 0);
-  assert.ok((await (await fetch(`${base}/api/runs`)).json()).brands);
+  const store = await (await fetch(`${base}/api/store`)).json();
+  assert.ok(Array.isArray(store.brands));
+  assert.equal(store.current, null);
+  // Prompt tab: every mode x agent prompt of docs/scheduled-prompt.md, with {{BRAND}} to fill.
+  const pr = await (await fetch(`${base}/api/prompts`)).json();
+  const modes = [...new Set(pr.prompts.map((p) => p.mode))];
+  assert.deepEqual(modes, ['Chỉ nghiên cứu', 'Làm bài & đưa lên']);
+  for (const m of modes) assert.deepEqual(pr.prompts.filter((p) => p.mode === m).map((p) => p.agent), ['Claude Code', 'Codex', 'ChatGPT'], m);
+  assert.ok(pr.prompts.every((p) => p.text.includes('{{BRAND}}') && p.text.length > 200), 'every prompt has the brand slot');
+  assert.ok(pr.all_brands);
+  assert.ok(Array.isArray((await (await fetch(`${base}/api/queue`)).json()).brands));
   const settings = await (await fetch(`${base}/api/settings`)).json();
-  assert.match(settings.scheduledPrompt, /RUNBOOK\.md/);
+  assert.equal(settings.settings.metricool.default_mode, 'draft');
+  assert.equal(settings.settings.approval, undefined);
   assert.equal((await fetch(`${base}/file?path=${encodeURIComponent(path.join(tool, 'icon.svg'))}`)).status, 404); // only workspace images
-  // Image host: settings shown and saved with the rest; "Đưa ảnh lên" refuses anything that is not an approved post.
+  // Image host: settings shown and saved with the rest. No approval or hosting button in the app any more.
   assert.match(settings.settings.imageHost.rawBase, /^https:\/\//);
   const saved = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: settings.settings }) })).json();
   assert.equal(saved.settings.imageHost.type, 'github-repo', JSON.stringify(saved));
-  const host = await fetch(base + '/api/host-image', { method: 'POST', headers: hdr(), body: JSON.stringify({ id: 'grenheim-20261109-01' }) });
-  assert.equal(host.status, 400);
-  assert.match((await host.json()).error, /Không có bản nháp/);
+  for (const p of ['/api/approve', '/api/reject', '/api/host-image']) assert.equal((await fetch(base + p, { method: 'POST', headers: hdr(), body: '{}' })).status, 404, p);
+  const bad = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: { metricool: { default_mode: 'now' } } }) })).json();
+  assert.match(bad.error, /default_mode/);
+  const sched = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: { metricool: { default_mode: 'schedule' } } }) })).json();
+  assert.equal(sched.settings.metricool.default_mode, 'schedule');
+  const cancel = await fetch(base + '/api/cancel', { method: 'POST', headers: hdr(), body: JSON.stringify({ id: 'grenheim-20261109-01' }) });
+  assert.equal(cancel.status, 400);
+  assert.match((await cancel.json()).error, /Không có bản nháp/);
 });
 
 test('brand settings: a token is never written; a bad file is put back', { skip: !fs.existsSync(path.join(tool, '..', 'vaniecom-workspace', 'skills', 'grenheim-skills')) && 'no brand skill to copy' }, async () => {
@@ -75,9 +91,9 @@ test('brand settings: a token is never written; a bad file is put back', { skip:
   const r = await post(bad);
   assert.equal(r.saved, false);
   assert.equal(fs.readFileSync(file, 'utf8'), before);
-  const good = JSON.parse(JSON.stringify(social)); good.approval.owner = 'Tester';
+  const good = JSON.parse(JSON.stringify(social)); good.cadence = { ...good.cadence, posts_per_week: 4 };
   assert.equal((await post(good)).saved, true);
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).approval.owner, 'Tester');
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).cadence.posts_per_week, 4);
 });
 
 test('projectField keeps the value only (no trailing note)', async () => {

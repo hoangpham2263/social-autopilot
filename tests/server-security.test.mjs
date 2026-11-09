@@ -79,7 +79,7 @@ test('CSRF: writes need JSON, same origin and the token', async () => {
   assert.equal(r.status, 403);
   r = await post('/api/settings', evil, { origin: 'http://evil.example' });
   assert.equal(r.status, 403);
-  for (const p of ['/api/brand?id=x', '/api/reject', '/api/approve', '/api/update', '/api/reload', '/api/setup-step', '/api/client-error'])
+  for (const p of ['/api/brand?id=x', '/api/cancel', '/api/store-item', '/api/update', '/api/reload', '/api/setup-step', '/api/client-error'])
     assert.equal((await fetch(base + p, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' })).status, 403, p);
   // A browser POST to /api/quit (Origin / Sec-Fetch-Site present) is not the launcher: refused without the token.
   assert.equal((await raw('/api/quit', { method: 'POST', headers: { host: `127.0.0.1:${port}`, origin: 'http://evil.example' } })).status, 403);
@@ -92,31 +92,28 @@ test('CSRF: writes need JSON, same origin and the token', async () => {
   assert.equal((await post('/api/client-error', { message: 'test' }, { origin: `http://localhost:${port}` })).status, 200);
 });
 
-test('/api/runs: brand must be a discovered brand, date YYYY-MM-DD', async () => {
-  fs.mkdirSync(path.join(tmp, 'workspace', 'runs', 'x'), { recursive: true });
-  for (const q of ['date=../../../x', 'brand=grenheim&date=../../../x', 'brand=..%2F..%2Fx', 'brand=../../x&date=2026-11-09', 'brand=nope'])
-    assert.equal((await fetch(`${base}/api/runs?${q}`)).status, 400, q);
-  const r = await (await fetch(`${base}/api/runs?brand=..%2F..%2Fx`)).json();
-  assert.match(r.error, /Không có thương hiệu/);
-  assert.match((await (await fetch(`${base}/api/runs?date=2026-1-9`)).json()).error, /YYYY-MM-DD/);
-  assert.equal((await fetch(`${base}/api/runs`)).status, 200);
+test('/api/store: brand must be a discovered brand, source an id; store-item only for a brand', async () => {
+  fs.mkdirSync(path.join(tmp, 'workspace', 'store', 'x'), { recursive: true });
+  for (const q of ['brand=..%2F..%2Fx', 'brand=../../x', 'brand=nope', 'source=..%2Fx'])
+    assert.equal((await fetch(`${base}/api/store?${q}`)).status, 400, q);
+  assert.match((await (await fetch(`${base}/api/store?brand=..%2F..%2Fx`)).json()).error, /Không có thương hiệu/);
+  assert.equal((await fetch(`${base}/api/store`)).status, 200);
+  assert.match((await (await post('/api/store-item', { brand: '../x', id: 'S0001' })).json()).error, /Không có thương hiệu/);
 });
 
 test('bad bodies get clear Vietnamese errors (400)', async () => {
   const check = async (p, data, re) => { const r = await post(p, data); assert.equal(r.status, 400, p); assert.match((await r.json()).error, re, p); };
-  await check('/api/approve', 'null', /object JSON/);
-  await check('/api/approve', '[1]', /object JSON/);
-  await check('/api/approve', '{bad', /không phải JSON hợp lệ/);
-  await check('/api/approve', {}, /Thiếu mã bản nháp/);
-  await check('/api/approve', { id: 'no-such-draft' }, /no-such-draft/); // no approver name needed; the draft is looked up
-  await check('/api/host-image', {}, /Thiếu mã bản nháp/);
-  await check('/api/host-image', { id: 42 }, /Thiếu mã bản nháp/);
-  await check('/api/reject', null, /object JSON/);
-  await check('/api/reject', { note: 'x' }, /Thiếu mã bản nháp/);
+  await check('/api/cancel', 'null', /object JSON/);
+  await check('/api/cancel', '[1]', /object JSON/);
+  await check('/api/cancel', '{bad', /không phải JSON hợp lệ/);
+  await check('/api/cancel', {}, /Thiếu mã bản nháp/);
+  await check('/api/cancel', { id: 42 }, /Thiếu mã bản nháp/);
+  await check('/api/cancel', { id: 'no-such-draft' }, /no-such-draft/);
+  await check('/api/store-item', null, /object JSON/);
   await check('/api/settings', {}, /Thiếu cài đặt/);
   await check('/api/brand?id=x', {}, /social/);
   await check('/api/brand', { social: {} }, /Thiếu mã thương hiệu/);
-  for (const r of [await post('/api/approve', 'null'), await post('/api/host-image', {})]) assert.doesNotMatch((await r.json()).error, /Cannot read|undefined/);
+  for (const r of [await post('/api/cancel', 'null'), await post('/api/store-item', {})]) assert.doesNotMatch((await r.json()).error, /Cannot read|undefined/);
 });
 
 test('/api/brands is cached; any write clears the cache', async () => {

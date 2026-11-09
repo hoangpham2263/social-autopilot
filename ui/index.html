@@ -19,11 +19,6 @@ nav.tabs { display: flex; margin: 0 0 12px; }
 nav.tabs button { height: var(--ctl-h); padding: var(--ctl-pad); font: inherit; font-size: var(--ctl-font); background: #e1e1e1; border: var(--ctl-border); margin-right: -1px; cursor: default; }
 nav.tabs button:hover { border-color: #0078d7; position: relative; }
 nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--accent); position: relative; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 0 0 12px; }
-a.stat { display: grid; gap: 2px; background: #fff; border: 1px solid var(--line); padding: 8px 12px; color: var(--ink); text-decoration: none; }
-a.stat:hover { border-color: #0078d7; }
-a.stat .v { font-size: 20px; } a.stat .v small { font-size: 12px; color: var(--muted); }
-a.stat .d { color: var(--muted); font-size: 12px; }
 .cards { display: grid; gap: 10px; }
 .card { background: #fff; border: 1px solid var(--line); padding: 10px 12px; }
 .card.ok { border-color: var(--accent); }
@@ -63,6 +58,14 @@ details[open] > summary { margin-bottom: 6px; }
 /* Nghiên cứu */
 .refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .ref img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--control); display: block; border: 1px solid var(--line); }
+.card .head-row { display: flex; align-items: center; gap: 8px; } .card .head-row h3 { flex: 1 1 auto; margin: 0 0 4px; }
+.ref { display: grid; gap: 4px; align-content: start; }
+.ref .thumb { position: relative; }
+.ref .count { position: absolute; right: 4px; bottom: 4px; background: #fff; border: 1px solid var(--line); padding: 0 6px; font-size: 12px; }
+.ref .head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ref .head .acts { margin-left: auto; }
+.ref .reject-box { display: flex; gap: 6px; } .ref .reject-box[hidden] { display: none; } .ref .reject-box input { flex: 1 1 auto; min-width: 0; width: auto; }
+#prText { width: 100%; }
 pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
 /* Bản nháp: a compact card, thumbnails on the left, the header row carries the actions. */
 .draft { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; }
@@ -145,51 +148,72 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 <main>
   <header><img src="/icon.svg" alt=""><h1>Social Autopilot</h1></header>
   <div id="setupStatus" class="setup-status"></div>
-  <section class="stats" id="stats" aria-label="Tổng quan"></section>
   <nav class="tabs" id="tabs">
-    <button type="button" data-page="drafts">Bản nháp</button>
-    <button type="button" data-page="brands">Thương hiệu</button>
-    <button type="button" data-page="research">Nghiên cứu</button>
+    <button type="button" data-page="overview">Tổng quan</button>
+    <button type="button" data-page="store">Kho</button>
+    <button type="button" data-page="posts">Bài đã tạo</button>
+    <button type="button" data-page="prompt">Prompt</button>
     <button type="button" data-page="settings">Cài đặt</button>
   </nav>
 
-  <section class="page" id="page-drafts" hidden>
+  <section class="page" id="page-overview" hidden>
+    <div class="toolbar"><div class="meta">Việc do agent làm theo prompt (tab Prompt); app chỉ để xem và quản lý.</div><button class="btn" type="button" id="ovReload">Tải lại</button></div>
+    <div class="cards" id="ovList"><div class="meta">Đang đọc…</div></div>
+  </section>
+
+  <section class="page" id="page-store" hidden>
     <div class="toolbar">
+      <div><label for="resBrand">Kho</label><select id="resBrand"></select></div>
+      <div><label for="resStatus">Hiện</label><select id="resStatus">
+        <option value="new">Mới</option><option value="used">Đã dùng</option><option value="rejected">Đã bỏ</option><option value="">Tất cả</option></select></div>
+      <div><label for="resSource">Nguồn</label><select id="resSource"></select></div>
+      <button class="btn" type="button" id="resReload">Tải lại</button>
+    </div>
+    <div id="resBody" class="meta">Chọn thương hiệu.</div>
+  </section>
+
+  <section class="page" id="page-posts" hidden>
+    <div class="toolbar">
+      <div><label for="drBrand">Thương hiệu</label><select id="drBrand"><option value="">Tất cả</option></select></div>
       <div><label for="drStatus">Hiện</label><select id="drStatus">
-        <option value="awaiting_approval">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Đã bỏ</option><option value="">Tất cả</option></select></div>
+        <option value="">Tất cả</option><option value="written">Đã ghi vào thương hiệu</option><option value="ready">Qua kiểm tra, chưa ghi</option><option value="failed">Lỗi kiểm tra</option><option value="working">Đang làm</option><option value="rejected">Đã bỏ</option></select></div>
       <button class="btn" type="button" id="drReload">Tải lại</button>
     </div>
     <div class="cards" id="draftList"></div>
   </section>
 
-  <section class="page" id="page-brands" hidden>
-    <div class="toolbar"><div class="meta" id="brandsRoot"></div><button class="btn" type="button" id="brandsReload">Kiểm tra lại</button></div>
-    <div class="cards" id="brandList"><div class="meta">Đang đọc…</div></div>
-  </section>
-
-  <section class="page" id="page-brand" hidden>
-    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Thương hiệu</button><h2 id="brandTitle" style="margin:0;font-size:16px"></h2></div>
-    <div id="brandForm"></div>
-    <div class="row-actions"><button class="btn primary" type="button" id="brandSave">Lưu</button><span class="meta">Lưu xong tool chạy check-skill; file sai thì trả lại bản cũ.</span></div>
-    <div class="msg" id="brandMsg"></div>
-  </section>
-
-  <section class="page" id="page-research" hidden>
+  <section class="page" id="page-prompt" hidden>
     <div class="toolbar">
-      <div><label for="resBrand">Thương hiệu</label><select id="resBrand"></select></div>
-      <div><label for="resDate">Lượt</label><select id="resDate"></select></div>
+      <div><label for="prMode">Chế độ</label><select id="prMode"></select></div>
+      <div><label for="prAgent">Agent</label><select id="prAgent"></select></div>
+      <div><label for="prBrand">Thương hiệu</label><select id="prBrand"></select></div>
+      <button class="btn primary" type="button" id="prCopy">Chép prompt</button><span class="meta" id="prMsg"></span>
     </div>
-    <div id="resBody" class="meta">Chọn thương hiệu.</div>
+    <textarea class="prompt" id="prText" readonly></textarea>
+    <div class="meta">Mở thư mục C:\hoangpq\social-autopilot trong agent đã chọn rồi dán. Nội dung lấy từ docs/scheduled-prompt.md.</div>
   </section>
 
   <section class="page" id="page-settings" hidden>
-    <div class="card" id="settingsView"></div>
-    <div class="row-actions"><button class="btn" type="button" id="settingsEdit">Sửa</button></div>
-    <div id="settingsEditor" hidden>
-      <form id="settingsForm" class="grid2"></form>
-      <div class="row-actions"><button class="btn primary" type="button" id="settingsSave">Lưu cài đặt</button><span class="meta">Ghi vào workspace/settings.json của máy này.</span></div>
-    </div>
-    <div class="msg" id="settingsMsg"></div>
+    <fieldset><legend>Thương hiệu</legend>
+      <div class="toolbar"><div class="meta" id="brandsRoot"></div><button class="btn" type="button" id="brandsReload">Kiểm tra lại</button></div>
+      <div class="cards" id="brandList"><div class="meta">Đang đọc…</div></div>
+    </fieldset>
+    <fieldset><legend>Cài đặt tool</legend>
+      <div id="settingsView"></div>
+      <div class="row-actions"><button class="btn" type="button" id="settingsEdit">Sửa</button></div>
+      <div id="settingsEditor" hidden>
+        <form id="settingsForm" class="grid2"></form>
+        <div class="row-actions"><button class="btn primary" type="button" id="settingsSave">Lưu cài đặt</button><span class="meta">Ghi vào workspace/settings.json của máy này.</span></div>
+      </div>
+      <div class="msg" id="settingsMsg"></div>
+    </fieldset>
+  </section>
+
+  <section class="page" id="page-brand" hidden>
+    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Cài đặt</button><h2 id="brandTitle" style="margin:0;font-size:16px"></h2></div>
+    <div id="brandForm"></div>
+    <div class="row-actions"><button class="btn primary" type="button" id="brandSave">Lưu</button><span class="meta">Lưu xong tool chạy check-skill; file sai thì trả lại bản cũ.</span></div>
+    <div class="msg" id="brandMsg"></div>
   </section>
 </main>
 <script>
@@ -208,37 +232,51 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   addEventListener("error", (e) => postJson("/api/client-error", { message: e.message, stack: e.error?.stack || "" }).catch(() => {}));
 
   // ----- tabs -----
-  const pages = ["drafts", "brands", "brand", "research", "settings"];
+  const pages = ["overview", "store", "posts", "prompt", "settings", "brand"];
   function show(page) {
+    if (!pages.includes(page)) page = "overview";
     for (const p of pages) $(`#page-${p}`).hidden = p !== page;
-    for (const b of $$("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "brands" : page)));
-    store.set("page", page === "brand" ? "brands" : page);
-    ({ drafts: loadDrafts, brands: loadBrands, research: loadResearch, settings: loadSettings })[page]?.();
-    loadStats();
+    for (const b of $$("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "settings" : page)));
+    store.set("page", page === "brand" ? "settings" : page);
+    ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, prompt: loadPrompts, settings: () => { loadBrands(); loadSettings(); } })[page]?.();
   }
   for (const b of $$("#tabs button")) b.onclick = () => show(b.dataset.page);
 
-  // ----- Tổng quan (read again on every page load) -----
+  // ----- Tổng quan: per brand, from queue.mjs (store, last research, posts, Metricool) + the skill check -----
   let brandData = { brands: [], metricool: { brands: [] } };
-  async function loadStats() {
-    const [d, b] = await Promise.all([getJson("/api/drafts"), getJson("/api/brands")]).catch(() => [{}, {}]);
+  const MC_TEXT = { draft: "nháp Metricool", scheduled: "đã hẹn giờ", published: "đã đăng", error: "lỗi Metricool", not_sent: "chưa gửi" };
+  async function loadOverview() {
+    const [q, b] = await Promise.all([getJson("/api/queue"), getJson("/api/brands")]).catch(() => [offline, {}]);
+    if (q.error) { $("#ovList").innerHTML = `<div class="bad-text">${esc(q.error)}</div>`; return; }
     if (b.brands) brandData = b;
-    const drafts = d.drafts || [], list = b.brands || [];
-    const waiting = drafts.filter((x) => x.status === "awaiting_approval").length;
-    const approved = drafts.filter((x) => x.brand_post);
-    const hosted = approved.filter((x) => x.brand_post.media_url).length;
-    const stat = (page, status, k, v, desc) => `<a class="stat" href="#" data-go="${page}" data-status="${status}"><span class="k">${esc(k)}</span><span class="v">${v}</span><span class="d">${esc(desc)}</span></a>`;
-    $("#stats").innerHTML = stat("drafts", "awaiting_approval", "Chờ duyệt", waiting, "bản nháp đợi bạn xem") +
-      stat("brands", "", "Thương hiệu sẵn sàng", `${list.filter((x) => x.usable).length}<small>/${list.length}</small>`, "chạy được trong lịch") +
-      stat("drafts", "approved", "Đã duyệt", approved.length, `${hosted} có link ảnh · chưa đăng`);
-    for (const a of $$("#stats [data-go]")) a.onclick = (e) => {
+    const num = (o, k) => o?.[k] || 0;
+    const card = (x) => {
+      const tag = x.usable ? ["Sẵn sàng", "c-green"] : x.enabled ? ["Bật nhưng còn thiếu", "c-red"] : ["Đang tắt", ""];
+      const r = x.research, st = x.store, d = x.drafts || {}, mc = x.metricool || {};
+      const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption");
+      return `<div class="card ${x.usable ? "ok" : "todo"}">
+        <h3>${esc(x.name || x.brand)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>
+        <dl class="kv">
+          <dt>Kho</dt><dd><a href="#" data-go="store" data-brand="${esc(x.brand)}">${st.total} bài</a> · ${st.new} mới · ${st.used} đã dùng · ${st.rejected} đã bỏ</dd>
+          <dt>Nghiên cứu gần nhất</dt><dd>${r.latest ? `${esc(r.latest)} · ${r.new_last_crawl} bài mới · ${r.duplicates_last_crawl} bài trùng bỏ qua · xong: ${esc(r.done.join(", ") || "-")}${r.pending.length ? ` · chưa xong: ${esc(r.pending.join(", "))}` : ""}` : "chưa có"}${r.blocked.length ? `<div class="bad-text">Bị chặn: ${esc(r.blocked.join("; "))}</div>` : ""}</dd>
+          <dt>Bài đã tạo</dt><dd><a href="#" data-go="posts" data-brand="${esc(x.brand)}">${x.written.length} đã ghi vào thương hiệu</a> · ${num(d, "ready")} qua kiểm tra chưa ghi · ${working} đang làm${num(d, "check_failed") + num(d, "image_failed") ? ` · <span class="bad-text">${num(d, "check_failed") + num(d, "image_failed")} lỗi</span>` : ""}</dd>
+          <dt>Metricool</dt><dd>${Object.keys(MC_TEXT).filter((k) => mc[k]).map((k) => `<span class="${k === "error" ? "bad-text" : ""}">${mc[k]} ${MC_TEXT[k]}</span>`).join(" · ") || "-"}</dd>
+        </dl>
+        ${x.problems?.length && x.enabled ? `<ul class="missing">${x.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
+      </div>`;
+    };
+    const orphan = (b.metricool?.brands || []).filter((m) => !m.skill_id).map((m) => `<div class="meta">${esc(m.name)}: brand Metricool chưa có skill (tool không đụng tới).</div>`).join("");
+    $("#ovList").innerHTML = (q.brands.map(card).join("") || `<div class="meta">Chưa có thương hiệu nào.</div>`) + orphan;
+    for (const a of $$("#ovList [data-go]")) a.onclick = (e) => {
       e.preventDefault();
-      if (a.dataset.go === "drafts") { $("#drStatus").value = a.dataset.status; store.set("drStatus", a.dataset.status); }
+      if (a.dataset.go === "store") { $("#resBrand").innerHTML = `<option value="${esc(a.dataset.brand)}" selected></option>`; store.set("resBrand", a.dataset.brand); }
+      if (a.dataset.go === "posts") store.set("drBrand", a.dataset.brand);
       show(a.dataset.go);
     };
   }
+  $("#ovReload").onclick = loadOverview;
 
-  // ----- Thương hiệu: every brand of the Metricool account, with its skill -----
+  // ----- Cài đặt, Thương hiệu: every brand of the Metricool account, with its skill; Sửa opens social.json -----
   async function loadBrands() {
     $("#brandList").innerHTML = `<div class="meta">Đang chạy check-skill của từng skill…</div>`;
     const r = await getJson("/api/brands").catch(() => offline);
@@ -250,17 +288,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const s = b.skill;
       const tag = !b.skill_id ? ["Chưa có skill", "c-amber"] : !s ? ["Skill không thấy", "c-red"] : s.usable ? ["Sẵn sàng", "c-green"] : s.enabled ? ["Bật nhưng còn thiếu", "c-red"] : s.ready ? ["Đủ, đang tắt", ""] : ["Còn thiếu", "c-amber"];
       return `<div class="card ${s?.usable ? "ok" : "todo"}">
-        <h3>${esc(b.name)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>
+        <div class="head-row"><h3>${esc(b.name)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>${s ? `<button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button>` : ""}</div>
         <div class="meta">Kênh: ${esc((b.networks || []).join(", ") || "-")} · múi giờ Metricool ${esc(b.timezone || "-")}</div>
-        ${b.tz_conflict ? `<div class="warn-text">social.json metricool.timezone (${esc(s.metricool_timezone)}) khác múi giờ brand trong Metricool (${esc(b.timezone)}): sửa cho khớp.</div>` : ""}${b.tz_mismatch ? `<div class="meta">Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${esc(s.timezone)} (khách xem), ghi theo ${esc(b.timezone)}. Gọn hơn (không bắt buộc): đặt múi giờ brand trong Metricool = ${esc(s.timezone)}.</div>` : ""}
-        ${!b.skill_id ? `<div class="warn-text">Chưa có bộ skill: tạo bằng new-skill để chạy tự động.</div>` : !s ? `<div class="bad-text">Không thấy skill "${esc(b.skill_id)}" trong thư mục thương hiệu.</div>` : ""}
+        ${b.tz_conflict ? `<div class="warn-text">social.json metricool.timezone (${esc(s.metricool_timezone)}) khác múi giờ brand trong Metricool (${esc(b.timezone)}): sửa cho khớp.</div>` : ""}${b.tz_mismatch ? `<div class="meta">Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${esc(s.timezone)} (khách xem), ghi theo ${esc(b.timezone)}.</div>` : ""}
+        ${!b.skill_id ? `<div class="warn-text">Chưa có bộ skill: tool không đụng tới brand này.</div>` : !s ? `<div class="bad-text">Không thấy skill "${esc(b.skill_id)}" trong thư mục thương hiệu.</div>` : ""}
         ${s?.problems?.length ? `<ul class="missing">${s.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
-        ${s ? `<div class="row-actions"><button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button></div>` : ""}
       </div>`;
     };
-    const orphan = (m.skills_without_metricool || []).map((s) => `<div class="card todo"><h3>${esc(s.brand || s.id)} <span class="status-tag c-amber">Chưa có brand Metricool</span></h3>
-      <div class="meta">Skill ${esc(s.id)} chưa gắn với brand nào trong tài khoản Metricool (Cài đặt, Nâng cao).</div>
-      <div class="row-actions"><button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button></div></div>`).join("");
+    const orphan = (m.skills_without_metricool || []).map((s) => `<div class="card todo"><div class="head-row"><h3>${esc(s.brand || s.id)} <span class="status-tag c-amber">Chưa có brand Metricool</span></h3><button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button></div>
+      <div class="meta">Skill ${esc(s.id)} chưa gắn với brand nào trong tài khoản Metricool (Cài đặt tool, Nâng cao).</div></div>`).join("");
     $("#brandList").innerHTML = m.brands.map(mcard).join("") + orphan + (r.skipped || []).map((s) => `<div class="meta">Bỏ qua ${esc(s.dir)}: ${esc(s.reason)}</div>`).join("");
     for (const btn of $$("[data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
   }
@@ -273,7 +309,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   async function openBrand(id) {
     $("#brandMsg").textContent = "";
     const r = await getJson(`/api/brand?id=${encodeURIComponent(id)}`).catch(() => offline);
-    if (r.error) { $("#brandMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; show("brands"); return; }
+    if (r.error) { $("#brandMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; show("settings"); return; }
     editing = { id, social: r.social, file: r.file };
     rawMode = false;
     const s = r.social, pi = s.product_images || {}, rr = pi.reference_redraw || {};
@@ -304,7 +340,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     show("brand");
   }
   const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" value="${esc(x.time || "")}" placeholder="10:00" style="max-width:80px;flex:0 0 80px"><button class="btn" type="button" data-rm="1">Xoá</button></div>`;
-  $("#brandBack").onclick = () => show("brands");
+  $("#brandBack").onclick = () => show("settings");
   $("#brandSave").onclick = async () => {
     const msg = $("#brandMsg");
     let social;
@@ -326,69 +362,128 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { social }).catch(() => offline);
     if (r.error) msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`;
     else if (!r.saved) msg.innerHTML = `<span class="bad-text">Không lưu, đã trả lại bản cũ: ${esc((r.errors || []).join("; "))}</span>`;
-    else { msg.innerHTML = `<span class="ok-text">Đã lưu.${r.tool_ready ? " Sẵn sàng cho tool." : ` Còn thiếu ${(r.missing || []).length} mục.`}</span>`; editing.added = []; setTimeout(() => show("brands"), 900); }
+    else { msg.innerHTML = `<span class="ok-text">Đã lưu.${r.tool_ready ? " Sẵn sàng cho tool." : ` Còn thiếu ${(r.missing || []).length} mục.`}</span>`; editing.added = []; setTimeout(() => show("settings"), 900); }
   };
 
-  // ----- Nghiên cứu -----
-  async function loadResearch(brand = $("#resBrand").value || store.get("resBrand"), date = $("#resDate").value) {
-    const r = await getJson(`/api/runs?brand=${encodeURIComponent(brand || "")}&date=${encodeURIComponent(date || "")}`).catch(() => offline);
+  // ----- Nghiên cứu: the research store (kho) of each brand, kept apart per brand; "Bỏ" = never used for posts -----
+  const ITEM_TEXT = { new: "Mới", used: "Đã dùng", rejected: "Đã bỏ" };
+  const ITEM_COLOR = { new: "c-green", used: "", rejected: "c-red" };
+  const STATE_TEXT = { end: "hết trang", known: "tới bài đã có", since: "tới mốc ngày", limit: "đủ số bài", blocked: "bị chặn", partial: "dừng giữa chừng" };
+  let resShown = 60;
+  async function loadResearch() {
+    const brand = $("#resBrand").value || store.get("resBrand"), status = $("#resStatus").value, source = $("#resSource").value;
+    const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
-    $("#resBrand").innerHTML = `<option value="">Chọn…</option>` + r.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.id)} (${b.runs.length} lượt)</option>`).join("");
-    const runs = r.brands.find((b) => b.id === brand)?.runs || [];
-    $("#resDate").innerHTML = runs.map((d) => `<option${d === r.current?.date ? " selected" : ""}>${esc(d)}</option>`).join("");
-    if (!r.current) { $("#resBody").innerHTML = `<div class="meta">${brand ? "Thương hiệu này chưa có lượt nghiên cứu." : "Chọn thương hiệu."}</div>`; return; }
-    const c = r.current, bySource = {};
-    for (const ref of c.refs) (bySource[ref.source] ||= []).push(ref);
-    const sources = c.run.sources || [];
-    $("#resBody").innerHTML = `<div class="meta">Trạng thái: ${esc(c.run.status || "-")} · bắt đầu ${esc(c.run.started || "-")}</div>` +
-      (sources.length ? sources : Object.keys(bySource).map((id) => ({ id }))).map((s) => `
-        <fieldset><legend>${esc(s.name || s.id)}</legend>
-          <div class="refs">${(bySource[s.id] || []).map((ref) => `<div class="card ref"><img loading="lazy" src="${img(ref.image_path)}" alt="">
-            <div class="meta">${esc(ref.key)}${ref.main_product ? ` · ${esc(ref.main_product)}` : ""}${ref.price_seen ? ` · ${esc(ref.price_seen)}` : ""}${ref.post_url ? ` · <a href="${esc(ref.post_url)}" target="_blank" rel="noopener">Bài gốc</a>` : ""}</div>
-            <details><summary>Caption</summary><pre>${esc(ref.caption)}</pre></details></div>`).join("") || `<div class="meta">Chưa có bài (chưa ingest).</div>`}</div>
-        </fieldset>`).join("") +
-      `<fieldset><legend>Ý tưởng</legend>${c.ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Trạng thái</th><th>Sản phẩm</th><th>Cảnh</th><th>Góc</th></tr></thead><tbody>${c.ideas.map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc(i.angle)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">Chưa có ý tưởng.</div>`}</fieldset>`;
+    $("#resBrand").innerHTML = `<option value="">Chọn…</option>` + r.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)} (${b.counts.total} bài, ${b.counts.new} mới)</option>`).join("");
+    const c = r.current;
+    if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Chọn thương hiệu.</div>`; return; }
+    $("#resSource").innerHTML = `<option value="">Tất cả</option>` + c.sources.map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
+    const k = c.counts;
+    const prog = Object.entries(c.progress);
+    const progress = prog.length ? `<details><summary>Tiến độ crawl theo nguồn</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Nguồn</th><th>Lần cuối</th><th>Kết quả</th><th>Đã hết trang</th><th>Bài trong kho</th><th>Mới nhất</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} mới)</td><td>${p.reached_end ? "có" : "chưa"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
+    const list = c.items.slice(0, resShown);
+    $("#resBody").innerHTML = `<div class="meta">Kho ${esc(c.brand)}: ${k.total} bài · ${k.new} mới · ${k.used} đã dùng · ${k.rejected} đã bỏ. Đang hiện ${c.items.length} bài.</div>${progress}
+      <div class="refs" style="margin-top:8px">${list.map((it) => `<div class="card ref" data-id="${esc(it.id)}">
+        <button class="thumb" type="button" data-lb title="Xem ảnh lớn"><img loading="lazy" src="${img(it.image_paths[0])}" alt="">${it.image_paths.length > 1 ? `<span class="count">${it.image_paths.length} ảnh</span>` : ""}</button>
+        <div class="head"><span>${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>
+          <span class="acts">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Khôi phục</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Bỏ</button>` : ""}</span></div>
+        <div class="reject-box" hidden><input type="text" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-confirm>Bỏ</button></div>
+        <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · đăng ${esc(it.posted_date)}` : ""} · lấy ${esc(String(it.captured || "").slice(0, 10))}${it.post_url ? ` · <a href="${esc(it.post_url)}" target="_blank" rel="noopener">Bài gốc</a>` : ""}</div>
+        ${it.used_by?.length ? `<div class="meta">Dùng cho: ${esc(it.used_by.join(", "))}</div>` : ""}${it.note ? `<div class="meta">Lý do bỏ: ${esc(it.note)}</div>` : ""}
+        <details><summary>Caption</summary><pre>${esc(it.caption)}</pre></details></div>`).join("") || `<div class="meta">Không có bài nào ở bộ lọc này.</div>`}</div>
+      ${c.items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Xem thêm (${c.items.length - resShown})</button></div>` : ""}
+      <fieldset style="margin-top:12px"><legend>Ý tưởng từ kho</legend>${c.ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Bài kho</th><th>Trạng thái</th><th>Sản phẩm</th><th>Cảnh</th><th>Bản nháp</th></tr></thead><tbody>${c.ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc((i.drafts || []).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">Chưa có ý tưởng (chế độ "Làm bài & đưa lên").</div>`}</fieldset>`;
+    if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
+    for (const card of $$("#resBody .ref")) {
+      const it = c.items.find((x) => x.id === card.dataset.id);
+      $("[data-lb]", card).onclick = () => openLightbox(it.image_paths.map((p, i, a) => ({ type: "image", path: p, label: `${it.id}${a.length > 1 ? ` ${i + 1}/${a.length}` : ""}` })));
+      const setStatus = async (status, note = "") => {
+        const res = await postJson("/api/store-item", { brand: c.brand, id: it.id, status, note }).catch(() => offline);
+        if (res.error) { card.insertAdjacentHTML("beforeend", `<div class="bad-text">${esc(res.error)}</div>`); return; }
+        loadResearch();
+      };
+      if ($("[data-reject]", card)) $("[data-reject]", card).onclick = () => { const box = $(".reject-box", card); box.hidden = !box.hidden; if (!box.hidden) $("input", box).focus(); };
+      if ($("[data-confirm]", card)) $("[data-confirm]", card).onclick = () => setStatus("rejected", $(".reject-box input", card).value);
+      if ($("[data-restore]", card)) $("[data-restore]", card).onclick = () => setStatus("new");
+    }
   }
-  $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resDate").innerHTML = ""; loadResearch($("#resBrand").value, ""); };
-  $("#resDate").onchange = () => loadResearch($("#resBrand").value, $("#resDate").value);
+  $("#resStatus").value = store.get("resStatus") || "new";
+  $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; resShown = 60; loadResearch(); };
+  $("#resStatus").onchange = () => { store.set("resStatus", $("#resStatus").value); resShown = 60; loadResearch(); };
+  $("#resSource").onchange = () => { resShown = 60; loadResearch(); };
+  $("#resReload").onclick = () => loadResearch();
 
-  // ----- Bản nháp: image(s), captions (collapsed), Duyệt / Bỏ -----
-  const STATUS_TEXT = { awaiting_approval: "Chờ duyệt", approved: "Đã duyệt", rejected: "Đã bỏ", needs_prompt: "Chờ prompt", needs_caption: "Chờ caption", generating: "Đang tạo ảnh", image_failed: "Lỗi ảnh", preparing: "Đang chuẩn bị" };
-  const STATUS_COLOR = { awaiting_approval: "c-amber", approved: "c-green", rejected: "c-red", image_failed: "c-red" };
+  // ----- Prompt: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent), brand filled in -----
+  let promptData = { prompts: [], brands: [] };
+  const fillPrompt = (text, brand) => text.replace(/\{\{BRAND\}\}/g, brand || promptData.all_brands || "tất cả");
+  function drawPrompt() {
+    const modes = [...new Set(promptData.prompts.map((p) => p.mode))];
+    const mode = modes.includes($("#prMode").value) ? $("#prMode").value : modes.includes(store.get("prMode")) ? store.get("prMode") : modes[0];
+    $("#prMode").innerHTML = modes.map((m) => `<option${m === mode ? " selected" : ""}>${esc(m)}</option>`).join("");
+    const agents = promptData.prompts.filter((p) => p.mode === mode).map((p) => p.agent);
+    const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
+    $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
+    const brand = $("#prBrand").value || "";
+    $("#prBrand").innerHTML = `<option value="">Tất cả</option>` + promptData.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (đang tắt)"}</option>`).join("");
+    const p = promptData.prompts.find((x) => x.mode === mode && x.agent === agent);
+    $("#prText").value = p ? fillPrompt(p.text, brand) : "Không có prompt trong docs/scheduled-prompt.md.";
+  }
+  async function loadPrompts() {
+    const r = await getJson("/api/prompts").catch(() => offline);
+    if (r.error) { $("#prText").value = r.error; return; }
+    promptData = r;
+    drawPrompt();
+  }
+  $("#prMode").onchange = () => { store.set("prMode", $("#prMode").value); drawPrompt(); };
+  $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
+  $("#prBrand").onchange = drawPrompt;
+  $("#prCopy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
+    $("#prMsg").textContent = "Đã chép.";
+    setTimeout(() => { $("#prMsg").textContent = ""; }, 2000);
+  };
+
+  // ----- Bài đã tạo: image(s), status of the automatic checks, hosted image, Metricool; optional "Bỏ" before written -----
+  const STATUS_TEXT = { ready: "Qua kiểm tra", approved: "Đã ghi vào thương hiệu", check_failed: "Lỗi kiểm tra", rejected: "Đã bỏ", needs_prompt: "Chờ prompt", needs_caption: "Chờ caption", generating: "Đang tạo ảnh", image_failed: "Lỗi ảnh", preparing: "Đang chuẩn bị", awaiting_approval: "Bản cũ (trước khi bỏ bước duyệt)" };
+  const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "c-red", image_failed: "c-red", check_failed: "c-red" };
+  const GROUP = { written: (d) => !!d.brand_post, ready: (d) => d.status === "ready" && !d.brand_post, failed: (d) => ["check_failed", "image_failed"].includes(d.status), working: (d) => ["needs_prompt", "generating", "needs_caption", "preparing", "awaiting_approval"].includes(d.status), rejected: (d) => d.status === "rejected" };
+  const MC_COLOR = { draft: "c-amber", scheduled: "c-green", published: "c-green", error: "c-red" };
   async function loadDrafts() {
-    const r = await getJson(`/api/drafts?status=${encodeURIComponent($("#drStatus").value)}`).catch(() => offline);
+    const brand = store.get("drBrand"), group = $("#drStatus").value;
+    const r = await getJson(`/api/drafts?brand=${encodeURIComponent(brand || "")}`).catch(() => offline);
     if (r.error) { $("#draftList").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
-    $("#draftList").innerHTML = r.drafts.length ? r.drafts.map((d) => {
+    if (!brandData.brands.length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
+    $("#drBrand").innerHTML = `<option value="">Tất cả</option>` + brandData.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
+    const list = r.drafts.filter((d) => !group || GROUP[group]?.(d));
+    $("#draftList").innerHTML = list.length ? list.map((d) => {
       const caps = Object.entries(d.captions || {});
       const swap = d.image_mode === "scene-swap";
-      const waiting = d.status === "awaiting_approval";
-      return `<div class="card draft" data-id="${esc(d.id)}" data-brand="${esc(d.brand)}">
+      const bp = d.brand_post;
+      const canCancel = !bp && d.status !== "rejected";
+      return `<div class="card draft" data-id="${esc(d.id)}">
         <div class="thumbs">${d.image_exists ? `<button class="thumb" type="button" data-lb="0" title="Xem ảnh lớn"><img src="${img(d.image)}" alt="Ảnh mới"></button>` : `<div class="none">Chưa có ảnh</div>`}
           ${swap && d.reference_image ? `<button class="thumb orig" type="button" data-lb="${d.image_exists ? 1 : 0}" title="Ảnh gốc của shop"><img src="${img(d.reference_image)}" alt="Ảnh gốc"></button>` : ""}</div>
         <div class="body">
-          <div class="head"><h3>${esc(d.id)} <span class="status-tag ${STATUS_COLOR[d.status] || ""}">${esc(STATUS_TEXT[d.status] || d.status)}</span>${swap ? `<span class="status-tag">scene-swap</span>` : ""}</h3>
-            <div class="acts"><button class="btn" type="button" data-act="preview">Xem trước</button>${waiting ? `<button class="btn primary" type="button" data-act="approve">Duyệt</button><button class="btn" type="button" data-act="reject">Bỏ</button>` : ""}</div></div>
+          <div class="head"><h3>${esc(bp?.post ? `${bp.post} · ` : "")}${esc(d.id)} <span class="status-tag ${STATUS_COLOR[d.status] || ""}">${esc(STATUS_TEXT[d.status] || d.status)}</span>${bp ? `<span class="status-tag ${MC_COLOR[bp.metricool] || ""}">${esc(MC_TEXT[bp.metricool] || bp.metricool || "-")}</span>` : ""}${swap ? `<span class="status-tag">scene-swap</span>` : ""}</h3>
+            <div class="acts"><button class="btn" type="button" data-act="preview">Xem trước</button>${canCancel ? `<button class="btn" type="button" data-act="cancel">Bỏ</button>` : ""}</div></div>
           <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)} · ${esc((d.networks || []).join(", "))} · ${esc(d.idea)}</div>
-          ${swap && waiting ? `<div class="warn-text meta">Ảnh nhỏ góc phải là ảnh gốc của shop: ảnh mới không được còn tên shop, logo, watermark, nhãn size.</div>` : ""}
           ${d.problems?.length ? `<ul class="missing">${d.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
           ${d.error ? `<div class="bad-text">${esc(d.error)}</div>` : ""}
-          ${d.status === "rejected" ? `<div class="bad-text">Đã bỏ: ${esc(d.note)}</div>` : ""}
-          ${d.brand_post ? hostBlock(d) : ""}
-          ${waiting ? `<div class="reject-box" hidden><input class="note" placeholder="Lý do bỏ"><button class="btn" type="button" data-act="reject-go">Xác nhận bỏ</button></div>` : ""}
+          ${d.status === "rejected" ? `<div class="bad-text">Đã bỏ${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
+          ${bp ? hostBlock(d) + mcBlock(bp) : ""}
+          ${canCancel ? `<div class="reject-box" hidden><input class="note" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-act="cancel-go">Xác nhận bỏ</button></div>` : ""}
           <div class="msg"></div>
-          <details><summary>Caption (${caps.length}) và chi tiết</summary><div class="captions">${caps.map(([f, t]) => `<div class="cap"><div class="meta">${esc(f)}</div><pre>${esc(t)}</pre></div>`).join("") || `<div class="meta">Chưa có caption.</div>`}</div>
+          <details><summary>Caption đăng (${caps.length}) và chi tiết</summary><div class="captions">${caps.map(([f, t]) => `<div class="cap"><div class="meta">${esc(f)}</div><pre>${esc(t)}</pre></div>`).join("") || `<div class="meta">Chưa có caption.</div>`}</div>
             <div class="meta">${esc((d.languages || []).join(", "))} (${esc(d.language_mode || "-")})${d.inspiration_url ? ` · <a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">bài tham khảo</a>` : ""} · ${d.metadata_clean ? `metadata đã bỏ, điểm ảnh giữ nguyên: ${d.metadata_clean.pixels_identical ? "có" : "KHÔNG"}` : "chưa làm sạch metadata"}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}${swap ? ` · ${d.logo_check ? `đã xác nhận sạch logo (${esc(d.logo_check.by)})` : "chưa xác nhận sạch logo"}` : ""}</div>
-            <div class="meta">${esc(d.dir)}</div></details>
+            <div class="meta">${esc(d.dir)}${bp?.folder ? `<br>${esc(bp.folder)}` : ""}</div></details>
         </div>
       </div>`;
-    }).join("") : `<div class="meta">Không có bản nháp nào.</div>`;
+    }).join("") : `<div class="meta">Không có bài nào.</div>`;
     const byId = Object.fromEntries(r.drafts.map((d) => [d.id, d]));
     for (const card of $$("#draftList .draft")) {
       const d = byId[card.dataset.id];
-      for (const btn of $$("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? openPreview(d) : decide(card, btn.dataset.act));
+      for (const btn of $$("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? openPreview(d) : cancelDraft(card, btn.dataset.act));
       for (const t of $$("[data-lb]", card)) t.onclick = () => openLightbox(mediaOf(d), Number(t.dataset.lb));
-      const host = $("[data-host]", card);
-      if (host) host.onclick = () => hostImage(card, host);
     }
   }
   // The draft's media for the lightbox: the post's own images/videos ("Ảnh mới"), then the shop's original (scene-swap).
@@ -508,86 +603,63 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     };
     draw(0);
   }
+  // Hosted image link (hosting runs automatically after the post is written into the brand; no button here).
   function hostBlock(d) {
-    const u = d.brand_post?.media_url;
+    const bp = d.brand_post, u = [].concat(bp?.media_url || [])[0];
     if (u) return `<div class="host"><span class="muted">Link ảnh:</span><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a><button class="btn copy-link" type="button" data-copy="${esc(u)}">Chép</button></div>`;
-    if (d.status !== "approved") return "";
-    if (d.image_host?.pending) return `<div class="host"><span class="muted">Đang đưa ảnh lên…</span></div>`;
-    const err = d.image_host && !d.image_host.ok && d.image_host.error ? `<span class="warn-text">${esc(d.image_host.error)}</span>` : "";
-    return `<div class="host"><span class="muted">Chưa có link ảnh</span>${err}<button class="btn primary" type="button" data-host="1">Đưa ảnh lên</button></div>`;
+    return `<div class="host"><span class="muted">${esc(bp?.image_link || "Chưa có link ảnh")}</span>${bp?.host_error ? `<span class="warn-text">${esc(bp.host_error)}</span>` : ""}</div>`;
   }
-  async function hostImage(card, btn) {
-    const msg = $(".msg", card);
-    btn.disabled = true;
-    msg.textContent = "Đang đưa ảnh lên và chờ link mở được (có thể mất vài phút)…";
-    const r = await postJson("/api/host-image", { id: card.dataset.id }).catch(() => offline);
-    if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; btn.disabled = false; return; }
-    msg.innerHTML = r.pending ? `<span>Đang đưa ảnh lên… app tự cập nhật khi xong.</span>` : `<span class="ok-text">Đã có link ảnh.</span>`;
-    setTimeout(loadDrafts, 4000);
+  // Metricool: what metricool-mcp.mjs record wrote (draft or scheduled, time, planner link).
+  function mcBlock(bp) {
+    if (!bp.metricool_sent?.length) return "";
+    return `<div class="host">${bp.metricool_sent.map((m) => `<span class="muted">${esc(m.network)}:</span> ${m.draft ? "nháp" : "hẹn giờ"} ${esc(m.publication || "")} ${esc(m.timezone || "")}${m.planner_url ? ` <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">mở trong Metricool</a>` : ""}`).join(" · ")}</div>`;
   }
   document.addEventListener("click", async (e) => {
     const b = e.target.closest(".copy-link");
     if (!b) return;
     try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Đã chép"; setTimeout(() => { b.textContent = "Chép"; }, 1500); } catch {}
   });
-  async function decide(card, act) {
+  // Optional "Bỏ" of a post before it is written into the brand (finalize.mjs cancel); nothing waits for it.
+  async function cancelDraft(card, act) {
     const msg = $(".msg", card), box = $(".reject-box", card);
-    if (act === "reject") { box.hidden = false; $(".note", card).focus(); return; }
-    const id = act === "approve" ? "approve" : "reject";
-    // The reject reason is only ever sent with Bỏ, never as an approval note.
-    const note = id === "reject" ? ($(".note", card)?.value.trim() || "") : "";
-    if (id === "reject" && !note) { msg.innerHTML = `<span class="bad-text">Nhập lý do bỏ.</span>`; return; }
+    if (act === "cancel") { box.hidden = !box.hidden; if (!box.hidden) $(".note", card).focus(); return; }
     for (const b of $$("[data-act]", card)) b.disabled = true;
-    msg.textContent = id === "approve" ? "Đang duyệt và ghi vào thương hiệu…" : "Đang bỏ…";
-    const r = await postJson(`/api/${id}`, { id: card.dataset.id, note }).catch(() => offline);
+    const r = await postJson("/api/cancel", { id: card.dataset.id, note: $(".note", card)?.value.trim() || "" }).catch(() => offline);
     if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; for (const b of $$("[data-act]", card)) b.disabled = false; return; }
-    const ce = r.check_post?.errors;
-    const host = r.image_host ? (r.image_host.ok ? " · đã có link ảnh" : r.image_host.pending ? " · đang đưa ảnh lên…" : `</span><br><span class="warn-text">Chưa có link ảnh: ${esc(r.image_host.error)} (bấm "Đưa ảnh lên" để thử lại)`) : "";
-    msg.innerHTML = id === "approve" ? `<span class="ok-text">Đã duyệt: ${esc(r.brand_post?.id)}${ce ? ` · check-post: ${ce} lỗi` : ""}${host}</span>` : `<span>Đã bỏ.</span>`;
-    setTimeout(loadDrafts, 1500);
+    loadDrafts();
   }
-  try { localStorage.removeItem("approver"); } catch {} // no named approver any more: drop the old remembered name
-  $("#drStatus").value = store.get("drStatus") || "awaiting_approval";
+  $("#drStatus").value = store.get("drStatus") || "";
   $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
+  $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
   $("#drReload").onclick = loadDrafts;
 
-  // ----- Cài đặt: a read-only summary; "Sửa" opens the form -----
+  // ----- Cài đặt: brands (skill status, Sửa social.json) + tool settings (summary; "Sửa" opens the form) -----
   let mbText = "";
   async function loadSettings() {
     const [r, mb] = await Promise.all([getJson("/api/settings"), getJson("/api/metricool-brands")]).catch(() => [offline, {}]);
     if (r.error) { $("#settingsMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; return; }
-    const s = r.settings, a = s.approval || {};
+    const s = r.settings, dd = s.research.dedupe || {};
     const yes = (v) => (v ? "có" : "không");
+    const mode = s.metricool?.default_mode === "schedule" ? "hẹn giờ thật" : "nháp (không tự đăng)";
     $("#settingsView").innerHTML = `<dl class="kv">
-      <dt>Nghiên cứu</dt><dd>${esc(s.research.max_sources_per_run)} nguồn/lượt · ${esc(s.research.max_posts_per_source)} bài/nguồn · ${esc(s.research.max_posts_per_day_all_brands)} bài/ngày (mọi thương hiệu) · nghỉ ${esc(s.research.delay_seconds.join("–"))} giây</dd>
-      <dt>Luật duyệt</dt><dd>${Object.entries(a).map(([k, v]) => `${esc(k)}: ${yes(v)}`).join(" · ")}</dd>
+      <dt>Nghiên cứu</dt><dd>nghỉ ${esc(s.research.delay_seconds.join("–"))} giây giữa thao tác · bỏ trùng ảnh khi khác ≤ ${esc(dd.image_distance ?? 20)}/256 bit, caption giống ≥ ${Math.round((dd.caption_similarity ?? 0.9) * 100)}%</dd>
+      <dt>Gửi Metricool</dt><dd>mặc định ${mode}</dd>
       <dt>Codex</dt><dd>chờ tối đa ${esc(s.codex.timeout_minutes)} phút</dd>
-      <dt>Host ảnh</dt><dd>${s.imageHost ? `tự đưa ảnh lên sau khi duyệt: ${yes(s.imageHost.auto_after_writeback !== false)}` : "chưa cấu hình"}</dd>
-      <dt>Metricool</dt><dd>${(mb.brands || []).length} brand (${esc((mb.brands || []).map((b) => b.name).join(", "))})</dd></dl>
-      <details><summary>Đường dẫn và prompt cho lịch chạy</summary>
-        <div class="meta">Thư mục thương hiệu: ${esc(r.skillsRootResolved)}</div><div class="meta">Repo ảnh: ${esc(s.imageHost?.path || "-")}</div>
-        <textarea class="prompt" id="schedPrompt" readonly>${esc(r.scheduledPrompt)}</textarea>
-        <div class="row-actions"><button class="btn" type="button" id="copyPrompt">Chép prompt</button><span class="meta" id="copyMsg"></span></div></details>`;
-    $("#copyPrompt").onclick = async () => {
-      try { await navigator.clipboard.writeText($("#schedPrompt").value); } catch { $("#schedPrompt").select(); document.execCommand("copy"); }
-      $("#copyMsg").textContent = "Đã chép.";
-      setTimeout(() => { $("#copyMsg").textContent = ""; }, 2000);
-    };
-    const num = (k, v, label) => `<div><label>${esc(label)}</label><input type="number" min="0" data-s="${k}" value="${esc(v)}"></div>`;
+      <dt>Host ảnh</dt><dd>${s.imageHost ? `tự đưa ảnh lên ngay sau khi ghi vào thương hiệu: ${yes(s.imageHost.auto_after_writeback !== false)}` : "chưa cấu hình"}</dd>
+      <dt>Metricool</dt><dd>${(mb.brands || []).length} brand (${esc((mb.brands || []).map((b) => b.name).join(", "))})</dd>
+      <dt>Đường dẫn</dt><dd class="meta">thương hiệu: ${esc(r.skillsRootResolved)} · repo ảnh: ${esc(s.imageHost?.path || "-")}</dd></dl>`;
+    const num = (k, v, label, step = "1") => `<div><label>${esc(label)}</label><input type="number" min="0" step="${step}" data-s="${k}" value="${esc(v)}"></div>`;
     mbText = JSON.stringify(mb, null, 2);
     $("#settingsForm").innerHTML = `
-      ${num("research.max_sources_per_run", s.research.max_sources_per_run, "Nguồn tối đa mỗi lượt")}
-      ${num("research.max_posts_per_source", s.research.max_posts_per_source, "Bài tối đa mỗi nguồn")}
-      ${num("research.max_posts_per_day_all_brands", s.research.max_posts_per_day_all_brands, "Bài tối đa mỗi ngày, mọi thương hiệu")}
       ${num("research.delay_seconds.0", s.research.delay_seconds[0], "Nghỉ tối thiểu (giây)")}
       ${num("research.delay_seconds.1", s.research.delay_seconds[1], "Nghỉ tối đa (giây)")}
+      <div><label>Gửi Metricool mặc định</label><select data-s="metricool.default_mode"><option value="draft"${s.metricool?.default_mode !== "schedule" ? " selected" : ""}>Nháp (không tự đăng)</option><option value="schedule"${s.metricool?.default_mode === "schedule" ? " selected" : ""}>Hẹn giờ thật</option></select></div>
       ${num("codex.timeout_minutes", s.codex.timeout_minutes, "Codex chờ tối đa (phút)")}
-      <div style="grid-column:1/-1" class="meta">Luật duyệt chỉ xem, không đổi trong app: ${Object.entries(a).map(([k, v]) => `${esc(k)}: ${v ? "có" : "không"}`).join(" · ")}</div>
-      ${s.imageHost ? `<div style="grid-column:1/-1" class="inline"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> tự đưa ảnh lên ngay sau khi duyệt</label></div>` : ""}
+      ${s.imageHost ? `<div style="grid-column:1/-1" class="inline"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> tự đưa ảnh lên ngay sau khi ghi vào thương hiệu</label></div>` : ""}
       <details style="grid-column:1/-1"><summary>Nâng cao (đường dẫn, lệnh, brand Metricool)</summary>
         <div class="grid2"><div style="grid-column:1/-1"><label>Thư mục thương hiệu (skillsRoot)</label><input data-s="skillsRoot" value="${esc(s.skillsRoot)}"></div>
         <div><label>Lệnh Codex</label><input data-s="codex.command" value="${esc(s.codex.command)}"></div>
-        <div><label>Lệnh ffmpeg (chỉ cho watermark)</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
+        <div><label>Lệnh ffmpeg (watermark, đọc ảnh WebP khi bỏ trùng)</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
         <div style="grid-column:1/-1"><label>Script làm sạch metadata (remove-watermark-skill)</label><input data-s="remove_watermark.script" value="${esc(s.remove_watermark?.script || "")}"></div>
         ${s.imageHost ? `<div style="grid-column:1/-1"><label>Repo ảnh (imageHost.path)</label><input data-s="imageHost.path" value="${esc(s.imageHost.path || "")}"></div>
         <div style="grid-column:1/-1"><label>Gốc link công khai (imageHost.rawBase, https)</label><input data-s="imageHost.rawBase" value="${esc(s.imageHost.rawBase || "")}"></div>` : ""}
@@ -595,7 +667,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Sửa" : "Đóng"; };
   $("#settingsSave").onclick = async () => {
-    const out = { research: { delay_seconds: [] }, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
+    const out = { research: { delay_seconds: [] }, metricool: {}, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
     for (const el of $$("#settingsForm [data-s]")) {
       const parts = el.dataset.s.split(".");
       const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
@@ -612,7 +684,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!err) { $("#settingsEditor").hidden = true; $("#settingsEdit").textContent = "Sửa"; loadSettings(); }
   };
 
-  show(store.get("page") || "drafts");
+  show(store.get("page") || "overview");
 })();
 </script>
 </body>

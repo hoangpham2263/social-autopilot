@@ -1,23 +1,23 @@
 // Social Autopilot's window (ui/) served on localhost, on macOS and Windows alike. A thin layer over scripts/: every
-// read and write goes through the same functions the scheduled agent runs (scripts/*.mjs), so the UI has no workflow
+// read and write goes through the same functions the agents run (scripts/*.mjs), so the UI has no workflow
 // logic of its own. core/launch.ps1 starts this file with --no-open and finds it by /api/root; each install gets its own
 // port from its folder (47000 + hash), SA_PORT overrides.
 import { createServer } from "node:http";
 import { spawn, execFile } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, statSync, renameSync, appendFileSync, createReadStream, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, statSync, renameSync, appendFileSync, createReadStream } from "node:fs";
 import { join, dirname, extname, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { Worker } from "node:worker_threads";
+import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
-import { workspace, discoverBrands, listDrafts, findDraft, withLock, writeJson, stamp, latestRun, runDir, readJson, loadRefs, rawSettings, saveSettings, settings, toolRoot, cleanText, brandOverview, metricoolBrands, saveMetricoolBrands } from "../scripts/lib.mjs";
+import { workspace, discoverBrands, listDrafts, readJson, rawSettings, saveSettings, settings, brandOverview, metricoolBrands, saveMetricoolBrands } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
-import { approve, reject } from "../scripts/approve.mjs";
+import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial } from "../scripts/social.mjs";
-import { queueReport } from "../scripts/queue.mjs";
-import { hostConfig, hostAfterWriteback } from "../scripts/host-image.mjs";
+import { queueReport, writtenPost } from "../scripts/queue.mjs";
+import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile } from "../scripts/store.mjs";
+import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -46,32 +46,20 @@ const q = (p) => p.replace(/'/g, "''");
 const pwshOut = (command, timeout) => new Promise((done, fail) => execFile(PWSH, psCommand(command), { cwd: root, env: toolEnv, timeout, windowsHide: true }, (err, out) => (err ? fail(err) : done(String(out).trim()))));
 
 // ----- data for the pages (all from scripts/) -----
-function runsOf(brand) {
-  const dir = join(workspace, "runs", brand);
-  return existsSync(dir) ? readdirSync(dir).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse() : [];
-}
-function runData(brand, date) {
-  const dir = runDir(brand, date);
-  const run = readJson(join(dir, "run.json"), {});
-  const refs = loadRefs(brand, date).map((r) => ({ ...r, image_path: join(dir, r.image) }));
-  const ideas = readJson(join(dir, "ideas.json"), { ideas: [] }).ideas;
-  return { brand, date, dir, run, refs, ideas };
-}
-// media_url of an approved post (host-image.mjs) from its brand catalog, read fresh on every request.
-function mediaUrl(bp) {
-  if (!bp?.catalog) return "";
-  try { return readJson(bp.catalog).posts.find((p) => p.id === bp.id)?.media_url || ""; } catch { return ""; }
-}
 function draftsData(brand, status) {
   return listDrafts(brand || undefined).filter((d) => !status || d.status.status === status).map((d) => ({
     ...summary(d), image_exists: existsSync(join(d.dir, "image.png")), languages: d.draft.languages, language_mode: d.draft.language_mode,
     inspiration_url: d.draft.inspiration.post_url || d.draft.inspiration.source_url, product_image: d.draft.product_image,
-    created: d.draft.created, by: d.status.by || "", image_host: d.status.image_host || null, brand_post: d.status.brand_post ? { ...d.status.brand_post, media_url: mediaUrl(d.status.brand_post) } : null, error: d.status.error || "", metadata_clean: d.status.metadata_clean || null, watermark: d.status.watermark || null, preview: previewOf(d),
+    created: d.draft.created, by: d.status.by || "", image_host: d.status.image_host || null, brand_post: d.status.brand_post ? { ...d.status.brand_post, ...writtenPost(d) } : null, error: d.status.error || "", metadata_clean: d.status.metadata_clean || null, watermark: d.status.watermark || null, preview: previewOf(d),
   })).sort((a, b) => String(b.created).localeCompare(String(a.created)));
 }
-function scheduledPrompt() {
-  const md = readFileSync(join(toolRoot, "docs", "scheduled-prompt.md"), "utf8");
-  return md.match(/```text\r?\n([\s\S]*?)```/)?.[1].trim() || md;
+// The research store (kho) of one brand for the Nghiên cứu tab: items (newest first), counts, crawl progress, ideas.
+function storeData(brand, status, source) {
+  const r = listItems(brand, { status, source });
+  const dir = storeDir(brand);
+  const items = r.items.slice().reverse().map((i) => ({ ...i, image_paths: i.images.map((f) => join(dir, f)) }));
+  const ideas = readJson(storeIdeasFile(brand), { ideas: [] }).ideas;
+  return { brand, dir, counts: r.counts, sources: r.sources, progress: readProgress(brand).sources || {}, items, ideas };
 }
 
 // ----- HTTP -----
@@ -139,49 +127,9 @@ const allowedFile = (p) => { const full = resolve(p); return full.startsWith(wor
 function restart() {
   const out = openSync(logFile("server.log"), "a");
   spawn(process.execPath, [join(here, "server.mjs"), "--no-open"], { cwd: root, detached: true, windowsHide: true, stdio: ["ignore", out, out], env: { ...process.env, SA_WAIT_PORT: "1" } }).unref();
-  setTimeout(() => afterJobs(() => process.exit(0)), 300);
+  setTimeout(() => process.exit(0), 300);
 }
 
-// ----- image hosting off the request: git pull/commit/push and the wait for the GitHub Pages link take seconds to
-// minutes, so they run in a worker thread of this process (no child Node, no window; the server keeps answering). The
-// draft's status.json image_host says pending at once; the worker records the outcome there (host-image.mjs) and the
-// window shows it on its next reload. One job per draft at a time; quit/reload wait for running jobs.
-const HOST_WORKER = new URL("data:text/javascript," + encodeURIComponent(`
-import { workerData } from "node:worker_threads";
-const { hostAfterWriteback, publish } = await import(workerData.host);
-const { findDraft, withLock, readJson, writeJson, stamp } = await import(workerData.lib);
-const { mode, result, input, id } = workerData;
-const record = (host) => {
-  const file = findDraft(id).dir + "/status.json";
-  withLock(file, () => writeJson(file, { ...readJson(file, {}), image_host: { ok: !!host.ok, at: stamp(), ...(host.url ? { url: host.url } : {}), ...(host.ok ? {} : { error: host.error || "", next: host.next || "" }) }, updated: stamp() }));
-};
-if (mode === "after") { const h = await hostAfterWriteback(result); await h?.promise; }
-else { try { record({ ok: true, ...(await publish(input)) }); } catch (e) { record({ ok: false, error: e.message, next: "node scripts/host-image.mjs publish --brand " + input.brand + " --post " + input.post }); } }
-`));
-const HOST_MODULES = { host: pathToFileURL(join(root, "scripts", "host-image.mjs")).href, lib: pathToFileURL(join(root, "scripts", "lib.mjs")).href };
-const PENDING = "Đang đưa ảnh lên và chờ link mở được; tải lại sau ít phút.";
-const hostJobs = new Map();
-const setImageHost = (id, image_host) => {
-  const file = join(findDraft(id).dir, "status.json");
-  withLock(file, () => writeJson(file, { ...readJson(file, {}), image_host: { ...image_host, at: stamp() }, updated: stamp() }));
-};
-function hostInBackground(id, data) {
-  const pending = { ok: false, pending: true, background: true, error: PENDING };
-  if (hostJobs.has(id)) return pending;
-  setImageHost(id, { ok: false, pending: true, error: PENDING });
-  const job = new Promise((done) => {
-    const w = new Worker(HOST_WORKER, { workerData: { ...HOST_MODULES, id, ...data } });
-    w.on("error", (e) => {
-      logError(`Đưa ảnh lên (${id})`, e?.stack || e);
-      try { setImageHost(id, { ok: false, error: e.message }); } catch {}
-    });
-    w.on("exit", done);
-  }).finally(() => hostJobs.delete(id));
-  hostJobs.set(id, job);
-  return pending;
-}
-// Quit/reload: running hosting jobs finish first (at most 5 minutes), so no git push is cut halfway.
-const afterJobs = (fn) => Promise.race([Promise.allSettled([...hostJobs.values()]), new Promise((r) => setTimeout(r, 5 * 60000))]).then(fn);
 
 // A page's request: a function from scripts/ that may throw; its message goes back as { error }.
 const api = async (res, fn) => { try { send(res, 200, await fn()); } catch (e) { send(res, 400, { error: e.message }); } };
@@ -219,46 +167,31 @@ async function handle(req, res) {
     if (!isObject(b.social)) throw new Error("Thiếu nội dung social.json (social phải là một object JSON).");
     return saveSocial(get("id"), b.social);
   });
-  if (path === "/api/runs") return api(res, () => {
-    const ids = discovered().brands.map((b) => b.id);
-    const brand = get("brand"), date = get("date");
-    if (brand && !ids.includes(brand)) throw new Error(`Không có thương hiệu "${brand}".`);
-    if (date && !/^d{4}-d{2}-d{2}$/.test(date)) throw new Error("Ngày không hợp lệ (cần dạng YYYY-MM-DD).");
-    const day = date || (brand ? latestRun(brand) : "");
-    return { brands: ids.map((id) => ({ id, runs: runsOf(id) })), current: brand && day ? runData(brand, day) : null };
+  if (path === "/api/store" && req.method === "GET") return api(res, () => {
+    const brands = discovered().brands;
+    const brand = get("brand"), status = get("status"), source = get("source");
+    if (brand && !brands.some((b) => b.id === brand)) throw new Error(`Không có thương hiệu "${brand}".`);
+    if (source && !/^[a-z0-9][a-z0-9-]*$/.test(source)) throw new Error("Nguồn không hợp lệ.");
+    return { brands: brands.map((b) => ({ id: b.id, name: b.brand, counts: listItems(b.id).counts })), current: brand ? storeData(brand, status, source) : null };
   });
+  // "Bỏ" a store item (rejected: never picked for ideas) or "Khôi phục" (back to new): same as store.mjs reject/restore.
+  if (path === "/api/store-item" && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    const brand = String(b.brand ?? ""), id = String(b.id ?? "");
+    if (!discovered().brands.some((x) => x.id === brand)) throw new Error(`Không có thương hiệu "${brand}".`);
+    if (!/^S\d{4,}$/.test(id)) throw new Error("Mã bài trong kho không hợp lệ (dạng S0001).");
+    return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
+  });
+  // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable })) }));
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
-  // Approve = the same as approve.mjs approve: write-back in this process, then the image goes to the image host in
-  // the background (image_host pending in the answer and in status.json; the outcome lands in status.json).
-  if (path === "/api/approve" && req.method === "POST") return api(res, async () => {
+  // Optional "Bỏ" of a generated post before it is written into the brand (finalize.mjs cancel). Nothing waits for it.
+  if (path === "/api/cancel" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
-    // No named approver: the app's user approves ("user" unless a name is sent).
-    const id = draftId(b), by = String(b.by ?? "").trim() || "user";
-    const r = approve({ id, by, note: String(b.note ?? "") });
-    if (!r?.brand_post?.id || r.reused) return r;
-    let h;
-    try { h = hostConfig(); } catch { return { ...r, image_host: await hostAfterWriteback(r) }; } // records the settings error; no git runs
-    if (!h.auto) return r;
-    return { ...r, image_host: hostInBackground(r.id || id, { mode: "after", result: r }) };
+    return cancel({ id: draftId(b), note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" });
   });
-  // "Đưa ảnh lên": host-image.mjs publish for an approved draft's brand post (it refuses anything not approved), in the
-  // background like an approval: the answer says pending at once.
-  if (path === "/api/host-image" && req.method === "POST") return api(res, async () => {
-    const id = draftId(await body(req));
-    const d = listDrafts().find((x) => x.id === id);
-    if (!d) throw new Error(`Không có bản nháp ${id}.`);
-    if (d.status.status !== "approved" || !d.status.brand_post?.id) throw new Error("Chỉ đưa ảnh lên cho bài đã duyệt và đã ghi vào thương hiệu.");
-    hostConfig(); // a settings problem is answered now, not later in the background
-    return { id, pending: true, image_host: hostInBackground(id, { mode: "publish", input: { brand: d.draft.brand, post: d.status.brand_post.id } }) };
-  });
-  if (path === "/api/reject" && req.method === "POST") return api(res, async () => {
-    const b = await body(req);
-    const id = draftId(b);
-    if (!String(b.note ?? "").trim()) throw new Error("Từ chối cần lý do.");
-    return reject({ id, by: String(b.by ?? "").trim() || "user", note: String(b.note) });
-  });
-  if (path === "/api/settings" && req.method === "GET") return api(res, () => ({ settings: rawSettings(), skillsRootResolved: settings().skillsRoot, scheduledPrompt: scheduledPrompt() }));
+  if (path === "/api/settings" && req.method === "GET") return api(res, () => ({ settings: rawSettings(), skillsRootResolved: settings().skillsRoot }));
   if (path === "/api/settings" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
     if (!isObject(b.settings)) throw new Error("Thiếu cài đặt (settings phải là một object JSON).");
@@ -280,9 +213,9 @@ async function handle(req, res) {
     return;
   }
   if (path === "/api/reload" && req.method === "POST") { send(res, 200, { ok: true }); setTimeout(() => { server.close(); restart(); }, 300); return; }
-  // The scheduled agent does the runs; closing the window stops the server once any image hosting has finished.
+  // The agents do the work (prompts); the app only shows and manages. Closing the window stops the server.
   if (path === "/api/run") return send(res, 200, { running: false });
-  if (path === "/api/quit" && req.method === "POST") { send(res, 200, { ok: true }); setTimeout(() => { server.close(); afterJobs(() => process.exit(0)); }, 200); return; }
+  if (path === "/api/quit" && req.method === "POST") { send(res, 200, { ok: true }); setTimeout(() => { server.close(); process.exit(0); }, 200); return; }
   if (path === "/icon.svg") return sendFile(res, join(root, "icon.svg"));
   const asset = /^\/core\/assets\/([\w.-]+)$/.exec(path);
   if (asset) return CORE_ASSETS.includes(asset[1]) ? sendFile(res, join(root, "core", "assets", asset[1])) : (res.writeHead(404), res.end());
