@@ -512,7 +512,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const u = d.brand_post?.media_url;
     if (u) return `<div class="host"><span class="muted">Link ảnh:</span><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a><button class="btn copy-link" type="button" data-copy="${esc(u)}">Chép</button></div>`;
     if (d.status !== "approved") return "";
-    return `<div class="host"><span class="muted">Chưa có link ảnh</span><button class="btn primary" type="button" data-host="1">Đưa ảnh lên</button></div>`;
+    if (d.image_host?.pending) return `<div class="host"><span class="muted">Đang đưa ảnh lên…</span></div>`;
+    const err = d.image_host && !d.image_host.ok && d.image_host.error ? `<span class="warn-text">${esc(d.image_host.error)}</span>` : "";
+    return `<div class="host"><span class="muted">Chưa có link ảnh</span>${err}<button class="btn primary" type="button" data-host="1">Đưa ảnh lên</button></div>`;
   }
   async function hostImage(card, btn) {
     const msg = $(".msg", card);
@@ -520,8 +522,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     msg.textContent = "Đang đưa ảnh lên và chờ link mở được (có thể mất vài phút)…";
     const r = await postJson("/api/host-image", { id: card.dataset.id }).catch(() => offline);
     if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; btn.disabled = false; return; }
-    msg.innerHTML = `<span class="ok-text">Đã có link ảnh.${r.check_post?.errors ? ` check-post: ${r.check_post.errors} lỗi` : ""}</span>`;
-    setTimeout(loadDrafts, 1200);
+    msg.innerHTML = r.pending ? `<span>Đang đưa ảnh lên… app tự cập nhật khi xong.</span>` : `<span class="ok-text">Đã có link ảnh.</span>`;
+    setTimeout(loadDrafts, 4000);
   }
   document.addEventListener("click", async (e) => {
     const b = e.target.closest(".copy-link");
@@ -540,7 +542,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const r = await postJson(`/api/${id}`, { id: card.dataset.id, note }).catch(() => offline);
     if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; for (const b of $$("[data-act]", card)) b.disabled = false; return; }
     const ce = r.check_post?.errors;
-    const host = r.image_host ? (r.image_host.ok ? " · đã có link ảnh" : `</span><br><span class="warn-text">Chưa có link ảnh: ${esc(r.image_host.error)} (bấm "Đưa ảnh lên" để thử lại)`) : "";
+    const host = r.image_host ? (r.image_host.ok ? " · đã có link ảnh" : r.image_host.pending ? " · đang đưa ảnh lên…" : `</span><br><span class="warn-text">Chưa có link ảnh: ${esc(r.image_host.error)} (bấm "Đưa ảnh lên" để thử lại)`) : "";
     msg.innerHTML = id === "approve" ? `<span class="ok-text">Đã duyệt: ${esc(r.brand_post?.id)}${ce ? ` · check-post: ${ce} lỗi` : ""}${host}</span>` : `<span>Đã bỏ.</span>`;
     setTimeout(loadDrafts, 1500);
   }
