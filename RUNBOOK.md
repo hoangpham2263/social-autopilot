@@ -93,7 +93,7 @@ Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp, 
 
 ### Bước 5b. Host ảnh (sau khi duyệt)
 
-Metricool lấy ảnh qua link công khai, nên ảnh của bài **đã duyệt** được đẩy lên repo công khai `C:hoangpqsocial-autopilot-sources` (settings `imageHost`, `type: "github-repo"`). `approve` / `writeback` tự chạy bước này ngay sau khi ghi vào thương hiệu (`imageHost.auto_after_writeback`); kết quả nằm trong `image_host` của JSON. Chạy tay hoặc chạy lại:
+Metricool lấy ảnh qua link công khai, nên ảnh của bài **đã duyệt** được đẩy lên repo công khai `C:\hoangpq\social-autopilot-sources` (settings `imageHost`, `type: "github-repo"`). `approve` / `writeback` tự chạy bước này ngay sau khi ghi vào thương hiệu (`imageHost.auto_after_writeback`); kết quả nằm trong `image_host` của JSON. Chạy tay hoặc chạy lại:
 ```
 node scripts/host-image.mjs publish --brand <id> --post POST-xx
 ```
@@ -101,10 +101,10 @@ node scripts/host-image.mjs publish --brand <id> --post POST-xx
 - Kiểm lại ảnh không còn metadata (`image-clean` + `clean-image.mjs --check` của skill), chép vào `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "`<brand> <post-id>`", push, chờ link raw trả HTTP 200 đúng nội dung (thử lại vài lần vì GitHub raw chậm), rồi ghi `media_url` vào mục catalog của bài và chạy `check-post.mjs`.
 - `image_host.ok: false` không huỷ việc duyệt: ghi lỗi vào báo cáo, chạy lại lệnh trong `image_host.next` sau vài phút.
 - Trong app: bài đã duyệt hiện link ảnh, hoặc "chưa có link" và nút "Đưa ảnh lên" (cùng lệnh publish).
-- Khi Metricool đã lưu bản riêng của ảnh, có thể gỡ file: `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`).
+- Chỉ gỡ file sau khi bài đã đăng (Metricool không chép ảnh ngoài; bài vẫn trỏ về link raw, gỡ sớm là mất ảnh): `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`). Không gỡ ngay sau khi nhập CSV.
 - Chỉ đẩy file lên repo ảnh; không đăng, không gửi gì tới Metricool hay mạng xã hội.
 
-**Publish (later: Metricool)**: chưa làm. Không đăng, không hẹn giờ ở đâu.
+**Metricool**: chưa gửi gì; chỉ có phụ lục CSV bên dưới (người nhập thủ công). Không đăng, không hẹn giờ ở đâu.
 
 ## Bước 6. Báo cáo
 
@@ -133,4 +133,4 @@ node scripts/metricool-csv.mjs validate <file.csv> [--brand <id>] [--allow-today
 - Chỉ bài `approved` có `media_url` (chuỗi hoặc mảng, tối đa 10) hoặc `video_url`. Đúng 99 cột theo `docs/metricool-csv-template.csv`. Không ghi vào thư mục thương hiệu, không gửi gì tới Metricool.
 - `Brand name` = `social.json metricool.brand_name` (nhãn đúng trong Metricool, vd `Dreamy Vows`); giờ theo `metricool.timezone` (timezone của brand trong Metricool), giờ lấy từ catalog `schedule {date, time}`, `--date/--time`, hoặc `cadence.slots`.
 - `validate` báo lỗi theo từng dòng và exit 1 khi có bất kỳ lỗi nào (Metricool sẽ nhập tất cả thành nháp, ngày sai thành "hôm nay giờ hiện tại"). Link ảnh chứa `.webp` bị từ chối.
-- Metricool không chép ảnh ngoài: file trên repo ảnh phải còn đến khi bài đã đăng.
+- Metricool không chép ảnh ngoài: file trên repo ảnh phải còn đến khi bài đã đăng (xem bước 5b về `remove`).

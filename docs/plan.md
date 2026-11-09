@@ -1,19 +1,19 @@
 # social-autopilot: thiết kế (bản cuối, v0.1)
 
-Ngày: 2026-11-07, sửa 2026-11-09 (app trở lại làm giao diện chính, dùng chung giao diện với dashboard tĩnh; thêm bước host ảnh). Trạng thái: **đã xây bản đầu (demo)**, repo GitHub riêng tư.
+Ngày: 2026-11-07, sửa 2026-11-09 (app trở lại làm giao diện chính, kiểu giao diện cũ; thêm bước host ảnh; dọn mã không dùng). Trạng thái: **đã xây bản đầu (demo)**, repo GitHub riêng tư.
 Tool độc lập ở `C:/hoangpq/social-autopilot`. File này thay bản kế hoạch trước; các quyết định dưới đây của người dùng thắng mọi chỗ khác.
 
-Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý → làm ảnh và caption riêng của thương hiệu → người duyệt duyệt → lưu bài đã duyệt vào `workspace/posts/` và `catalog.json` của thương hiệu. **Publish (later: Metricool)**: chưa làm.
+Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý → làm ảnh và caption riêng của thương hiệu → người duyệt duyệt → lưu bài đã duyệt vào `workspace/posts/` và `catalog.json` của thương hiệu. **Metricool**: chưa đăng; chỉ xuất CSV cho người nhập (mục 8).
 
 ## 1. Script headless + app + dashboard tĩnh
 
 | Phần | Ai dùng | Gồm |
 |---|---|---|
 | **Headless (nguồn duy nhất)** | Agent theo lịch: Claude Code scheduled task/routine, Codex/ChatGPT automation; agent trong chat | `RUNBOOK.md` + `scripts/*.mjs` (mỗi lệnh in một JSON, chạy lại không trùng) + `docs/scheduled-prompt.md` |
-| **App (giao diện chính)** | Người dùng | `start-app.cmd` / `start-app.command` → `src/server.mjs` (127.0.0.1) + `ui/index.html`; vỏ `core/` (launch, Cấu hình, bridge, webview2, Cập nhật). Gọi đúng hàm của `scripts/`: duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; đọc dữ liệu mới mỗi lần mở trang |
+| **App (giao diện chính)** | Người dùng | `start-app.cmd` / `start-app.command` → `src/server.mjs` (127.0.0.1) + `ui/index.html`; vỏ `core/` (launch, Cấu hình, webview2, Cập nhật). Gọi đúng hàm của `scripts/`: duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; đọc dữ liệu mới mỗi lần mở trang |
 | **Dashboard (chỉ xem, tuỳ chọn)** | Người dùng | `scripts/dashboard.mjs` → `dashboard.html` tĩnh, nhấp đúp là mở (`open-dashboard.cmd`). Không server, không nút thao tác |
 
-- App khôi phục từ commit 0db4530 (người dùng chọn 09/11/2026: chạy như app như trước) và nối với mọi thứ thêm sau (scene-swap, làm sạch metadata, host ảnh); giao diện dùng stylesheet của dashboard (`/ui/dashboard.css`). Quản lý cũng làm được qua chat với agent hoặc script.
+- App khôi phục từ commit 0db4530 (người dùng chọn 09/11/2026: chạy như app như trước) và nối với mọi thứ thêm sau (scene-swap, làm sạch metadata, host ảnh); giao diện giữ kiểu cũ (`core/assets/tool.css`), dashboard tĩnh giữ kiểu shadcn riêng, hai bên không dùng chung CSS. Quản lý cũng làm được qua chat với agent hoặc script.
 - Cuối mỗi vòng (và sau mỗi lần duyệt/bỏ) agent chạy `node scripts/dashboard.mjs`.
 - Agent theo lịch và lệnh chạy tay có thể chồng nhau: mọi đọc-sửa-ghi file chung có khoá (`<file>.lock`) và ghi nguyên tử.
 
@@ -53,7 +53,7 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 5b. **Host ảnh:** `host-image.mjs publish` (tự chạy sau write-back): ảnh bài đã duyệt lên repo công khai `social-autopilot-sources` (`<brand>/<yyyy>/<mm>/<post-id>.<ext>`), push, chờ HTTP 200, ghi `media_url` vào catalog. Xem mục 4, "Host ảnh".
 6. **Báo cáo:** `queue.mjs` liệt kê bản chờ duyệt (ảnh, caption, link tham khảo; scene-swap kèm ảnh gốc của shop), bài đã ghi, lỗi.
 7. **Dashboard:** `dashboard.mjs` dựng lại `dashboard.html` (bài đã duyệt hiện link ảnh hoặc "chưa có link").
-8. **Publish (later: Metricool):** chưa làm; khi làm, `media[]` của Metricool dùng `media_url`.
+8. **Metricool:** chưa đăng tự động; `metricool-csv.mjs` xuất CSV từ bài đã duyệt có `media_url` (xem mục 8).
 
 ## 4. Luật ảnh
 
@@ -82,10 +82,10 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 - `clean-image.mjs` của skill thương hiệu chỉ chạy khi `--check` chưa báo SẠCH.
 
 **Host ảnh** (người dùng chốt 09/11/2026)
-- Repo công khai `C:/hoangpq/social-autopilot-sources` (https://github.com/hoangpham2263/social-autopilot-sources, nhánh main; README ghi luật). Settings `imageHost`: `type: "github-repo"`, `path`, `rawBase`; `"shopify-files"` là chỗ giữ, chưa làm.
+- Repo công khai `C:/hoangpq/social-autopilot-sources` (https://github.com/hoangpham2263/social-autopilot-sources, nhánh main; README ghi luật). Settings `imageHost`: `type: "github-repo"`, `path`, `rawBase`.
 - Chỉ ảnh của bài đã được người duyệt (catalog `approved`/`scheduled`/`published`); không bao giờ bản nháp hay ảnh tham khảo của đối thủ. Metadata đã bỏ (kiểm lại trước khi đẩy).
 - `host-image.mjs publish`: chép, commit "<brand> <post-id>", push, chờ link raw trả 200 đúng nội dung (thử lại), ghi `media_url` (trường tuỳ chọn trong chuẩn, `check-post` kiểm là link https). Lỗi host không huỷ duyệt.
-- `host-image.mjs remove`: xoá file (commit + push) và bỏ `media_url`, khi Metricool đã lưu bản riêng.
+- `host-image.mjs remove`: xoá file (commit + push) và bỏ `media_url`, **chỉ sau khi bài đã đăng** (Metricool không chép ảnh ngoài, bài vẫn trỏ về link raw).
 
 ## 5. Cấu trúc
 ```text
@@ -93,15 +93,15 @@ social-autopilot/
 ├── README.md, AGENTS.md, CLAUDE.md, RUNBOOK.md, package.json
 ├── start-app.cmd, start-app.command        mở app (nhấp đúp)
 ├── src/server.mjs, ui/index.html           app: máy chủ cục bộ + trang
-├── core/                                   vỏ app: launch, setup, bridge, webview2, update
+├── core/                                   vỏ app: launch, setup (Node.js, Codex), webview2, update
 ├── open-dashboard.cmd                      mở dashboard.html (nhấp đúp)
 ├── dashboard.html (git bỏ qua)             dashboard tĩnh, chỉ xem, do scripts/dashboard.mjs dựng
 ├── config/settings.json                    chung: skillsRoot, giới hạn, codex, ffmpeg, remove_watermark, luật duyệt
 ├── scripts/                                brands, sources, social, research, ideas, draft (+draft-lib), image-clean,
-│                                           queue, approve, writeback, host-image, dashboard, lib
+│                                           queue, approve, writeback, host-image, metricool-csv, dashboard, lib
 ├── prompts/                                scene-edit.txt, scene-swap.txt, caption-brief.md, idea-abstract.md
-├── docs/                                   plan.md, research.md, scheduled-prompt.md, metricool.md, metricool-mapping.md
-├── tests/                                  cycle.test.mjs, dashboard.test.mjs, host-image.test.mjs, server.test.mjs, fake-codex.mjs
+├── docs/                                   plan.md, research.md, scheduled-prompt.md, metricool*.md/csv, examples/
+├── tests/                                  cycle, dashboard, host-image, server, metricool-csv tests, fake-codex.mjs
 └── workspace/ (git bỏ qua)                 settings.json, research-log.json, runs/, drafts/, logs/
 Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<brand>/project/social.json (+ project.md).
 ```
@@ -122,7 +122,9 @@ Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<bra
 | Agent theo lịch và lệnh chạy tay ghi cùng lúc | Trung bình | Khoá file và ghi nguyên tử. |
 | Hạn mức Codex | Thấp | Trạng thái `image_failed` ghi lý do; vòng sau chạy tiếp. |
 
-## 8. Giai đoạn sau: Metricool (đã tìm hiểu, chưa làm vì chưa có tài khoản)
+## 8. Metricool (đường CSV đã thử; đăng tự động chưa làm)
+
+Trạng thái và kết quả thử thật: `docs/metricool.md`; ánh xạ cột: `docs/metricool-mapping.md`; mẫu: `docs/metricool-csv-template.csv`. Đang dùng: `scripts/metricool-csv.mjs export|validate` (người tự nhập CSV vào Metricool). Dưới đây là các đường tự động hoá chưa làm.
 
 **MCP chính thức** `https://ai.metricool.com/mcp`
 - Cài: `claude mcp add --transport http metricool https://ai.metricool.com/mcp`, đăng nhập OAuth.
@@ -151,8 +153,8 @@ Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<bra
 - TikTok: xuống dòng, Story.
 
 **Khi làm**
-- Thêm bước Publish (script; app hiện lịch đăng).
+- Thêm bước đăng tự động (script; app hiện lịch đăng).
 - Điền khối `metricool` trong `social.json`.
 - Chỉ đăng bài `approved`; mặc định tạo nháp.
 - Catalog thêm `schedule.<network>` và trạng thái `scheduled`; `check-post` đã nhận các trường này.
-- Ảnh: dùng `media_url` của catalog (host-image.mjs đã làm), `saveExternalMediaFiles: true`; sau khi Metricool lưu bản riêng thì `host-image.mjs remove`.
+- Ảnh: dùng `media_url` của catalog (host-image.mjs đã làm), Metricool không chép ảnh ngoài, nên chỉ `host-image.mjs remove` sau khi bài đã đăng.
