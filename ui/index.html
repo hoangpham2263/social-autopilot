@@ -18,10 +18,13 @@ b, strong, h1, h2, h3, th { font-weight: 400; }
 a { color: #0b57d0; }
 html, body { height: 100%; }
 main { height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
-main > header, main > nav, main > .setup-status, main > .app-foot { flex: 0 0 auto; }
+main > header, main > nav, main > .setup-status { flex: 0 0 auto; }
 .page { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .page[hidden] { display: none; }
-.app-foot { flex: 0 0 auto; padding: 6px 0 0; text-align: center; font-size: 11px; color: var(--muted); }
+.page:not([hidden]) { display: flex; flex-direction: column; }
+.page > .app-foot { margin-top: auto; }
+h3 .dot.after { margin: 0 0 0 8px; }
+.app-foot { flex: 0 0 auto; padding: 16px 0 4px; text-align: center; font-size: 11px; color: var(--muted); }
 nav.tabs { display: flex; margin: 0 0 12px; }
 nav.tabs button { height: var(--ctl-h); padding: var(--ctl-pad); font: inherit; font-size: var(--ctl-font); background: #e1e1e1; border: var(--ctl-border); margin-right: -1px; cursor: default; }
 nav.tabs button:hover { border-color: #0078d7; position: relative; }
@@ -297,6 +300,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   function show(page) {
     if (!pages.includes(page)) page = "overview";
     for (const p of pages) $(`#page-${p}`).hidden = p !== page;
+    $(`#page-${page}`).append($("#appFoot")); // footer sits after the page content, not pinned to the window
     for (const b of $$("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "overview" : page)));
     store.set("page", page === "brand" ? "overview" : page);
     ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, prompt: loadPrompts, settings: loadSettings })[page]?.();
@@ -304,8 +308,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   for (const b of $$("#tabs button")) b.onclick = () => show(b.dataset.page);
   // core/assets/hub.js opens Settings when the setup is incomplete (its banner's button too).
   window.saOpenSettings = () => show("settings");
-  // Footer: the installed version (/api/root).
-  getJson("/api/root").then((r) => { if (r.version) $("#appFoot").textContent = `© 2026 Social Autopilot · v${String(r.version).replace(/^v/, "")}`; }).catch(() => {});
 
   // ----- Overview: per brand, from queue.mjs (library, last research, posts, Metricool) + the skill check -----
   let brandData = { brands: [], metricool: { brands: [] } };
@@ -399,7 +401,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
       const parts = (list) => list.filter(Boolean).join(" · ");
       const none = `<span class="muted">No posts yet</span>`;
-      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.new && `${st.new} new`, st.used && `${st.used} used`, st.rejected && `${st.rejected} dropped`]) : none;
+      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.new && `${st.new} unused`, st.used && `${st.used} used`, st.rejected && `${st.rejected} dropped`]) : none;
       const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} new`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} duplicates skipped`, arr(r.pending).length && `unfinished: ${esc(arr(r.pending).join(", "))}`]) : "";
       const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
       const written = arr(x?.written).length;
@@ -408,7 +410,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const posts = written || review || posted ? [go("review", review, "To review"), go("queued", Math.max(0, written - posted), "Queued"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
       const sug = !s && m.suggested_skill ? `<dt>Skill found</dt><dd>${esc(m.suggested_skill.id)} ${btn("data-suggest", m.suggested_skill.dir, "Link", "Link this skill folder to the brand", " primary")}</dd>` : "";
       return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
-        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}</h3>${actions(m)}</div>
+        <div class="head-row"><h3>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}<span class="dot after ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span></h3>${actions(m)}</div>
         <dl class="kv">
           <dt>Metricool</dt><dd>${esc(arr(m.networks).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}</dd>
           ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}${sug}
@@ -525,7 +527,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   };
 
   // ----- Library: the research store of each brand, kept apart per brand; "Drop" = never used for posts -----
-  const ITEM_TEXT = { new: "New", used: "Used", rejected: "Dropped" };
+  const ITEM_TEXT = { new: "Unused", used: "Used", rejected: "Dropped" };
   const ITEM_COLOR = { new: "c-green", used: "", rejected: "c-red" };
   const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway" };
   let resShown = 60, resStatus = store.get("resStatus") || "new", resAvatars = {};
@@ -552,12 +554,13 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const brand = $("#resBrand").value || store.get("resBrand"), status = resStatus, source = $("#resSource").value;
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
-    $("#resBrand").innerHTML = `<option value="">Pick…</option>` + az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)} (${b.counts?.total ?? 0} posts, ${b.counts?.new ?? 0} new)</option>`).join("");
+    $("#resBrand").innerHTML = `<option value="">Pick…</option>` + az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}</option>`).join("");
     const c = r.current;
+    if (!c && !brand && r.brands?.length) { const first = az(r.brands, (x) => x.name || x.id)[0]; $("#resBrand").value = first.id; store.set("resBrand", first.id); return loadResearch(); } // no brand chosen yet: open the first (A–Z)
     if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
     $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
     const k = c.counts || {};
-    const SHOW = [["new", "New", k.new], ["used", "Used", k.used], ["rejected", "Dropped", k.rejected], ["", "All", k.total]];
+    const SHOW = [["new", "Unused", k.new], ["used", "Used", k.used], ["rejected", "Dropped", k.rejected], ["", "All", k.total]];
     $("#resStatus").innerHTML = SHOW.map(([v, t, n]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}">${t} (${n ?? 0})</button>`).join("");
     for (const b of $$("#resStatus button")) b.onclick = () => { resStatus = b.dataset.show; store.set("resStatus", resStatus); resShown = 60; loadResearch(); };
     const items = arr(c.items);
@@ -568,7 +571,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#resBody").innerHTML = `${progress}
       <div class="tiles spaced">${list.map((it) => tile({ id: it.id, img: arr(it.image_paths)[0] || "",
         title: String(it.caption || "").split(/\r?\n/).find((l) => l.trim()) || it.id,
-        status: `<span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>`,
         who: pageOf(it), whoTip: `${pageOf(it)} · ${it.id}${it.posted_date ? ` · ${it.posted_date}` : ""}`,
         actions: it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : "" })).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
       ${items.length > resShown ? `<div class="actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}`;
