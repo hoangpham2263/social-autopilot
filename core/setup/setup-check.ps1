@@ -1,5 +1,5 @@
 ﻿# Cấu hình: read-only readiness checks. Social Autopilot needs Node.js (its scripts and this server) and Codex CLI
-# signed in (it makes the brand's scene images). Facebook research runs in the scheduled agent's Playwright, not here.
+# signed in (it makes the brand's scene images). Facebook research runs in scripts/crawl-fb.mjs (playwright-core, npm install) against Chrome, not here.
 param([switch]$AsJson)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)

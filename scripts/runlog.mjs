@@ -21,6 +21,7 @@ export const DRIED_UP_RUNS = 3;
 // One source's outcome in plain words.
 export function sourceState(x) {
   if (x.state === 'blocked') return 'blocked';
+  if (x.state === 'skipped') return 'skipped (quota)'; // never opened: the brand's --max-posts was used up first
   if (x.state === 'pending' || x.state === 'partial') return x.note && /lỗi|error/i.test(x.note) ? 'error' : 'unfinished';
   if (x.new > 0) return 'new posts';
   if (x.state === 'end' || x.reached_end) return x.new ? 'new posts' : 'reached end';
@@ -30,8 +31,8 @@ export function sourceState(x) {
 function researchPart(brandId) {
   const r = researchReport(brandId);
   if (!r.date) return { date: null, sources: [], new: 0, duplicates: 0 };
-  const sources = r.sources.map((x) => ({ id: x.id, name: x.name || x.id, new: x.new, duplicates: x.duplicates, backfilled: x.backfilled, reached_end: x.reached_end, state: sourceState(x), note: x.note || '' }));
-  return { date: r.date, crawl_mode: r.crawl_mode, sources, new: r.new_total || 0, duplicates: r.duplicates_total || 0, store: r.store };
+  const sources = r.sources.map((x) => ({ id: x.id, name: x.name || x.id, new: x.new, kept: x.kept || 0, filtered: x.filtered || 0, low_keep: !!x.low_keep, duplicates: x.duplicates, backfilled: x.backfilled, reached_end: x.reached_end, state: sourceState(x), note: x.note || '' }));
+  return { date: r.date, crawl_mode: r.crawl_mode, sources, new: r.new_total || 0, kept: r.kept_total || 0, filtered: r.filtered_total || 0, duplicates: r.duplicates_total || 0, store: r.store };
 }
 
 function createPart(brandId, since) {
@@ -50,10 +51,12 @@ function createPart(brandId, since) {
 }
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// "N kept · M filtered" once the batch filter judged something (store.mjs verdict).
+export const keptText = (kept = 0, filtered = 0) => (kept || filtered ? `${kept} kept · ${filtered} filtered` : '');
 export function brandHeadline(mode, b) {
   if (mode === 'research') {
     const r = b.research || {}, dry = (r.sources || []).filter((x) => x.state === 'dried up').length, blocked = (r.sources || []).filter((x) => x.state === 'blocked').length;
-    return [`+${plural(r.new || 0, 'post')}`, dry && `${plural(dry, 'source')} dried up`, blocked && `${blocked} blocked`, (b.errors || []).length && plural(b.errors.length, 'error')].filter(Boolean).join(' · ');
+    return [`+${plural(r.new || 0, 'post')}`, keptText(r.kept, r.filtered), dry && `${plural(dry, 'source')} dried up`, blocked && `${blocked} blocked`, (b.errors || []).length && plural(b.errors.length, 'error')].filter(Boolean).join(' · ');
   }
   const c = b.create || {}, errs = (c.failed || []).length + (c.errors || []).length + (b.errors || []).length;
   return [`${(c.scheduled || []).length} scheduled`, `${(c.to_review || []).length} to review`, errs && plural(errs, 'error')].filter(Boolean).join(' · ');
@@ -90,7 +93,7 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
   const result = errors.length || per.some((b) => b.result === 'error') ? 'error' : per.some((b) => b.result === 'warning') ? 'warning' : 'ok';
   const sum = (f) => per.reduce((a, b) => a + f(b), 0);
   const headline = mode === 'research'
-    ? [`+${plural(sum((b) => b.research.new || 0), 'post')}`, sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length) && `${plural(sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length), 'source')} dried up`, sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length) && `${sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length)} blocked`].filter(Boolean).join(' · ')
+    ? [`+${plural(sum((b) => b.research.new || 0), 'post')}`, keptText(sum((b) => b.research.kept || 0), sum((b) => b.research.filtered || 0)), sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length) && `${plural(sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length), 'source')} dried up`, sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length) && `${sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length)} blocked`].filter(Boolean).join(' · ')
     : [`${sum((b) => b.create.scheduled.length)} scheduled`, `${sum((b) => b.create.to_review.length)} to review`, (errors.length + sum((b) => b.errors.length + b.create.errors.length + b.create.failed.length)) && plural(errors.length + sum((b) => b.errors.length + b.create.errors.length + b.create.failed.length), 'error')].filter(Boolean).join(' · ');
   const id = `${ended.replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}-${mode}`;
   const log = { id, mode, agent: String(agent || ''), started: since, ended, duration_s: Math.max(0, Math.round((Date.parse(ended) - Date.parse(since)) / 1000)), result, headline, notes: String(notes || extra.notes || ''), errors, brands: per };
@@ -108,6 +111,7 @@ export function listLogs({ brand = '', mode = '', limit = 0 } = {}) {
   const streak = {};
   for (const l of logs.filter((x) => x.mode === 'research').slice().reverse()) for (const b of l.brands || []) for (const s of b.research?.sources || []) {
     const k = `${b.brand}/${s.id}`;
+    if (s.state === 'skipped (quota)') continue; // not opened: says nothing about the source
     streak[k] = s.new > 0 ? 0 : (streak[k] || 0) + 1;
   }
   for (const l of logs) for (const b of l.brands || []) for (const s of b.research?.sources || []) s.dry_runs = streak[`${b.brand}/${s.id}`] || 0;
