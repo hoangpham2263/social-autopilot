@@ -1,15 +1,15 @@
-// Step 3: drafts. One folder per draft in workspace/drafts/<brand>/<id>/: draft.json (what it is), status.json (where it
+// Mode "Làm bài & đưa lên", step 2: drafts. One folder per draft in workspace/drafts/<brand>/<id>/: draft.json (what it is), status.json (where it
 // is), prompt.txt + codex.log + image.png (the brand's own image, made by Codex CLI from the brand's own product photo),
 // brief.md and content-<lang>.txt (captions written by the agent in the brand voice, per social.json). Nothing here
-// touches the brand folder; that happens only in approve.mjs.
-//   node scripts/draft.mjs new   --brand <id> --idea <date>/<Ixx> --product <brand image> [--scene <mood image>]
-//   node scripts/draft.mjs new   --brand <id> --idea <date>/<Ixx> --ref-image <workspace/runs/<brand>/.../refs/R01-….jpg>
+// touches the brand folder; that happens only in finalize.mjs (after every automatic check passed).
+//   node scripts/draft.mjs new   --brand <id> --idea I001 --product <brand image> [--scene <mood image>]
+//   node scripts/draft.mjs new   --brand <id> --idea I001 --ref-image <workspace/store/<brand>/images/S0001-1-….jpg>
 //                                [--brand-can-produce]   scene-swap: opt-in per brand (product_images.reference_redraw)
 //   node scripts/draft.mjs confirm-clean --id <draft> --by <name>   scene-swap: looked at image.png, no shop name/logo left
 //   node scripts/draft.mjs image --id <draft> [--force]     runs Codex (prompt.txt must be finished: no {{...}} left)
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
 //                                                           product_images.watermark.enabled (default off; needs ffmpeg)
-//   node scripts/draft.mjs check --id <draft>               checks image + captions; ready -> awaiting_approval
+//   node scripts/draft.mjs check --id <draft>               automatic checks of image + captions; passed -> ready
 //   node scripts/draft.mjs show  --id <draft>
 //   node scripts/draft.mjs list  [--brand <id>] [--status s]
 import fs from 'node:fs';
@@ -17,7 +17,8 @@ import path from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { checkDraft, summary, logoWarnings } from './draft-lib.mjs';
 import { cleanDraftImage } from './image-clean.mjs';
-import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, runDir, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, loadRefs, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
+import { readStore, storeDir, storeIdeasFile, markUsed } from './store.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 // The brand's own photo: inside its skill folder, or inside a local folder its social.json lists in
@@ -30,14 +31,17 @@ const fill = (tpl, map) => tpl.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in map ? m
 
 export function newDraft(args) {
   const brand = loadBrand(need(args, 'brand'));
-  const [date, ideaId] = need(args, 'idea').split('/');
-  const ideasFile = path.join(runDir(brand.id, date), 'ideas.json');
-  const ideas = readJson(ideasFile);
+  // Ideas come from the brand's store (ideas.mjs, workspace/store/<brand>/ideas.json); old "<date>/Ixx" ids are gone.
+  const ideaId = need(args, 'idea');
+  if (ideaId.includes('/')) throw new Error('Ý giờ lấy từ kho: dùng --idea I001 (ideas.mjs list), không còn dạng <ngày>/Ixx.');
+  const ideasFile = storeIdeasFile(brand.id);
+  const ideas = readJson(ideasFile, { ideas: [] });
   const idea = ideas.ideas.find((i) => i.id === ideaId);
   if (!idea) throw new Error(`Không có ý ${ideaId} trong ${ideasFile}.`);
   if (idea.status !== 'picked' && !(idea.status === 'drafted' && args.again)) throw new Error(`Ý ${ideaId} đang "${idea.status}"; chỉ ý đã pick mới làm nháp (--again để làm thêm bản).`);
-  const refs = loadRefs(brand.id, date);
-  const ref = refs.find((r) => r.key === idea.ref) || {};
+  const store = readStore(brand.id);
+  const imagesDir = path.join(storeDir(brand.id), 'images');
+  const ref = store.items.find((r) => r.id === idea.item) || {};
 
   // AI-built scenes are on by default for every brand (never an AI label on the post); only an explicit false stops them.
   if (brand.social.product_images?.ai_scenes_allowed === false) throw new Error('social.json product_images.ai_scenes_allowed = false: thương hiệu tắt dựng cảnh bằng AI.');
@@ -50,10 +54,10 @@ export function newDraft(args) {
     if (rr.enabled !== true) throw new Error('social.json product_images.reference_redraw.enabled khác true: thương hiệu chỉ dùng ảnh của chính mình (--product).');
     if (args.product) throw new Error('Dùng --product hoặc --ref-image, không cả hai.');
     product = path.resolve(String(args['ref-image']));
-    if (!inside(path.join(workspace, 'runs', brand.id), product) || !fs.existsSync(product) || !IMAGE.test(product)) throw new Error(`--ref-image phải là ảnh tham khảo của chính thương hiệu này, trong ${path.join(workspace, 'runs', brand.id)}.`);
+    if (!inside(imagesDir, product) || !fs.existsSync(product) || !IMAGE.test(product)) throw new Error(`--ref-image phải là ảnh trong kho của chính thương hiệu này (${imagesDir}).`);
     const hash = sha1(fs.readFileSync(product));
-    refUsed = refs.find((r) => r.image_sha1 === hash);
-    if (!refUsed) throw new Error('--ref-image không phải một ảnh đã ingest của lượt này (refs.json).');
+    refUsed = store.items.find((r) => (r.image_sha1 || []).includes(hash));
+    if (!refUsed) throw new Error('--ref-image không phải một ảnh đã ingest vào kho (items.json).');
     if (rr.only_if_brand_can_produce !== false && !args['brand-can-produce']) throw new Error('reference_redraw.only_if_brand_can_produce: xác nhận thương hiệu làm được đúng sản phẩm này (project.md mục 5) bằng --brand-can-produce.');
     imageMode = 'scene-swap';
   } else {
@@ -61,14 +65,14 @@ export function newDraft(args) {
     if (!fs.existsSync(product) || !IMAGE.test(product)) throw new Error('Ảnh sản phẩm không có hoặc không phải PNG/JPEG/WebP.');
     if (!ownImage(brand, product)) throw new Error(`Ảnh sản phẩm phải là ảnh của thương hiệu: trong ${brand.dir} hoặc một thư mục product_images.sources[].path của social.json.`);
   }
-  // The second image is only a mood reference, never a competitor's post (anything under workspace/runs/).
+  // The second image is only a mood reference, never a competitor's post (anything under workspace/runs/ or store/).
   let scene = '';
   if (args.scene) {
     scene = path.resolve(String(args.scene));
     if (!fs.existsSync(scene) || !IMAGE.test(scene)) throw new Error('Ảnh không khí không có hoặc không phải ảnh.');
-    if (inside(path.join(workspace, 'runs'), scene)) throw new Error('Ảnh không khí không được là ảnh tham khảo của đối thủ (workspace/runs/).');
+    if (inside(path.join(workspace, 'runs'), scene) || inside(path.join(workspace, 'store'), scene)) throw new Error('Ảnh không khí không được là ảnh tham khảo của đối thủ (workspace/runs/, workspace/store/).');
     const hash = sha1(fs.readFileSync(scene));
-    if (refs.some((r) => r.image_sha1 === hash)) throw new Error('Ảnh không khí trùng một ảnh tham khảo của đối thủ.');
+    if (store.items.some((r) => (r.image_sha1 || []).includes(hash))) throw new Error('Ảnh không khí trùng một ảnh tham khảo của đối thủ.');
   }
 
   const day = today(brand.timezone).replace(/-/g, '');
@@ -83,8 +87,8 @@ export function newDraft(args) {
   const networks = (brand.social.channels || []).filter((x) => x.enabled).map((x) => ({ network: x.network, account: x.account || '', url: x.url || '', lang: [].concat(x.lang || []) }));
   const draft = {
     id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(),
-    idea: { run: date, id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'].map((f) => [f, idea[f] || ''])) },
-    inspiration: { run: date, ref: refUsed.key || idea.ref, source: refUsed.source || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
+    idea: { run: 'store', id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'].map((f) => [f, idea[f] || ''])) },
+    inspiration: { run: refUsed.run || 'store', ref: refUsed.id || idea.item, store_item: refUsed.id || idea.item, source: refUsed.source_id || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
     image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false } : {}),
     product_image: product, scene_image: scene, networks, languages: brand.languages, review_languages: brand.review_languages || [], language_mode: mode,
     // captions: posted languages + reviewer-only languages (language_policy.review_langs; never posted).
@@ -95,7 +99,7 @@ export function newDraft(args) {
     ? 'The second attached image is ONLY a mood/lighting reference. Do not copy it and do not take any objects from it.'
     : 'There is no second image.';
   fs.writeFileSync(path.join(dir, 'prompt.txt'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', imageMode === 'scene-swap' ? 'scene-swap.txt' : 'scene-edit.txt'), 'utf8'), {
-    SOURCE_SHOP: refUsed.store || refUsed.source || 'the source shop',
+    SOURCE_SHOP: refUsed.store || refUsed.source_id || 'the source shop',
     SCENE: idea.scene, ANGLE: idea.angle, PROPS: idea.props || 'at most one or two props that fit the scene',
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
   }), 'utf8');
@@ -103,7 +107,7 @@ export function newDraft(args) {
     BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
     SECTIONS: [].concat(brand.social.caption_rules?.project_md_sections || []).join('; ') || '1, 3, 7, 8, 10, 11',
-    FILES: [...brand.languages.map((l) => `- content-${l}.txt`), ...(brand.review_languages || []).map((l) => `- content-${l}.txt (chỉ để người duyệt đọc, KHÔNG đăng; cùng giọng thương hiệu, cùng quy tắc)`)].join('\n'),
+    FILES: [...brand.languages.map((l) => `- content-${l}.txt`), ...(brand.review_languages || []).map((l) => `- content-${l}.txt (chỉ để người dùng đọc, KHÔNG đăng; cùng giọng thương hiệu, cùng quy tắc)`)].join('\n'),
     WEBSITE: projectField(brand.project, 'Website') || '(chưa có)', HASHTAG: projectField(brand.project, 'Hashtag cố định') || '(chưa có)',
   }), 'utf8');
   withLock(ideasFile, () => {
@@ -112,6 +116,8 @@ export function newDraft(args) {
     it.status = 'drafted'; it.drafts = [...new Set([...(it.drafts || []), id])]; it.updated = stamp();
     writeJson(ideasFile, now);
   });
+  // The store item(s) behind this draft are "used" by it (never picked again for a new idea).
+  for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) markUsed(brand.id, it, id);
   const status = setStatus(dir, 'needs_prompt', { image_mode: imageMode, ...(imageMode === 'scene-swap' ? { source_shop: draft.inspiration.source_shop, source_url: draft.inspiration.source_url } : {}) });
   return ({ id, dir, status: status.status, next: `Mở ${path.join(dir, 'prompt.txt')}, thay {{PRODUCT_DESCRIPTION}} bằng mô tả đúng sản phẩm trong ảnh, rồi chạy draft.mjs image --id ${id}. Viết caption theo brief.md.` });
 }
@@ -220,7 +226,7 @@ export function check(args) {
   const { dir, draft, status } = findDraft(need(args, 'id'));
   if (['approved', 'rejected'].includes(status.status)) return ({ id: draft.id, status: status.status, note: 'Đã xử lý, không kiểm lại.' });
   const { problems, warnings } = checkDraft(dir, draft, status);
-  const next = problems.length ? (fs.existsSync(path.join(dir, 'image.png')) ? 'needs_caption' : status.status) : 'awaiting_approval';
+  const next = problems.length ? (fs.existsSync(path.join(dir, 'image.png')) ? 'needs_caption' : status.status) : 'ready';
   const st = setStatus(dir, next, { problems });
   return ({ id: draft.id, status: st.status, problems, warnings });
 }

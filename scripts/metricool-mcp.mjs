@@ -1,5 +1,5 @@
 // Metricool MCP route (Starter plan has no REST API): this script never talks to Metricool. It prepares the exact
-// arguments the AGENT passes to the claude.ai "Metricool" connector tool createScheduledPost, records what Metricool
+// arguments the AGENT passes to its Metricool MCP tool createScheduledPost (any agent: Claude, ChatGPT, Codex), records what Metricool
 // answered into the brand catalog, and lists sent posts so the agent can reconcile them with getScheduledPosts.
 //   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-01,POST-02] [--draft|--schedule] [--lang en]
 //          [--date YYYY-MM-DD --time HH:MM] [--allow-today]
@@ -9,7 +9,9 @@
 // payload: one item per approved post with media_url/video_url and no metricool.<network>.id yet. Posting times come from
 // the shared planner of metricool-csv.mjs (catalog schedule, --date/--time, cadence.slots or automatic times), planned in
 // the audience timezone (cadence.timezone). publicationDate carries that timezone, so Metricool converts it itself (no
-// manual conversion as in the CSV route). Default draft:true; --schedule sends draft:false (autoPublish at the time).
+// manual conversion as in the CSV route). Default draft:true (settings metricool.default_mode "draft"); "schedule" or
+// --schedule sends draft:false (autoPublish at the time). A post whose check-post.mjs fails is blocked, the others go.
+// The output is plain JSON for any agent's Metricool tool (Claude connector, ChatGPT connector, Codex MCP server).
 // Text = posted languages only (never language_policy.review_langs), never any AI label. Media must be public https links
 // (MCP copies them to static.metricool.com). Fortera Apparel (blogId <blog_id_1>, no skill) is never a target.
 import fs from 'node:fs';
@@ -48,9 +50,11 @@ export function targetBlog(brand) {
 function payloadItems(args, { now = new Date(), root = settings().skillsRoot } = {}) {
   const brand = findBrand(need(args, 'brand'), root);
   if (!brand.enabled) throw new Error(`social.json enabled: false (${brand.id}): không gửi gì lên Metricool.`);
-  if (args.draft && args.schedule) throw new Error('Chọn một: --draft (mặc định) hoặc --schedule.');
+  if (args.draft && args.schedule) throw new Error('Chọn một: --draft hoặc --schedule.');
   const blogId = targetBlog(brand);
-  const draft = !args.schedule;
+  // Default: a Metricool DRAFT (nothing goes live by itself); settings metricool.default_mode "schedule" switches to real
+  // scheduling; --draft / --schedule override it for one call.
+  const draft = args.schedule ? false : args.draft ? true : defaultMode() !== 'schedule';
   const plan = planPosts(args, { now, root, brand });
   const tz = brand.audience_timezone;
   const unsupported = plan.networkKeys.filter((n) => !MCP_NETWORKS.includes(n));
@@ -62,6 +66,9 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
     const p = it.post, { date, time } = it.when;
     if (!validDate(date) || !validTime(time)) { problems.push(`${p.id}: giờ "${date} ${time}" không hợp lệ.`); continue; }
     if (date < cur.date || (date === cur.date && (!args['allow-today'] || time <= cur.time))) { problems.push(`${p.id}: ${date} ${time} ${tz} đã qua hoặc là hôm nay (hôm nay ${cur.date} ${cur.time}); chỉ ngày mai trở đi (--allow-today cho giờ sau bây giờ).`); continue; }
+    // The brand skill's check-post.mjs must pass (no human approval step: automatic checks are the gate).
+    const cp = checkPost(brand, p.id);
+    if (cp?.errors) { problems.push(`${p.id}: check-post.mjs của skill báo ${cp.errors} lỗi.`); continue; }
     const text = it.texts[0].text;
     if (!text.trim()) { problems.push(`${p.id}: caption trống.`); continue; }
     const ai = aiLabelHits(text);
@@ -96,20 +103,23 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
       record: rec,
     });
   }
-  if (problems.length) throw Object.assign(new Error(`Không tạo được payload: ${problems.join(' ')}`), { problems });
-  return { brand, blogId, draft, plan, items };
+  // A post that fails a check is blocked (listed with the reason); the others still go. Only when nothing is left is it an error.
+  if (problems.length && !items.length) throw Object.assign(new Error(`Không tạo được payload: ${problems.join(' ')}`), { problems });
+  return { brand, blogId, draft, plan, items, blocked: problems };
 }
 
 function runPayload(args) {
   const x = payloadItems(args);
   out({
     brand: x.brand.id, blog_id: x.blogId, metricool_brand: x.brand.brand_name, audience_timezone: x.brand.audience_timezone, draft: x.draft,
-    languages: x.plan.langs, networks: x.plan.networkKeys, items: x.items, skipped: x.plan.skipped, warnings: x.plan.warnings,
+    languages: x.plan.langs, networks: x.plan.networkKeys, items: x.items, blocked: x.blocked, skipped: x.plan.skipped, warnings: x.plan.warnings,
     next: x.items.length
       ? 'Với từng item: gọi tool MCP Metricool createScheduledPost với đúng args (blogId, date, info; không sửa info), rồi chạy lệnh record với id, uuid, plannerUrl, publicationDate.dateTime, publicationDate.timezone Metricool trả về. Không bao giờ dùng blogId khác (Fortera <blog_id_1> cấm).'
       : 'Không có bài nào cần gửi.',
   });
 }
+
+export const defaultMode = () => (settings().metricool?.default_mode === 'schedule' ? 'schedule' : 'draft');
 
 // ----- record -----
 const isUrl = (v) => { try { return new URL(v).protocol === 'https:'; } catch { return false; } };

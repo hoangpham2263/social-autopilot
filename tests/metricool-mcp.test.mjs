@@ -187,3 +187,29 @@ test('record: draft keeps approved; scheduled writes schedule.<network> + status
   r = run('record', '--brand', 'testbrand', '--post', 'POST-09', '--id', '1', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
   assert.equal(r.ok, false);
 });
+
+test('payload: a failing post is blocked, the others still go; default mode from settings (draft unless "schedule")', () => {
+  setup({ posts: [
+    { id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } },
+    { id: 'POST-02', media_url: IMG(2), schedule: { date: '2020-01-01', time: '10:00' } },
+  ] });
+  let r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.items.map((i) => i.post), ['POST-01']);
+  assert.equal(r.blocked.length, 1);
+  assert.match(r.blocked[0], /POST-02.*đã qua/);
+  assert.equal(r.draft, true);
+  // The brand skill's check-post.mjs is part of the gate: errors block the post.
+  write(path.join(brandDir, 'scripts', 'check-post.mjs'), "console.log(JSON.stringify({ errors: process.argv[2] === 'POST-01' ? 1 : 0, results: [] }));");
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } }, { id: 'POST-03', media_url: IMG(3), schedule: { date: FUTURE, time: '11:00' } }] });
+  write(path.join(brandDir, 'scripts', 'check-post.mjs'), "console.log(JSON.stringify({ errors: process.argv[2] === 'POST-01' ? 1 : 0, results: [] }));");
+  r = run('payload', '--brand', 'testbrand');
+  assert.deepEqual(r.items.map((i) => i.post), ['POST-03']);
+  assert.match(r.blocked[0], /POST-01: check-post/);
+  // settings metricool.default_mode "schedule": real scheduling unless --draft.
+  write(path.join(ws, 'settings.json'), JSON.stringify({ metricool: { default_mode: 'schedule' } }));
+  try {
+    assert.equal(run('payload', '--brand', 'testbrand').draft, false);
+    assert.equal(run('payload', '--brand', 'testbrand', '--draft').draft, true);
+  } finally { fs.rmSync(path.join(ws, 'settings.json'), { force: true }); }
+});

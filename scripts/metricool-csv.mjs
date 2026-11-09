@@ -361,7 +361,6 @@ export function autoPicker(network, postsPerWeek, tz, taken, { allowToday, now }
 
 // ----- shared planning (CSV export and Metricool MCP payload) -----
 const list = (v) => (v === undefined || v === null || v === '' ? [] : [].concat(v)).map((x) => String(x).trim()).filter(Boolean);
-export const mediaList = list;
 
 function captionText(brand, post, langs, mode, separator) {
   const texts = [];
@@ -369,7 +368,7 @@ function captionText(brand, post, langs, mode, separator) {
     const fileName = post.captions?.[lang];
     if (!fileName) throw new Error(`${post.id}: catalog không có caption "${lang}".`);
     const st = post.caption_status?.[lang];
-    if (st && st !== 'approved') throw new Error(`${post.id}: caption "${lang}" chưa duyệt (caption_status ${st}).`);
+    if (st && st !== 'approved') throw new Error(`${post.id}: caption "${lang}" chưa "approved" (caption_status ${st}).`);
     const file = path.join(brand.dir, post.folder || '', fileName);
     if (!fs.existsSync(file)) throw new Error(`${post.id}: không có file ${file}.`);
     texts.push(cleanText(fs.readFileSync(file, 'utf8')).text);
@@ -438,7 +437,7 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
   if (args.lang && args.lang !== true) {
     langs = String(args.lang).split(',').map((s) => s.trim()).filter(Boolean); mode = langs.length > 1 ? 'one-post-bilingual' : 'single';
     const bad = langs.filter((l) => reviewOnly.includes(l));
-    if (bad.length) throw new Error(`--lang ${bad.join(',')}: ngôn ngữ chỉ để người duyệt đọc (language_policy.review_langs), không đăng.`);
+    if (bad.length) throw new Error(`--lang ${bad.join(',')}: ngôn ngữ chỉ để đọc (language_policy.review_langs), không đăng.`);
   }
   if (!langs.length) throw new Error(`${brand.id}: kênh không khai báo lang.`);
   if (mode === 'single') langs = langs.slice(0, 1);

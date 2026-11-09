@@ -116,7 +116,6 @@ export function rawSettings() {
 // Saves this machine's settings to workspace/settings.json (config/settings.json stays the default in git). Only the
 // known keys, checked; nothing that looks like a secret.
 const RESEARCH_DROPPED = ['max_sources_per_run', 'max_posts_per_source', 'max_posts_per_day_all_brands', 'max_per_day'];
-export const APPROVAL_RULES = ['require_image', 'require_all_captions', 'reject_requires_note'];
 // Every key not sent keeps this machine's current value (defaults + workspace/settings.json, merged deeply); nothing is
 // reset to config/settings.json and no key is dropped. Values are checked strictly: a wrong type is refused, never coerced.
 export function saveSettings(input = {}) {
@@ -128,20 +127,18 @@ export function saveSettings(input = {}) {
     const str = (v, name) => { if (typeof v !== 'string' || !v.trim()) throw new Error(`${name} không được trống.`); if (/token|secret|password/i.test(v)) throw new Error(`${name} không được chứa token/mật khẩu.`); return v.trim(); };
     const bool = (v, name) => { if (v === true || v === 'true') return true; if (v === false || v === 'false') return false; throw new Error(`${name} phải là true hoặc false (nhận ${JSON.stringify(v)}).`); };
     const obj = (v, name) => { if (v === undefined) return {}; if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(`${name} phải là object.`); return v; };
-    const r = obj(input.research, 'research'), a = obj(input.approval, 'approval'), cx = obj(input.codex, 'codex'), ff = obj(input.ffmpeg, 'ffmpeg'), rw = obj(input.remove_watermark, 'remove_watermark'), ih = obj(input.imageHost, 'imageHost');
-    // Approval rules the tool knows; anything else in an older settings file (require_owner_match: the named approver
-    // was dropped) is removed on save.
-    const cr = cur.research || {}, ca = Object.fromEntries(APPROVAL_RULES.map((k) => [k, cur.approval?.[k] ?? true]));
+    const r = obj(input.research, 'research'), mc = obj(input.metricool, 'metricool'), cx = obj(input.codex, 'codex'), ff = obj(input.ffmpeg, 'ffmpeg'), rw = obj(input.remove_watermark, 'remove_watermark'), ih = obj(input.imageHost, 'imageHost');
+    const cr = cur.research || {};
     const delay = [].concat(r.delay_seconds ?? cr.delay_seconds).map((x, i) => int(x, `research.delay_seconds[${i}]`));
     if (delay.length !== 2 || delay[0] > delay[1]) throw new Error('research.delay_seconds phải là [min, max] với min <= max.');
-    // Dropped settings are ignored when an older form still sends them: require_owner_match (no named approver) and the
-    // research limits (no limits since 2026-11-09).
-    for (const k of Object.keys(a)) if (!(k in ca) && k !== 'require_owner_match') throw new Error(`approval.${k} không phải quy tắc duyệt đã biết (${Object.keys(ca).join(', ')}).`);
+    // Metricool: draft (default; nothing goes live by itself) or schedule (real scheduling).
+    const mode = mc.default_mode ?? cur.metricool?.default_mode ?? 'draft';
+    if (!['draft', 'schedule'].includes(mode)) throw new Error('metricool.default_mode phải là "draft" hoặc "schedule".');
     const changes = {
       skillsRoot: str(input.skillsRoot ?? cur.skillsRoot, 'skillsRoot'),
       // Research: only the human-like pause between page actions; there are no run or post limits.
       research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay },
-      approval: Object.fromEntries(Object.keys(ca).map((k) => [k, bool(a[k] ?? ca[k], `approval.${k}`)])),
+      metricool: { ...(cur.metricool || {}), default_mode: mode },
       codex: { command: str(cx.command ?? cur.codex?.command, 'codex.command'), timeout_minutes: int(cx.timeout_minutes ?? cur.codex?.timeout_minutes, 'codex.timeout_minutes', 1) },
       ffmpeg: { command: str(ff.command ?? cur.ffmpeg?.command, 'ffmpeg.command') },
       remove_watermark: { script: str(rw.script ?? cur.remove_watermark?.script, 'remove_watermark.script') },
@@ -162,7 +159,8 @@ export function saveSettings(input = {}) {
     }
     if (!fs.existsSync(path.resolve(toolRoot, changes.skillsRoot))) throw new Error(`skillsRoot không tồn tại: ${path.resolve(toolRoot, changes.skillsRoot)}`);
     const next = merge(cur, changes);
-    next.approval = changes.approval;
+    // No approval step any more (user, 09/11/2026): older settings files lose their approval block on save.
+    delete next.approval;
     next.research = changes.research;
     if (changes.remove_watermark.providers) next.remove_watermark.providers = changes.remove_watermark.providers;
     writeJson(file, next);
@@ -397,18 +395,6 @@ export function brandSources(social) {
     .map((x) => ({ id: x.id, name: x.name || x.id, platform: x.platform || '', url: x.url, what_to_take: x.what_to_take || '', notes: x.notes || '' }));
 }
 
-// Every reference of a brand's run, across its source folders: key '<source-id>/R01', image relative to the run folder.
-export function loadRefs(brand, date) {
-  const dir = runDir(brand, date);
-  const refs = [];
-  if (!fs.existsSync(dir)) return refs;
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const file = path.join(dir, e.name, 'refs.json');
-    if (!e.isDirectory() || !fs.existsSync(file)) continue;
-    for (const r of readJson(file).refs) refs.push({ ...r, key: `${e.name}/${r.id}`, source: e.name, image: `${e.name}/${r.image}` });
-  }
-  return refs;
-}
 export function latestRun(brand) {
   const dir = path.join(workspace, 'runs', brand);
   if (!fs.existsSync(dir)) return '';
@@ -425,7 +411,7 @@ export function findDraft(id) {
 export function setStatus(dir, status, extra = {}) {
   const file = path.join(dir, 'status.json');
   return withLock(file, () => {
-    // tool_status = the last status the tool itself set; a status that differs from it was edited by hand (approve.mjs sync).
+    // tool_status = the last status the tool itself set (kept for the log).
     const next = { ...readJson(file, {}), ...extra, status, tool_status: status, updated: stamp() };
     writeJson(file, next);
     return next;

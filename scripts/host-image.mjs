@@ -19,7 +19,7 @@
 //   node scripts/host-image.mjs remove  --brand <id> --post <POST-id> [--force]
 //       delete the hosted file(s) (commit, push), drop the URL fields. Only for status "published"; --force removes
 //       anyway and returns a warning (Metricool posts still pointing at the link lose their media).
-// Both are idempotent. approve.mjs / writeback.mjs call publish right after a write-back (imageHost.auto_after_writeback).
+// Both are idempotent. finalize.mjs / writeback.mjs call publish right after a write-back (imageHost.auto_after_writeback).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -203,7 +203,7 @@ function imageExt(name) {
 export async function publish({ brand: brandId, post: postId, video: wantVideo = false, fast = false }, s = settings()) {
   const h = hostConfig(s);
   const { brand, catalogFile, entry } = postOf(brandId, postId);
-  if (!APPROVED.includes(entry.status)) throw new Error(`${postId} đang "${entry.status}"; chỉ host media của bài đã được người duyệt (approved/scheduled/published).`);
+  if (!APPROVED.includes(entry.status)) throw new Error(`${postId} đang "${entry.status}"; chỉ host media của bài đã ghi vào thương hiệu (approved/scheduled/published).`);
   const items = mediaOf(brand, entry, postId, wantVideo);
   const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
   for (const it of items) {
@@ -286,7 +286,7 @@ function recordHost(draftId, host) {
   } catch { /* the draft may be gone; the catalog still has the link */ }
 }
 
-// Called right after a write-back (approve.mjs, writeback.mjs, the app): a hosting failure never undoes the approval.
+// Called right after a write-back (finalize.mjs, writeback.mjs, the app): a hosting failure never undoes the write-back.
 // It returns quickly: push + a short check (an image gets its raw link at once). When the post still needs the slow
 // part (the Pages link, or any video), the full publish keeps running in the background (`background` holds its
 // promise) and records its result in status.json image_host. Every outcome, ok or error (+ the command to run again),

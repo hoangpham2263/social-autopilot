@@ -120,7 +120,7 @@ test('publish: approved only, clean only, commit + push + 200, media_url in the 
 
   const draft = await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-91');
   assert.equal(draft.ok, false);
-  assert.match(draft.error, /người duyệt/);
+  assert.match(draft.error, /đã ghi vào thương hiệu/);
   const dirty = await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-92');
   assert.equal(dirty.ok, false);
   assert.match(dirty.error, /metadata/);

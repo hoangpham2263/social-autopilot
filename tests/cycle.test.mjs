@@ -1,5 +1,6 @@
 // One whole cycle against a throw-away brand skill and workspace (never the real brand folders):
-// brands -> sources -> research start/ingest (append, dedupe, cleaning) -> ideas -> draft (fake Codex) -> check -> approve -> write-back.
+// brands -> sources -> research start/ingest into the store (dedupe, cleaning, incremental) -> store ideas -> draft
+// (fake Codex) -> automatic checks -> finalize (write-back, host). No approval step.
 // npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,6 +32,20 @@ export function png(w = 8, h = 8, rgb = [200, 120, 40]) {
   const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
   const raw = Buffer.alloc((w * 3 + 1) * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set(rgb, y * (w * 3 + 1) + 1 + x * 3);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+// A PNG with a structure of its own (blocks of gray from a seed), so perceptual hashes differ between seeds and stay
+// close for the same seed at another size. A solid colour would hash the same as every other solid colour.
+export function pattern(seed, size = 32) {
+  let x = seed.reduce((a, v, i) => (a * 31 + v + i) >>> 0, 7) || 1;
+  const rnd = () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x % 256; };
+  const grid = Array.from({ length: 64 }, rnd);
+  const crc = (buf) => { let c = ~0; for (const b of buf) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const raw = Buffer.alloc((size * 3 + 1) * size);
+  for (let y = 0; y < size; y++) for (let px = 0; px < size; px++) { const v = grid[Math.floor((y * 8) / size) * 8 + Math.floor((px * 8) / size)]; raw.set([v, v, v], y * (size * 3 + 1) + 1 + px * 3); }
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
@@ -75,6 +90,9 @@ test.before(() => {
 });
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
+const storeFile = (b) => path.join(ws, 'store', b, 'items.json');
+const readItems = (b) => JSON.parse(fs.readFileSync(storeFile(b), 'utf8')).items;
+
 test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const brands = run('brands.mjs');
   assert.deepEqual(brands.usable.sort(), ['dreamyvows', 'grenheim'], JSON.stringify(brands.brands.map((b) => b.problems)));
@@ -83,57 +101,120 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const sources = run('sources.mjs');
   assert.deepEqual(sources.brands[0].sources.map((s) => s.id), ['shop-a', 'shop-b']);
 
+  // ----- Mode 1 "Chỉ nghiên cứu": crawl -> store -----
   const start = run('research.mjs', 'start', '--brand', 'dreamyvows');
   assert.equal(start.ok, true, JSON.stringify(start));
   assert.equal(run('research.mjs', 'start', '--brand', 'dreamyvows').reused, true);
   const [a, b] = start.run.sources;
+  assert.equal(a.known_count, 0);
+  assert.match(a.stop_rule, /cuộn tới hết trang/);
 
-  // shop-a: 3 posts, no limits; Facebook's U+034F removed.
-  const posts = [1, 2, 3].map((n) => ({ post_url: `https://fb/p${n}`, caption: `Đèn neon͏͏ số ${n}​ giá 600k`, image: `raw/${n}.png` }));
-  posts.forEach((p, i) => write(path.join(a.dir, p.image), png(8, 8, [i * 40, 10, 10])));
+  // shop-a: 3 posts; Facebook's U+034F removed. Captions differ enough not to count as one.
+  const caps = ['Đèn neon͏͏ chữ Love​ cho tiệc cưới ngoài trời, ánh trắng ấm, dây dài ba mét', 'Bảng LED tên cô dâu chú rể treo cổng hoa, màu hồng phấn, kèm móc treo', 'Neon Happy Birthday để bàn nhà hàng, pin sạc dùng tám tiếng liền'];
+  const posts = [1, 2, 3].map((n) => ({ post_url: `https://www.facebook.com/shopa/posts/10000000${n}`, caption: caps[n - 1], image: `raw/${n}.png`, posted_date: `2026-10-0${n}` }));
+  const pics = [[0, 0, 0, 255, 255, 255], [255, 255, 255, 0, 0, 0], [0, 255, 0, 255, 0, 255]];
+  posts.forEach((p, i) => write(path.join(a.dir, p.image), pattern(pics[i])));
   // Only real images inside the source folder: a text file named .png, a .txt and a file outside the run are dropped.
   write(path.join(a.dir, 'raw', 'fake.png'), 'not an image');
   write(path.join(a.dir, 'raw', 'note.txt'), 'x');
   const outsideImg = path.join(tmp, 'elsewhere.png'); write(outsideImg, png(8, 8, [1, 2, 3]));
   write(a.raw_file, JSON.stringify([...posts, { post_url: 'https://fb/fake', image: 'raw/fake.png' }, { post_url: 'https://fb/txt', image: 'raw/note.txt' }, { post_url: 'https://fb/out', image: outsideImg }]));
-  // A leftover file in refs/ from an earlier ingest is removed.
-  write(path.join(a.dir, 'refs', 'R09-stale.png'), png());
-  posts.forEach((p, i) => write(path.join(b.dir, p.image), png(8, 8, [10, i * 40 + 5, 10])));
-  write(b.raw_file, JSON.stringify(posts));
+  // shop-b: one post of its own, and the same photo as shop-a's first post re-encoded (another shop reposting it).
+  write(path.join(b.dir, 'raw', '1.png'), pattern([10, 200, 10, 200, 10, 200], 32));
+  write(path.join(b.dir, 'raw', 'repost.png'), pattern(pics[0], 48));
+  write(b.raw_file, JSON.stringify([{ post_url: 'https://www.facebook.com/shopb/posts/20000001', caption: 'Mẫu đèn ngủ hình mặt trăng cho phòng bé, cắm cổng USB tiện lợi', images: ['raw/1.png'] }, { post_url: 'https://www.facebook.com/shopb/posts/20000002', caption: 'Hàng mới về', image: 'raw/repost.png' }]));
   const ingest = run('research.mjs', 'ingest', '--brand', 'dreamyvows');
   assert.equal(ingest.ok, true, JSON.stringify(ingest));
-  assert.deepEqual(ingest.sources.map((s) => s.refs), [3, 3]);
+  assert.deepEqual(ingest.sources.map((s) => s.added), [3, 1]);
   assert.deepEqual(ingest.sources[0].dropped.map((d) => d.post_url).sort(), ['https://fb/fake', 'https://fb/out', 'https://fb/txt']);
-  assert.ok(!fs.existsSync(path.join(a.dir, 'refs', 'R09-stale.png')), 'stale ref file removed');
-  const refs = JSON.parse(fs.readFileSync(path.join(a.dir, 'refs.json'), 'utf8')).refs;
-  assert.ok(!/[͏​]/.test(refs[0].caption));
-  // A second run the same day: start again is allowed, the new post is appended, duplicates dropped.
-  assert.equal(run('research.mjs', 'start', '--brand', 'dreamyvows').reused, true);
-  write(path.join(a.dir, 'raw', '4.png'), png(8, 8, [200, 200, 10]));
-  write(a.raw_file, JSON.stringify([...posts, { post_url: 'https://fb/p4', caption: 'mới', image: 'raw/4.png' }]));
-  const again = run('research.mjs', 'ingest', '--brand', 'dreamyvows');
-  assert.deepEqual(again.sources.map((s) => s.refs), [4, 3]);
-  assert.equal(again.sources[0].added, 1);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(a.dir, 'refs.json'), 'utf8')).refs.map((r) => r.id), ['R01', 'R02', 'R03', 'R04']);
-  assert.equal(fs.readdirSync(path.join(a.dir, 'refs')).length, 4);
+  assert.equal(ingest.sources[1].duplicates, 1, JSON.stringify(ingest.sources[1]));
+  assert.equal(ingest.sources[1].duplicate_list[0].rule, 'image_phash');
+  assert.equal(ingest.sources[1].note, '1 bài trùng bỏ qua');
+  let items = readItems('dreamyvows');
+  assert.deepEqual(items.map((i) => i.id), ['S0001', 'S0002', 'S0003', 'S0004']);
+  assert.ok(!/[͏​]/.test(items[0].caption));
+  assert.ok(items.every((i) => i.status === 'new' && fs.existsSync(path.join(ws, 'store', 'dreamyvows', i.images[0]))));
+  const dupLog = JSON.parse(fs.readFileSync(path.join(ws, 'store', 'dreamyvows', 'duplicates.json'), 'utf8')).duplicates;
+  assert.equal(dupLog.length, 1);
+  assert.equal(dupLog[0].matched, 'S0001');
 
-  const init = run('ideas.mjs', 'init', '--brand', 'dreamyvows');
-  assert.equal(init.total, 7);
-  const copied = run('ideas.mjs', 'set', '--brand', 'dreamyvows', '--id', 'I01', '--json', JSON.stringify({ product_type: 'đèn neon số 1 giá 600k', scene: 'x', angle: 'y', caption_structure: 'z' }));
-  assert.ok(copied.problems.length >= 1);
-  assert.equal(run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', 'I01').ok, false);
+  // How each source ended; blocked needs a reason. The report: new per source, duplicates, done, blocked.
+  assert.equal(run('research.mjs', 'result', '--brand', 'dreamyvows', '--source', 'shop-b', '--state', 'blocked').ok, false);
+  assert.equal(run('research.mjs', 'result', '--brand', 'dreamyvows', '--source', 'shop-a', '--state', 'end').result.reached_end, true);
+  assert.equal(run('research.mjs', 'result', '--brand', 'dreamyvows', '--source', 'shop-b', '--state', 'blocked', '--note', 'checkpoint').run_status, 'done-with-blocked');
+  const report = run('research.mjs', 'report', '--brand', 'dreamyvows');
+  assert.deepEqual(report.sources.map((s) => [s.id, s.new, s.duplicates]), [['shop-a', 3, 0], ['shop-b', 1, 1]]);
+  assert.deepEqual(report.done, ['shop-a']);
+  assert.deepEqual(report.blocked, ['shop-b: checkpoint']);
+  assert.equal(report.store.new, 4);
+
+  // A later crawl (incremental): start tells where to stop (known posts of the source, brand-wide ids to skip).
+  const again = run('research.mjs', 'start', '--brand', 'dreamyvows', '--source', 'shop-a', '--since', '2026-01-01', '--max-posts', '1');
+  const a2 = again.run.sources[0];
+  assert.deepEqual(again.run.sources.map((s) => s.id), ['shop-a']);
+  assert.equal(a2.known_count, 3);
+  assert.equal(a2.reached_end_before, true);
+  assert.match(a2.stop_rule, /3 bài liên tiếp đã có/);
+  assert.match(a2.stop_rule, /2026-01-01/);
+  const known = JSON.parse(fs.readFileSync(a2.known_file, 'utf8'));
+  assert.equal(known.post_urls.length, 3);
+  assert.ok(known.brand_post_ids.includes('20000001'), 'brand-wide Facebook ids, to skip before downloading');
+  assert.match(run('research.mjs', 'start', '--brand', 'dreamyvows', '--full').run.sources[0].stop_rule, /--full/);
+  run('research.mjs', 'start', '--brand', 'dreamyvows', '--source', 'shop-a', '--since', '2026-01-01', '--max-posts', '1');
+  // Same post under another link spelling (tracking parameters, m.) is a duplicate; an old post (before --since) is
+  // dropped; only 1 new post (--max-posts 1).
+  write(path.join(a.dir, 'raw', '5.png'), pattern([200, 0, 0, 0, 0, 200]));
+  write(path.join(a.dir, 'raw', '6.png'), pattern([0, 0, 200, 200, 0, 0]));
+  write(path.join(a.dir, 'raw', '7.png'), pattern([0, 90, 0, 90, 0, 90], 24, 3));
+  write(a.raw_file, JSON.stringify([
+    { post_url: 'https://m.facebook.com/shopa/posts/100000001/?__cft__=x&ref=share', caption: 'khác', image: 'raw/5.png' },
+    { post_url: 'https://www.facebook.com/shopa/posts/100000009', caption: 'Cũ lắm rồi nhưng vẫn là một caption đủ dài để so sánh', image: 'raw/6.png', posted_date: '2025-12-31' },
+    { post_url: 'https://www.facebook.com/shopa/posts/100000010', caption: 'Bài mới tinh về đèn treo tường hình trái tim cho phòng khách', image: 'raw/5.png', posted_date: '2026-11-01' },
+    { post_url: 'https://www.facebook.com/shopa/posts/100000011', caption: 'Một bài mới nữa về chữ neon để quầy bar quán cà phê', image: 'raw/7.png', posted_date: '2026-11-02' },
+  ]));
+  const inc = run('research.mjs', 'ingest', '--brand', 'dreamyvows', '--source', 'shop-a');
+  assert.equal(inc.sources[0].added, 1, JSON.stringify(inc));
+  assert.deepEqual(inc.sources[0].duplicate_list.map((d) => d.rule), ['post_url']);
+  assert.deepEqual(inc.sources[0].dropped.map((d) => d.reason).sort(), ['vượt --max-posts', 'đăng trước --since 2026-01-01']);
+  items = readItems('dreamyvows');
+  assert.equal(items.length, 5);
+
+  // ----- Mode 2 "Làm bài & đưa lên": store -> ideas -> draft -> automatic checks -> brand -> host -----
+  // Store "Bỏ": a rejected item is never picked for an idea; restore puts it back.
+  assert.equal(run('store.mjs', 'reject', '--brand', 'dreamyvows', '--id', 'S0002', '--note', 'không hợp').item.status, 'rejected');
+  assert.match(run('store.mjs', 'reject', '--brand', 'dreamyvows', '--id', 'S0002').error, /đã bỏ/);
+  const init = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--count', '2');
+  assert.equal(init.ok, true, JSON.stringify(init));
+  assert.equal(init.added.length, 2);
+  assert.ok(!init.items.includes('S0002'), 'rejected item not used');
+  items = readItems('dreamyvows');
+  for (const [n, id] of init.items.entries()) { const it = items.find((x) => x.id === id); assert.equal(it.status, 'used'); assert.deepEqual(it.used_by, [init.added[n]]); }
+  // Only "new" items: an item already used cannot be picked again.
+  assert.match(run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', init.items[0]).error, /chỉ lấy bài "new"/);
+  assert.equal(run('store.mjs', 'restore', '--brand', 'dreamyvows', '--id', 'S0002').item.status, 'new');
+  const rest = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--count', '10');
+  assert.equal(rest.added.length, 3);
+  assert.equal(rest.store_new_left, 0);
+  assert.equal(run('ideas.mjs', 'init', '--brand', 'dreamyvows').added.length, 0);
+
+  const I = init.added[0], itemId = init.items[0];
+  const refItem = items.find((x) => x.id === itemId);
+  const copied = run('ideas.mjs', 'set', '--brand', 'dreamyvows', '--id', I, '--json', JSON.stringify({ product_type: refItem.caption.split(' ').slice(0, 7).join(' '), scene: 'x', angle: 'y', caption_structure: 'z' }));
+  assert.ok(copied.problems.length >= 1, JSON.stringify(copied));
+  assert.equal(run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', I).ok, false);
   const idea = { product_type: 'neon chữ để bàn', scene: 'bàn ăn tối kỷ niệm, chạng vạng', angle: 'ngang tầm mắt người ngồi', caption_structure: 'dịp dùng, cách đặt làm, CTA' };
-  assert.equal(run('ideas.mjs', 'set', '--brand', 'dreamyvows', '--id', 'I01', '--json', JSON.stringify(idea)).idea.status, 'ready');
-  assert.equal(run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', 'I01').idea.status, 'picked');
+  assert.equal(run('ideas.mjs', 'set', '--brand', 'dreamyvows', '--id', I, '--json', JSON.stringify(idea)).idea.status, 'ready');
+  assert.equal(run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', I).idea.status, 'picked');
 
-  const date = start.run.date;
   const outside = path.join(tmp, 'outside.png'); fs.writeFileSync(outside, png());
-  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--product', outside).ok, false);
+  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', outside).ok, false);
+  assert.match(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `2026-11-09/I01`, '--product', outside).error, /--idea I001/);
   const product = path.join(brandDir, 'project', 'sources', 'inputs', 'test-product', 'product.png');
-  const refImage = path.join(a.dir, refs[0].image);
-  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--product', product, '--scene', refImage).ok, false);
-  const draft = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--product', product);
+  const refImage = path.join(ws, 'store', 'dreamyvows', refItem.images[0]);
+  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product, '--scene', refImage).ok, false);
+  const draft = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product);
   assert.equal(draft.ok, true, JSON.stringify(draft));
+  assert.ok(readItems('dreamyvows').find((x) => x.id === itemId).used_by.includes(draft.id), 'store item used_by the draft');
   assert.equal(run('draft.mjs', 'image', '--id', draft.id).ok, false); // {{PRODUCT_DESCRIPTION}} not filled
   const promptFile = path.join(draft.dir, 'prompt.txt');
   fs.writeFileSync(promptFile, fs.readFileSync(promptFile, 'utf8').replace('{{PRODUCT_DESCRIPTION}}', 'A warm white neon sign reading "Love".'));
@@ -156,8 +237,8 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'needs_caption');
   for (const l of ['vn', 'en']) write(path.join(draft.dir, `content-${l}.txt`), `Bảng neon "Love" cho bữa tối kỷ niệm (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows #neon\n`);
   const checked = run('draft.mjs', 'check', '--id', draft.id);
-  assert.equal(checked.status, 'awaiting_approval', JSON.stringify(checked.problems));
-  const waiting = run('queue.mjs').brands[0].awaiting_approval;
+  assert.equal(checked.status, 'ready', JSON.stringify(checked.problems));
+  const waiting = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').ready;
   assert.equal(waiting.length, 1);
   // vn is reviewer-only: shown apart, never in the posted captions.
   assert.deepEqual(Object.keys(waiting[0].captions), ['content-en.txt']);
@@ -168,20 +249,33 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   fs.writeFileSync(vnFile, vnText.replace('#DreamyVows', 'Ảnh tạo bằng AI\n#DreamyVows'));
   const labelled = run('draft.mjs', 'check', '--id', draft.id);
   assert.ok(labelled.problems.some((p) => /nhãn AI/.test(p) && /content-vn/.test(p)), JSON.stringify(labelled.problems));
+  // No human gate: finalize checks again, so a label slipped in after check stops that post (check_failed).
+  assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'needs_caption');
   fs.writeFileSync(vnFile, vnText);
-  assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'awaiting_approval');
+  assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'ready');
+  fs.writeFileSync(vnFile, vnText.replace('#DreamyVows', 'made with AI\n#DreamyVows'));
+  const stopped = run('finalize.mjs', 'run', '--id', draft.id);
+  assert.deepEqual(stopped.failed, [draft.id]);
+  assert.match(stopped.results[0].error, /nhãn AI/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(draft.dir, 'status.json'), 'utf8')).status, 'check_failed');
+  fs.writeFileSync(vnFile, vnText);
 
-  // Nothing in the brand before approval; write-back refuses a draft not approved. No named approver: --by is free text.
+  // Nothing in the brand before finalize; write-back refuses a draft not finalized.
   assert.equal(JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.filter((p) => p.source === `social-autopilot ${draft.id}`).length, 0);
   assert.equal(run('writeback.mjs', '--id', draft.id).ok, false);
-  const ok = run('approve.mjs', 'approve', '--id', draft.id, '--by', '  someone   else ', '--note', 'đẹp');
-  assert.equal(ok.ok, true, JSON.stringify(ok));
+  const fin = run('finalize.mjs', 'run', '--brand', 'dreamyvows');
+  assert.deepEqual(fin.results.map((r) => r.id), []); // check_failed is not "ready": run check first
+  assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'ready');
+  const done = run('finalize.mjs', 'run', '--brand', 'dreamyvows');
+  assert.deepEqual(done.done, [draft.id], JSON.stringify(done));
+  const ok = done.results[0];
   const catalog = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'));
   const post = catalog.posts.find((p) => p.id === ok.brand_post.id);
   assert.match(post.id, /^POST-\d+$/);
   assert.equal(catalog.posts.filter((p) => p.id === post.id).length, 1); // a new number, after the brand's own posts
   assert.equal(post.status, 'approved');
-  assert.equal(post.approval.by, 'someone else');
+  assert.equal(post.approval.by, 'auto');
+  assert.equal(post.inspiration.store_item, itemId);
   assert.deepEqual(Object.keys(post.captions), ['en']); // posted captions only
   assert.deepEqual(post.review_captions, { vn: 'content-vn.txt' });
   assert.equal(post.ai_disclosure.label, undefined); // never an AI label on a post
@@ -189,39 +283,38 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.ok(fs.existsSync(path.join(brandDir, post.folder, 'image.png')));
   assert.ok(ok.check_post, "check-post.mjs of the skill must run");
   assert.equal(ok.check_post.errors, 0, JSON.stringify(ok.check_post));
-  // Wired after write-back: the approved image is committed and pushed to the host; the link check fails here (closed
-  // port), so no media_url yet and the command to run again is given.
+  // Wired after write-back: the image is committed and pushed to the host; the link check fails here (closed port), so
+  // no media_url yet and the command to run again is given.
   assert.equal(ok.image_host.ok, false, JSON.stringify(ok.image_host));
   assert.ok(ok.image_host.next.endsWith(`host-image.mjs publish --brand dreamyvows --post ${post.id}`), ok.image_host.next);
   assert.equal(git(tmp, '--git-dir', hostBare, 'log', '-1', '--format=%s', 'main'), `dreamyvows ${post.id}`);
   assert.equal(post.media_url, undefined);
-  assert.equal(run('approve.mjs', 'approve', '--id', draft.id).reused, true);
-  // Queue (RUNBOOK step 6): the approved post with "chưa có link" and the host error + command.
-  const done = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').approved.find((x) => x.id === draft.id);
-  assert.equal(done.media_url, null);
-  assert.equal(done.image_link, 'chưa có link');
-  assert.ok(done.host_error, JSON.stringify(done));
-  assert.ok(done.next.includes(`--post ${post.id}`));
+  assert.equal(run('finalize.mjs', 'run', '--id', draft.id).results[0].reused, true);
+  // Report: the written post with "chưa có link" and the host error + command; not sent to Metricool yet.
+  const w = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').written.find((x) => x.id === draft.id);
+  assert.equal(w.media_url, null);
+  assert.equal(w.image_link, 'chưa có link');
+  assert.ok(w.host_error, JSON.stringify(w));
+  assert.ok(w.next.includes(`--post ${post.id}`));
+  assert.equal(w.metricool, 'not_sent');
 
-  // Reject needs a note.
-  run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', 'I01');
-  const second = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--product', product, '--again');
-  assert.equal(run('approve.mjs', 'reject', '--id', second.id).ok, false);
-  const rejected = run('approve.mjs', 'reject', '--id', second.id, '--note', 'không hợp');
-  assert.equal(rejected.status, 'rejected');
-  assert.equal(rejected.by, 'user');
-  assert.match(run('approve.mjs', 'reject', '--id', second.id, '--note', 'lại').error, /không từ chối lại/);
+  // Optional "Bỏ" before a draft reaches the brand; not after.
+  run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', I);
+  const second = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product, '--again');
+  assert.equal(run('finalize.mjs', 'cancel', '--id', second.id, '--note', 'không hợp').status, 'rejected');
+  assert.match(run('finalize.mjs', 'cancel', '--id', second.id).error, /đã bỏ/);
+  assert.match(run('finalize.mjs', 'cancel', '--id', draft.id).error, /đã ghi vào thương hiệu/);
 
-  // Scene-swap: off by default (brand images only), opt-in per brand in social.json.
+  // Scene-swap: off by default (brand images only), opt-in per brand in social.json; the image is a store image.
   const socialFile = path.join(brandDir, 'project', 'social.json');
   const setRedraw = (value) => { const s = JSON.parse(fs.readFileSync(socialFile, 'utf8')); s.product_images.reference_redraw = value; fs.writeFileSync(socialFile, JSON.stringify(s, null, 2)); };
-  const refPath = path.join(a.dir, refs[1].image);
+  const refPath = path.join(ws, 'store', 'dreamyvows', items.find((x) => x.id === 'S0001').images[0]);
   setRedraw({ enabled: false, require_logo_removal: true, only_if_brand_can_produce: true });
-  const swapArgs = ['draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--ref-image', refPath, '--again'];
+  const swapArgs = ['draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', refPath, '--again'];
   assert.match(run(...swapArgs).error, /reference_redraw\.enabled/);
   setRedraw({ enabled: true, require_logo_removal: true, only_if_brand_can_produce: true });
   assert.match(run(...swapArgs).error, /brand-can-produce/);
-  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', `${date}/I01`, '--ref-image', outside, '--again', '--brand-can-produce').ok, false); // not a reference of this brand
+  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', outside, '--again', '--brand-can-produce').ok, false); // not a store image of this brand
   const swap = run(...swapArgs, '--brand-can-produce');
   assert.equal(swap.ok, true, JSON.stringify(swap));
   const swapPrompt = path.join(swap.dir, 'prompt.txt');
@@ -235,10 +328,10 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.ok(swapCheck.problems.some((p) => /confirm-clean/.test(p)), 'visual logo check is required');
   for (const l of ['vn', 'en']) write(path.join(swap.dir, `content-${l}.txt`), `Bảng neon "Love" cho bàn tiệc (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
   assert.equal(run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent').ok, true);
-  assert.equal(run('draft.mjs', 'check', '--id', swap.id).status, 'awaiting_approval');
-  const shown = run('queue.mjs').brands.find((b) => b.brand === 'dreamyvows').awaiting_approval.find((d) => d.id === swap.id);
-  assert.equal(shown.reference_image, refPath); // the approver sees the shop's original beside the result
-  const swapOk = run('approve.mjs', 'approve', '--id', swap.id);
+  assert.equal(run('draft.mjs', 'check', '--id', swap.id).status, 'ready');
+  const shown = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').ready.find((d) => d.id === swap.id);
+  assert.equal(shown.reference_image, refPath); // the shop's original beside the result in the app
+  const swapOk = run('finalize.mjs', 'run', '--id', swap.id).results[0];
   assert.equal(swapOk.ok, true, JSON.stringify(swapOk));
   const swapPost = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.find((p) => p.id === swapOk.brand_post.id);
   assert.equal(swapPost.image_mode, 'scene-swap');
@@ -248,12 +341,71 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   setRedraw(undefined);
 });
 
-test('research has no limits: another brand starts after a big run, the same brand restarts', { skip: !haveReal && 'no brand skills to copy' }, () => {
+test('store dedupe rules: post link / Facebook id, caption (exact and near), image file and perceptual hash', async () => {
+  const { postKey, postIds, normCaption, captionSimilarity, findDuplicate } = await import(new URL('../scripts/store.mjs', import.meta.url));
+  assert.equal(postKey('https://m.facebook.com/shop/posts/123456789/?__cft__[0]=x&ref=y'), postKey('https://www.facebook.com/shop/posts/123456789'));
+  assert.equal(postKey('https://www.facebook.com/photo/?fbid=555666777&set=a.1&__tn__=x'), 'facebook.com/photo?fbid=555666777');
+  assert.deepEqual(postIds('https://www.facebook.com/photo/?fbid=555666777&set=a.1'), ['555666777']);
+  assert.deepEqual(postIds('https://www.facebook.com/duodecor/posts/pfbid02abcDEF123ghiJKL'), ['pfbid02abcDEF123ghiJKL']);
+  assert.deepEqual(postIds('https://example.com/p/123456789'), []);
+  assert.equal(normCaption('Đèn NEON͏ 😍 #sale gọi 0896 677 966 https://x.vn !!'), 'đèn neon gọi');
+  const long = 'đèn neon chữ love cho tiệc cưới ngoài trời ánh trắng ấm dây dài ba mét bảo hành mười hai tháng';
+  assert.ok(captionSimilarity(long, long.replace('mười hai', '12')) >= 0.9);
+  assert.ok(captionSimilarity(long, 'bảng led tên cô dâu chú rể treo cổng hoa màu hồng phấn kèm móc treo chắc chắn') < 0.5);
+  const cfg = { image_distance: 20, caption_similarity: 0.9 };
+  const store = [{ id: 'S0001', post_keys: ['facebook.com/shop/posts/111'], post_ids: ['111', '999888777'], image_sha1: ['aa'], image_phash: ['0'.repeat(64)], caption_norm: long, caption_hash: 'h1' }];
+  const cand = (x) => ({ post_url: '', alt_urls: [], sha1: ['zz'], phash: ['f'.repeat(64)], caption_norm: 'ngắn', caption_hash: 'hx', ...x });
+  assert.equal(findDuplicate(cand({ post_url: 'https://facebook.com/shop/posts/111/?ref=a' }), store, cfg).rule, 'post_url');
+  // Facebook shows one post under the post id and each photo's fbid: any shared id is the same post.
+  assert.equal(findDuplicate(cand({ post_url: 'https://www.facebook.com/shop/posts/222', alt_urls: ['https://www.facebook.com/photo/?fbid=999888777'] }), store, cfg).rule, 'post_id');
+  assert.equal(findDuplicate(cand({ sha1: ['aa'] }), store, cfg).rule, 'image_sha1');
+  assert.equal(findDuplicate(cand({ phash: ['0'.repeat(63) + '7'] }), store, cfg).rule, 'image_phash');
+  assert.equal(findDuplicate(cand({ phash: ['f'.repeat(32) + '0'.repeat(32)] }), store, cfg), null);
+  assert.equal(findDuplicate(cand({ caption_norm: long, caption_hash: 'h1' }), store, cfg).rule, 'caption');
+  assert.equal(findDuplicate(cand({ caption_norm: long.replace('ba mét', '3 mét'), caption_hash: 'h2' }), store, cfg).rule, 'caption_similar');
+  assert.equal(findDuplicate(cand({ caption_norm: 'đèn neon', caption_hash: 'h3' }), [{ ...store[0], caption_norm: 'đèn neon', caption_hash: 'h3' }], cfg), null, 'short captions are too common to match');
+});
+
+test('perceptual hash: same picture resized matches, different picture does not', async () => {
+  const { decodePng, dhash, hamming } = await import(new URL('../scripts/phash.mjs', import.meta.url));
+  const a = dhash(decodePng(pattern([0, 0, 0, 255, 255, 255], 64))), b = dhash(decodePng(pattern([0, 0, 0, 255, 255, 255], 40)));
+  const c = dhash(decodePng(pattern([0, 255, 0, 255, 0, 255], 64)));
+  assert.ok(hamming(a, b) <= 20, `resized: ${hamming(a, b)}`);
+  assert.ok(hamming(a, c) > 40, `different: ${hamming(a, c)}`);
+});
+
+test('migrate: old dated runs into the store, duplicates once, drafted references marked used', async () => {
+  const brand = 'migr';
+  const day = path.join(ws, 'runs', brand, '2026-11-08', 'src1');
+  write(path.join(day, 'refs', 'R01-a.png'), pattern([0, 0, 0, 255, 255, 255]));
+  write(path.join(day, 'refs', 'R02-b.png'), pattern([255, 0, 0, 0, 0, 255]));
+  write(path.join(day, 'refs.json'), JSON.stringify({ refs: [{ id: 'R01', post_url: 'https://www.facebook.com/x/posts/101010101', caption: 'một', image: 'refs/R01-a.png' }, { id: 'R02', post_url: 'https://www.facebook.com/x/posts/202020202', caption: 'hai', image: 'refs/R02-b.png' }] }));
+  write(path.join(ws, 'runs', brand, '2026-11-08', 'ideas.json'), JSON.stringify({ ideas: [{ id: 'I01', ref: 'src1/R02', status: 'drafted', drafts: ['migr-20261108-01'] }] }));
+  const day2 = path.join(ws, 'runs', brand, '2026-11-09', 'src1');
+  write(path.join(day2, 'refs', 'R01-a.png'), pattern([0, 0, 0, 255, 255, 255]));
+  write(path.join(day2, 'refs.json'), JSON.stringify({ refs: [{ id: 'R01', post_url: 'https://www.facebook.com/x/posts/101010101', caption: 'một', image: 'refs/R01-a.png' }] }));
+  const r = run('store.mjs', 'migrate', '--brand', brand).brands[0];
+  assert.equal(r.added, 2);
+  assert.equal(r.duplicates, 1);
+  assert.equal(run('store.mjs', 'migrate', '--brand', brand).brands[0].added, 0);
+  const items = readItems(brand);
+  assert.equal(items.length, 2);
+  assert.equal(items[1].status, 'used');
+  assert.deepEqual(items[1].used_by, ['migr-20261108-01']);
+  assert.equal(items[0].status, 'new');
+});
+
+test('research has no limits by default: another brand starts after a big run, the same brand restarts', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const r = run('research.mjs', 'start', '--brand', 'grenheim');
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.run.budget, undefined);
+  assert.equal(r.run.mode.max_posts, 0);
   assert.equal(run('research.mjs', 'start', '--brand', 'grenheim').reused, true);
   assert.equal(run('research.mjs', 'limits').ok, false); // the command is gone
+  assert.match(run('research.mjs', 'start', '--brand', 'grenheim', '--since', '9/11').error, /YYYY-MM-DD/);
+  assert.match(run('research.mjs', 'start', '--brand', 'grenheim', '--source', 'nope').error, /nope/);
+  // Stores stay apart per brand.
+  assert.ok(!fs.existsSync(storeFile('grenheim')) || readItems('grenheim').every((i) => i.source_id === 'wood-a'));
 });
 
 test('clean script strips U+034F and zero-width characters from a CSV', () => {

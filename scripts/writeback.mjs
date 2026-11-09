@@ -1,7 +1,8 @@
 // Step 5: write-back. Writes ONE approved draft into the brand's own skill folder: workspace/posts/POST-<slug>/
 // (image cleaned by the skill's scripts/clean-image.mjs, content-<lang>.txt) and one entry in workspace/catalog.json,
 // in the format the skill already uses; then runs the skill's scripts/check-post.mjs on it. Refuses anything that is
-// not approved. approve.mjs calls it; run it alone only to retry a write-back that failed.
+// not approved (finalize.mjs sets approved, by "auto", after every automatic check passed). finalize.mjs calls it; run it
+// alone only to retry a write-back that failed.
 //   node scripts/writeback.mjs --id <draft>      (then host-image.mjs publish, see the end of this file)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,7 @@ export function slugify(text) {
   return /^[a-z]/.test(s) ? s : `post-${s || 'social'}`.replace(/-$/, '');
 }
 
-// One write-back at a time per brand catalog (the UI and a scheduled agent may approve at the same moment).
+// One write-back at a time per brand catalog (two agents may finalize at the same moment).
 export function writeBack(id) {
   const { draft } = findDraft(id);
   const brand = loadBrand(draft.brand);
@@ -26,7 +27,7 @@ export function writeBack(id) {
 function writeBackInner(id) {
   const { dir, draft, status } = findDraft(id);
   if (status.brand_post) return { id, status: 'approved', brand_post: status.brand_post, reused: true };
-  if (status.status !== 'approved') throw new Error(`Bản nháp ${id} chưa được duyệt (status "${status.status}"); không ghi vào thương hiệu.`);
+  if (status.status !== 'approved') throw new Error(`Bản nháp ${id} chưa qua finalize.mjs (status "${status.status}"); không ghi vào thương hiệu.`);
   const brand = loadBrand(draft.brand);
   const { by = 'user', note = '' } = status;
   if (!fs.existsSync(path.join(dir, 'image.png'))) throw new Error('Bản nháp không có image.png.');
@@ -77,7 +78,7 @@ function writeBackInner(id) {
     ...(captionFiles.some((f) => /-[a-z]+\.txt$/.test(f.replace(/^content-[a-z]{2}/, ''))) ? { caption_variants: captionFiles.filter((f) => /^content-[a-z]{2}-/.test(f)) } : {}),
     channels: draft.networks.map((n) => n.network),
     language_mode: draft.language_mode,
-    inspiration: { ...(/^https?:\/\//.test(draft.inspiration.post_url || '') ? { url: draft.inspiration.post_url } : {}), source: draft.inspiration.source, source_shop: draft.inspiration.source_shop || '', mode: draft.image_mode || 'brand-image', source_url: draft.inspiration.source_url, run: draft.inspiration.run, ref: draft.inspiration.ref, idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}` },
+    inspiration: { ...(/^https?:\/\//.test(draft.inspiration.post_url || '') ? { url: draft.inspiration.post_url } : {}), source: draft.inspiration.source, source_shop: draft.inspiration.source_shop || '', mode: draft.image_mode || 'brand-image', source_url: draft.inspiration.source_url, run: draft.inspiration.run, ref: draft.inspiration.ref, ...(draft.inspiration.store_item ? { store_item: draft.inspiration.store_item } : {}), idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}` },
     // Bookkeeping only: a record that AI made the image. Never a label on the post or in the caption.
     ...(draft.image_mode === 'scene-swap'
       ? { ai_disclosure: true }
@@ -97,7 +98,7 @@ function writeBackInner(id) {
   }
   const brandPost = { id: postId, folder: path.join(brand.dir, folderRel), catalog: catalogFile };
   setStatus(dir, 'approved', { brand_post: brandPost, problems: [], error: '' });
-  return { id: draft.id, status: 'approved', brand_post: brandPost, check_post: checkPost, warnings, next: 'Publish (later: Metricool) — chưa làm; bài nằm trong workspace/posts của thương hiệu, trạng thái approved.' };
+  return { id: draft.id, status: 'approved', brand_post: brandPost, check_post: checkPost, warnings, next: `node scripts/metricool-mcp.mjs payload --brand ${draft.brand} --posts ${postId}` };
 }
 
 // Then the image goes to the image host (host-image.mjs, settings imageHost.auto_after_writeback); a hosting error is

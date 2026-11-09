@@ -1,9 +1,10 @@
-// Draft checks shared by draft.mjs, status.mjs and approve.mjs (no command of its own).
+// Draft checks shared by draft.mjs and finalize.mjs (no command of its own).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { cleanProblems } from './image-clean.mjs';
-import { loadRefs, readJson, runDir, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
+import { readStore, postKey } from './store.mjs';
+import { readJson, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
 
 // Which caption languages of a draft are posted and which are only for the approver to read (social.json
 // language_policy.review_langs). Read from the brand's social.json now, so older drafts follow the current policy.
@@ -39,7 +40,8 @@ export function checkDraft(dir, draft, status = {}) {
   // image.png must be the remove-watermark skill's clean copy: no metadata chunks, pixels identical to the original.
   else problems.push(...cleanProblems(dir, status));
   let refCaption = '';
-  try { refCaption = loadRefs(draft.brand, draft.inspiration.run).find((r) => r.key === draft.inspiration.ref)?.caption || ''; } catch {}
+  // The reference caption from the brand's store (store_item; drafts made before the store: matched by the post link).
+  try { const key = postKey(draft.inspiration.post_url); refCaption = readStore(draft.brand).items.find((r) => (draft.inspiration.store_item && r.id === draft.inspiration.store_item) || (!draft.inspiration.store_item && key && (r.post_keys || [r.post_key]).includes(key)))?.caption || ''; } catch {}
   // Posted languages and reviewer-only languages are checked alike.
   const langs = draftLangs(draft);
   const files = [...new Set([...Object.values(draft.captions || {}), ...langs.review.map(langs.file)])];
@@ -72,7 +74,7 @@ export function checkDraft(dir, draft, status = {}) {
     if (draft.require_logo_removal !== false && (!status.logo_check || status.logo_check.image_sha1 !== hash)) {
       problems.push(`scene-swap: xem image.png và xác nhận không còn tên shop "${draft.inspiration.source_shop || draft.inspiration.source}", logo, watermark, nhãn size, số điện thoại (draft.mjs confirm-clean --id ${draft.id} --by <tên>)`);
     }
-    warnings.push('scene-swap: người duyệt phải xem ảnh gốc của shop cạnh ảnh mới (reference_image trong báo cáo/giao diện).');
+    warnings.push('scene-swap: agent phải xem kỹ ảnh mới cạnh ảnh gốc của shop (reference_image; app hiện cả hai).');
   }
   return { problems, warnings, captions };
 }

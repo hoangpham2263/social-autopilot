@@ -1,19 +1,36 @@
-// Step 1: research, per brand, per source. The sources come only from the brand's own project/social.json
-// (research.sources[]); the browsing is done by the agent through Playwright (docs/research.md). This script opens a
-// run, then ingests and cleans what the agent saved. Results: workspace/runs/<brand>/<date>/<source-id>/.
-//   node scripts/research.mjs start  --brand <id>                      open (or reopen) today's run for the brand
-//   node scripts/research.mjs ingest --brand <id> [--source <sid>] [--date d] [--csv file]   raw.json -> refs.json/csv
-//   node scripts/research.mjs clean  --in <file> [--out <file>]        strip U+034F / zero-width / NBSP from CSV or text
-// No run or post limits (user, 2026-11-09): a brand's research can be started any number of times a day; each run of
-// the day goes into the day's folder and ingest appends the new posts to the refs already there (duplicates dropped by
-// post link and image). What stays is behaviour safety: human-like random pauses between page actions
-// (settings research.delay_seconds) and stopping at any checkpoint/captcha (docs/research.md).
+// Mode "Chỉ nghiên cứu" (research only; run on its own, e.g. weekly, by an agent with a logged-in browser). Per brand,
+// per enabled source of its own project/social.json (research.sources[]): the agent crawls the source's posts
+// (docs/research.md), this script opens the crawl, tells the agent where to stop, ingests what it saved into the brand's
+// STORE (workspace/store/<brand>/, scripts/store.mjs) and reports. No ideas or drafts in this mode.
+//   node scripts/research.mjs start  --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full]
+//        open (or reopen) today's crawl; writes <source>/known.json (posts already in the store) and each source's stop rule
+//   node scripts/research.mjs ingest --brand <id> [--source <sid>] [--date d] [--csv file]
+//        <source>/raw.json + downloaded images -> store (U+034F/zero-width cleaned, duplicates across crawls dropped)
+//   node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|blocked|partial [--note ..]
+//        how the crawl of a source ended (blocked/partial need --note)
+//   node scripts/research.mjs report --brand <id> [--date d]   new posts per source, sources done, sources blocked
+//   node scripts/research.mjs clean  --in <file> [--out <file>]   strip U+034F / zero-width / NBSP from CSV or text
+// The dated folder workspace/runs/<brand>/<date>/ stays as the crawl's log (run.json, known.json, raw.json, raw/,
+// ingest.json). No run or post limits unless the user asks (--since / --max-posts); behaviour safety stays: human-like
+// random pauses (settings research.delay_seconds) and stopping at any checkpoint/captcha.
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, sha1, latestRun, brandSources, inside } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, latestRun, brandSources, inside } from './lib.mjs';
+import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir } from './store.mjs';
 
 const logFile = () => path.join(workspace, 'research-log.json');
 const readLog = () => { const l = readJson(logFile(), {}); return { runs: l.runs || [], collected: l.collected || {} }; };
+export const STATES = { end: 'cuộn tới hết trang', known: 'dừng ở bài đã có trong kho', since: 'tới mốc --since', limit: 'đủ --max-posts', blocked: 'bị chặn (checkpoint/captcha/đăng nhập)', partial: 'dừng giữa chừng' };
+
+// Where the crawling agent stops on a source (docs/research.md, "Khi nào dừng").
+export function stopRule(mode, known) {
+  const rules = [];
+  if (mode.full || !known.count) rules.push(known.count ? 'cuộn tới hết trang (--full: không dừng ở bài đã có; bài đã có vẫn bị bỏ khi ingest)' : 'kho chưa có bài của nguồn này: cuộn tới hết trang');
+  else rules.push(`dừng khi gặp 3 bài liên tiếp đã có trong known.json (bài ghim đầu trang có thể cũ: bỏ qua, đi tiếp); bài mới nhất trong kho: ${known.newest_posted_date || 'không rõ ngày'}`);
+  if (mode.since) rules.push(`dừng khi tới bài đăng trước ${mode.since}`);
+  if (mode.max_posts) rules.push(`dừng sau ${mode.max_posts} bài mới`);
+  return rules.join('; ');
+}
 
 // The brand's date is in its timezone (cadence.timezone), never UTC.
 function start(args, s) {
@@ -21,31 +38,48 @@ function start(args, s) {
   const date = today(brand.timezone);
   const dir = runDir(brand.id, date);
   const runFile = path.join(dir, 'run.json');
-  const sources = brandSources(brand.social);
-  if (!sources.length) throw new Error(`${brand.id}: social.json chưa có research.sources nào bật (có url).`);
+  const only = args.source && args.source !== true ? String(args.source).split(',').map((x) => x.trim()).filter(Boolean) : [];
+  const all = brandSources(brand.social);
+  if (!all.length) throw new Error(`${brand.id}: social.json chưa có research.sources nào bật (có url).`);
+  const bad = only.filter((id) => !all.some((x) => x.id === id));
+  if (bad.length) throw new Error(`Source không có hoặc đang tắt trong social.json của ${brand.id}: ${bad.join(', ')}.`);
+  const sources = all.filter((x) => !only.length || only.includes(x.id));
+  if (args.since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(args.since))) throw new Error('--since cần dạng YYYY-MM-DD.');
+  if (args['max-posts'] !== undefined && !(Number.isInteger(Number(args['max-posts'])) && Number(args['max-posts']) > 0)) throw new Error('--max-posts cần số nguyên dương.');
+  const mode = { since: args.since ? String(args.since) : '', max_posts: args['max-posts'] ? Number(args['max-posts']) : 0, full: !!args.full };
   const before = readJson(runFile, null);
+  const progress = readProgress(brand.id).sources || {};
   const run = {
-    ...(before || {}), brand: brand.id, date, started: before?.started || stamp(), restarted: before ? stamp() : undefined, status: 'open',
-    fb_account: brand.social.research?.fb_account || '', delay_seconds: s.research.delay_seconds,
-    sources: sources.map((x) => ({ ...x, dir: path.join(dir, x.id), raw_file: path.join(dir, x.id, 'raw.json'), downloads: path.join(dir, x.id, 'raw') })),
+    ...(before || {}), brand: brand.id, date, started: before?.started || stamp(), restarted: before ? stamp() : undefined, status: 'open', mode,
+    fb_account: brand.social.research?.fb_account || '', delay_seconds: s.research.delay_seconds, store: storeDir(brand.id),
+    sources: sources.map((x) => {
+      const sdir = path.join(dir, x.id);
+      fs.mkdirSync(path.join(sdir, 'raw'), { recursive: true });
+      const known = knownPosts(brand.id, x.id);
+      const knownFile = path.join(sdir, 'known.json');
+      // known.json: this source's links (stop rule) + every link and Facebook id of the brand's store (skip before downloading).
+      writeJson(knownFile, { brand: brand.id, source: x.id, written: stamp(), ...known });
+      return { ...x, dir: sdir, raw_file: path.join(sdir, 'raw.json'), downloads: path.join(sdir, 'raw'), known_file: knownFile, known_count: known.count,
+        reached_end_before: !!progress[x.id]?.reached_end, stop_rule: stopRule(mode, known), result: null, new: 0, duplicates: 0 }; // each start is a new crawl of the source
+    }),
   };
   delete run.budget;
-  for (const x of run.sources) fs.mkdirSync(x.downloads, { recursive: true });
   writeJson(runFile, run);
   const log = readLog();
-  log.runs.push({ brand: brand.id, date, started: stamp() });
+  log.runs.push({ brand: brand.id, date, started: stamp(), mode });
   writeJson(logFile(), log);
-  out({ reused: !!before, dir, run, next: 'Theo docs/research.md: với từng source, tải ảnh vào <source>/raw/, ghi <source>/raw.json (bài mới của lượt này), rồi chạy research.mjs ingest (bài mới được nối thêm, bài trùng bị bỏ).' });
+  out({ reused: !!before, dir, run, next: 'Theo docs/research.md: với từng source, cuộn trang theo stop_rule, tải ảnh vào <source>/raw/, ghi <source>/raw.json, chạy research.mjs ingest --source <sid>, rồi research.mjs result --source <sid> --state <...>. Cuối cùng research.mjs report.' });
 }
 
-// <source>/raw.json: [{ post_url, caption, image (path relative to the source folder, or absolute), main_product?, price_seen?, store? }]
-// or the neon-competitors CSV (store,page_url,main_product,image_file,content,price_seen,post_url) with --csv.
+// <source>/raw.json: [{ post_url, caption, images: ["raw/1.jpg", ...] (or image: "raw/1.jpg"), posted_date?: YYYY-MM-DD,
+// main_product?, price_seen?, store? }] or the neon-competitors CSV (store,page_url,main_product,image_file,content,
+// price_seen,post_url) with --csv.
 function readRaw(args, sourceDir) {
   if (args.csv) {
     const file = path.resolve(String(args.csv));
     const [head, ...rows] = parseCsv(fs.readFileSync(file, 'utf8'));
     const col = (r, name) => r[head.indexOf(name)] ?? '';
-    return rows.map((r) => ({ store: col(r, 'store'), post_url: col(r, 'post_url'), caption: col(r, 'content'), image: col(r, 'image_file') && path.resolve(path.dirname(file), col(r, 'image_file')), main_product: col(r, 'main_product'), price_seen: col(r, 'price_seen') }));
+    return rows.map((r) => ({ store: col(r, 'store'), post_url: col(r, 'post_url'), caption: col(r, 'content'), image: col(r, 'image_file') && path.resolve(path.dirname(file), col(r, 'image_file')), main_product: col(r, 'main_product'), price_seen: col(r, 'price_seen'), posted_date: col(r, 'posted_date') }));
   }
   const file = path.join(sourceDir, 'raw.json');
   if (!fs.existsSync(file)) return null;
@@ -53,12 +87,12 @@ function readRaw(args, sourceDir) {
   return Array.isArray(raw) ? raw : raw.posts || [];
 }
 
-// A reference image must be a real JPEG/PNG/WebP file (extension and file signature) inside the run's source folder
+// A post image must be a real JPEG/PNG/WebP file (extension and file signature) inside the crawl's source folder
 // (where the agent saves downloads, <source>/raw/); anything else is dropped with the reason.
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
-export function imageProblem(file, sourceDir, { allowRefs = false } = {}) {
+export function imageProblem(file, sourceDir) {
   if (!file) return 'không có file ảnh';
-  if (!inside(sourceDir, file) || (!allowRefs && inside(path.join(sourceDir, 'refs'), file))) return 'ảnh phải nằm trong thư mục source của lượt này (<source>/raw/)';
+  if (!inside(sourceDir, file)) return 'ảnh phải nằm trong thư mục source của lượt này (<source>/raw/)';
   if (!IMAGE_EXT.test(file)) return 'không phải ảnh jpg/jpeg/png/webp';
   let st; try { st = fs.statSync(file); } catch { return 'không có file ảnh'; }
   if (!st.isFile()) return 'không phải file';
@@ -70,62 +104,88 @@ export function imageProblem(file, sourceDir, { allowRefs = false } = {}) {
   return isPng || isJpg || isWebp ? '' : 'nội dung file không phải ảnh jpg/png/webp';
 }
 
-function ingest(args, s) {
-  const brand = loadBrand(need(args, 'brand'));
+function openRun(args, brand) {
   const date = args.date ? String(args.date) : latestRun(brand.id);
   const dir = runDir(brand.id, date || today(brand.timezone));
   const runFile = path.join(dir, 'run.json');
   if (!date || !fs.existsSync(runFile)) throw new Error('Chưa có lượt nghiên cứu: chạy research.mjs start trước.');
-  const run = readJson(runFile);
+  return { date, dir, runFile, run: readJson(runFile) };
+}
+
+function ingest(args) {
+  const brand = loadBrand(need(args, 'brand'));
+  const { dir, runFile, run } = openRun(args, brand);
   if (args.source && !run.sources.some((x) => x.id === args.source)) throw new Error(`Source "${args.source}" không có trong lượt này (chỉ source bật trong social.json của ${brand.id}).`);
   if (args.csv && !args.source) throw new Error('--csv cần --source.');
+  const mode = run.mode || {};
   const log = readLog();
   log.collected[run.date] ||= {};
   const day = log.collected[run.date];
   const report = [];
   for (const src of run.sources.filter((x) => !args.source || x.id === args.source)) {
-    const key = `${brand.id}/${src.id}`;
     const raw = readRaw(args, src.dir);
-    if (!raw) { report.push({ source: src.id, refs: 0, note: 'chưa có raw.json' }); continue; }
-    const refsDir = path.join(src.dir, 'refs');
-    fs.mkdirSync(refsDir, { recursive: true });
-    // Refs of earlier runs today stay (ids and idea links keep working) when their image is still a valid file in
-    // refs/; new posts are appended; duplicates (same post link or same image) are dropped.
-    const old = readJson(path.join(src.dir, 'refs.json'), { refs: [] }).refs || [];
-    const refs = old.filter((r) => r?.image && !imageProblem(path.join(src.dir, r.image), src.dir, { allowRefs: true }));
-    const dropped = [], seenImg = new Set(refs.map((r) => r.image_sha1)), seenPost = new Set(refs.map((r) => r.post_url).filter(Boolean));
-    let next = Math.max(0, ...refs.map((r) => Number(/^R(\d+)$/.exec(r.id)?.[1] || 0)));
-    let hidden = 0, added = 0;
+    if (!raw) { report.push({ source: src.id, added: 0, note: 'chưa có raw.json' }); continue; }
+    const base = args.csv ? path.dirname(path.resolve(String(args.csv))) : src.dir;
+    const dropped = [], posts = [];
     for (const p of raw) {
-      if (p.post_url && seenPost.has(p.post_url)) { dropped.push({ post_url: p.post_url, reason: 'trùng bài' }); continue; }
-      const img = p.image ? path.resolve(args.csv ? path.dirname(path.resolve(String(args.csv))) : src.dir, String(p.image)) : '';
-      const bad = imageProblem(img, src.dir);
-      if (bad) { dropped.push({ post_url: p.post_url, image: p.image || '', reason: bad }); continue; }
-      const data = fs.readFileSync(img);
-      const hash = sha1(data);
-      if (seenImg.has(hash)) { dropped.push({ post_url: p.post_url, reason: 'trùng ảnh' }); continue; }
-      seenImg.add(hash); if (p.post_url) seenPost.add(p.post_url);
-      const id = `R${String(++next).padStart(2, '0')}`;
-      added++;
-      const name = `${id}-${hash.slice(0, 8)}${(path.extname(img) || '.jpg').toLowerCase()}`;
-      if (!fs.existsSync(path.join(refsDir, name))) fs.copyFileSync(img, path.join(refsDir, name));
-      const caption = cleanText(p.caption);
-      hidden += caption.removed + caption.nbsp;
-      refs.push({ id, source: src.id, source_url: src.url, store: cleanText(p.store || src.name).text, post_url: p.post_url || '', main_product: cleanText(p.main_product).text, price_seen: cleanText(p.price_seen).text, caption: caption.text, image: `refs/${name}`, image_sha1: hash });
+      const list = [].concat(p.images || p.image || []).filter(Boolean).map((f) => path.resolve(base, String(f)));
+      const checked = list.map((f) => ({ f, bad: imageProblem(f, base) }));
+      const good = checked.filter((x) => !x.bad).map((x) => x.f);
+      if (!good.length) { dropped.push({ post_url: p.post_url || '', image: [].concat(p.images || p.image || []).join(', '), reason: checked[0]?.bad || 'không có file ảnh' }); continue; }
+      posts.push({ ...p, images: good });
     }
-    // Files in refs/ that refs.json no longer lists (an earlier ingest's leftovers, invalid images) are removed.
-    const keep = new Set(refs.map((r) => path.basename(r.image)));
-    const stale = fs.readdirSync(refsDir).filter((f) => !keep.has(f));
-    for (const f of stale) fs.rmSync(path.join(refsDir, f), { recursive: true, force: true });
-    writeJson(path.join(src.dir, 'refs.json'), { brand: brand.id, date: run.date, source: src.id, refs });
-    fs.writeFileSync(path.join(src.dir, 'refs.csv'), toCsv([['id', 'store', 'source_url', 'main_product', 'image_file', 'content', 'price_seen', 'post_url'], ...refs.map((r) => [r.id, r.store, r.source_url, r.main_product, r.image, r.caption, r.price_seen, r.post_url])]), 'utf8');
-    day[key] = refs.length;
-    report.push({ source: src.id, dir: src.dir, refs: refs.length, added, hidden_chars_removed: hidden, dropped, stale_removed: stale.length });
+    const left = mode.max_posts ? Math.max(0, mode.max_posts - (src.new || 0)) : 0;
+    const r = mode.max_posts && !left
+      ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0 }
+      : addPosts(brand.id, src, posts, { run: run.date, since: mode.since || '', limit: left });
+    src.new = (src.new || 0) + r.added.length;
+    src.duplicates = (src.duplicates || 0) + r.duplicates.length;
+    day[`${brand.id}/${src.id}`] = (day[`${brand.id}/${src.id}`] || 0) + r.added.length;
+    const entry = { at: stamp(), raw_posts: raw.length, added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
+    const logPath = path.join(src.dir, 'ingest.json');
+    writeJson(logPath, { source: src.id, ingests: [...(readJson(logPath, { ingests: [] }).ingests || []), entry] });
+    report.push({ source: src.id, added: r.added.length, new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}) });
   }
   writeJson(logFile(), log);
-  Object.assign(run, { status: 'ingested', ingested: stamp() });
+  Object.assign(run, { ingested: stamp() });
   writeJson(runFile, run);
-  out({ dir, sources: report, next: `node scripts/ideas.mjs init --brand ${brand.id}` });
+  out({ dir, store: storeDir(brand.id), sources: report, next: 'research.mjs result --brand <id> --source <sid> --state <end|known|since|limit|blocked|partial> cho từng source đã xong; cuối cùng research.mjs report.' });
+}
+
+function result(args) {
+  const brand = loadBrand(need(args, 'brand'));
+  const { runFile, run } = openRun(args, brand);
+  const sid = need(args, 'source');
+  const src = run.sources.find((x) => x.id === sid);
+  if (!src) throw new Error(`Source "${sid}" không có trong lượt này.`);
+  const state = need(args, 'state');
+  if (!STATES[state]) throw new Error(`--state phải là: ${Object.keys(STATES).join(', ')}.`);
+  const note = args.note && args.note !== true ? cleanText(args.note).text : '';
+  if (['blocked', 'partial'].includes(state) && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
+  src.result = { state, label: STATES[state], note, reached_end: state === 'end', new: src.new || 0, at: stamp() };
+  const progress = recordProgress(brand.id, sid, src.result);
+  if (run.sources.every((x) => x.result)) run.status = run.sources.some((x) => x.result.state === 'blocked') ? 'done-with-blocked' : 'done';
+  writeJson(runFile, run);
+  out({ source: sid, result: src.result, progress, run_status: run.status, next: state === 'blocked' ? 'Dừng nghiên cứu ngay (không mở source nào nữa trong lượt này), chạy research.mjs report.' : 'Sang source tiếp theo, hoặc research.mjs report khi xong.' });
+}
+
+// The end-of-crawl report: new posts per source, sources done, blocked, not finished; store totals.
+export function researchReport(brandId, date) {
+  const day = date || latestRun(brandId);
+  const run = day ? readJson(path.join(runDir(brandId, day), 'run.json'), null) : null;
+  const store = readStore(brandId);
+  const progress = readProgress(brandId).sources || {};
+  if (!run) return { brand: brandId, date: null, store: counts(store.items), sources: [], done: [], blocked: [], pending: [] };
+  const sources = run.sources.map((x) => ({
+    id: x.id, name: x.name, url: x.url, new: x.new || 0, state: x.result?.state || 'pending', label: x.result?.label || 'chưa xong', note: x.result?.note || '',
+    duplicates: x.duplicates || 0, duplicates_text: `${x.duplicates || 0} bài trùng bỏ qua`, reached_end: !!progress[x.id]?.reached_end, store_items: store.items.filter((i) => i.source_id === x.id).length,
+  }));
+  return {
+    brand: brandId, date: day, status: run.status, mode: run.mode || {}, new_total: sources.reduce((a, x) => a + x.new, 0), duplicates_total: sources.reduce((a, x) => a + x.duplicates, 0), store: counts(store.items), sources,
+    done: sources.filter((x) => !['pending', 'blocked', 'partial'].includes(x.state)).map((x) => x.id),
+    blocked: sources.filter((x) => x.state === 'blocked').map((x) => `${x.id}: ${x.note}`),
+    pending: sources.filter((x) => ['pending', 'partial'].includes(x.state)).map((x) => x.id),
+  };
 }
 
 function clean(args) {
@@ -151,7 +211,9 @@ if (isMain(import.meta.url)) main(() => {
   const s = settings();
   const cmd = args._[0];
   if (cmd === 'start') return withLock(logFile(), () => start(args, s));
-  if (cmd === 'ingest') return withLock(logFile(), () => ingest(args, s));
+  if (cmd === 'ingest') return withLock(logFile(), () => ingest(args));
+  if (cmd === 'result') return withLock(logFile(), () => result(args));
+  if (cmd === 'report') { const b = loadBrand(need(args, 'brand')); return out(researchReport(b.id, args.date ? String(args.date) : '')); }
   if (cmd === 'clean') return clean(args);
-  throw new Error('Lệnh: start | ingest | clean');
+  throw new Error('Lệnh: start | ingest | result | report | clean');
 });

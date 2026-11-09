@@ -28,7 +28,7 @@ test('QA: metricool validate refuses an AI label inside Text', () => {
   }
 });
 
-// Same rule at draft check: a caption with an AI label must not reach awaiting_approval.
+// Same rule at draft check: a caption with an AI label must not reach ready (nor the brand, nor Metricool).
 test('QA: draft check flags an AI label in a caption', () => {
   const brandDir = path.join(tmp, 'brand');
   fs.mkdirSync(path.join(brandDir, 'project'), { recursive: true });
@@ -50,7 +50,7 @@ test('QA: saveSettings keeps machine values for keys not sent', () => {
   const host = path.join(tmp, 'host');
   fs.mkdirSync(host, { recursive: true });
   fs.writeFileSync(path.join(ws, 'settings.json'), JSON.stringify({ imageHost: { type: 'github-repo', path: host, rawBase: 'https://raw.example.invalid/x/main', verify: { attempts: 1, delay_seconds: 0 } } }));
-  const code = `import('${path.join(tool, 'scripts', 'lib.mjs').replace(/\\/g, '/').replace(/^([A-Za-z]):/, 'file:///$1:')}').then((m) => { m.saveSettings({ approval: { require_image: true } }); });`;
+  const code = `import('${path.join(tool, 'scripts', 'lib.mjs').replace(/\\/g, '/').replace(/^([A-Za-z]):/, 'file:///$1:')}').then((m) => { m.saveSettings({ metricool: { default_mode: 'draft' } }); });`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { env: { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: tmp }, encoding: 'utf8', windowsHide: true });
   assert.equal(r.status, 0, r.stderr);
   const saved = JSON.parse(fs.readFileSync(path.join(ws, 'settings.json'), 'utf8'));

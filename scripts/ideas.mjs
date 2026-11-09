@@ -1,66 +1,88 @@
-// Step 2: ideas. Each reference post becomes an ABSTRACT idea (product type, scene, angle, caption structure) the brand
-// can make with its own product; never the competitor's image, words, logo or shop name (prompts/idea-abstract.md).
-//   node scripts/ideas.mjs init   --brand <id> [--date d]          ideas.json with one empty idea per reference (keeps filled ones)
-//   node scripts/ideas.mjs set    --brand <id> --id I01 --json '{...}' | --file f   fill an idea; checked for copying
-//   node scripts/ideas.mjs pick   --brand <id> --id I01              mark for drafting
-//   node scripts/ideas.mjs reject --brand <id> --id I01 [--note ..]
-//   node scripts/ideas.mjs list   --brand <id> [--date d] [--status s]
-import fs from 'node:fs';
+// Mode "Tạo bài từ kho", step 1: ideas. Ideas come only from the brand's STORE (workspace/store/<brand>/, filled by
+// mode "Chỉ nghiên cứu"); no browsing. init takes store items with status "new" only and marks them "used" (used_by =
+// the idea id), so an item never gives two ideas. Each idea is ABSTRACT (product type, scene, angle, caption structure)
+// for the brand's own product; never the competitor's image, words, logo or shop name (prompts/idea-abstract.md).
+// Ideas live in workspace/store/<brand>/ideas.json (ids I001, I002, ... per brand).
+//   node scripts/ideas.mjs init   --brand <id> [--count N] [--items S0001,S0002] [--source <sid>]
+//                                 N new store items (default cadence.posts_per_week, else 3; newest first, sources mixed)
+//   node scripts/ideas.mjs set    --brand <id> --id I001 --json '{...}' | --file f   fill an idea; checked for copying
+//   node scripts/ideas.mjs pick   --brand <id> --id I001              mark for drafting
+//   node scripts/ideas.mjs reject --brand <id> --id I001 [--note ..] [--item rejected]   idea dropped; the store item
+//                                 stays "used" (or "rejected" with --item rejected), never back to "new"
+//   node scripts/ideas.mjs list   --brand <id> [--status s]
 import path from 'node:path';
-import { main, out, parseArgs, need, loadBrand, runDir, latestRun, loadRefs, readJson, writeJson, withLock, stamp, sharedWords, cleanText } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, withLock, stamp, sharedWords, cleanText } from './lib.mjs';
+import { readStore, storeDir, storeIdeasFile, markUsed, setItemStatus } from './store.mjs';
 
 const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'];
 const CORE = ['product_type', 'scene', 'angle', 'caption_structure'];
 
-function open(args) {
-  const brand = loadBrand(need(args, 'brand'));
-  const date = args.date ? String(args.date) : latestRun(brand.id);
-  if (!date) throw new Error('Chưa có lượt nghiên cứu nào cho ' + brand.id);
-  const dir = runDir(brand.id, date);
-  return { brand, date, dir, file: path.join(dir, 'ideas.json') };
-}
-
 // Words or marks taken from the reference: 6 words in a row, phone numbers, links, the shop's name.
-function copyProblems(idea, ref) {
+export function copyProblems(idea, item) {
   const text = IDEA_FIELDS.map((f) => idea[f] || '').join('\n');
   const problems = [];
-  const hits = sharedWords(text, ref?.caption || '');
+  const hits = sharedWords(text, item?.caption || '');
   if (hits.length) problems.push(`chép chữ của bài tham khảo: "${hits[0]}"`);
   if (/(\+?\d[\d .-]{7,}\d)/.test(text)) problems.push('có số điện thoại');
   if (/https?:\/\/|www\.|\.vn\b|\.com\b/i.test(text)) problems.push('có link');
-  if (ref?.store && ref.store.length > 3 && text.toLowerCase().includes(ref.store.toLowerCase())) problems.push(`có tên shop "${ref.store}"`);
+  if (item?.store && item.store.length > 3 && text.toLowerCase().includes(item.store.toLowerCase())) problems.push(`có tên shop "${item.store}"`);
   return problems;
 }
 
-main(() => {
+// New store items in a fair order: newest first within each source, sources taken in turn.
+export function pickNew(items, n, source = '') {
+  const by = {};
+  for (const i of items.filter((x) => x.status === 'new' && (!source || x.source_id === source))) (by[i.source_id] ||= []).push(i);
+  for (const list of Object.values(by)) list.sort((a, b) => String(b.posted_date || b.captured).localeCompare(String(a.posted_date || a.captured)) || b.id.localeCompare(a.id));
+  const res = [], lists = Object.keys(by).sort().map((k) => by[k]);
+  while (res.length < n && lists.some((l) => l.length)) for (const l of lists) if (l.length && res.length < n) res.push(l.shift());
+  return res;
+}
+
+if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();
-  const cmd = args._[0];
-  const { brand, date, dir, file } = open(args);
-  return withLock(file, () => run(args, cmd, brand, date, dir, file));
+  const brand = loadBrand(need(args, 'brand'));
+  const file = storeIdeasFile(brand.id);
+  return withLock(file, () => run(args, args._[0], brand, file));
 });
 
-function run(args, cmd, brand, date, dir, file) {
-  const refs = loadRefs(brand.id, date);
-  const data = readJson(file, { brand: brand.id, date, ideas: [] });
+function run(args, cmd, brand, file) {
+  const store = readStore(brand.id);
+  const itemOf = (idea) => store.items.find((x) => x.id === idea.item);
+  const data = readJson(file, { brand: brand.id, next: 0, ideas: [] });
   const save = () => writeJson(file, data);
   const find = () => { const id = need(args, 'id'); const i = data.ideas.find((x) => x.id === id); if (!i) throw new Error(`Không có ý ${id}.`); return i; };
 
   if (cmd === 'init') {
-    if (!refs.length) throw new Error('Chưa có refs.json nào trong các source: chạy research.mjs ingest trước.');
-    let added = 0;
-    for (const r of refs) {
-      if (data.ideas.some((i) => i.ref === r.key)) continue;
-      data.ideas.push({ id: `I${String(data.ideas.length + 1).padStart(2, '0')}`, ref: r.key, source: r.source, ref_image: r.image, status: 'todo', ...Object.fromEntries(IDEA_FIELDS.map((f) => [f, ''])) });
-      added++;
+    if (!store.items.length) throw new Error(`Kho ${brand.id} trống: chạy chế độ "Chỉ nghiên cứu" (research.mjs) trước.`);
+    let chosen;
+    if (args.items && args.items !== true) {
+      chosen = String(args.items).split(',').map((x) => x.trim()).filter(Boolean).map((id) => {
+        const it = store.items.find((x) => x.id === id);
+        if (!it) throw new Error(`Kho ${brand.id} không có ${id}.`);
+        if (it.status !== 'new') throw new Error(`${id} đang "${it.status}": chỉ lấy bài "new" (chưa dùng, chưa bỏ).`);
+        return it;
+      });
+    } else {
+      const n = Number(args.count) > 0 ? Number(args.count) : Number(brand.social.cadence?.posts_per_week) || 3;
+      chosen = pickNew(store.items, n, args.source && args.source !== true ? String(args.source) : '');
+    }
+    const added = [];
+    for (const it of chosen) {
+      const id = `I${String(++data.next).padStart(3, '0')}`;
+      data.ideas.push({ id, item: it.id, source: it.source_id, ref_image: path.join(storeDir(brand.id), it.images[0]), post_url: it.post_url, status: 'todo', created: stamp(), ...Object.fromEntries(IDEA_FIELDS.map((f) => [f, ''])) });
+      added.push(id);
     }
     save();
-    return out({ file, added, total: data.ideas.length, next: 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' });
+    for (const [n, it] of chosen.entries()) markUsed(brand.id, it.id, added[n]);
+    const left = readStore(brand.id).items.filter((x) => x.status === 'new').length;
+    return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: left, next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài "new": chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
   }
   if (cmd === 'set') {
     const idea = find();
     const patch = args.file ? readJson(path.resolve(String(args.file))) : JSON.parse(need(args, 'json'));
     for (const f of IDEA_FIELDS) if (patch[f] !== undefined) idea[f] = cleanText(patch[f]).text;
-    const problems = copyProblems(idea, refs.find((r) => r.key === idea.ref));
+    const problems = copyProblems(idea, itemOf(idea));
     const missing = CORE.filter((f) => !idea[f]);
     idea.problems = problems;
     if (!['picked', 'rejected', 'drafted'].includes(idea.status)) idea.status = problems.length || missing.length ? 'todo' : 'ready';
@@ -71,19 +93,20 @@ function run(args, cmd, brand, date, dir, file) {
   if (cmd === 'pick' || cmd === 'reject') {
     const idea = find();
     if (cmd === 'pick') {
-      const problems = copyProblems(idea, refs.find((r) => r.key === idea.ref));
+      const problems = copyProblems(idea, itemOf(idea));
       const missing = CORE.filter((f) => !idea[f]);
       if (problems.length || missing.length) throw new Error(`Ý ${idea.id} chưa chọn được: ${[...missing.map((m) => 'thiếu ' + m), ...problems].join('; ')}`);
     }
     idea.status = cmd === 'pick' ? 'picked' : 'rejected';
-    if (args.note) idea.note = String(args.note);
+    if (args.note && args.note !== true) idea.note = String(args.note);
     idea.updated = stamp();
     save();
+    if (cmd === 'reject' && args.item === 'rejected' && itemOf(idea)?.status !== 'rejected') setItemStatus(brand.id, idea.item, 'rejected', { note: idea.note || `ý ${idea.id} bị bỏ` });
     return out({ idea });
   }
   if (cmd === 'list') {
     const list = data.ideas.filter((i) => !args.status || i.status === args.status);
-    return out({ file, date, ideas: list.map(({ id, ref, status, product_type, scene, angle, caption_structure }) => ({ id, idea: `${date}/${id}`, ref, status, product_type, scene, angle, caption_structure })) });
+    return out({ file, ideas: list.map(({ id, item, status, product_type, scene, angle, caption_structure, drafts }) => ({ id, item, status, product_type, scene, angle, caption_structure, drafts: drafts || [] })) });
   }
   throw new Error('Lệnh: init | set | pick | reject | list');
 }
