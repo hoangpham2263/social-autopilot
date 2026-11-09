@@ -21,7 +21,6 @@
     "timeout_minutes": 15
   },
   "publish": {
-    "provider": "none",
     "note": "Publish (later: Metricool). Chưa có code đăng bài."
   },
   "imageHost": {
@@ -34,9 +33,7 @@
     "verify": {
       "attempts": 6,
       "delay_seconds": 10
-    },
-    "note": "Chỉ ảnh bài đã được người duyệt; type \"shopify-files\" là chỗ giữ cho sau (chưa làm).",
-    "shopify_files": {}
+    }
   },
   "ffmpeg": {
     "command": "ffmpeg"
