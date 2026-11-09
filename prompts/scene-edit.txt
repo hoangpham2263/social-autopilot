@@ -2,7 +2,11 @@ Use your built-in image generation / image editing tool to EDIT the first attach
 
 THE PRODUCT (must stay IDENTICAL to the first image):
 {{PRODUCT_DESCRIPTION}}
-Keep it exactly as in the original: same text letter for letter (with the exact accents), same shapes, colors, materials, proportions and size relative to the room. Do not add, remove or restyle any part. Do not add stands, feet, brackets, cables or any part not visible in the original.
+Keep it exactly as in the original: same shapes, colors, materials and proportions. Do not add, remove or restyle any part. Do not add stands, feet, brackets, cables or any part not visible in the original.
+
+REAL SIZE: {{SIZE}}. Place it at exactly this size relative to the furniture in the scene (name it: bed, table, counter, door, sofa...), with correct perspective on the wall or floor and natural shadows/glow. Do not enlarge it to make it more visible.
+TEXT ON THE PRODUCT: {{SIGN_TEXT_RULE}}
+Follow the brand's image guide ({{IMAGE_GUIDE}}): real size, context text, no logo.
 
 BRAND RULES FOR THIS PRODUCT (from the brand's project.md, section 10):
 {{PRODUCT_RULES}}

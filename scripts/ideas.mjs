@@ -27,7 +27,9 @@ export function postsNeeded(brand, s = settings()) {
 }
 import { readStore, storeDir, storeIdeasFile, markUsed, setItemStatus } from './store.mjs';
 
-const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'];
+// product_size (real size, from the skill's size_source) and sign_text (custom-text products) are optional here and
+// can be given to draft.mjs new as --size / --sign-text.
+const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why', 'product_size', 'sign_text'];
 const CORE = ['product_type', 'scene', 'angle', 'caption_structure'];
 
 // Words or marks taken from the reference: 6 words in a row, phone numbers, links, the shop's name.

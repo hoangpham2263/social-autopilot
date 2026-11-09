@@ -172,13 +172,15 @@ Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.
 
 2.4. Bản nháp và ảnh:
 ```
-node scripts/draft.mjs new --brand <id> --idea I001 --product "<ảnh sản phẩm của thương hiệu>" [--scene "<ảnh không khí>"]
-node scripts/draft.mjs new --brand <id> --idea I001 --ref-image "workspace/store/<id>/images/S0001-1-....jpg" --brand-can-produce   # scene-swap, chỉ khi bật
+node scripts/draft.mjs new --brand <id> --idea I001 --product "<ảnh sản phẩm của thương hiệu>" --size "<cỡ thật>" [--sign-text "<chữ trên bảng>"] [--scene "<ảnh không khí>"]
+node scripts/draft.mjs new --brand <id> --idea I001 --ref-image "workspace/store/<id>/images/S0001-1-....jpg" --brand-can-produce --size ".." [--sign-text ".."]   # scene-swap, chỉ khi bật
+node scripts/draft.mjs reprompt --id <draft> [--size ..] [--sign-text ..] [--description ".."]   # dựng lại prompt.txt (giữ mô tả cũ), rồi image --force
 node scripts/draft.mjs image --id <draft> [--force]
 node scripts/draft.mjs watermark --id <draft>                    # chỉ khi product_images.watermark.enabled
 node scripts/draft.mjs confirm-clean --id <draft> --by "<tên>"   # chỉ scene-swap, sau khi xem kỹ
 ```
 - Ảnh sản phẩm (`brand-image`, mặc định): trong thư mục skill hoặc `product_images.sources`. Ảnh không khí không được là ảnh kho/đối thủ.
+- **Cỡ thật và chữ trên sản phẩm** (luật nằm trong skill: `references/image-guide.md` mục "Kích thước thật và chữ trên sản phẩm" và project.md mục 10): `--size` bắt buộc, lấy theo `product_images.size_source` trong social.json (cm và inch, vd "91 cm (36 in) wide"). `product_images.custom_text: true` (vd DreamyVows) thì bắt buộc `--sign-text`: chữ hợp cảnh (tên cặp đôi, tên quán...), không phải chữ mẫu "Your Names"/"Your Logo" (tool chặn). Có thể ghi sẵn trong ý (`product_size`, `sign_text` qua `ideas.mjs set`). Tool chỉ điền vào prompt; xem ảnh: sai cỡ so với đồ xung quanh, còn chữ mẫu hoặc sai chữ thì làm lại.
 - Trước `image`: mở `prompt.txt`, thay `{{PRODUCT_DESCRIPTION}}` bằng mô tả đúng sản phẩm (chữ từng ký tự, dấu, font, màu, vật liệu, tỉ lệ); **không xoá dòng NO LOGO**.
 - `image` chạy `codex exec --skip-git-repo-check -s workspace-write - -i <ảnh> < prompt.txt`, rồi tự làm sạch metadata (`settings.remove_watermark.script`): `image-generated.png` (gốc) → `image.png` (sạch) + `image-clean-report.json`. Xem ảnh: sai thì sửa prompt, `--force` (tối đa 2 lần). Sandbox chặn `codex exec` lồng nhau thì báo người dùng.
 - Scene-swap (opt-in `product_images.reference_redraw.enabled`): ảnh kho của chính thương hiệu, chỉ đổi cảnh, xoá logo/watermark/nhãn size/số điện thoại của shop; bắt buộc `--brand-can-produce` và `confirm-clean`.
@@ -189,7 +191,7 @@ node scripts/draft.mjs confirm-clean --id <draft> --by "<tên>"   # chỉ scene-
 ```
 node scripts/draft.mjs check --id <draft>        # qua hết → "ready" (To review); không qua → "needs_caption" + problems
 ```
-Kiểm: ảnh sạch metadata (điểm ảnh không đổi), đủ caption từng ngôn ngữ, dòng Website và hashtag cố định, không Markdown/ký tự ẩn, không chép caption tham khảo, không nhãn AI, prompt có NO LOGO, watermark nếu bật, scene-swap đã `confirm-clean` và caption không có tên shop. Sửa rồi chạy lại tới khi `ready`.
+Kiểm: ảnh sạch metadata (điểm ảnh không đổi), đủ caption từng ngôn ngữ, caption nhắc đúng `sign_text` (nếu có) và không còn chữ mẫu "Your Names"/"Your Logo" (khi `custom_text`), dòng Website và hashtag cố định, không Markdown/ký tự ẩn, không chép caption tham khảo, không nhãn AI, prompt có NO LOGO, watermark nếu bật, scene-swap đã `confirm-clean` và caption không có tên shop. Sửa rồi chạy lại tới khi `ready`.
 
 2.7. **Dừng ở To review.** Agent không duyệt, không ghi vào skill, không host ảnh, không gửi bài mới này. Người dùng xem trong app (tab **Posts** → Preview): **Approve** chạy `node scripts/finalize.mjs approve --id <draft>` (kiểm lại lần nữa, ghi `workspace/posts/POST-<slug>/` + mục `approved` trong `catalog.json` của skill, chạy `check-post.mjs`, host ảnh → `media_url`); không qua → `check_failed` + lý do. **Drop** = `node scripts/finalize.mjs cancel --id <draft> [--note ".."]`. Host lỗi không huỷ bài: chạy lại `node scripts/host-image.mjs publish --brand <id> --post POST-xx` (có trong `image_host.next`). Lượt Create & publish sau gửi bài đã duyệt ở bước 2.1.
 

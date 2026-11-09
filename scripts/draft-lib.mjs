@@ -63,6 +63,9 @@ export function checkDraft(dir, draft, status = {}) {
     if (tag && !text.trim().split(/\r?\n/).at(-1)?.split(/\s+/).includes(tag)) problems.push(`${f} thiếu hashtag ${tag} ở dòng cuối`);
     const hits = sharedWords(text, refCaption);
     if (hits.length) problems.push(`${f} chép chữ bài tham khảo: "${hits[0]}"`);
+    // Custom-text products: every caption (posted and reviewer-only) quotes the sign's real text; never a template placeholder ("Your Names").
+    if (draft.sign_text && !text.toLowerCase().includes(String(draft.sign_text).toLowerCase())) problems.push(`${f} không nhắc đúng chữ trên bảng "${draft.sign_text}"`);
+    if (draft.custom_text && /\byour\s+(names?|logo|bar(\s+name)?|business(\s+name)?|name\s+here|shop(\s+name)?)\b/i.test(text)) problems.push(`${f} còn chữ mẫu kiểu "Your Names"/"Your Logo": dùng đúng chữ trên bảng`);
     const shop = String(draft.inspiration.source_shop || '').trim();
     if (draft.image_mode === 'scene-swap' && shop.length > 2 && text.toLowerCase().includes(shop.toLowerCase())) problems.push(`${f} nhắc tên shop nguồn "${shop}"`);
   }

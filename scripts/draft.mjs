@@ -5,6 +5,11 @@
 //   node scripts/draft.mjs new   --brand <id> --idea I001 --product <brand image> [--scene <mood image>]
 //   node scripts/draft.mjs new   --brand <id> --idea I001 --ref-image <workspace/store/<brand>/images/S0001-1-….jpg>
 //                                [--brand-can-produce]   scene-swap: opt-in per brand (product_images.reference_redraw)
+//        --size "<real size, e.g. 91 cm (36 in) wide>" (required; from the skill: social.json product_images.size_source)
+//        --sign-text "<text on the product>" (required when product_images.custom_text: a context text, never the template
+//        placeholder; rules in the skill's references/image-guide.md and project.md section 10)
+//   node scripts/draft.mjs reprompt --id <draft> [--size ..] [--sign-text ..] [--description "<product description>"]
+//        rebuilds prompt.txt from the template (the old description is kept when none is given); then image --force
 //   node scripts/draft.mjs confirm-clean --id <draft> --by <name>   scene-swap: looked at image.png, no shop name/logo left
 //   node scripts/draft.mjs image --id <draft> [--force]     runs Codex (prompt.txt must be finished: no {{...}} left)
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
@@ -85,8 +90,9 @@ export function newDraft(args) {
 
   const mode = brand.social.language_policy?.mode || 'single';
   const networks = (brand.social.channels || []).filter((x) => x.enabled).map((x) => ({ network: x.network, account: x.account || '', url: x.url || '', lang: [].concat(x.lang || []) }));
+  const { size: productSize, signText, customText } = sizeAndText(brand, args, idea);
   const draft = {
-    id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(),
+    id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(), product_size: productSize, ...(signText ? { sign_text: signText } : {}), custom_text: customText,
     idea: { run: 'store', id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'].map((f) => [f, idea[f] || ''])) },
     inspiration: { run: refUsed.run || 'store', ref: refUsed.id || idea.item, store_item: refUsed.id || idea.item, source: refUsed.source_id || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
     image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false } : {}),
@@ -102,9 +108,11 @@ export function newDraft(args) {
     SOURCE_SHOP: refUsed.store || refUsed.source_id || 'the source shop',
     SCENE: idea.scene, ANGLE: idea.angle, PROPS: idea.props || 'at most one or two props that fit the scene',
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
+    ...sizeTextFill(brand, productSize, signText),
   }), 'utf8');
   fs.writeFileSync(path.join(dir, 'brief.md'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'caption-brief.md'), 'utf8'), {
     BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
+    SIGN_TEXT_NOTE: signText ? 'Chữ trên bảng là "' + signText + '": caption (mọi ngôn ngữ) nhắc đúng chữ này, không viết chữ mẫu kiểu "Your Names".' : '',
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
     SECTIONS: [].concat(brand.social.caption_rules?.project_md_sections || []).join('; ') || '1, 3, 7, 8, 10, 11',
     FILES: [...brand.languages.map((l) => `- content-${l}.txt`), ...(brand.review_languages || []).map((l) => `- content-${l}.txt (chỉ để người dùng đọc, KHÔNG đăng; cùng giọng thương hiệu, cùng quy tắc)`)].join('\n'),
@@ -120,6 +128,48 @@ export function newDraft(args) {
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) markUsed(brand.id, it, id);
   const status = setStatus(dir, 'needs_prompt', { image_mode: imageMode, ...(imageMode === 'scene-swap' ? { source_shop: draft.inspiration.source_shop, source_url: draft.inspiration.source_url } : {}) });
   return ({ id, dir, status: status.status, next: `Mở ${path.join(dir, 'prompt.txt')}, thay {{PRODUCT_DESCRIPTION}} bằng mô tả đúng sản phẩm trong ảnh, rồi chạy draft.mjs image --id ${id}. Viết caption theo brief.md.` });
+}
+
+// The real size (required) and, for custom-text products (social.json product_images.custom_text), the context text
+// shown on the product. The rules live in the brand's skill (references/image-guide.md, project.md section 10).
+function sizeAndText(brand, args, from = {}) {
+  const str = (k) => (args[k] && args[k] !== true ? String(args[k]).trim() : '');
+  const size = str('size') || String(from.product_size || '').trim();
+  if (!size) throw new Error(`Missing --size: the product's real size (where: ${brand.social.product_images?.size_source || 'project.md mục 5/10'}).`);
+  const customText = brand.social.product_images?.custom_text === true;
+  const signText = str('sign-text') || String(from.sign_text || '').trim();
+  if (customText && !signText) throw new Error('This brand has custom-text products (product_images.custom_text): give --sign-text, a text that fits the scene (never the template placeholder).');
+  if (signText && PLACEHOLDER.test(signText)) throw new Error(`--sign-text "${signText}" is a template placeholder: choose a text that fits the scene.`);
+  return { size, signText, customText };
+}
+export const PLACEHOLDER = /\byour\s+(names?|logo|bar(\s+name)?|business(\s+name)?|name\s+here|text|brand|shop(\s+name)?|company)\b/i;
+function sizeTextFill(brand, size, signText) {
+  return {
+    SIZE: size,
+    SIGN_TEXT_RULE: signText ? `The text on the product must read exactly: "${signText}". Replace any template/placeholder text of the photo (such as "Your Names", "Your Logo") with it; keep the product's font style, colours, layout and number of lines.` : 'Keep the product\'s own text exactly as in the photo.',
+    IMAGE_GUIDE: path.join(brand.dir, 'references', 'image-guide.md'),
+  };
+}
+// Rebuilds prompt.txt of an existing draft from the template (new size / sign text), keeping its product description.
+function reprompt(args) {
+  const { dir, draft } = findDraft(need(args, 'id'));
+  const brand = loadBrand(draft.brand, { allowDisabled: true });
+  const { size, signText, customText } = sizeAndText(brand, args, { product_size: draft.product_size, sign_text: draft.sign_text });
+  const old = fs.existsSync(path.join(dir, 'prompt.txt')) ? fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8') : '';
+  const kept = (old.match(/THE PRODUCT[^\n]*\n([\s\S]*?)\n(?:Keep |Real size)/) || [])[1] || '';
+  const description = args.description && args.description !== true ? String(args.description).trim() : kept.trim();
+  const tpl = fs.readFileSync(path.join(toolRoot, 'prompts', draft.image_mode === 'scene-swap' ? 'scene-swap.txt' : 'scene-edit.txt'), 'utf8');
+  const second = draft.scene_image ? 'The second attached image is ONLY a mood/lighting reference. Do not copy it and do not take any objects from it.' : 'There is no second image.';
+  fs.writeFileSync(path.join(dir, 'prompt.txt'), fill(tpl, {
+    PRODUCT_DESCRIPTION: description || '{{PRODUCT_DESCRIPTION}}', SOURCE_SHOP: draft.inspiration?.source_shop || 'the source shop',
+    SCENE: draft.idea.scene, ANGLE: draft.idea.angle, PROPS: draft.idea.props || 'at most one or two props that fit the scene',
+    PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
+    ...sizeTextFill(brand, size, signText),
+  }), 'utf8');
+  const next = { ...draft, product_size: size, custom_text: customText };
+  if (signText) next.sign_text = signText; else delete next.sign_text;
+  writeJson(path.join(dir, 'draft.json'), next);
+  return { id: draft.id, product_size: size, sign_text: signText || null, prompt: path.join(dir, 'prompt.txt'), next: description ? `node scripts/draft.mjs image --id ${draft.id} --force` : 'Fill {{PRODUCT_DESCRIPTION}} in prompt.txt, then draft.mjs image --force.' };
 }
 
 function codexCommand(s) {
@@ -237,10 +287,11 @@ if (isMain(import.meta.url)) main(() => {
   const cmd = args._[0];
   if (cmd === 'new') return out(newDraft(args));
   if (cmd === 'image') return out(image(args, s));
+  if (cmd === 'reprompt') return out(reprompt(args));
   if (cmd === 'check') return out(check(args));
   if (cmd === 'watermark') return out(watermark(args, s));
   if (cmd === 'confirm-clean') return out(confirmClean(args));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
-  throw new Error('Lệnh: new | image | watermark | confirm-clean | check | show | list');
+  throw new Error('Lệnh: new | reprompt | image | watermark | confirm-clean | check | show | list');
 });

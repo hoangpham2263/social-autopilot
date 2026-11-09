@@ -215,8 +215,25 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const product = path.join(brandDir, 'project', 'sources', 'inputs', 'test-product', 'product.png');
   const refImage = path.join(ws, 'store', 'dreamyvows', refItem.images[0]);
   assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product, '--scene', refImage).ok, false);
-  const draft = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product);
+  // Real size is required; the brand's skill marks custom-text products (product_images.custom_text): a context text,
+  // never the template placeholder.
+  const newArgs = ['draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product];
+  assert.match(run(...newArgs).error, /--size/);
+  assert.match(run(...newArgs, '--size', '76 cm (30 in) wide').error, /--sign-text/);
+  assert.match(run(...newArgs, '--size', '76 cm (30 in) wide', '--sign-text', 'Your Names').error, /placeholder/);
+  const size = ['--size', '76 cm (30 in) wide, about half the table', '--sign-text', 'Love'];
+  const draft = run(...newArgs, ...size);
   assert.equal(draft.ok, true, JSON.stringify(draft));
+  const made = JSON.parse(fs.readFileSync(path.join(draft.dir, 'draft.json'), 'utf8'));
+  assert.equal(made.product_size, '76 cm (30 in) wide, about half the table');
+  assert.equal(made.sign_text, 'Love');
+  assert.equal(made.custom_text, true);
+  const firstPrompt = fs.readFileSync(path.join(draft.dir, 'prompt.txt'), 'utf8');
+  assert.match(firstPrompt, /REAL SIZE: 76 cm \(30 in\) wide/);
+  assert.match(firstPrompt, /must read exactly: "Love"/);
+  assert.ok(firstPrompt.includes(path.join(brandDir, 'references', 'image-guide.md')), 'points to the skill image guide');
+  assert.ok(!/\{\{(SIZE|SIGN_TEXT_RULE|IMAGE_GUIDE)\}\}/.test(firstPrompt));
+  assert.match(fs.readFileSync(path.join(draft.dir, 'brief.md'), 'utf8'), /Chữ trên bảng là "Love"/);
   assert.ok(readItems('dreamyvows').find((x) => x.id === itemId).used_by.includes(draft.id), 'store item used_by the draft');
   assert.equal(run('draft.mjs', 'image', '--id', draft.id).ok, false); // {{PRODUCT_DESCRIPTION}} not filled
   const promptFile = path.join(draft.dir, 'prompt.txt');
@@ -239,6 +256,21 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
 
   assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'needs_caption');
   for (const l of ['vn', 'en']) write(path.join(draft.dir, `content-${l}.txt`), `Bảng neon "Love" cho bữa tối kỷ niệm (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows #neon\n`);
+  const capFile = path.join(draft.dir, 'content-en.txt');
+  const goodCap = fs.readFileSync(capFile, 'utf8');
+  write(capFile, goodCap.replace('"Love"', 'with Your Names'));
+  const signProblems = run('draft.mjs', 'check', '--id', draft.id).problems;
+  assert.ok(signProblems.some((p) => /content-en/.test(p) && /"Love"/.test(p)), JSON.stringify(signProblems));
+  assert.ok(signProblems.some((p) => /Your Names/.test(p)), JSON.stringify(signProblems));
+  write(capFile, goodCap);
+  const re = run('draft.mjs', 'reprompt', '--id', draft.id, '--size', '91 cm (36 in) wide', '--sign-text', 'Emma & Liam');
+  assert.equal(re.ok, true, JSON.stringify(re));
+  const rePrompt = fs.readFileSync(path.join(draft.dir, 'prompt.txt'), 'utf8');
+  assert.match(rePrompt, /REAL SIZE: 91 cm \(36 in\)/);
+  assert.match(rePrompt, /must read exactly: "Emma & Liam"/);
+  assert.match(rePrompt, /A warm white neon sign reading "Love"\./); // description kept
+  assert.ok(run('draft.mjs', 'check', '--id', draft.id).problems.some((p) => /"Emma & Liam"/.test(p)), 'captions must follow the new sign text');
+  assert.equal(run('draft.mjs', 'reprompt', '--id', draft.id, '--size', '76 cm (30 in) wide, about half the table', '--sign-text', 'Love').ok, true);
   const checked = run('draft.mjs', 'check', '--id', draft.id);
   assert.equal(checked.status, 'ready', JSON.stringify(checked.problems));
   const waiting = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').ready;
@@ -303,7 +335,7 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
 
   // Optional "Bỏ" before a draft reaches the brand; not after.
   run('ideas.mjs', 'pick', '--brand', 'dreamyvows', '--id', I);
-  const second = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product, '--again');
+  const second = run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--product', product, '--again', ...size);
   assert.equal(run('finalize.mjs', 'cancel', '--id', second.id, '--note', 'không hợp').status, 'rejected');
   assert.match(run('finalize.mjs', 'cancel', '--id', second.id).error, /đã bỏ/);
   assert.match(run('finalize.mjs', 'cancel', '--id', draft.id).error, /đã ghi vào thương hiệu/);
@@ -313,11 +345,11 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const setRedraw = (value) => { const s = JSON.parse(fs.readFileSync(socialFile, 'utf8')); s.product_images.reference_redraw = value; fs.writeFileSync(socialFile, JSON.stringify(s, null, 2)); };
   const refPath = path.join(ws, 'store', 'dreamyvows', items.find((x) => x.id === 'S0001').images[0]);
   setRedraw({ enabled: false, require_logo_removal: true, only_if_brand_can_produce: true });
-  const swapArgs = ['draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', refPath, '--again'];
+  const swapArgs = ['draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', refPath, '--again', ...size];
   assert.match(run(...swapArgs).error, /reference_redraw\.enabled/);
   setRedraw({ enabled: true, require_logo_removal: true, only_if_brand_can_produce: true });
   assert.match(run(...swapArgs).error, /brand-can-produce/);
-  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', outside, '--again', '--brand-can-produce').ok, false); // not a store image of this brand
+  assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', outside, '--again', '--brand-can-produce', ...size).ok, false); // not a store image of this brand
   const swap = run(...swapArgs, '--brand-can-produce');
   assert.equal(swap.ok, true, JSON.stringify(swap));
   const swapPrompt = path.join(swap.dir, 'prompt.txt');
