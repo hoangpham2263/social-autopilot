@@ -1,7 +1,7 @@
 ﻿# Run from Cập nhật: bring Social Autopilot up to the latest GitHub Release (vX.Y.Z) of hoangpham2263/social-autopilot.
 # Git checkouts use git pull; ZIP installs download the newest release ZIP. User data is never touched.
-# -Check prints the newer version ('' when current); -Apply installs it (the app reopens itself afterwards).
-param([string]$Root = (Split-Path $PSScriptRoot -Parent), [switch]$NoRun, [switch]$Check, [switch]$Apply)
+# Dot-sourced by src/server.mjs with -NoRun, which only loads the functions (Get-InstalledVersion, Get-AppUpdate, Update-App).
+param([string]$Root = (Split-Path $PSScriptRoot -Parent), [switch]$NoRun)
 $ErrorActionPreference = 'Stop'
 $script:Repo = 'hoangpham2263/social-autopilot'
 $script:Asset = 'social-autopilot.zip'
@@ -113,5 +113,3 @@ function Update-App([string]$Root) {
     } finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-if ($Check) { return (Get-AppUpdate $Root) }
-if ($Apply) { Update-App $Root }

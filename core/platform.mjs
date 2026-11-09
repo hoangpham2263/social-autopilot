@@ -35,20 +35,15 @@ export const psFile = (file, args = []) => (onWindows
   ? psCommand(`& ${quote(file)} ${args.map((a) => (/^-[A-Za-z]+$/.test(a) ? a : quote(a))).join(" ")}; exit $LASTEXITCODE`)
   : ["-NoProfile", "-File", file, ...args]);
 
-// Stop every process whose command line has this text (a tool's server, the menu), as pkill -f does.
-export function killMatching(text, done = () => {}) {
-  if (!onWindows) return execFile("pkill", ["-f", text], () => done());
-  execFile(PWSH, psCommand(`Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains(${quote(text)}) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`), { windowsHide: true }, () => done());
-}
-// Stop a process and everything it started (Dừng: run-images.ps1, codex and their children). On macOS the process
+// Stop a process and everything it started (a Codex sign-in and its children). On macOS the process
 // was started detached, so it leads its own group.
 export function killTree(proc) {
   if (onWindows) return execFile("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { windowsHide: true }, () => {});
   try { process.kill(-proc.pid, "SIGKILL"); } catch { try { proc.kill("SIGKILL"); } catch {} }
 }
 
-// The user's own Chrome, where the Social Autopilot extension (core/extension) is installed and the AIs are signed in: started,
-// or a page opened in it. background: Chrome is not brought to the front (a run starting it).
+// The user's own Chrome, where ChatGPT is signed in: started, or a page opened in it. background: Chrome is not brought
+// to the front.
 export function openChrome(url = "", { background = false } = {}) {
   return new Promise((resolve) => {
     const done = (err) => resolve(err ? "Không mở được Google Chrome. Cài Google Chrome rồi thử lại." : "");
@@ -67,34 +62,4 @@ export function appWindow(url, size = "1120,840") {
     return spawn(toolsChrome, [`--user-data-dir=${appProfile}`, "--no-first-run", "--no-default-browser-check", "--disable-infobars", ...args], { detached: true, stdio: "ignore" }).unref();
   }
   execFile("open", ["-na", "Google Chrome", "--args", ...args], (err) => { if (err) execFile("open", [url]); });
-}
-
-// A terminal window running a program the user works in themselves (Antigravity's /login): Terminal on macOS, a
-// console window on Windows.
-export function openTerminal(program) {
-  if (onWindows) return spawn("cmd.exe", ["/c", "start", '""', "cmd.exe", "/k", `"${program}"`], { detached: true, stdio: "ignore", windowsHide: false, windowsVerbatimArguments: true }).unref();
-  const quoted = `'${program.replace(/'/g, "'\\''")}'`;
-  execFile("osascript", ["-e", `tell application "Terminal" to do script "${quoted.replace(/["\\]/g, "\\$&")}"`, "-e", 'tell application "Terminal" to activate']);
-}
-
-// The system file dialog: real paths, opened at folder. filter is "images" or "table" (CSV or ZIP / RAR / 7Z).
-export function chooseFiles({ folder = "", table = false }, done) {
-  const lines = (err, stdout) => done(err ? [] : String(stdout).split(/\r?\n/).map((p) => p.trim()).filter(Boolean));
-  if (onWindows) {
-    const filter = table ? "Bảng nhập|*.csv;*.zip;*.rar;*.7z" : "Ảnh|*.png;*.jpg;*.jpeg";
-    const script = `Add-Type -AssemblyName System.Windows.Forms; $d=New-Object Windows.Forms.OpenFileDialog; $d.Multiselect=$true; $d.Title=${quote(table ? "Chọn bảng nhập" : "Chọn ảnh")}; $d.Filter=${quote(filter)}; `
-      + `if(${quote(folder)} -and (Test-Path -LiteralPath ${quote(folder)})){$d.InitialDirectory=${quote(folder)}}; `
-      + `$owner=New-Object Windows.Forms.Form -Property @{TopMost=$true;ShowInTaskbar=$false;Opacity=0}; $owner.Show(); `
-      + `if($d.ShowDialog($owner) -eq 'OK'){$d.FileNames}; $owner.Dispose()`;
-    return execFile(PWSH, ["-STA", ...psCommand(script)], { windowsHide: true }, lines);
-  }
-  const at = folder && existsSync(folder) ? ` default location (POSIX file ${JSON.stringify(folder)})` : "";
-  const what = table ? `"Chọn bảng nhập" of type {"csv", "zip", "rar", "7z"}` : `"Chọn ảnh" of type {"public.png", "public.jpeg"}`;
-  const script = `set picked to choose file with prompt ${what} with multiple selections allowed${at}
-set out to ""
-repeat with f in picked
-set out to out & POSIX path of f & linefeed
-end repeat
-return out`;
-  execFile("osascript", ["-e", script], lines);
 }

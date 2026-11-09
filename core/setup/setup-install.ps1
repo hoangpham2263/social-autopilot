@@ -1,8 +1,6 @@
-﻿# Install on Windows (core/launch.ps1 when Node.js is missing): Node.js and the bridge (core/bridge), each only when
-# missing, then the same readiness check as Cấu hình.
+﻿# Install on Windows (core/launch.ps1 when Node.js is missing): Node.js, only when missing, then the same readiness check as Cấu hình.
 $ErrorActionPreference = 'Continue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-$root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 function Step([string]$Text) { Write-Host "`n== $Text" -ForegroundColor Cyan }
 function Update-SessionPath { $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User') }
 function Test-Tool([string]$Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
@@ -31,11 +29,6 @@ if (-not (Test-Tool node)) {
     }
 }
 Write-Host "Node.js $(node --version)"
-
-Step 'Cầu nối trình duyệt'
-foreach ($bridge in @(Join-Path $root 'core/bridge')) {
-    if (Test-Path -LiteralPath (Join-Path $bridge 'package.json')) { Push-Location $bridge; npm install --silent; Pop-Location; Write-Host "Đã cài: $bridge" }
-}
 
 Step 'Kiểm tra'
 & (Join-Path $PSScriptRoot 'setup-check.ps1')

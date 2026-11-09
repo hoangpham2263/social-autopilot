@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-time install on macOS, run by start-app.command when Node.js or PowerShell is missing: Homebrew, Node.js,
-# PowerShell 7 and the browser bridge, each only when missing, then the same readiness check as Cấu hình.
+# PowerShell 7, each only when missing, then the same readiness check as Cấu hình.
 cd "$(dirname "$0")/../.." || exit 1
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.dotnet/tools:$PATH"
 step() { printf '\n== %s\n' "$1"; }
@@ -20,9 +20,6 @@ echo "Node.js $(node --version)"
 step "PowerShell 7"
 command -v pwsh >/dev/null || brew install --cask powershell || exit 1
 pwsh --version
-
-step "Cầu nối trình duyệt"
-[ -f core/bridge/package.json ] && (cd core/bridge && npm install --silent) && echo "Đã cài."
 
 step "Kiểm tra"
 pwsh -NoProfile -File core/setup/setup-check.ps1
