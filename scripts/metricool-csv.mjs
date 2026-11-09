@@ -40,6 +40,9 @@ const NEEDS_MEDIA = ['Instagram', 'Pinterest', 'TikTok', 'Youtube'];
 const NEEDS_VIDEO = ['TikTok', 'Youtube'];
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm|avi)(\?|#|$)/i;
 const MAX_MEDIA = 10;
+// User rule: never add an AI label when posting. Export always writes "false" (as the template's example row) in
+// these columns and never adds AI disclosure text to Text; validate fails when any of them is not false/empty.
+export const AI_LABEL_COLUMNS = ['Pinterest AI generated content', 'Pinterest AI generated person', 'Youtube AI generated content', 'TikTok Ai generated content'];
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const pics = (n) => `Picture Url ${n}`;
 const alts = (n) => `Alt text picture ${n}`;
@@ -167,6 +170,10 @@ export function validateRows(rows, ctx) {
       else if (v !== '' && v !== 'false') err(n, col, `"${v}" phải là true, false hoặc trống (viết thường)`);
     }
     if (!on.length) err(n, 'networks', 'không có mạng nào true (Facebook, Instagram, ...)');
+    for (const col of AI_LABEL_COLUMNS) {
+      const v = r[col] ?? '';
+      if (v !== '' && v !== 'false') err(n, col, `"${v}": không gắn nhãn AI khi đăng (quy tắc người dùng); phải là false hoặc trống`);
+    }
     // Media
     const media = [];
     let gap = 0;
@@ -339,6 +346,7 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
       const r = Object.fromEntries(header.map((h) => [h, '']));
       r.Text = t.text; r.Date = when.date; r.Time = when.time; r.Draft = args.draft ? 'true' : 'false';
       for (const col of networks) r[col] = 'true';
+      for (const col of AI_LABEL_COLUMNS) r[col] = 'false';
       media.forEach((m, k) => { r[pics(k + 1)] = m; if (altList[k]) r[alts(k + 1)] = altList[k]; });
       if (video.length && p.video_thumbnail_url) r['Video Thumbnail Url'] = String(p.video_thumbnail_url);
       if (networks.includes('Facebook')) r['Facebook Post Type'] = p.facebook_post_type || (video.length ? 'REEL' : 'POST');

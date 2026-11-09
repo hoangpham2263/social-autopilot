@@ -91,6 +91,8 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   assert.equal(p1.Draft, 'true'); assert.equal(p1.Facebook, 'true'); assert.equal(p1.Instagram, '');
   assert.equal(p1['Alt text picture 1'], 'Alt "one"');
   assert.equal(p1['Facebook Post Type'], 'POST');
+  for (const col of lib.AI_LABEL_COLUMNS) assert.equal(p1[col], 'false', col);
+  assert.ok(!/AI/i.test(p1.Text), 'no AI disclosure text');
   assert.match(p1.Time, /^(10:00:00|19:30:00)$/, 'time from cadence slot');
   assert.ok(p1.Date > new Date().toISOString().slice(0, 10) || p1.Date >= addDays(0));
   assert.equal(p2.Date, FUTURE); assert.equal(p2.Time, '08:15:00');
@@ -226,6 +228,16 @@ test('validate: >4 pictures on Twitter/X, video rules', () => {
   assert.equal(r.ok, false);
   assert.ok(r.errors.some((e) => e.row === 2 && e.field === 'Twitter/X'));
   assert.ok(r.errors.some((e) => e.row === 3 && e.field === 'TikTok' && /video/.test(e.error)));
+});
+
+test('validate: any AI-label column true fails (never label AI when posting)', () => {
+  setup({ posts: [] });
+  const rows = lib.AI_LABEL_COLUMNS.map((col) => row({ [col]: 'true' }));
+  rows.push(row({ 'Youtube AI generated content': 'false', 'TikTok Ai generated content': '' }));
+  const r = run('validate', csvFile('ai.csv', rows));
+  assert.equal(r.ok, false);
+  lib.AI_LABEL_COLUMNS.forEach((col, i) => assert.ok(r.errors.some((e) => e.row === i + 2 && e.field === col), col));
+  assert.ok(!r.errors.some((e) => e.row === rows.length + 1));
 });
 
 test('checkUrl: 200 image ok; 404 and text/html refused', async () => {
