@@ -20,8 +20,8 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 - Chỉ dò trong `skillsRoot` (mặc định `C:/hoangpq/vaniecom-workspace/skills/`). Một thương hiệu = thư mục skill chuẩn có `SKILL.md`, `project/project.md`, `project/social.json`.
 - Chạy trong lịch khi `enabled: true` **và** `scripts/check-skill.mjs --tool-ready` của skill đạt. Tool in đúng những gì skill báo còn thiếu.
 - Dữ kiện thương hiệu chỉ nằm trong `skills\<brand>\project\social.json` (giọng, website, hashtag trong `project.md` cạnh nó); repo tool không chứa dữ kiện thương hiệu nào. Tên trường theo `project-skill-standard/README.md` (mục "Khai báo social"):
-  - `research.sources[]`, `research.max_per_day`, `research.fb_account`;
-  - `channels[]`, `language_policy`;
+  - `research.sources[]`, `research.fb_account`;
+  - `channels[]`, `language_policy` (`review_langs`: ngôn ngữ chỉ để người duyệt đọc, không đăng);
   - `product_images`: `sources`, `ai_scenes_allowed`, `watermark`, `reference_redraw`;
   - `caption_rules.project_md_sections`, `cadence`, `approval`.
 
@@ -34,7 +34,7 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 ## 3. Quy trình (giống nhau mọi thương hiệu, chi tiết trong RUNBOOK.md)
 0. **Mở vòng:** `approve.mjs sync`, `brands.mjs`, `sources.mjs`.
 1. **Nghiên cứu.**
-   - `research.mjs start`, có giới hạn trong code: `max_per_day` của thương hiệu, số nguồn mỗi lượt, số bài mỗi nguồn, số bài mỗi ngày cho mọi thương hiệu cộng lại.
+   - `research.mjs start`: không giới hạn lượt/bài (người dùng, 09/11/2026); chạy lại trong ngày thì nối bài mới, bỏ trùng.
    - Agent đọc Facebook bằng Playwright theo `docs/research.md`.
    - `research.mjs ingest` lọc U+034F và ký tự ẩn, bỏ trùng, ghi vào `workspace/runs/<brand>/<date>/<source-id>/`.
 2. **Ý tưởng:** `ideas.mjs` tạo ý trừu tượng, chặn chép chữ, số điện thoại, link, tên shop.
@@ -47,7 +47,7 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
    6. `confirm-clean`, chỉ với scene-swap;
    7. viết caption theo skill của thương hiệu;
    8. `draft.mjs check` → `awaiting_approval`.
-4. **Duyệt:** nút Duyệt/Bỏ trong app hoặc chat (`approve.mjs approve|reject`), cùng hàm. Người duyệt phải khớp `approval.owner`; bỏ thì phải ghi lý do.
+4. **Duyệt:** nút Duyệt/Bỏ trong app hoặc chat (`approve.mjs approve|reject`), cùng hàm. Không có người duyệt đích danh (ai duyệt trong chat/app là người duyệt); bỏ thì phải ghi lý do.
 5. **Ghi vào thương hiệu:** `writeback.mjs` tạo `workspace/posts/POST-<slug>/` và một mục `approved` trong `catalog.json` (`inspiration`, `image_mode`, `ai_disclosure`, `approval`), rồi chạy `check-post.mjs` của skill.
 5b. **Host ảnh:** `host-image.mjs publish` (tự chạy sau write-back): ảnh bài đã duyệt lên repo công khai `social-autopilot-sources` (`<brand>/<yyyy>/<mm>/<post-id>.<ext>`), push, chờ HTTP 200, ghi `media_url` vào catalog. Xem mục 4, "Host ảnh".
 6. **Báo cáo:** `queue.mjs` liệt kê bản chờ duyệt (ảnh, caption, link tham khảo; scene-swap kèm ảnh gốc của shop), bài đã ghi, lỗi.
@@ -59,7 +59,7 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 **Mặc định `brand-image`**
 - Ảnh sản phẩm là ảnh của chính thương hiệu (thư mục skill hoặc `product_images.sources`).
 - Ảnh không khí không được là ảnh tham khảo.
-- Chỉ dựng cảnh AI khi `ai_scenes_allowed: true`.
+- Dựng cảnh AI bật mặc định (chỉ `ai_scenes_allowed: false` mới tắt); không bao giờ gắn nhãn AI lên bài.
 
 **Không logo trên sản phẩm**
 - Prompt (`prompts/scene-edit.txt`, `scene-swap.txt`) có lệnh NO LOGO; `check` cảnh báo khi prompt thiếu lệnh này.
@@ -96,7 +96,7 @@ social-autopilot/
 ├── core/                                   vỏ app: launch, setup (Node.js, Codex), webview2, update
 ├── .github/workflows/release.yml           tag v* → ZIP release cho nút Cập nhật
 ├── config/metricool-brands.json            các brand trong tài khoản Metricool (ghi tay), gắn với skill
-├── config/settings.json                    chung: skillsRoot, giới hạn, codex, ffmpeg, remove_watermark, luật duyệt
+├── config/settings.json                    chung: skillsRoot, nhịp nghiên cứu, codex, ffmpeg, remove_watermark, luật duyệt
 ├── scripts/                                brands, sources, social, research, ideas, draft (+draft-lib), image-clean,
 │                                           queue, approve, writeback, host-image, metricool-csv, preview, lib
 ├── prompts/                                scene-edit.txt, scene-swap.txt, caption-brief.md, idea-abstract.md
@@ -108,15 +108,14 @@ Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<bra
 
 ## 6. Còn lại
 - Publish qua Metricool (mục 8), làm sau; app có thể thêm lịch đăng khi đó.
-- Bật từng thương hiệu: điền `approval.owner`, `ai_scenes_allowed`, `cadence.slots`, nguồn tham khảo (GRENHEIM), rồi đặt `enabled: true`.
+- DreamyVows và GRENHEIM đã bật (`enabled: true`), chỉ đăng tiếng Anh, tiếng Việt chỉ để duyệt (`review_langs: ["vn"]`); giờ đăng tự động khi `cadence.slots` trống.
 - Watermark cần ffmpeg trên máy; lúc xây, ffmpeg chưa có trên PATH.
-- `research.max_per_day` > 1 chưa có tác dụng, vì mỗi ngày chỉ có một thư mục lượt.
 
 ## 7. Rủi ro
 
 | Rủi ro | Mức | Cách giảm |
 |---|---|---|
-| Điều khoản Meta cấm thu thập dữ liệu tự động khi chưa được phép, kể cả khi đã đăng nhập (https://developers.facebook.com/docs/development/terms-and-policies/automated-data-collection/, https://about.fb.com/news/2021/04/how-we-combat-scraping/) | Cao | Giới hạn trong code (bài/ngày cho mọi thương hiệu, lượt/ngày theo thương hiệu). Nhịp như người, dừng khi gặp checkpoint, dùng tài khoản phụ, chế độ `semi-auto`. |
+| Điều khoản Meta cấm thu thập dữ liệu tự động khi chưa được phép, kể cả khi đã đăng nhập (https://developers.facebook.com/docs/development/terms-and-policies/automated-data-collection/, https://about.fb.com/news/2021/04/how-we-combat-scraping/) | Cao | Không còn giới hạn lượt/bài (người dùng chấp nhận, 09/11/2026). Nhịp như người (nghỉ ngẫu nhiên), dừng khi gặp checkpoint, dùng tài khoản phụ, chế độ `semi-auto`. |
 | Bản quyền ảnh, caption, thiết kế; scene-swap tăng rủi ro bị báo cáo | Cao | Ảnh đối thủ chỉ nằm trong `workspace/` (Git bỏ qua). Scene-swap tắt mặc định, bật theo từng thương hiệu, bắt xác nhận đã xoá logo, người duyệt xem ảnh gốc cạnh ảnh mới. |
 | Ảnh AI bị hiểu là ảnh khách thật | Trung bình | Không gắn nhãn AI lên bài (người dùng chốt 09/11/2026); chỉ ghi `ai_disclosure` trong catalog để lưu vết nội bộ. |
 | Agent theo lịch và lệnh chạy tay ghi cùng lúc | Trung bình | Khoá file và ghi nguyên tử. |

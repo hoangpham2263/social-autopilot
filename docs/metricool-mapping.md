@@ -81,7 +81,7 @@ Nguồn: `social.json` = `<skill>/project/social.json`; `catalog` = `<skill>/wor
 | `blogId` (query) / `Brand name` | Có | int / tên brand chính xác, phân biệt hoa thường | `social.json.metricool.blog_id` | **Thiếu**: `metricool:{}`, chưa có brand DreamyVows/GRENHEIM trong Metricool |
 | `userId` (query) | Có | int | `settings.metricool.user_id` (mỗi tài khoản một số) | Thiếu. Fortera là <user_id> |
 | `X-Mc-Auth` header | Có (API) | token | settings, chỉ ở máy, không đưa vào Git | Gói Free không có. MCP dùng OAuth |
-| `publicationDate.dateTime` / `Date`+`Time` | Có | `YYYY-MM-DDTHH:mm:ss` không có offset / `YYYY-MM-DD` + `HH:mm:ss` | Khung giờ trống tiếp theo trong `social.json.cadence.slots`, người duyệt có thể sửa | **Thiếu**: `slots: []`. Catalog chưa có trường `schedule` |
+| `publicationDate.dateTime` / `Date`+`Time` | Có | `YYYY-MM-DDTHH:mm:ss` không có offset / `YYYY-MM-DD` + `HH:mm:ss` | Khung giờ trống tiếp theo trong `social.json.cadence.slots`, hoặc giờ tự động khi `slots` trống (`docs/metricool.md`, "Giờ đăng tự động") | Có (tự động). Catalog `schedule` tuỳ chọn |
 | `publicationDate.timezone` | Có | tên IANA | `social.json.metricool.timezone`, nếu trống thì `cadence.timezone` | Có `America/Los_Angeles`; brand Fortera dùng New York. Thống nhất theo từng brand |
 | `text` | Có | UTF-8, giữ `\n`, emoji được | `folder/content-<lang>.txt`, ngôn ngữ theo `channels[].lang` + `language_policy` | Có. Chưa chốt chỉ EN hay VN+EN |
 | text riêng từng mạng | Không | API: mỗi mạng một bài, hoặc caption riêng qua MCP; CSV: mỗi dòng một mạng | `captions` theo mạng (tương lai) | Hiện chỉ có FB |
@@ -151,7 +151,7 @@ If there's a birthday coming up that you want to plan for someone, try typing th
 ## 4. Còn thiếu ở phía mình
 1. **URL ảnh công khai**: chưa có bước upload và chưa có trường `image_url` trong catalog. Metricool không nhận file máy.
 2. **blog_id / user_id cho từng brand**: DreamyVows và GRENHEIM chưa có brand trong Metricool. Gói Free của tài khoản hiện có đã dùng hết 1 brand cho Fortera.
-3. **Giờ đăng**: `cadence.slots` trống; catalog chưa có `schedule`. Có thể điền slots từ API best times.
+3. **Giờ đăng**: `cadence.slots` trống thì tool tự chọn giờ theo mạng (`docs/metricool.md`); có thể ghi đè bằng slots từ best times.
 4. **Alt text**: chưa có trường.
 5. **Quy tắc first comment**: chưa có.
 6. **Ngôn ngữ**: `one-post-bilingual` hay chỉ EN, chưa chốt.

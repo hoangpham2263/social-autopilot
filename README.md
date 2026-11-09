@@ -12,7 +12,7 @@ Một quy trình, hai mặt (cùng gọi các hàm trong `scripts/`):
 - Kiểm tra: `npm test`.
 
 ```
-config/settings.json   cài đặt chung: skillsRoot, giới hạn nghiên cứu, codex, ffmpeg, remove_watermark, luật duyệt, imageHost
+config/settings.json   cài đặt chung: skillsRoot, nhịp nghiên cứu (delay_seconds), codex, ffmpeg, remove_watermark, luật duyệt, imageHost
 config/metricool-brands.json  các brand trong tài khoản Metricool (gói không có API, ghi tay): name, blog_id, timezone, networks, skill_id
 src/server.mjs, ui/     app: máy chủ cục bộ (127.0.0.1, cổng theo thư mục, SA_PORT để đổi) + trang; start-app.cmd / start-app.command
 core/                  vỏ app: launch, Cấu hình (setup: Node.js, Codex), webview2, Cập nhật (update.ps1, GitHub Release qua .github/workflows/release.yml)

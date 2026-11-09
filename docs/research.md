@@ -10,7 +10,7 @@ Agent làm phần duyệt trang; tool không có scraper. Rút từ bản thử 
 
 ## Mỗi source
 1. Mở `url` của source. Nghỉ ngẫu nhiên trong `delay_seconds` (mặc định 5-15 giây) giữa mọi lần mở trang, cuộn, bấm.
-2. Bài trong feed: `[data-ad-rendering-role="story_message"]`. Lấy tối đa `max_posts` bài hợp `what_to_take` của source.
+2. Bài trong feed: `[data-ad-rendering-role="story_message"]`. Lấy các bài hợp `what_to_take` của source (không giới hạn số bài; chạy lại trong ngày thì `ingest` nối bài mới, bỏ trùng).
 3. Caption đầy đủ: mở ảnh của bài, bấm "Xem bài viết" (hoặc "Xem thêm"), đọc lại `story_message`. Caption Facebook có ký tự ẩn U+034F; cứ lưu nguyên, `ingest` sẽ lọc.
 4. Ảnh: lấy URL `scontent` lớn nhất của ảnh bài, tải bằng curl vào `<source>/raw/<n>.jpg`. Không chụp màn hình thay ảnh.
 5. Link bài: dạng `https://www.facebook.com/photo/?fbid=...` hoặc link bài viết.

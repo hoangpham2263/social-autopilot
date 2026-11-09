@@ -5,11 +5,12 @@ Scripts + RUNBOOK là nguồn duy nhất của quy trình. Người dùng quản
 Dành cho agent (Claude Code scheduled task/routine, Codex/ChatGPT automation) được gọi theo lịch. Chạy từ thư mục `C:\hoangpq\social-autopilot`. Mọi script in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Script chạy lại không sinh trùng.
 
 Quy tắc cứng:
-- Thương hiệu chỉ đến từ `config/settings.json` → `skillsRoot` (mặc định `C:\hoangpq\vaniecom-workspace\skills\`). Mọi thứ riêng của thương hiệu (nguồn tham khảo, kênh, ngôn ngữ, người duyệt, giọng, ảnh gốc) đọc từ thư mục skill của nó. Không hard-code thương hiệu, không trộn nguồn giữa thương hiệu.
+- Thương hiệu chỉ đến từ `config/settings.json` → `skillsRoot` (mặc định `C:\hoangpq\vaniecom-workspace\skills\`). Mọi thứ riêng của thương hiệu (nguồn tham khảo, kênh, ngôn ngữ đăng và ngôn ngữ chỉ để duyệt, giọng, ảnh gốc) đọc từ thư mục skill của nó. Không hard-code thương hiệu, không trộn nguồn giữa thương hiệu.
 - Các thương hiệu chạy **nối tiếp** (một Chrome, một agent).
 - Không ghi gì vào thư mục thương hiệu trước khi được duyệt. Không đăng bài ở đâu cả.
 - Không dùng ảnh hay câu chữ của đối thủ trong bài; ảnh đưa vào Codex phải là ảnh của chính thương hiệu.
-- Gặp lỗi `ok: false` thì ghi lại và chuyển sang thương hiệu/bước tiếp, không lách giới hạn.
+- Gặp lỗi `ok: false` thì ghi lại và chuyển sang thương hiệu/bước tiếp, không lách luật.
+- Không bao giờ gắn nhãn AI lên bài ("made with AI", "tạo bằng AI", `#AIgenerated`...): `draft.mjs check` và `metricool-csv.mjs validate` chặn.
 
 ## Bước 0. Thương hiệu và nguồn
 
@@ -21,20 +22,19 @@ node scripts/sources.mjs         # mỗi thương hiệu: các research.sources 
 
 Lặp **từng thương hiệu trong `usable`**, mỗi lần một thương hiệu, bước 1-5.
 
-## Bước 1. Nghiên cứu (giới hạn trong code)
+## Bước 1. Nghiên cứu (không giới hạn lượt/bài)
 
 ```
 node scripts/research.mjs start --brand <id>
 ```
-- `ok: false` vì giới hạn (`limits`): bỏ qua nghiên cứu hôm nay, sang bước 2 với lượt cũ (nếu có).
-- `reused: true`: lượt hôm nay đã mở; làm tiếp những source chưa có `raw.json`.
-- Với **từng source** trong `run.sources` (chỉ source của thương hiệu này): làm theo `docs/research.md` bằng Playwright, lấy tối đa `max_posts` bài, nghỉ `delay_seconds` ngẫu nhiên giữa các thao tác, tải ảnh vào `<source>/raw/`, ghi `<source>/raw.json`.
+- Không có giới hạn lượt hay số bài (người dùng, 09/11/2026); `start` chạy lại trong ngày được (`reused: true`, cùng thư mục ngày theo múi giờ thương hiệu).
+- Với **từng source** trong `run.sources` (chỉ source của thương hiệu này): làm theo `docs/research.md` bằng Playwright, nghỉ `delay_seconds` ngẫu nhiên giữa các thao tác, tải ảnh vào `<source>/raw/`, ghi `<source>/raw.json` (bài của lượt này).
 - Gặp checkpoint, captcha, yêu cầu đăng nhập: dừng nghiên cứu ngay, ghi vào báo cáo.
 
 ```
 node scripts/research.mjs ingest --brand <id>
 ```
-Làm sạch caption (U+034F, ký tự ẩn), bỏ trùng, cắt theo giới hạn, ra `<source>/refs.json`, `refs.csv`, `refs/`.
+Làm sạch caption (U+034F, ký tự ẩn), nối bài mới vào refs đã có, bỏ trùng (link bài, ảnh), ra `<source>/refs.json`, `refs.csv`, `refs/`. Chỉ nhận file ảnh jpg/png/webp thật nằm trong thư mục source của lượt (`dropped` ghi lý do); file thừa trong `refs/` bị dọn.
 
 ## Bước 2. Ý tưởng
 
@@ -49,7 +49,7 @@ Không hợp thương hiệu: `ideas.mjs reject --id I01 --note "<lý do>"`. Ch�
 
 ## Bước 3. Bản nháp
 
-Chỉ khi `product_images.ai_scenes_allowed: true`. Logo không bao giờ nằm trên sản phẩm (prompt có lệnh NO LOGO; `draft.mjs check` cảnh báo nếu prompt thiếu).
+Dựng cảnh AI bật mặc định cho mọi thương hiệu (chỉ `product_images.ai_scenes_allowed: false` mới tắt); không bao giờ gắn nhãn AI lên bài. Logo không bao giờ nằm trên sản phẩm (prompt có lệnh NO LOGO; `draft.mjs check` cảnh báo nếu prompt thiếu).
 
 1. Chọn ảnh sản phẩm. Mặc định (`brand-image`): ảnh **của thương hiệu**, trong thư mục skill hoặc thư mục ở `product_images.sources`. Ảnh không khí (tuỳ chọn) không được là ảnh tham khảo.
    ```
@@ -68,28 +68,29 @@ Chỉ khi `product_images.ai_scenes_allowed: true`. Logo không bao giờ nằm 
 4. Xem `image.png`: sản phẩm giữ y hệt, đúng chữ, không logo/watermark lạ. Không đạt: sửa prompt, `draft.mjs image --id <draft> --force` (tối đa 2 lần).
 5. Chỉ khi social.json `product_images.watermark.enabled: true`: `node scripts/draft.mjs watermark --id <draft>` (logo nhỏ ở góc, cần ffmpeg; sau đó ảnh được làm sạch lại).
 6. Scene-swap: so `image.png` với ảnh gốc của shop; khi chắc không còn tên shop, logo, watermark, nhãn size, số điện thoại: `node scripts/draft.mjs confirm-clean --id <draft> --by "<tên>"`. Còn thì sửa prompt, tạo lại.
-7. Viết caption theo `brief.md` (dùng SKILL.md mục A và project.md của thương hiệu), mỗi ngôn ngữ một file `content-<lang>.txt` trong thư mục nháp. Không nhắc tên shop nguồn.
+7. Viết caption theo `brief.md` (dùng SKILL.md mục A và project.md của thương hiệu), mỗi ngôn ngữ một file `content-<lang>.txt` trong thư mục nháp: ngôn ngữ đăng (`channels[].lang`) và ngôn ngữ chỉ để duyệt (`language_policy.review_langs`, vd `content-vn.txt`; không bao giờ đăng). Không nhắc tên shop nguồn, không nhãn AI.
 8. `node scripts/draft.mjs check --id <draft>` → `awaiting_approval`, hoặc sửa theo `problems` rồi check lại. Check không đạt khi ảnh chưa sạch metadata hay điểm ảnh bị đổi, chưa chèn watermark mà thương hiệu bật, scene-swap chưa xác nhận sạch logo hoặc caption có tên shop.
 
 ## Bước 4. Duyệt (trong chat)
 
 Bước 6 đưa danh sách chờ duyệt cho người. Khi người duyệt nói "duyệt <id>" / "approve <id>":
 ```
-node scripts/approve.mjs approve --id <draft> --by "<tên người duyệt>" [--note "..."]
+node scripts/approve.mjs approve --id <draft> [--by "<tên>"] [--note "..."]
 ```
-`--by` phải là `approval.owner` trong social.json của thương hiệu, nếu không script từ chối. "Bỏ <id>, lý do ...":
+Không có người duyệt đích danh: người trả lời trong chat/app là người duyệt; `--by` chỉ ghi vết (mặc định `user`). "Bỏ <id>, lý do ..." (bắt buộc có lý do; bản đã bỏ không bỏ lại):
 ```
-node scripts/approve.mjs reject --id <draft> --by "<tên>" --note "<lý do>"
+node scripts/approve.mjs reject --id <draft> --note "<lý do>" [--by "<tên>"]
 ```
-Người có thể sửa tay `status.json` của bản nháp (`"status": "approved"` hoặc `"rejected"`, kèm `"by"`, `"note"`); đầu mỗi vòng chạy:
+Người có thể sửa tay `status.json` của bản nháp (`"status": "approved"` hoặc `"rejected"`, kèm `"note"`; bỏ thì phải có lý do); đầu mỗi vòng chạy:
 ```
 node scripts/approve.mjs sync
 ```
-Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp, nhập tên người duyệt; cùng luật, cùng hàm). Không tự duyệt thay người.
+Sửa tay sai luật thì bản nháp trở về trạng thái tool đặt lần cuối, kèm `error`.
+Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp; cùng luật, cùng hàm). Không tự duyệt thay người.
 
 ## Bước 5. Ghi vào thương hiệu
 
-`approve` tự gọi `writeback.mjs`: làm sạch lại nếu cần (remove-watermark-skill; rồi `scripts/clean-image.mjs` của skill chỉ khi `--check` chưa báo SẠCH), tạo `workspace/posts/POST-<slug>/` (image.png, `content-<lang>.txt`), thêm một mục `approved` vào `workspace/catalog.json`, rồi chạy `scripts/check-post.mjs` của skill. Ghi lỗi thì chạy lại `node scripts/writeback.mjs --id <draft>`.
+`approve` tự gọi `writeback.mjs`: làm sạch lại nếu cần (remove-watermark-skill; rồi `scripts/clean-image.mjs` của skill chỉ khi `--check` chưa báo SẠCH), tạo `workspace/posts/POST-<slug>/` (image.png, `content-<lang>.txt`), thêm một mục `approved` vào `workspace/catalog.json` (`captions` = ngôn ngữ đăng; `review_captions` = ngôn ngữ chỉ để duyệt), rồi chạy `scripts/check-post.mjs` của skill. Ghi lỗi thì chạy lại `node scripts/writeback.mjs --id <draft>`.
 
 ### Bước 5b. Host ảnh/video (sau khi duyệt)
 
@@ -114,10 +115,10 @@ node scripts/host-image.mjs publish --brand <id> --post POST-xx [--video]
 node scripts/queue.mjs
 ```
 Gửi người dùng một tin ngắn, mỗi thương hiệu:
-- nghiên cứu: đã lấy bao nhiêu bài / bị chặn vì giới hạn / dừng vì checkpoint;
-- **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption từng ngôn ngữ (nguyên văn), ý + link bài tham khảo; bản scene-swap thì kèm đường dẫn ảnh gốc của shop (`reference_image`) để người duyệt xem hai ảnh cạnh nhau; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
+- nghiên cứu: đã lấy bao nhiêu bài / dừng vì checkpoint;
+- **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption đăng từng ngôn ngữ (`captions`, nguyên văn) và bản chỉ để duyệt (`review_captions`, ghi rõ "không đăng"), ý + link bài tham khảo; bản scene-swap thì kèm đường dẫn ảnh gốc của shop (`reference_image`) để người duyệt xem hai ảnh cạnh nhau; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
 - đã duyệt và ghi vào thương hiệu (POST-xx, thư mục, link ảnh `media_url` hoặc "chưa có link" kèm lỗi host);
-- lỗi cần người xử lý (thiếu owner, Codex hết lượt, ảnh không đạt).
+- lỗi cần người xử lý (Codex hết lượt, ảnh không đạt, host ảnh lỗi).
 
 ## Bước 7. Kết thúc vòng
 
@@ -130,6 +131,7 @@ node scripts/metricool-csv.mjs export --brand <id> [--posts POST-01,POST-02] [--
 node scripts/metricool-csv.mjs validate <file.csv> [--brand <id>] [--allow-today] [--check-urls]
 ```
 - Chỉ bài `approved` có `media_url` (chuỗi hoặc mảng, tối đa 10) hoặc `video_url`. Đúng 99 cột theo `docs/metricool-csv-template.csv`. Không ghi vào thư mục thương hiệu, không gửi gì tới Metricool.
-- `Brand name` = `social.json metricool.brand_name` (nhãn đúng trong Metricool, vd `Dreamy Vows`); giờ theo `metricool.timezone` (timezone của brand trong Metricool), giờ lấy từ catalog `schedule {date, time}`, `--date/--time`, hoặc `cadence.slots`.
-- `validate` báo lỗi theo từng dòng và exit 1 khi có bất kỳ lỗi nào (Metricool sẽ nhập tất cả thành nháp, ngày sai thành "hôm nay giờ hiện tại"). Link ảnh chứa `.webp` bị từ chối.
+- `Brand name` = `social.json metricool.brand_name` (nhãn đúng trong Metricool, vd `Dreamy Vows`); giờ theo `metricool.timezone` (timezone của brand trong Metricool), giờ lấy từ catalog `schedule {date, time}`, `--date/--time`, `cadence.slots` (nếu có), hoặc **tự động** khi `slots` trống: rải `posts_per_week` vào ngày/giờ tốt của mạng (bảng ở `docs/metricool.md`), mỗi ngày tối đa một bài của thương hiệu.
+- Chỉ ngôn ngữ đăng vào CSV; `--lang` với ngôn ngữ chỉ để duyệt bị từ chối. Text có nhãn AI bị từ chối.
+- `validate` báo lỗi theo từng dòng và exit 1 khi có bất kỳ lỗi nào (Metricool sẽ nhập tất cả thành nháp, ngày sai thành "hôm nay giờ hiện tại"). Link ảnh WebP (`.webp`, `format=webp`/`fm=webp`...; với `--check-urls` cả content-type `image/webp`) bị từ chối.
 - Metricool không chép ảnh ngoài: file trên repo ảnh phải còn đến khi bài đã đăng (xem bước 5b về `remove`).

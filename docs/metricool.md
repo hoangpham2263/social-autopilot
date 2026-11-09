@@ -59,7 +59,7 @@ Bảng giá trong app (USD, trả theo năm, chưa thuế):
 | Tính năng Metricool | Dùng thế nào |
 |---|---|
 | Nháp (`draft`) | Bước 8: bài `approved` gửi lên dạng nháp, người duyệt bấm hẹn giờ trong Metricool. Duyệt chính vẫn ở app của mình (Free không có approval) |
-| Best times | Đọc qua MCP để điền `cadence.slots` (vd. 3 khung/tuần theo giờ cao nhất) |
+| Best times | Không bắt buộc: `cadence.slots` trống thì tool tự chọn giờ (mục "Giờ đăng tự động" bên dưới); muốn ghi đè thì điền `cadence.slots` (có thể theo best times đọc qua MCP) |
 | Competitors | Thêm 5 trang đối thủ FB làm nguồn nghiên cứu (chọn kỹ vì Free không đổi được) |
 | CSV import | Đường dự phòng: tool xuất CSV đúng template, người dùng tự import |
 | MCP | Đường chính cho agent (Claude Code), không cần gói trả phí |
@@ -73,6 +73,23 @@ Bảng giá trong app (USD, trả theo năm, chưa thuế):
 - Mỗi bài: `text` (hoặc text riêng từng mạng), ngày giờ, `media` là **URL công khai** (Shopify CDN như Fortera đang làm, hoặc GitHub raw/R2), `alt text`, `first comment` (tuỳ chọn), loại bài IG (POST/REEL/STORY), cờ `draft`.
 - Với CSV: thêm định dạng ngày giờ đã chọn khi import, và `Brand name` nếu một file chứa nhiều brand.
 - Không cần ID trang Facebook trong payload, Metricool lấy từ brand.
+
+### Giờ đăng tự động (cadence.slots trống)
+
+`metricool-csv.mjs export` chọn giờ cho bài chưa có `schedule` và không có `--date/--time`. `cadence.slots` có giờ thì dùng giờ đó (ghi đè); trống thì rải `cadence.posts_per_week` (1-7, mặc định 3) vào các ngày tốt nhất của mạng đầu tiên trong kênh bật, giờ theo **múi giờ Metricool của brand** (`metricool.timezone`, không có thì `cadence.timezone`). Mỗi ngày tối đa một bài của thương hiệu; không trùng ngày+giờ đã có trong catalog; bài thêm khi `posts_per_week` lớn hơn số ngày tốt đi theo thứ tự mon, fri, wed, thu, tue, sat, sun. Bảng (`AUTO_TIMES` trong `scripts/metricool-csv.mjs`, giờ thử theo thứ tự):
+
+| Mạng | Ngày tốt | Giờ |
+|---|---|---|
+| Facebook | tue, wed, thu | 09:00, 10:00, 11:00 |
+| Instagram | tue, wed, fri | 11:00, 13:00, 10:00 |
+| TikTok | tue, thu, fri | 18:00, 19:00, 17:00 |
+| LinkedIn | tue, wed, thu | 08:00, 10:00, 12:00 |
+| Pinterest | fri, sat, sun | 20:00, 21:00, 14:00 |
+| YouTube | thu, fri, sat | 15:00, 17:00, 12:00 |
+| X, Threads, Bluesky | tue, wed, thu | 09:00, 12:00, 10:00 |
+| Google Business Profile | mon, wed, fri | 10:00, 11:00, 09:00 |
+
+Đây là giờ mặc định chung; khi có số liệu best times của brand thì điền `cadence.slots` để ghi đè.
 
 ### Đường rẻ nhất chạy được
 1. **Free + MCP + draft** chạy được với 1 brand, 20 bài/tháng (3 bài/tuần ≈ 13 bài/tháng là đủ). Nhưng **tài khoản này đã bị Fortera dùng hết** slot brand và gần hết 20 bài/tháng, nên phải dùng một tài khoản Free riêng cho mỗi thương hiệu (cần xem điều khoản), hoặc
