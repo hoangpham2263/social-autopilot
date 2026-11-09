@@ -26,12 +26,9 @@ export function writeBack(id) {
 function writeBackInner(id) {
   const { dir, draft, status } = findDraft(id);
   if (status.brand_post) return { id, status: 'approved', brand_post: status.brand_post, reused: true };
-  if (status.status !== 'approved' || !status.by) throw new Error(`Bản nháp ${id} chưa được duyệt (status "${status.status}"); không ghi vào thương hiệu.`);
+  if (status.status !== 'approved') throw new Error(`Bản nháp ${id} chưa được duyệt (status "${status.status}"); không ghi vào thương hiệu.`);
   const brand = loadBrand(draft.brand);
-  const { by, note = '' } = status;
-  // Re-checked here too, so a status.json edited by hand cannot skip the rule: the approver is the brand's owner.
-  const owners = [].concat(brand.social.approval?.owner || []).map((o) => String(o).trim().toLowerCase()).filter(Boolean);
-  if (settings().approval.require_owner_match && !owners.includes(String(by).trim().toLowerCase())) throw new Error(`"${by}" không phải người duyệt của ${brand.brand} (approval.owner).`);
+  const { by = 'user', note = '' } = status;
   if (!fs.existsSync(path.join(dir, 'image.png'))) throw new Error('Bản nháp không có image.png.');
   // The brand's catalog and post folder, as its skill writes them.
   const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
@@ -51,9 +48,9 @@ function writeBackInner(id) {
   // then the brand skill's own clean-image.mjs only when its --check does not already say SẠCH (no double work).
   try { cleanDraftImage(dir, { generator: 'codex' }); } catch (e) { fs.rmSync(folder, { recursive: true, force: true }); throw e; }
   const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
-  const already = fs.existsSync(cleaner) && /SẠCH:/.test(spawnSync(process.execPath, [cleaner, '--check', path.join(dir, 'image.png')], { encoding: 'utf8' }).stdout || '');
+  const already = fs.existsSync(cleaner) && /SẠCH:/.test(spawnSync(process.execPath, [cleaner, '--check', path.join(dir, 'image.png')], { encoding: 'utf8', windowsHide: true }).stdout || '');
   if (fs.existsSync(cleaner) && !already) {
-    const r = spawnSync(process.execPath, [cleaner, path.join(dir, 'image.png'), path.join(folder, 'image.png')], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [cleaner, path.join(dir, 'image.png'), path.join(folder, 'image.png')], { encoding: 'utf8', windowsHide: true });
     if (r.status !== 0) { fs.rmSync(folder, { recursive: true, force: true }); throw new Error(`clean-image.mjs lỗi: ${(r.stderr || r.stdout).trim()}`); }
   } else {
     fs.copyFileSync(path.join(dir, 'image.png'), path.join(folder, 'image.png'));
@@ -64,7 +61,7 @@ function writeBackInner(id) {
   const png = fs.readFileSync(path.join(folder, 'image.png'));
   const dims = png.subarray(1, 4).toString('latin1') === 'PNG' ? [png.readUInt32BE(16), png.readUInt32BE(20)] : undefined;
 
-  const date = today();
+  const date = today(brand.timezone);
   const rel = (p) => path.relative(brand.dir, p).split(path.sep).join('/');
   const entry = {
     id: postId, folder: folderRel, group: 'standard',
@@ -75,6 +72,8 @@ function writeBackInner(id) {
     image_source: draft.image_mode === 'scene-swap' ? `reference:${draft.inspiration.post_url || draft.inspiration.source_url}` : inside(brand.dir, draft.product_image) ? rel(draft.product_image) : draft.product_image,
     captions: Object.fromEntries(brand.languages.map((l) => [l, `content-${l}.txt`])),
     caption_status: Object.fromEntries(brand.languages.map((l) => [l, 'approved'])),
+    // Reviewer-only languages (language_policy.review_langs): the file is kept for reading, never a posted caption.
+    ...((brand.review_languages || []).some((l) => captionFiles.includes(`content-${l}.txt`)) ? { review_captions: Object.fromEntries(brand.review_languages.filter((l) => captionFiles.includes(`content-${l}.txt`)).map((l) => [l, `content-${l}.txt`])) } : {}),
     ...(captionFiles.some((f) => /-[a-z]+\.txt$/.test(f.replace(/^content-[a-z]{2}/, ''))) ? { caption_variants: captionFiles.filter((f) => /^content-[a-z]{2}-/.test(f)) } : {}),
     channels: draft.networks.map((n) => n.network),
     language_mode: draft.language_mode,
@@ -93,7 +92,7 @@ function writeBackInner(id) {
   let checkPost = null;
   const checker = path.join(brand.dir, 'scripts', 'check-post.mjs');
   if (fs.existsSync(checker)) {
-    const r = spawnSync(process.execPath, [checker, postId], { cwd: brand.dir, encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [checker, postId], { cwd: brand.dir, encoding: 'utf8', windowsHide: true });
     try { const j = JSON.parse(r.stdout); checkPost = { errors: j.errors, results: j.results.map(({ errors, warnings }) => ({ errors, warnings })) }; } catch { checkPost = { errors: 1, output: (r.stdout || r.stderr).slice(0, 2000) }; }
   }
   const brandPost = { id: postId, folder: path.join(brand.dir, folderRel), catalog: catalogFile };
@@ -106,5 +105,6 @@ function writeBackInner(id) {
 if (isMain(import.meta.url)) main(async () => {
   const r = writeBack(need(parseArgs(), 'id'));
   const host = await hostAfterWriteback(r);
+  if (host) try { setStatus(findDraft(r.id).dir, 'approved', { image_host: { ok: host.ok, at: new Date().toISOString(), ...(host.url ? { url: host.url } : {}), ...(host.ok ? {} : { error: host.error, next: host.next || '' }) } }); } catch {}
   out(host ? { ...r, image_host: host } : r);
 });

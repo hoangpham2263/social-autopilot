@@ -39,7 +39,8 @@ export function newDraft(args) {
   const refs = loadRefs(brand.id, date);
   const ref = refs.find((r) => r.key === idea.ref) || {};
 
-  if (brand.social.product_images?.ai_scenes_allowed !== true) throw new Error('social.json product_images.ai_scenes_allowed khác true: thương hiệu chưa cho dựng cảnh bằng AI.');
+  // AI-built scenes are on by default for every brand (never an AI label on the post); only an explicit false stops them.
+  if (brand.social.product_images?.ai_scenes_allowed === false) throw new Error('social.json product_images.ai_scenes_allowed = false: thương hiệu tắt dựng cảnh bằng AI.');
   // Default ("brand-image"): the product photo is the brand's own (inside its skill folder or a product_images.sources
   // folder). Opt-in "scene-swap" (--ref-image): a research reference of this brand is the product photo and only the
   // scene changes; only when the brand's social.json has product_images.reference_redraw.enabled: true.
@@ -70,7 +71,7 @@ export function newDraft(args) {
     if (refs.some((r) => r.image_sha1 === hash)) throw new Error('Ảnh không khí trùng một ảnh tham khảo của đối thủ.');
   }
 
-  const day = today().replace(/-/g, '');
+  const day = today(brand.timezone).replace(/-/g, '');
   const brandDrafts = path.join(draftsRoot, brand.id);
   fs.mkdirSync(brandDrafts, { recursive: true });
   const n = fs.readdirSync(brandDrafts).filter((d) => d.startsWith(`${brand.id}-${day}-`)).length + 1;
@@ -85,8 +86,9 @@ export function newDraft(args) {
     idea: { run: date, id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'].map((f) => [f, idea[f] || ''])) },
     inspiration: { run: date, ref: refUsed.key || idea.ref, source: refUsed.source || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
     image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false } : {}),
-    product_image: product, scene_image: scene, networks, languages: brand.languages, language_mode: mode,
-    image: 'image.png', captions: Object.fromEntries(brand.languages.map((l) => [l, `content-${l}.txt`])), ai_disclosure: { tool: 'codex' },
+    product_image: product, scene_image: scene, networks, languages: brand.languages, review_languages: brand.review_languages || [], language_mode: mode,
+    // captions: posted languages + reviewer-only languages (language_policy.review_langs; never posted).
+    image: 'image.png', captions: Object.fromEntries([...brand.languages, ...(brand.review_languages || [])].map((l) => [l, `content-${l}.txt`])), ai_disclosure: { tool: 'codex' },
   };
   writeJson(path.join(dir, 'draft.json'), draft);
   const second = scene
@@ -101,7 +103,7 @@ export function newDraft(args) {
     BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
     SECTIONS: [].concat(brand.social.caption_rules?.project_md_sections || []).join('; ') || '1, 3, 7, 8, 10, 11',
-    FILES: brand.languages.map((l) => `- content-${l}.txt`).join('\n'),
+    FILES: [...brand.languages.map((l) => `- content-${l}.txt`), ...(brand.review_languages || []).map((l) => `- content-${l}.txt (chỉ để người duyệt đọc, KHÔNG đăng; cùng giọng thương hiệu, cùng quy tắc)`)].join('\n'),
     WEBSITE: projectField(brand.project, 'Website') || '(chưa có)', HASHTAG: projectField(brand.project, 'Hashtag cố định') || '(chưa có)',
   }), 'utf8');
   withLock(ideasFile, () => {
@@ -119,7 +121,7 @@ function codexCommand(s) {
   if (/\.m?js$/i.test(cmd)) return { file: process.execPath, pre: [path.resolve(toolRoot, cmd)], shell: false };
   if (process.platform === 'win32' && !path.isAbsolute(cmd)) {
     try {
-      const found = execFileSync('where', [cmd], { encoding: 'utf8' }).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const found = execFileSync('where', [cmd], { encoding: 'utf8', windowsHide: true }).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       const pick = found.find((f) => /\.(cmd|exe)$/i.test(f)) || found[0];
       return { file: pick, pre: [], shell: /\.cmd$/i.test(pick) };
     } catch { throw new Error('Không tìm thấy Codex CLI (codex). Cài và đăng nhập Codex trước.'); }
@@ -139,7 +141,7 @@ export function image(args, s = settings()) {
   if (draft.image_mode === 'scene-swap') {
     if (brandNow.social.product_images?.reference_redraw?.enabled !== true) throw new Error('Thương hiệu đã tắt reference_redraw: bản nháp scene-swap không tạo ảnh được.');
   } else if (!ownImage(brandNow, draft.product_image)) throw new Error('Ảnh sản phẩm không còn là ảnh của thương hiệu.');
-  if (brandNow.social.product_images?.ai_scenes_allowed !== true) throw new Error('social.json product_images.ai_scenes_allowed khác true: không dựng cảnh AI.');
+  if (brandNow.social.product_images?.ai_scenes_allowed === false) throw new Error('social.json product_images.ai_scenes_allowed = false: không dựng cảnh AI.');
   // An earlier image is kept aside (image-old-<time>.png); the new Codex output becomes image-generated.png.
   if (args.force) for (const f of ['image-generated.png', 'image.png']) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(dir, `image-old-${Date.now()}-${f}`));
   for (const f of ['image-watermarked.png', 'image-clean-report.json']) fs.rmSync(path.join(dir, f), { force: true });

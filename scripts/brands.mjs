@@ -9,7 +9,7 @@ main(() => {
   out({
     skillsRoot: root,
     usable: brands.filter((b) => b.usable).map((b) => b.id),
-    brands: brands.map(({ id, dir, brand, enabled, ready, usable, channels, languages, language_mode, owner, sources, ai_scenes_allowed, problems }) => ({ id, dir, brand, enabled, ready, usable, channels, languages, language_mode, owner, sources, ai_scenes_allowed, problems })),
+    brands: brands.map(({ id, dir, brand, enabled, ready, usable, channels, languages, language_mode, review_languages, sources, ai_scenes_allowed, problems }) => ({ id, dir, brand, enabled, ready, usable, channels, languages, language_mode, review_languages, sources, ai_scenes_allowed, problems })),
     skipped,
   });
 });

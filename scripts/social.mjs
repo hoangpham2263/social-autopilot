@@ -7,21 +7,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, isMain, parseArgs, need, discoverBrands, readJson, writeText, withLock } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, discoverBrands, readJson, writeText, withLock, secretProblems } from './lib.mjs';
 
-const SECRET_KEY = /token|secret|passw|api[_-]?key|cookie|session|credential|auth/i;
-const looksLikeToken = (v) => typeof v === 'string' && !/\s/.test(v) && !/^https?:\/\//.test(v)
-  && (/^(EAA|sk-|ghp_|gho_|xox[bp]-|ya29\.)/.test(v) || (v.length >= 40 && /^[A-Za-z0-9_\-.=+]+$/.test(v) && /\d/.test(v) && /[A-Za-z]/.test(v)));
-
-export function secretProblems(value, at = '') {
-  const found = [];
-  if (Array.isArray(value)) value.forEach((x, i) => found.push(...secretProblems(x, `${at}[${i}]`)));
-  else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) {
-    if (SECRET_KEY.test(k)) found.push(`trường "${at}${k}" giống token/mật khẩu`);
-    found.push(...secretProblems(v, `${at}${k}.`));
-  } else if (looksLikeToken(value)) found.push(`giá trị ở "${at.replace(/\.$/, '')}" giống token`);
-  return found;
-}
+// Secret detection lives in lib.mjs (shared with metricool-brands.json): only real secret keys (token, secret, password,
+// api_key, access_key, x-mc-auth, bearer, ...) and token-looking values; "author" or "session" alone are fine.
+export { secretProblems };
 
 function brandDir(id) {
   const { brands, root } = discoverBrands();

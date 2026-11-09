@@ -17,7 +17,11 @@
 //   facebook_post_type (default POST, REEL for a video).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages } from './lib.mjs';
+
+// WebP in any form Metricool refuses ("Unsupported .webp format"): the extension anywhere in the URL, or a CDN format
+// parameter (format=webp, fm=webp, f=webp, output=webp, ...). With --check-urls a content-type image/webp is refused too.
+export const WEBP_URL = /\.webp|[?&;](?:format|fm|f|output|ext|type|mime|auto)=(?:image(?:%2F|\/))?webp(?:[&#;]|$)/i;
 
 export const TEMPLATE = path.join(toolRoot, 'docs', 'metricool-csv-template.csv');
 export const templateHeader = () => parseCsv(fs.readFileSync(TEMPLATE, 'utf8'))[0];
@@ -117,7 +121,8 @@ export async function checkUrl(url, { timeoutMs = 15000 } = {}) {
     if (r.status === 405 || r.status === 403 || r.status === 501) r = await once('GET');
     const okStatus = r.status === 200 || r.status === 206;
     const okType = /^(image|video)\//.test(r.type);
-    return { ok: okStatus && okType, status: r.status, content_type: r.type, error: !okStatus ? `HTTP ${r.status}` : !okType ? `content-type "${r.type || '(trống)'}" không phải image/* hay video/*` : '' };
+    const webp = /^image\/webp\b/.test(r.type);
+    return { ok: okStatus && okType && !webp, status: r.status, content_type: r.type, error: !okStatus ? `HTTP ${r.status}` : !okType ? `content-type "${r.type || '(trống)'}" không phải image/* hay video/*` : webp ? 'máy chủ trả ảnh WebP (content-type image/webp): Metricool báo "Unsupported .webp format"; dùng PNG/JPG trên repo ảnh' : '' };
   } catch (e) { return { ok: false, status: 0, content_type: '', error: e.name === 'AbortError' ? 'hết thời gian chờ' : e.message }; }
 }
 
@@ -185,13 +190,13 @@ export function validateRows(rows, ctx) {
       if (/\s/.test(url)) err(n, pics(k), 'link có khoảng trắng');
       let u = null; try { u = new URL(url); } catch {}
       if (!u || u.protocol !== 'https:') err(n, pics(k), `"${url}" phải là link https`);
-      if (/\.webp/i.test(url)) err(n, pics(k), `link chứa ".webp": Metricool báo "Unsupported .webp format" (xét chuỗi trong URL, kể cả khi CDN trả JPEG); dùng PNG/JPG trên repo ảnh`);
+      if (WEBP_URL.test(url)) err(n, pics(k), `link là WebP (".webp" hoặc format=webp): Metricool báo "Unsupported .webp format" (xét chuỗi trong URL, kể cả khi CDN trả JPEG); dùng PNG/JPG trên repo ảnh`);
     }
     const thumb = r['Video Thumbnail Url'] ?? '';
     if (thumb) {
       let u = null; try { u = new URL(thumb); } catch {}
       if (!u || u.protocol !== 'https:') err(n, 'Video Thumbnail Url', `"${thumb}" phải là link https`);
-      if (/\.webp/i.test(thumb)) err(n, 'Video Thumbnail Url', 'link chứa ".webp" (Metricool không nhận)');
+      if (WEBP_URL.test(thumb)) err(n, 'Video Thumbnail Url', 'link là WebP (".webp" hoặc format=webp; Metricool không nhận)');
     }
     const videos = media.filter((m) => VIDEO_EXT.test(m));
     if (videos.length && media.length > videos.length) err(n, 'Picture Url', 'trộn video và ảnh trong một bài');
@@ -208,6 +213,8 @@ export function validateRows(rows, ctx) {
       const len = Array.from(text).length;
       for (const col of on) if (len > TEXT_LIMITS[col]) err(n, 'Text', `${len} ký tự, quá giới hạn ${col} (${TEXT_LIMITS[col]})`);
       if (hasHidden(text)) err(n, 'Text', 'có ký tự ẩn (zero-width, NBSP, BOM, ...)');
+      const ai = aiLabelHits(text);
+      if (ai.length) err(n, 'Text', `có nhãn AI (${ai.map((x) => `"${x}"`).join(', ')}): không gắn nhãn AI khi đăng (quy tắc người dùng)`);
     }
     // Same brand + time + network twice
     for (const col of on) {
@@ -274,6 +281,43 @@ function slotPicker(slots, tz, taken, { allowToday, now }) {
   };
 }
 
+// Automatic posting times when cadence.slots is empty: good default days and hours per network, in the brand's Metricool
+// timezone (docs/metricool.md "Giờ đăng tự động"). The first network of the brand's enabled channels decides.
+export const AUTO_TIMES = {
+  Facebook: { days: ['tue', 'wed', 'thu'], times: ['09:00', '10:00', '11:00'] },
+  Instagram: { days: ['tue', 'wed', 'fri'], times: ['11:00', '13:00', '10:00'] },
+  TikTok: { days: ['tue', 'thu', 'fri'], times: ['18:00', '19:00', '17:00'] },
+  LinkedIn: { days: ['tue', 'wed', 'thu'], times: ['08:00', '10:00', '12:00'] },
+  Pinterest: { days: ['fri', 'sat', 'sun'], times: ['20:00', '21:00', '14:00'] },
+  Youtube: { days: ['thu', 'fri', 'sat'], times: ['15:00', '17:00', '12:00'] },
+  'Twitter/X': { days: ['tue', 'wed', 'thu'], times: ['09:00', '12:00', '10:00'] },
+  Threads: { days: ['tue', 'wed', 'thu'], times: ['09:00', '12:00', '10:00'] },
+  Bluesky: { days: ['tue', 'wed', 'thu'], times: ['09:00', '12:00', '10:00'] },
+  GBP: { days: ['mon', 'wed', 'fri'], times: ['10:00', '11:00', '09:00'] },
+};
+// Days added in this order when posts_per_week is larger than the network's best days.
+const EXTRA_DAYS = ['mon', 'fri', 'wed', 'thu', 'tue', 'sat', 'sun'];
+// cadence.posts_per_week (1-7, default 3) spread over the week's best days for the network; at most one post of the brand
+// a day (dates already used by its scheduled posts are skipped), never a date+time already used in the queue.
+export function autoPicker(network, postsPerWeek, tz, taken, { allowToday, now }) {
+  const table = AUTO_TIMES[network] || AUTO_TIMES.Facebook;
+  const n = Math.min(7, Math.max(1, Number.isInteger(postsPerWeek) ? postsPerWeek : 3));
+  const days = [...new Set([...table.days, ...EXTRA_DAYS])].slice(0, n);
+  const usedDates = new Set([...taken].map((k) => k.slice(0, 10)));
+  const cur = nowIn(tz, now);
+  return () => {
+    for (let d = allowToday ? 0 : 1; d < 366; d++) {
+      const date = addDays(cur.date, d);
+      if (!days.includes(weekday(date)) || usedDates.has(date)) continue;
+      const time = table.times.map((t) => `${t}:00`).find((t) => !(d === 0 && t <= cur.time) && !taken.has(`${date} ${t}`));
+      if (!time) continue;
+      taken.add(`${date} ${time}`); usedDates.add(date);
+      return { date, time };
+    }
+    return null;
+  };
+}
+
 export function buildExport(args, { now = new Date(), root = settings().skillsRoot } = {}) {
   const brand = findBrand(need(args, 'brand'), root);
   const social = brand.social;
@@ -292,10 +336,16 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
   if (unknown.length) throw new Error(`Mạng không có cột trong template Metricool: ${unknown.join(', ')}.`);
   const networks = [...new Set(channels.map((c) => NETWORKS[String(c.network).toLowerCase()]))];
   if (!networks.length) throw new Error(`${brand.id}: social.json không có kênh nào enabled.`);
-  const chanLangs = [...new Set(channels.flatMap((c) => [].concat(c.lang || [])))];
+  // Reviewer-only languages (language_policy.review_langs) are never exported: they are for the approver to read.
+  const reviewOnly = reviewLanguages(social);
+  const chanLangs = [...new Set(channels.flatMap((c) => [].concat(c.lang || [])))].filter((l) => !reviewOnly.includes(l));
   let mode = social.language_policy?.mode || 'single';
   let langs = chanLangs;
-  if (args.lang && args.lang !== true) { langs = String(args.lang).split(',').map((s) => s.trim()).filter(Boolean); mode = langs.length > 1 ? 'one-post-bilingual' : 'single'; }
+  if (args.lang && args.lang !== true) {
+    langs = String(args.lang).split(',').map((s) => s.trim()).filter(Boolean); mode = langs.length > 1 ? 'one-post-bilingual' : 'single';
+    const bad = langs.filter((l) => reviewOnly.includes(l));
+    if (bad.length) throw new Error(`--lang ${bad.join(',')}: ngôn ngữ chỉ để người duyệt đọc (language_policy.review_langs), không đăng.`);
+  }
   if (!langs.length) throw new Error(`${brand.id}: kênh không khai báo lang.`);
   if (mode === 'single') langs = langs.slice(0, 1);
   const separator = typeof social.metricool?.bilingual_separator === 'string' ? social.metricool.bilingual_separator : '\n\n';
@@ -326,15 +376,20 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
   // Times: catalog schedule, --date/--time, else next cadence slot.
   const taken = new Set();
   for (const p of posts) if (p.schedule?.date && p.schedule?.time) taken.add(`${p.schedule.date} ${normTime(p.schedule.time)}`);
-  const nextSlot = slotPicker(social.cadence?.slots, brand.timezone, taken, { allowToday: !!args['allow-today'], now });
+  // cadence.slots (when the brand lists any) override the automatic times.
+  const hasSlots = Array.isArray(social.cadence?.slots) && social.cadence.slots.length > 0;
+  const nextSlot = hasSlots
+    ? slotPicker(social.cadence.slots, brand.timezone, taken, { allowToday: !!args['allow-today'], now })
+    : autoPicker(networks[0], social.cadence?.posts_per_week, brand.timezone, taken, { allowToday: !!args['allow-today'], now });
+  const slotSource = hasSlots ? 'cadence.slots' : `tự động (${networks[0]}, ${brand.timezone})`;
   const override = args.date && args.date !== true ? { date: String(args.date), time: normTime(args.time === true ? '' : args.time || '') } : null;
 
   const rows = [], map = [];
   for (const p of posts) {
     let when = p.schedule?.date ? { date: String(p.schedule.date), time: normTime(p.schedule.time), source: 'catalog schedule' } : null;
     if (!when && override) when = { ...override, source: '--date/--time' };
-    if (!when) { const s = nextSlot(); if (s) when = { ...s, source: 'cadence.slots' }; }
-    if (!when) { problems.push(`${p.id}: không có giờ đăng (catalog schedule, cadence.slots trống, không có --date/--time).`); continue; }
+    if (!when) { const s = nextSlot(); if (s) when = { ...s, source: slotSource }; }
+    if (!when) { problems.push(`${p.id}: không tìm được giờ đăng (catalog schedule, ${slotSource}, --date/--time).`); continue; }
     const images = list(p.media_url), video = list(p.video_url);
     if (images.length && video.length) { problems.push(`${p.id}: có cả media_url và video_url; Metricool không trộn ảnh với video.`); continue; }
     const media = video.length ? video : images;

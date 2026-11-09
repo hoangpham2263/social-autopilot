@@ -3,7 +3,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { cleanProblems } from './image-clean.mjs';
-import { loadRefs, readJson, runDir, projectField, hasHidden, sharedWords } from './lib.mjs';
+import { loadRefs, readJson, runDir, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
+
+// Which caption languages of a draft are posted and which are only for the approver to read (social.json
+// language_policy.review_langs). Read from the brand's social.json now, so older drafts follow the current policy.
+export function draftLangs(draft, social) {
+  if (!social) { try { social = readJson(path.join(draft.brand_dir, 'project', 'social.json')); } catch { social = {}; } }
+  const review = reviewLanguages(social);
+  const postedNow = brandLanguages(social);
+  const all = [...new Set([...Object.keys(draft.captions || {}), ...postedNow, ...review])];
+  const posted = all.filter((l) => !review.includes(l) && (!postedNow.length || postedNow.includes(l)));
+  return { posted, review, file: (l) => draft.captions?.[l] || `content-${l}.txt` };
+}
 
 // The prompt must keep the no-logo rule: the brand's logo never appears on the product (user, 07/11/2026).
 export function logoWarnings(prompt) {
@@ -29,7 +40,9 @@ export function checkDraft(dir, draft, status = {}) {
   else problems.push(...cleanProblems(dir, status));
   let refCaption = '';
   try { refCaption = loadRefs(draft.brand, draft.inspiration.run).find((r) => r.key === draft.inspiration.ref)?.caption || ''; } catch {}
-  const files = Object.values(draft.captions);
+  // Posted languages and reviewer-only languages are checked alike.
+  const langs = draftLangs(draft);
+  const files = [...new Set([...Object.values(draft.captions || {}), ...langs.review.map(langs.file)])];
   for (const f of fs.readdirSync(dir)) if (/^content-[a-z]{2}-[a-z]+\.txt$/.test(f)) files.push(f);
   const captions = {};
   for (const f of files) {
@@ -39,6 +52,9 @@ export function checkDraft(dir, draft, status = {}) {
     captions[f] = text;
     if (!text.trim()) problems.push(`${f} trống`);
     if (hasHidden(text)) problems.push(`${f} có ký tự ẩn`);
+    // User rule: never any AI label on a post (the record that AI made the image stays in the catalog's ai_disclosure).
+    const ai = aiLabelHits(text);
+    if (ai.length) problems.push(`${f} có nhãn AI (${ai.map((x) => `"${x}"`).join(', ')}): không bao giờ ghi nhãn AI trên bài`);
     if (/\*\*|`|^#{1,6}\s|^>\s|\\#/m.test(text)) problems.push(`${f} có Markdown`);
     if (/\n[\t ]*\n[\t ]*\n/.test(text.replace(/\r\n/g, '\n'))) problems.push(`${f} thừa dòng trống`);
     if (website && !text.includes(`🌐 Website: ${website}`)) problems.push(`${f} thiếu dòng "🌐 Website: ${website}"`);
@@ -62,9 +78,12 @@ export function checkDraft(dir, draft, status = {}) {
 }
 
 export function summary({ dir, draft, status }) {
-  const captions = {};
-  for (const f of Object.values(draft.captions)) { const file = path.join(dir, f); if (fs.existsSync(file)) captions[f] = fs.readFileSync(file, 'utf8'); }
+  // captions = what is posted; review_captions = reviewer-only languages (read when approving, never posted).
+  const langs = draftLangs(draft);
+  const read = (list) => { const o = {}; for (const l of list) { const f = langs.file(l); const file = path.join(dir, f); if (fs.existsSync(file)) o[f] = fs.readFileSync(file, 'utf8'); } return o; };
+  const captions = read(langs.posted), review_captions = read(langs.review);
   return { id: draft.id, brand: draft.brand, status: status.status, dir, image: path.join(dir, 'image.png'), idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}`, inspiration: draft.inspiration.post_url || draft.inspiration.source_url, networks: draft.networks.map((n) => n.network), problems: status.problems || [], note: status.note || '', captions,
+    posted_languages: langs.posted, review_languages: langs.review, review_captions,
     image_mode: draft.image_mode || 'brand-image',
     // Scene-swap: the approver sees the shop's original photo next to the result.
     ...(draft.image_mode === 'scene-swap' ? { reference_image: draft.reference_image, source_shop: draft.inspiration.source_shop || '', source_url: draft.inspiration.source_url || '', logo_check: status.logo_check || null } : {}) };

@@ -9,7 +9,14 @@ import { fileURLToPath } from 'node:url';
 export const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // SA_WORKSPACE lets tests run against a throw-away workspace; normal runs use <tool>/workspace.
 export const workspace = path.resolve(process.env.SA_WORKSPACE || path.join(toolRoot, 'workspace'));
-export const today = () => new Date().toISOString().slice(0, 10);
+// Dates are local, never UTC: a brand's date is in its timezone (social.json cadence.timezone), tool-level dates (logs,
+// research-log totals) in Vietnam time. new Date().toISOString() rolled back a day before 07:00 VN.
+export const TOOL_TZ = 'Asia/Ho_Chi_Minh';
+export const validTimeZone = (tz) => { if (typeof tz !== 'string' || !tz.trim()) return false; try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } };
+export function today(tz = TOOL_TZ, now = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: validTimeZone(tz) ? tz : TOOL_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
 export const stamp = () => new Date().toISOString();
 
 // ----- output -----
@@ -108,40 +115,59 @@ export function rawSettings() {
 
 // Saves this machine's settings to workspace/settings.json (config/settings.json stays the default in git). Only the
 // known keys, checked; nothing that looks like a secret.
-export function saveSettings(input) {
-  const d = readJson(path.join(toolRoot, 'config', 'settings.json'));
-  const int = (v, name, min = 0) => { const n = Number(v); if (!Number.isInteger(n) || n < min) throw new Error(`${name} phải là số nguyên >= ${min}.`); return n; };
-  const str = (v, name) => { if (typeof v !== 'string' || !v.trim()) throw new Error(`${name} không được trống.`); if (/token|secret|password/i.test(v)) throw new Error(`${name} không được chứa token/mật khẩu.`); return v.trim(); };
-  const r = input.research || {}, a = input.approval || {};
-  const delay = [].concat(r.delay_seconds ?? d.research.delay_seconds).map((x, i) => int(x, `research.delay_seconds[${i}]`));
-  if (delay.length !== 2 || delay[0] > delay[1]) throw new Error('research.delay_seconds phải là [min, max] với min <= max.');
-  const next = {
-    skillsRoot: str(input.skillsRoot ?? d.skillsRoot, 'skillsRoot'),
-    research: {
-      max_sources_per_run: int(r.max_sources_per_run ?? d.research.max_sources_per_run, 'research.max_sources_per_run', 1),
-      max_posts_per_source: int(r.max_posts_per_source ?? d.research.max_posts_per_source, 'research.max_posts_per_source', 1),
-      max_posts_per_day_all_brands: int(r.max_posts_per_day_all_brands ?? d.research.max_posts_per_day_all_brands, 'research.max_posts_per_day_all_brands'),
-      delay_seconds: delay,
-    },
-    approval: Object.fromEntries(Object.keys(d.approval).map((k) => [k, a[k] === undefined ? d.approval[k] : a[k] === true || a[k] === 'true'])),
-    codex: { command: str(input.codex?.command ?? d.codex.command, 'codex.command'), timeout_minutes: int(input.codex?.timeout_minutes ?? d.codex.timeout_minutes, 'codex.timeout_minutes', 1) },
-    ffmpeg: { command: str(input.ffmpeg?.command ?? d.ffmpeg.command, 'ffmpeg.command') },
-    remove_watermark: {
-      script: str(input.remove_watermark?.script ?? d.remove_watermark.script, 'remove_watermark.script'),
-      providers: Object.fromEntries(Object.entries(input.remove_watermark?.providers ?? d.remove_watermark.providers).map(([k, v]) => [str(k, 'provider'), str(v, 'provider')])),
-    },
-  };
-  // Image host (host-image.mjs): the kind stays as configured; path, link base and the after-write-back switch editable.
-  const ih = input.imageHost || {}, dh = d.imageHost || {};
-  if (dh.type) {
-    const rawBase = str(ih.rawBase ?? dh.rawBase, 'imageHost.rawBase');
-    if (!/^https:\/\//.test(rawBase)) throw new Error('imageHost.rawBase phải là link https.');
-    next.imageHost = { ...dh, path: str(ih.path ?? dh.path, 'imageHost.path'), rawBase, auto_after_writeback: ih.auto_after_writeback === undefined ? dh.auto_after_writeback !== false : ih.auto_after_writeback === true || ih.auto_after_writeback === 'true' };
-  }
-  if (!fs.existsSync(path.resolve(toolRoot, next.skillsRoot))) throw new Error(`skillsRoot không tồn tại: ${path.resolve(toolRoot, next.skillsRoot)}`);
+const RESEARCH_DROPPED = ['max_sources_per_run', 'max_posts_per_source', 'max_posts_per_day_all_brands', 'max_per_day'];
+export const APPROVAL_RULES = ['require_image', 'require_all_captions', 'reject_requires_note'];
+// Every key not sent keeps this machine's current value (defaults + workspace/settings.json, merged deeply); nothing is
+// reset to config/settings.json and no key is dropped. Values are checked strictly: a wrong type is refused, never coerced.
+export function saveSettings(input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('settings phải là một object.');
   const file = path.join(workspace, 'settings.json');
-  withLock(file, () => writeJson(file, next));
-  return next;
+  return withLock(file, () => {
+    const cur = rawSettings();
+    const int = (v, name, min = 0) => { const n = typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v) : v; if (!Number.isInteger(n) || n < min) throw new Error(`${name} phải là số nguyên >= ${min}.`); return n; };
+    const str = (v, name) => { if (typeof v !== 'string' || !v.trim()) throw new Error(`${name} không được trống.`); if (/token|secret|password/i.test(v)) throw new Error(`${name} không được chứa token/mật khẩu.`); return v.trim(); };
+    const bool = (v, name) => { if (v === true || v === 'true') return true; if (v === false || v === 'false') return false; throw new Error(`${name} phải là true hoặc false (nhận ${JSON.stringify(v)}).`); };
+    const obj = (v, name) => { if (v === undefined) return {}; if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(`${name} phải là object.`); return v; };
+    const r = obj(input.research, 'research'), a = obj(input.approval, 'approval'), cx = obj(input.codex, 'codex'), ff = obj(input.ffmpeg, 'ffmpeg'), rw = obj(input.remove_watermark, 'remove_watermark'), ih = obj(input.imageHost, 'imageHost');
+    // Approval rules the tool knows; anything else in an older settings file (require_owner_match: the named approver
+    // was dropped) is removed on save.
+    const cr = cur.research || {}, ca = Object.fromEntries(APPROVAL_RULES.map((k) => [k, cur.approval?.[k] ?? true]));
+    const delay = [].concat(r.delay_seconds ?? cr.delay_seconds).map((x, i) => int(x, `research.delay_seconds[${i}]`));
+    if (delay.length !== 2 || delay[0] > delay[1]) throw new Error('research.delay_seconds phải là [min, max] với min <= max.');
+    // Dropped settings are ignored when an older form still sends them: require_owner_match (no named approver) and the
+    // research limits (no limits since 2026-11-09).
+    for (const k of Object.keys(a)) if (!(k in ca) && k !== 'require_owner_match') throw new Error(`approval.${k} không phải quy tắc duyệt đã biết (${Object.keys(ca).join(', ')}).`);
+    const changes = {
+      skillsRoot: str(input.skillsRoot ?? cur.skillsRoot, 'skillsRoot'),
+      // Research: only the human-like pause between page actions; there are no run or post limits.
+      research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay },
+      approval: Object.fromEntries(Object.keys(ca).map((k) => [k, bool(a[k] ?? ca[k], `approval.${k}`)])),
+      codex: { command: str(cx.command ?? cur.codex?.command, 'codex.command'), timeout_minutes: int(cx.timeout_minutes ?? cur.codex?.timeout_minutes, 'codex.timeout_minutes', 1) },
+      ffmpeg: { command: str(ff.command ?? cur.ffmpeg?.command, 'ffmpeg.command') },
+      remove_watermark: { script: str(rw.script ?? cur.remove_watermark?.script, 'remove_watermark.script') },
+    };
+    // Providers: a map sent is the whole map (so one can be removed); not sent = kept.
+    if (rw.providers !== undefined) changes.remove_watermark.providers = Object.fromEntries(Object.entries(obj(rw.providers, 'remove_watermark.providers')).map(([k, v]) => [str(k, 'provider'), str(v, 'provider')]));
+    // Image host (host-image.mjs): the kind stays as configured; path, link base, branch, remote, verify and the
+    // after-write-back switch editable; anything not sent stays as it is on this machine.
+    const ch = cur.imageHost || {};
+    if (ch.type) {
+      const rawBase = str(ih.rawBase ?? ch.rawBase, 'imageHost.rawBase');
+      if (!/^https:\/\//.test(rawBase)) throw new Error('imageHost.rawBase phải là link https.');
+      const host = { path: str(ih.path ?? ch.path, 'imageHost.path'), rawBase, auto_after_writeback: bool(ih.auto_after_writeback ?? ch.auto_after_writeback ?? true, 'imageHost.auto_after_writeback') };
+      for (const k of ['branch', 'remote']) if (ih[k] !== undefined || ch[k] !== undefined) host[k] = str(ih[k] ?? ch[k], `imageHost.${k}`);
+      const v = obj(ih.verify, 'imageHost.verify'), cv = ch.verify || {};
+      if (Object.keys(v).length || Object.keys(cv).length) host.verify = { ...cv, ...Object.fromEntries(Object.entries(v).map(([k, x]) => [k, int(x, `imageHost.verify.${k}`, k === 'attempts' ? 1 : 0)])) };
+      changes.imageHost = host;
+    }
+    if (!fs.existsSync(path.resolve(toolRoot, changes.skillsRoot))) throw new Error(`skillsRoot không tồn tại: ${path.resolve(toolRoot, changes.skillsRoot)}`);
+    const next = merge(cur, changes);
+    next.approval = changes.approval;
+    next.research = changes.research;
+    if (changes.remove_watermark.providers) next.remove_watermark.providers = changes.remove_watermark.providers;
+    writeJson(file, next);
+    return next;
+  });
 }
 
 // ----- Metricool brands: config/metricool-brands.json (defaults, in git) or workspace/metricool-brands.json (this machine) -----
@@ -151,13 +177,33 @@ export const metricoolBrands = () => readJson(metricoolFile());
 export function saveMetricoolBrands(input) {
   const list = Array.isArray(input?.brands) ? input.brands : null;
   if (!list) throw new Error('Thiếu danh sách brands.');
+  const secrets = secretProblems(input);
+  if (secrets.length) throw new Error(`Không lưu token/mật khẩu: ${secrets.join('; ')}.`);
+  let current = {};
+  try { current = metricoolBrands(); } catch {}
+  if (input.account !== undefined && (!input.account || typeof input.account !== 'object' || Array.isArray(input.account))) throw new Error('account phải là object.');
+  const account = { ...(current.account || {}), ...(input.account || {}) };
+  if (account.brand_limit !== undefined && account.brand_limit !== null && account.brand_limit !== '') {
+    const n = typeof account.brand_limit === 'string' && /^\d+$/.test(account.brand_limit.trim()) ? Number(account.brand_limit) : account.brand_limit;
+    if (!Number.isInteger(n) || n < 1) throw new Error('account.brand_limit phải là số nguyên >= 1.');
+    account.brand_limit = n;
+  }
+  if (account.brand_limit && list.length > account.brand_limit) throw new Error(`Gói Metricool chỉ có ${account.brand_limit} brand (account.brand_limit), danh sách có ${list.length}.`);
+  const names = new Set(), skills = new Set();
   const brands = list.map((b, i) => {
+    if (!b || typeof b !== 'object') throw new Error(`Brand thứ ${i + 1} không hợp lệ.`);
     const name = String(b.name || '').trim();
     if (!name) throw new Error(`Brand thứ ${i + 1} thiếu tên.`);
-    if (/token|secret|password/i.test(JSON.stringify(b))) throw new Error('Không lưu token/mật khẩu.');
-    return { name, blog_id: String(b.blog_id || '').trim(), timezone: String(b.timezone || '').trim(), networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id: b.skill_id ? String(b.skill_id).trim() : null, last_checked: String(b.last_checked || '').trim() };
+    const key = name.normalize('NFC').toLowerCase();
+    if (names.has(key)) throw new Error(`Tên brand "${name}" bị trùng.`);
+    names.add(key);
+    const timezone = String(b.timezone || '').trim();
+    if (!validTimeZone(timezone)) throw new Error(`Brand "${name}": timezone "${timezone}" không phải múi giờ IANA hợp lệ (vd. Asia/Ho_Chi_Minh).`);
+    const skill_id = b.skill_id ? String(b.skill_id).trim() : null;
+    if (skill_id) { if (skills.has(skill_id)) throw new Error(`skill_id "${skill_id}" gắn cho hơn một brand.`); skills.add(skill_id); }
+    return { name, blog_id: String(b.blog_id || '').trim(), timezone, networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id, last_checked: String(b.last_checked || '').trim() };
   });
-  const next = { version: 1, account: input.account || {}, brands };
+  const next = { version: 1, account, brands };
   const file = path.join(workspace, 'metricool-brands.json');
   withLock(file, () => writeJson(file, next));
   return next;
@@ -170,8 +216,9 @@ export function brandOverview(found = discoverBrands()) {
   const brands = (cfg.brands || []).map((m) => {
     const skill = m.skill_id ? found.brands.find((b) => b.id === m.skill_id) : null;
     if (skill) used.add(skill.id);
-    const tz_mismatch = !!(skill && skill.timezone && m.timezone && skill.timezone !== m.timezone);
-    return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone } : null, skill_missing: !!(m.skill_id && !skill), tz_mismatch };
+    // Both the skill's metricool.timezone (CSV times are read in it) and its cadence.timezone must match the Metricool brand.
+    const tz_mismatch = !!(skill && m.timezone && [skill.metricool_timezone, skill.timezone].some((tz) => tz && tz !== m.timezone));
+    return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone, metricool_timezone: skill.metricool_timezone || '' } : null, skill_missing: !!(m.skill_id && !skill), tz_mismatch };
   });
   return { account: cfg.account || {}, brands, skills_without_metricool: found.brands.filter((b) => !used.has(b.id)).map((b) => ({ id: b.id, brand: b.brand })) };
 }
@@ -222,11 +269,66 @@ export function projectSection(md, n) {
 export const projectField = (md, label) => (md.match(new RegExp(`^- ${label}(?: \\(\\*\\))?:\\s*(.+)$`, 'm'))?.[1] || '')
   .replace(/\s*<!--.*?-->/g, '').replace(/\s+\([^()]*\)\s*$/, '').trim();
 
-// Languages to write: every lang of the enabled channels (social.json channels[]).
+// Languages that are POSTED: every lang of the enabled channels (social.json channels[]).
 export function brandLanguages(social) {
   const langs = new Set();
   for (const c of social.channels || []) if (c.enabled) for (const l of [].concat(c.lang || [])) langs.add(l);
   return [...langs];
+}
+export const postedLangs = brandLanguages;
+// Reviewer-only languages (social.json language_policy.review_langs, e.g. ["vn"]): a content-<lang>.txt is written and
+// checked for the approver to read, but it is NEVER posted: not in the post text, the preview's posted text, the
+// catalog's posted captions or the Metricool CSV. A posted language is never also a review language.
+export function reviewLanguages(social) {
+  const posted = new Set(brandLanguages(social));
+  return [...new Set([].concat(social?.language_policy?.review_langs || []).map((l) => String(l).trim()).filter((l) => /^[a-z]{2}$/.test(l) && !posted.has(l)))];
+}
+export const reviewLangs = reviewLanguages;
+
+// ----- AI labels: never on a post (user rule). Captions and CSV Text are refused when they carry one. -----
+// "AI" in upper case is a label; lower-case "ai" in Vietnamese means "who", so Vietnamese patterns need upper-case AI
+// (or "trí tuệ nhân tạo"). Text is compared without diacritics.
+const AI_TAGS = /^(ai|a\.i|ai\w*(generated|art|artwork|artist|image|images|photo|photos|photography|created|made|design|assisted|edit|edited|render|rendered|illustration|picture)|(made|created|generated|designed|drawn|edited|done|tao|lam|ve)(with|by|bang|boi|voi)ai|generativeai|midjourney|dalle\d*|stablediffusion|anhai|hinhai|tranhai)$/;
+export function aiLabelHits(text) {
+  const raw = String(text || '').normalize('NFC');
+  const marked = raw.replace(/(?<![\p{L}\p{N}_])A\.?I\.?(?![\p{L}\p{N}_])/gu, '§AI§');
+  const s = marked.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
+  const hits = [];
+  for (const m of s.matchAll(/#([\p{L}\p{N}_.]+)/gu)) if (AI_TAGS.test(m[1].replace(/§/g, '').replace(/\.$/, ''))) hits.push(`#${m[1].replace(/§/g, '')}`);
+  const EAI = '(?:§ai§|\\bai\\b|artificial intelligence)', VAI = '(?:§ai§|tri tue nhan tao)';
+  const patterns = [
+    new RegExp(`\\b(?:made|created|generated|produced|designed|rendered|edited|enhanced|crafted|built|drawn|illustrated|powered|imagined|done)\\s+(?:with|by|using|via|through)\\s+(?:an?\\s+|the\\s+help\\s+of\\s+|the\\s+)?${EAI}`),
+    new RegExp(`${EAI}[\\s-]*(?:generated|created|made|art|artwork|image|images|photo|photos|render|rendered|assisted|edited|enhanced|illustration|picture)\\b`),
+    new RegExp(`\\bgenerative\\s+${EAI}`),
+    new RegExp(`\\b(?:tao|lam|ve|sinh|dung|thiet ke|chinh sua|che|xu ly|minh hoa)(?:\\s+ra)?\\s+(?:bang|boi|voi|tu|nho|qua)\\s+(?:cong nghe\\s+|cong cu\\s+)?${VAI}`),
+    new RegExp(`\\bminh\\s+hoa[^\\n]{0,60}${VAI}`),
+    new RegExp(`\\b(?:anh|hinh|hinh anh|tranh|buc anh)\\s+${VAI}`),
+    new RegExp(`${VAI}\\s+(?:tao|ve|sinh|lam|thiet ke)\\b`),
+    new RegExp(`\\b(?:do|boi)\\s+${VAI}\\s`),
+  ];
+  for (const re of patterns) { const m = s.match(re); if (m) hits.push(m[0].replace(/§ai§/g, 'AI').trim()); }
+  return [...new Set(hits)];
+}
+
+// ----- secrets: keys and values that look like a token/password (social.json, metricool-brands.json) -----
+// Only real secret keys (token, secret, password, api key, access key, x-mc-auth, bearer, cookie, credentials,
+// authorization); "author", "session_note", "auth_owner" are fine.
+const SECRET_WORDS = new Set(['token', 'tokens', 'secret', 'secrets', 'password', 'passwords', 'passwd', 'pwd', 'bearer', 'cookie', 'cookies', 'credential', 'credentials', 'authorization']);
+const SECRET_JOINED = /(apikey|accesskey|secretkey|privatekey|clientsecret|accesstoken|refreshtoken|xmcauth|authtoken|sessiontoken|sessionid|sessioncookie)/;
+export function secretKey(k) {
+  const words = String(k).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return words.some((w) => SECRET_WORDS.has(w)) || SECRET_JOINED.test(words.join(''));
+}
+export const looksLikeToken = (v) => typeof v === 'string' && (/^\s*bearer\s+\S{10,}/i.test(v) || (!/\s/.test(v) && !/^https?:\/\//.test(v)
+  && (/^(EAA|sk-|ghp_|gho_|github_pat_|xox[bp]-|ya29\.|AKIA)/.test(v) || (v.length >= 40 && /^[A-Za-z0-9_\-.=+]+$/.test(v) && /\d/.test(v) && /[A-Za-z]/.test(v)))));
+export function secretProblems(value, at = '') {
+  const found = [];
+  if (Array.isArray(value)) value.forEach((x, i) => found.push(...secretProblems(x, `${at}[${i}]`)));
+  else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) {
+    if (secretKey(k)) found.push(`trường "${at}${k}" giống token/mật khẩu`);
+    found.push(...secretProblems(v, `${at}${k}.`));
+  } else if (looksLikeToken(value)) found.push(`giá trị ở "${at.replace(/\.$/, '')}" giống token`);
+  return found;
 }
 
 // One brand = one skill folder under skillsRoot with SKILL.md, project/project.md and project/social.json.
@@ -244,10 +346,11 @@ export function inspectBrand(dir) {
   result.channels = (social.channels || []).filter((c) => c.enabled).map((c) => c.network);
   result.languages = brandLanguages(social);
   result.language_mode = social.language_policy?.mode || '';
-  result.owner = social.approval?.owner || '';
   result.timezone = social.cadence?.timezone || '';
+  result.metricool_timezone = typeof social.metricool?.timezone === 'string' ? social.metricool.timezone.trim() : '';
+  result.review_languages = reviewLanguages(social);
   result.sources = brandSources(social).map((x) => x.id);
-  result.ai_scenes_allowed = social.product_images?.ai_scenes_allowed ?? null;
+  result.ai_scenes_allowed = social.product_images?.ai_scenes_allowed !== false; // on unless explicitly false
   const checker = path.join(dir, 'scripts', 'check-skill.mjs');
   if (!fs.existsSync(checker)) result.problems.push('skill thiếu scripts/check-skill.mjs');
   else {
@@ -319,7 +422,8 @@ export function findDraft(id) {
 export function setStatus(dir, status, extra = {}) {
   const file = path.join(dir, 'status.json');
   return withLock(file, () => {
-    const next = { ...readJson(file, {}), ...extra, status, updated: stamp() };
+    // tool_status = the last status the tool itself set; a status that differs from it was edited by hand (approve.mjs sync).
+    const next = { ...readJson(file, {}), ...extra, status, tool_status: status, updated: stamp() };
     writeJson(file, next);
     return next;
   });
