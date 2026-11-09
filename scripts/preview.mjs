@@ -39,5 +39,7 @@ export function previewOf(d) {
   const posted = new Set(posts.flatMap((p) => p.langs));
   const review_texts = review.filter((l) => !posted.has(l)).map((lang) => ({ lang, text: cap(lang) })).filter((x) => x.text);
   const media = ['image.png'].map((f) => join(d.dir, f)).filter((f) => existsSync(f)).map((path) => ({ type: /\.(mp4|mov|webm)$/i.test(path) ? 'video' : 'image', path }));
-  return { page_name: social.brand || d.draft.brand_name || d.draft.brand, mode: posts[0]?.mode || draftMode, posts, review_texts, media };
+  // The brand's page as on Facebook: the channel's account name and the skill's avatar (served by /avatar?brand=).
+  const avatar = d.draft.brand_dir && lib.brandAvatar(d.draft.brand_dir) ? `/avatar?brand=${encodeURIComponent(d.draft.brand)}` : '';
+  return { page_name: lib.pageName(social) || d.draft.brand_name || d.draft.brand, page_avatar: avatar, mode: posts[0]?.mode || draftMode, posts, review_texts, media };
 }

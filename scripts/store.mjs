@@ -26,6 +26,13 @@ import { imageHashes, hamming } from './phash.mjs';
 export const STATUSES = ['new', 'used', 'rejected'];
 const validBrand = (b) => { if (!/^[a-z0-9][a-z0-9-]*$/.test(String(b || ''))) throw new Error('Mã thương hiệu không hợp lệ.'); return String(b); };
 export const storeDir = (brand) => path.join(workspace, 'store', validBrand(brand));
+// A reference page's avatar, saved by research.mjs ingest: store/<brand>/sources/<source>/avatar.<ext>; '' when none.
+export function sourceAvatar(brand, source) {
+  const dir = path.join(storeDir(brand), 'sources', String(source || ''));
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(String(source || ''))) return '';
+  for (const ext of ['jpg', 'jpeg', 'png', 'webp']) { const f = path.join(dir, `avatar.${ext}`); if (fs.existsSync(f)) return f; }
+  return '';
+}
 export const itemsFile = (brand) => path.join(storeDir(brand), 'items.json');
 export const progressFile = (brand) => path.join(storeDir(brand), 'progress.json');
 export const storeIdeasFile = (brand) => path.join(storeDir(brand), 'ideas.json');

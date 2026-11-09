@@ -50,7 +50,7 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .page-head { display: flex; gap: 12px; align-items: center; margin: 0 0 24px; }
 .page-head h2 { margin: 0; font-size: 16px; }
 .missing.flush { margin: 0; }
-.refs.spaced { margin-top: 8px; }
+.tiles.spaced { margin-top: 8px; }
 fieldset.spaced { margin-top: 24px; }
 .placeholder-media { aspect-ratio: 1 / 1; background: #e4e6eb; }
 fieldset { border: 1px solid var(--line); background: #fff; padding: 10px 12px; margin: 0 0 12px; min-width: 0; }
@@ -81,22 +81,23 @@ details[open] > summary { margin-bottom: 6px; }
 #prText[readonly] { background: #fafafa; }
 pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
 /* Library */
-.refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.ref img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--control); display: block; border: 1px solid var(--line); }
-.ref { display: grid; gap: 4px; align-content: start; }
-.ref .thumb { position: relative; }
-.ref .count { position: absolute; right: 4px; bottom: 4px; background: #fff; border: 1px solid var(--line); padding: 0 6px; font-size: 12px; }
-.ref .head { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; min-width: 0; white-space: nowrap; }
-.ref .head .title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.ref .head .status-tag, .ref .head .btn { flex: 0 0 auto; }
-.ref .head .btn { height: 24px; padding: 0 8px; }
-.ref > .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ref .head .acts { margin-left: auto; }
-.ref .none { aspect-ratio: 1 / 1; display: grid; place-items: center; border: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
-.ref .line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ref .head .status-tag + .status-tag { margin-left: -2px; }
-.ref .reject-box { position: relative; }
-.count-bad { color: rgb(176, 0, 0); }
+/* One card template (tile()) for every card grid: square image; title row (1 line) with an optional status at its
+   end; bottom row pinned to the card's bottom with the brand/page name (left) and small action buttons (right). */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.tile { display: flex; flex-direction: column; gap: 6px; background: #fff; border: 1px solid var(--line); padding: 8px; min-width: 0; cursor: pointer; }
+.tile:hover { border-color: #0078d7; } .tile:focus { outline: 1px solid #0078d7; outline-offset: -1px; }
+.tile .tile-img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--control); border: 1px solid var(--line); box-sizing: border-box; }
+.tile .tile-img.none { display: grid; place-items: center; color: var(--muted); font-size: 12px; border-style: dashed; }
+.tile .tile-title { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.tile .tile-title .t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tile .tile-title .status-tag { flex: 0 0 auto; }
+.tile .tile-foot { margin-top: auto; display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 24px; }
+.tile .tile-foot .who { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.tile .tile-foot .btn { height: 24px; padding: 0 8px 2px; font-size: 12px; flex: 0 0 auto; }
+.tile .msg:empty { display: none; }
+.av-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; background: #fff; }
+.brand-av { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 8px; border: 1px solid var(--line); background: #fff; }
+.pv .globe { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; margin-left: 2px; }
 /* A click on a card (not on its buttons, links or Caption) opens it in the overlay; Enter too. */
 .card.open-card { cursor: pointer; }
 .card.open-card:hover { border-color: #0078d7; }
@@ -201,8 +202,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   <section class="page" id="page-store" hidden>
     <div class="fields">
       <div class="field"><label for="resBrand">Brand</label><select id="resBrand"></select></div>
-      <div class="field"><label for="resStatus">Show</label><select id="resStatus">
-        <option value="new">New</option><option value="used">Used</option><option value="rejected">Dropped</option><option value="">All</option></select></div>
+      <div class="field auto"><span class="label">Show</span><span class="seg" id="resStatus" role="group" aria-label="Show"></span></div>
       <div class="field"><label for="resSource">Source</label><select id="resSource"></select></div>
     </div>
     <div id="resBody" class="meta">Pick a brand.</div>
@@ -408,7 +408,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const posts = written || review || posted ? [go("review", review, "To review"), go("queued", Math.max(0, written - posted), "Queued"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
       const sug = !s && m.suggested_skill ? `<dt>Skill found</dt><dd>${esc(m.suggested_skill.id)} ${btn("data-suggest", m.suggested_skill.dir, "Link", "Link this skill folder to the brand", " primary")}</dd>` : "";
       return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
-        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span>${esc(m.name)}</h3>${actions(m)}</div>
+        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}</h3>${actions(m)}</div>
         <dl class="kv">
           <dt>Metricool</dt><dd>${esc(arr(m.networks).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}</dd>
           ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}${sug}
@@ -528,14 +528,20 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const ITEM_TEXT = { new: "New", used: "Used", rejected: "Dropped" };
   const ITEM_COLOR = { new: "c-green", used: "", rejected: "c-red" };
   const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway" };
-  let resShown = 60;
-  // Cards that open in the overlay: a click anywhere except buttons, links, inputs and the Caption toggle; Enter too.
-  function wireCards(cards, open) {
-    cards.forEach((card, i) => {
-      card.classList.add("open-card");
-      card.tabIndex = 0;
-      card.onclick = (e) => { if (e.target.closest("a, button:not(.thumb), input, textarea, select, summary, .reject-box")) return; open(i); };
+  let resShown = 60, resStatus = store.get("resStatus") || "new", resAvatars = {};
+  if (!["new", "used", "rejected", ""].includes(resStatus)) resStatus = "new";
+  // The one card template: { id, img, title, status (html), who (brand/page name), actions (html), hint }.
+  const tile = (x) => `<div class="tile" data-id="${esc(x.id)}" tabindex="0">
+    ${x.img ? `<img class="tile-img" loading="lazy" src="${img(x.img)}" alt="">` : `<div class="tile-img none">No image</div>`}
+    <div class="tile-title"><span class="t" title="${esc(x.title)}">${esc(x.title)}</span>${x.status || ""}</div>
+    <div class="tile-foot"><span class="who" title="${esc(x.whoTip || x.who)}">${x.whoHtml || esc(x.who)}</span>${x.actions || ""}</div>
+    <div class="msg"></div></div>`;
+  // A whole card opens its preview (click or Enter); its buttons do their own thing.
+  function wireTiles(box, open) {
+    $$(".tile", box).forEach((card, i) => {
+      card.onclick = (e) => { if (e.target.closest("a, button, input, select")) return; open(i); };
       card.onkeydown = (e) => { if (e.target === card && e.key === "Enter") { e.preventDefault(); open(i); } };
+      for (const b of $$("button", card)) b.addEventListener("click", (e) => e.stopPropagation());
     });
   }
   // After the overlay closes: back to the card last shown (when it is still on the page).
@@ -543,7 +549,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // ‹ Prev / Next › of the overlay header, the same for both lists.
   const itemNav = (i, n) => `<span class="item-nav"><button class="btn" type="button" data-item="-1"${i ? "" : " disabled"}>‹ Prev</button><span class="meta">${i + 1}/${n}</span><button class="btn" type="button" data-item="1"${i < n - 1 ? "" : " disabled"}>Next ›</button></span>`;
   const loadResearch = safely("#resBody", async () => {
-    const brand = $("#resBrand").value || store.get("resBrand"), status = $("#resStatus").value, source = $("#resSource").value;
+    const brand = $("#resBrand").value || store.get("resBrand"), status = resStatus, source = $("#resSource").value;
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
     $("#resBrand").innerHTML = `<option value="">Pick…</option>` + az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)} (${b.counts?.total ?? 0} posts, ${b.counts?.new ?? 0} new)</option>`).join("");
@@ -551,24 +557,30 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
     $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
     const k = c.counts || {};
+    const SHOW = [["new", "New", k.new], ["used", "Used", k.used], ["rejected", "Dropped", k.rejected], ["", "All", k.total]];
+    $("#resStatus").innerHTML = SHOW.map(([v, t, n]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}">${t} (${n ?? 0})</button>`).join("");
+    for (const b of $$("#resStatus button")) b.onclick = () => { resStatus = b.dataset.show; store.set("resStatus", resStatus); resShown = 60; loadResearch(); };
     const items = arr(c.items);
     const prog = Object.entries(c.progress || {});
     const progress = prog.length ? `<details><summary>Crawl progress by source</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Source</th><th>Last run</th><th>Result</th><th>Reached end</th><th>In library</th><th>Newest</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} new)</td><td>${p.reached_end ? "yes" : "no"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
     const list = items.slice(0, resShown);
-    $("#resBody").innerHTML = `<div class="meta">${k.total ?? 0} posts · ${k.new ?? 0} new · ${k.used ?? 0} used · ${k.rejected ?? 0} dropped. Showing ${items.length}.</div>${progress}
-      <div class="refs spaced">${list.map((it) => `<div class="card ref" data-id="${esc(it.id)}">
-        ${arr(it.image_paths).length ? `<button class="thumb" type="button" title="View"><img loading="lazy" src="${img(it.image_paths[0])}" alt=""></button>` : `<div class="none">No image</div>`}
-        <div class="head"><span class="title">${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : ""}</div>
-        <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · ${esc(it.posted_date)}` : ""}</div></div>`).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
-      ${items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}`;
+    const pageOf = (it) => it.store || it.source_id || "";
+    $("#resBody").innerHTML = `${progress}
+      <div class="tiles spaced">${list.map((it) => tile({ id: it.id, img: arr(it.image_paths)[0] || "",
+        title: String(it.caption || "").split(/\r?\n/).find((l) => l.trim()) || it.id,
+        status: `<span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>`,
+        who: pageOf(it), whoTip: `${pageOf(it)} · ${it.id}${it.posted_date ? ` · ${it.posted_date}` : ""}`,
+        actions: it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : "" })).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
+      ${items.length > resShown ? `<div class="actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
-    const cards = $$("#resBody .ref");
-    wireCards(cards, (i) => openStoreItem(c.brand, list.slice(), i));
+    resAvatars = c.avatars || {};
+    const cards = $$("#resBody .tile");
+    wireTiles($("#resBody"), (i) => openStoreItem(c.brand, list.slice(), i));
     for (const card of cards) {
       const it = items.find((x) => x.id === card.dataset.id);
       const setStatus = async (status, note = "") => {
         const res = await postJson("/api/store-item", { brand: c.brand, id: it.id, status, note }).catch(() => offline);
-        if (res.error) { card.insertAdjacentHTML("beforeend", `<div>${errLine(res.error)}</div>`); return; }
+        if (res.error) { $(".msg", card).innerHTML = errLine(res.error); return; }
         loadResearch();
       };
       if ($("[data-reject]", card)) $("[data-reject]", card).onclick = () => { if (confirm(`Drop ${it.id}? It will never be used for posts.`)) setStatus("rejected", ""); };
@@ -589,7 +601,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         : imgs.length === 1 ? `<div class="media n1"><img src="${img(imgs[0])}" alt="" data-big="0"></div>`
         : `<div class="car"><img src="${img(imgs[k])}" alt="" data-big><button class="car-nav prev" type="button" data-img="-1" aria-label="Previous image">‹</button><button class="car-nav next" type="button" data-img="1" aria-label="Next image">›</button><span class="car-count">${k + 1}/${imgs.length}</span></div>`;
       const post = `<div class="pv fb"><div class="pv-tag">Source post · ${esc(it.source_id)}</div>
-        <div class="pv-head"><div class="av">${esc(String(page).trim().charAt(0).toUpperCase())}</div><div class="who"><b>${esc(page)}</b><span>${esc(it.posted_date || `captured ${String(it.captured || "").slice(0, 10)}`)} · Public</span></div></div>
+        <div class="pv-head"><div class="av">${resAvatars[it.source_id] ? `<img class="av-img" src="${img(resAvatars[it.source_id])}" alt="">` : esc(String(page).trim().charAt(0).toUpperCase())}</div><div class="who"><b>${esc(page)}</b><span>${esc(it.posted_date || `captured ${String(it.captured || "").slice(0, 10)}`)} · ${GLOBE}</span></div></div>
         <div class="txt">${it.caption ? postText(it.caption) : `<span class="muted">(no caption)</span>`}</div>${media}<div class="bar"><span>Like</span><span>Comment</span><span>Share</span></div></div>`;
       const stage = `<div class="pv-stage"><div class="pv-col">${post}</div></div>`;
       const dups = arr(it.duplicates);
@@ -611,7 +623,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         <div class="msg">${msg}</div>`;
       openOverlay(`Library ${esc(brand)} · ${esc(it.id)}`, `<div class="pv-layout sp-layout">${stage}<div class="pv-side">${side}</div></div>`,
         imgs.length > 1 ? (s) => { k = (k + s + imgs.length) % imgs.length; $(".car img", overlay).src = img(imgs[k]); $(".car-count", overlay).textContent = `${k + 1}/${imgs.length}`; } : null, nav, go);
-      lbOnClose = () => focusCard("#resBody .ref", it.id);
+      lbOnClose = () => focusCard("#resBody .tile", it.id);
       for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
       for (const b of $$("[data-img]", overlay)) b.onclick = () => lbKeys(Number(b.dataset.img));
       // The image large (lightbox); closing it comes back to this post.
@@ -633,9 +645,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     };
     draw();
   }
-  $("#resStatus").value = store.get("resStatus") || "new";
   $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; resShown = 60; loadResearch(); };
-  $("#resStatus").onchange = () => { store.set("resStatus", $("#resStatus").value); resShown = 60; loadResearch(); };
   $("#resSource").onchange = () => { resShown = 60; loadResearch(); };
 
   // ----- Prompt: the short prompts of docs/scheduled-prompt.md (mode x agent); brand and this run's options filled in.
@@ -770,20 +780,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#drExtra").innerHTML = [failed ? `<span class="count-bad">${failed} failed</span>` : "", making ? `${making} in progress` : ""].filter(Boolean).join(" · ");
     const list = drafts.filter((d) => stateOf(d) === drState);
     drList = list;
-    $("#draftList").innerHTML = list.length ? `<div class="refs">${list.map((d) => {
-      const thumb = draftThumb(d), fail = failedOf(d), review = drState === "review" && !fail;
-      const when = plannedOf(d);
-      const meta = [esc(d.brand), fail ? `<span class="bad-text" title="${esc(fail)}">${esc(fail)}</span>` : drState === "queued" ? (when !== "-" ? esc(when) : "next run") : when !== "-" ? esc(when) : ""].filter(Boolean).join(" · ");
-      return `<div class="card ref draft" data-id="${esc(d.id)}">
-        ${thumb ? `<button class="thumb" type="button" title="Preview"><img loading="lazy" src="${img(thumb)}" alt=""></button>` : `<div class="none">No image yet</div>`}
-        <div class="head">${fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : ""}<span class="title" title="${esc(titleOf(d))}">${esc(titleOf(d))}</span>${review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ""}</div>
-        <div class="meta">${meta}</div>
-        <div class="msg"></div>
-      </div>`;
+    $("#draftList").innerHTML = list.length ? `<div class="tiles">${list.map((d) => {
+      const fail = failedOf(d), review = drState === "review" && !fail, when = plannedOf(d);
+      return tile({ id: d.id, img: draftThumb(d), title: titleOf(d),
+        status: fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : "",
+        who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (when !== "-" ? when : drState === "queued" ? "next run" : "")].filter(Boolean).join(" · "),
+        actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
-    const cards = $$("#draftList .draft");
-    wireCards(cards, (i) => openPreview(list[i], { list, i }));
-    cards.forEach((card, i) => {
+    wireTiles($("#draftList"), (i) => openPreview(list[i], { list, i }));
+    $$("#draftList .tile").forEach((card, i) => {
       for (const btn of $$("[data-act]", card)) btn.onclick = async () => {
         const d = list[i], msg = $(".msg", card);
         if (btn.dataset.act === "drop" && !confirm("Drop this post? It will not be used.")) return;
@@ -877,6 +882,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 
   // Preview: how the post would look on each enabled channel (Facebook feed card, Instagram post), from the server's
   // preview data. ONE language at a time: the posted language first (EN), the reviewer-only reading (VN) on the switch.
+  const GLOBE = `<svg class="globe" viewBox="0 0 16 16" aria-label="Public"><circle cx="8" cy="8" r="6.5" fill="none" stroke="#65676b" stroke-width="1.3"/><path d="M1.5 8h13M8 1.5c2 2 2.6 4.2 2.6 6.5S10 12.5 8 14.5M8 1.5C6 3.5 5.4 5.7 5.4 8S6 12.5 8 14.5" fill="none" stroke="#65676b" stroke-width="1.1"/></svg>`;
   const LANG_NAME = (l) => String(l || "").split("+").map((x) => x.toUpperCase()).join(" + ");
   // Facebook-like "… See more": past 5 lines or ~250 characters the text is cut; the rest opens in place.
   const linkify = (t) => esc(t).replace(/(https?:\/\/[^\s<]+)|(^|\s)(#[\p{L}\p{N}_]+)/gu, (m, url, sp, tag) => (url ? `<a href="${url}" target="_blank" rel="noopener">${url}</a>` : `${sp}<span class="tag">${tag}</span>`));
@@ -899,7 +905,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const go = nav ? (step) => { const j = nav.i + step; if (nav.list[j]) openPreview(nav.list[j], { list: nav.list, i: j }); } : null;
     const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", swap = d.image_mode === "scene-swap";
     const p = d.preview || { posts: [], media: [] };
-    const initial = esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
+    const initial = p.page_avatar ? `<img class="av-img" src="${esc(p.page_avatar)}" alt="">` : esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
+    const whenTxt = plannedOf(d) !== "-" ? esc(plannedOf(d)) : "Draft preview";
     const media = () => {
       const m = arr(p.media).slice(0, 4);
       if (!m.length) return `<div class="placeholder-media"></div>`;
@@ -909,7 +916,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const tag = (post, o) => `<div class="pv-tag">${esc(NET[post.network] || post.network)}${o.lang ? ` · ${esc(LANG_NAME(o.lang))}` : ""}${o.review ? ` · <span class="pv-ro">Review only, not posted</span>` : ""}</div>`;
     const empty = "(no caption yet)";
     const fb = (post, o) => `<div class="pv fb${o.review ? " review" : ""}">${tag(post, o)}
-      <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(p.page_name)}</b><span>Just now · Public</span></div></div>
+      <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(p.page_name)}</b><span>${whenTxt} · ${GLOBE}</span></div></div>
       <div class="txt">${postText(o.text || empty)}</div>${media()}<div class="bar"><span>Like</span><span>Comment</span><span>Share</span></div></div>`;
     const ig = (post, o) => `<div class="pv ig${o.review ? " review" : ""}">${tag(post, o)}
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(post.account || p.page_name)}</b></div></div>
@@ -952,7 +959,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const langBar = opts.length > 1 ? `<nav class="tabs pv-langs" aria-label="Language">${opts.map((x, j) => `<button type="button" data-lang="${j}" aria-pressed="${x === o}">${esc(LANG_NAME(x.lang) || "?")} <span class="meta">${x.review ? "Review only" : "Posted"}</span></button>`).join("")}</nav>` : "";
       openOverlay(title, `<div class="pv-layout"><div class="pv-stage"><div class="pv-col">${langBar}${post && o ? card(post, o) : `<div class="meta">No channel enabled.</div>`}</div></div><div class="pv-side">${side(post, o)}</div></div>`,
         posts.length > 1 ? (step) => draw((k + step + posts.length) % posts.length) : null, chan + (nav ? itemNav(nav.i, nav.list.length) : ""), go);
-      if (nav) lbOnClose = () => focusCard("#draftList .draft", d.id);
+      if (nav) lbOnClose = () => focusCard("#draftList .tile", d.id);
       for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
       const sideBox = $(".pv-side", overlay);
       for (const b of $$("[data-act]", sideBox)) b.onclick = () => cancelDraft(sideBox, d, b.dataset.act, nav);

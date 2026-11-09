@@ -458,6 +458,30 @@ export function secretProblems(value, at = '') {
   return found;
 }
 
+// The brand's avatar for previews and Overview, always a file inside the skill folder: the Facebook page avatar
+// (project/sources/assets/social/facebook/avatar.*), else a logo listed in project/sources/manifest.json, else an icon or
+// logo in project/sources/assets/logo/ (*-icon first). '' when there is none (the app shows the first letter).
+const AVATAR_EXT = /\.(png|jpe?g|webp|svg)$/i;
+export function brandAvatar(dir) {
+  const base = path.join(dir, 'project', 'sources');
+  const ok = (f) => f && AVATAR_EXT.test(f) && inside(dir, f) && fs.existsSync(f) && fs.statSync(f).isFile();
+  const fb = path.join(base, 'assets', 'social', 'facebook');
+  for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'svg']) if (ok(path.join(fb, `avatar.${ext}`))) return path.join(fb, `avatar.${ext}`);
+  try {
+    const m = readJson(path.join(base, 'manifest.json'));
+    const list = (Array.isArray(m) ? m : m.files || m.entries || m.assets || []).map((e) => (typeof e === 'string' ? e : e?.path || e?.file || '')).filter((p) => /logo/i.test(p));
+    for (const p of list.sort((a, b) => /icon/i.test(b) - /icon/i.test(a))) { const f = path.resolve(base, p); if (ok(f)) return f; const g = path.resolve(dir, p); if (ok(g)) return g; }
+  } catch {}
+  const logo = path.join(base, 'assets', 'logo');
+  try {
+    const files = fs.readdirSync(logo).filter((n) => AVATAR_EXT.test(n)).sort((a, b) => /icon/i.test(b) - /icon/i.test(a) || /\.svg$/i.test(b) - /\.svg$/i.test(a));
+    if (files.length && ok(path.join(logo, files[0]))) return path.join(logo, files[0]);
+  } catch {}
+  return '';
+}
+// The page name a post shows: the enabled Facebook channel's account, else the brand name.
+export const pageName = (social) => String((social?.channels || []).find((c) => c?.enabled && c.network === 'facebook' && c.account)?.account || social?.brand || '');
+
 // One brand = one skill folder (under skillsRoot, or linked by path from Tổng quan) with SKILL.md, project/project.md and project/social.json.
 // Readiness is the skill's own check (scripts/check-skill.mjs --tool-ready, exit 0 = ready); the tool does not
 // re-implement it. Usable (in the run) = enabled: true and ready.
@@ -475,6 +499,8 @@ export function inspectBrand(dir) {
   result.language_mode = social.language_policy?.mode || '';
   result.timezone = social.cadence?.timezone || '';
   result.posts_per_week = Number.isInteger(social.cadence?.posts_per_week) ? social.cadence.posts_per_week : null;
+  result.avatar = !!brandAvatar(dir);
+  result.page_name = pageName(social);
   result.metricool_timezone = typeof social.metricool?.timezone === 'string' ? social.metricool.timezone.trim() : '';
   result.review_languages = reviewLanguages(social);
   result.sources = brandSources(social).map((x) => x.id);

@@ -63,7 +63,7 @@ node scripts/research.mjs start --brand <id> [--source a,b] [--since YYYY-MM-DD]
 - `--full`: cuộn hết dù đã có (chậm).
 - Tiến độ từng nguồn: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen`, `reached_end`, `last_run`). Mỗi source trong `run.sources` có `stop_rule` và `known_file` (`known.json`: link bài của nguồn + mọi link/mã bài Facebook đã có trong kho: `brand_post_urls`, `brand_post_ids`).
 
-1.2. Với từng source, theo `docs/research.md`: cuộn theo `stop_rule`; bài có link/mã trong `known.json` thì bỏ qua **trước khi tải**; mở bài mới lấy caption đầy đủ, ngày đăng, link bài (+ `alt_urls`), tải ảnh lớn nhất vào `<source>/raw/`, ghi `<source>/raw.json`. Nghỉ ngẫu nhiên `research.delay_seconds` giữa mọi thao tác.
+1.2. Với từng source, theo `docs/research.md`: cuộn theo `stop_rule`; bài có link/mã trong `known.json` thì bỏ qua **trước khi tải**; mở bài mới lấy caption đầy đủ, ngày đăng, link bài (+ `alt_urls`), tải ảnh lớn nhất vào `<source>/raw/`, ghi `<source>/raw.json`. Tải luôn ảnh đại diện (avatar) của trang nguồn vào `<source>/raw/avatar.jpg` và ghi raw.json dạng `{ "page": { "name": "<tên trang>", "avatar": "raw/avatar.jpg" }, "posts": [...] }`; ingest lưu nó vào `workspace/store/<brand>/sources/<source>/avatar.jpg` cho xem trước ở tab Library. Nghỉ ngẫu nhiên `research.delay_seconds` giữa mọi thao tác.
 
 1.3. Đưa vào kho (bỏ trùng):
 ```

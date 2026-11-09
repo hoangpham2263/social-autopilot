@@ -99,6 +99,14 @@ function start(args, s) {
   out({ reused: !!before, dir, run, next });
 }
 
+// The source page's profile picture: raw.json as an object may carry { page: { name, avatar: "raw/avatar.jpg" } } (or
+// page_avatar at the top). ingest copies a valid image to store/<brand>/sources/<source>/avatar.<ext> (Library previews).
+function readPageAvatar(sourceDir) {
+  const raw = readJson(path.join(sourceDir, 'raw.json'), null);
+  const f = raw && !Array.isArray(raw) ? raw.page?.avatar || raw.page_avatar : '';
+  return f ? path.resolve(sourceDir, String(f)) : '';
+}
+
 // <source>/raw.json: [{ post_url, caption, images: ["raw/1.jpg", ...] (or image: "raw/1.jpg"), posted_date?: YYYY-MM-DD,
 // main_product?, price_seen?, store? }] or the neon-competitors CSV (store,page_url,main_product,image_file,content,
 // price_seen,post_url) with --csv.
@@ -154,6 +162,13 @@ function ingest(args) {
     const raw = readRaw(args, src.dir);
     if (!raw) { report.push({ source: src.id, added: 0, note: 'chưa có raw.json' }); continue; }
     const base = args.csv ? path.dirname(path.resolve(String(args.csv))) : src.dir;
+    const avatar = args.csv ? '' : readPageAvatar(src.dir);
+    if (avatar && !imageProblem(avatar, src.dir)) {
+      const to = path.join(storeDir(brand.id), 'sources', src.id, `avatar${path.extname(avatar).toLowerCase().replace('.jpeg', '.jpg')}`);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      for (const ext of ['.jpg', '.png', '.webp']) if (path.join(path.dirname(to), `avatar${ext}`) !== to) fs.rmSync(path.join(path.dirname(to), `avatar${ext}`), { force: true });
+      fs.copyFileSync(avatar, to);
+    }
     const dropped = [], posts = [];
     for (const p of raw) {
       const list = [].concat(p.images || p.image || []).filter(Boolean).map((f) => path.resolve(base, String(f)));

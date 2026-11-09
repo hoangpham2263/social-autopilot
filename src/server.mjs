@@ -10,13 +10,13 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
-import { workspace, discoverBrands, listDrafts, readJson, rawSettings, saveSettings, settings, brandOverview, metricoolBrands, saveMetricoolBrands, linkMetricool } from "../scripts/lib.mjs";
+import { workspace, discoverBrands, listDrafts, brandAvatar, readJson, rawSettings, saveSettings, settings, brandOverview, metricoolBrands, saveMetricoolBrands, linkMetricool } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
-import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile } from "../scripts/store.mjs";
+import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar } from "../scripts/store.mjs";
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
@@ -64,7 +64,9 @@ function storeData(brand, status, source) {
   for (const x of readJson(duplicatesFile(brand), { duplicates: [] }).duplicates || []) (dups[x.matched] ||= []).push({ at: x.at || "", source: x.source || "", post_url: x.post_url || "", reason: x.reason || x.rule || "", detail: x.detail || "" });
   const items = r.items.slice().reverse().map((i) => ({ ...i, image_paths: i.images.map((f) => join(dir, f)), duplicates: dups[i.id] || [] }));
   const ideas = readJson(storeIdeasFile(brand), { ideas: [] }).ideas;
-  return { brand, dir, counts: r.counts, sources: r.sources, progress: readProgress(brand).sources || {}, items, ideas };
+  // Each reference page's avatar (captured by research ingest), served through /file (workspace images only).
+  const avatars = Object.fromEntries(r.sources.map((s) => [s, sourceAvatar(brand, s)]).filter(([, a]) => a));
+  return { brand, dir, counts: r.counts, sources: r.sources, progress: readProgress(brand).sources || {}, items, ideas, avatars };
 }
 
 // ----- HTTP -----
@@ -242,6 +244,8 @@ async function handle(req, res) {
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
   if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: defaultSource() }));
   if (path === "/api/skills/sources" && req.method === "POST") return api(res, async () => listSources(String((await body(req)).from || "").trim() || defaultSource()));
+  // A brand's avatar (previews, Overview): only the avatar file inside a linked skill folder (lib.mjs brandAvatar).
+  if (path === "/avatar") { const b = discovered().brands.find((x) => x.id === get("brand")); const a = b ? brandAvatar(b.dir) : ""; return a ? sendFile(res, a) : (res.writeHead(404), res.end()); }
   if (path === "/file") return allowedFile(get("path")) ? sendFile(res, resolve(get("path"))) : (res.writeHead(404), res.end());
   // Cấu hình, Cập nhật, Tải lại (core/assets/hub.js). The Cấu hình page gets the session token like the main page.
   if (path === "/setup" && req.method === "GET") return sendHtml(res, join(root, "core", "setup", "page.html"));
