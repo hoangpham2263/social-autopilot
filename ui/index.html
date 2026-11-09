@@ -55,18 +55,26 @@ details[open] > summary { margin-bottom: 6px; }
 .slot { display: flex; gap: 6px; margin-bottom: 4px; align-items: center; }
 .slot select, .slot input { width: auto; }
 .slot input[type=text], .src-url { flex: 1 1 auto; min-width: 0; }
+.card .head-row { display: flex; align-items: center; gap: 8px; } .card .head-row h3 { flex: 1 1 auto; margin: 0 0 4px; }
+#prText { width: 100%; }
+/* Prompt run options: one compact row; Nguồn is a dropdown of checkboxes. */
+.pr-opts input[type=number] { min-width: 0; width: 130px; } .pr-opts input[type=date] { min-width: 0; width: 150px; }
+.pr-src { position: relative; }
+.pr-src > summary { list-style: none; min-width: 160px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; color: var(--ink); font-size: var(--ctl-font); }
+.pr-src > summary::-webkit-details-marker { display: none; }
+details.pr-src[open] > summary { margin-bottom: 0; }
+.pr-src-list { position: absolute; z-index: 5; top: calc(var(--ctl-h) - 1px); left: 0; min-width: 220px; max-height: 260px; overflow: auto; background: #fff; border: 1px solid #8a8a8a; padding: 4px 0; }
+.pr-src-list label { display: flex; gap: 8px; align-items: center; margin: 0; padding: 4px 10px; white-space: nowrap; }
+.pr-src-list label:hover { background: var(--hover); }
+pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
 /* Nghiên cứu */
 .refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .ref img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--control); display: block; border: 1px solid var(--line); }
-.card .head-row { display: flex; align-items: center; gap: 8px; } .card .head-row h3 { flex: 1 1 auto; margin: 0 0 4px; }
 .ref { display: grid; gap: 4px; align-content: start; }
 .ref .thumb { position: relative; }
 .ref .count { position: absolute; right: 4px; bottom: 4px; background: #fff; border: 1px solid var(--line); padding: 0 6px; font-size: 12px; }
 .ref .head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .ref .head .acts { margin-left: auto; }
-.ref .reject-box { display: flex; gap: 6px; } .ref .reject-box[hidden] { display: none; } .ref .reject-box input { flex: 1 1 auto; min-width: 0; width: auto; }
-#prText { width: 100%; }
-pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
 /* Bản nháp: a compact card, thumbnails on the left, the header row carries the actions. */
 .draft { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; }
 .thumbs { position: relative; align-self: start; }
@@ -76,15 +84,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .draft .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .draft .head h3 { margin: 0; font-size: 14px; flex: 1 1 auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .draft .acts { display: flex; gap: 6px; margin-left: auto; }
-.draft .reject-box { display: flex; gap: 6px; align-items: center; }
-.draft .reject-box[hidden] { display: none; }
-.draft .reject-box input { flex: 1 1 220px; width: auto; }
 .draft .line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .captions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
 .captions .cap { border: 1px solid var(--line); padding: 6px 8px; }
+@media (max-width: 720px) { .draft { grid-template-columns: 1fr; } .thumbs img { width: 100%; max-width: 300px; height: auto; aspect-ratio: 1 / 1; } }
+/* A click on a card (not on its buttons, links or Caption) opens it in the overlay; Enter too. */
+.card.open-card { cursor: pointer; }
+.card.open-card:hover { border-color: #0078d7; }
+.card.open-card:focus { outline: 1px solid #0078d7; outline-offset: -1px; }
 .host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; }
 .host a { overflow-wrap: anywhere; }
-@media (max-width: 720px) { .draft { grid-template-columns: 1fr; } .thumbs img { width: 100%; max-width: 300px; height: auto; aspect-ratio: 1 / 1; } }
+.reject-box { display: flex; gap: 6px; align-items: center; } .reject-box input { flex: 1 1 auto; min-width: 0; width: auto; }
 /* Xem trước: static mocks of a Facebook feed post and an Instagram post (no external calls). */
 .pv { width: 360px; max-width: 100%; background: #fff; border: 1px solid #dadde1; border-radius: 8px; font: 14px/1.34 "Segoe UI", Helvetica, Arial, sans-serif; color: #050505; overflow: hidden; }
 .pv .pv-tag { font-size: 11px; color: #65676b; padding: 6px 12px 0; }
@@ -107,7 +117,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .pv.ig .av { background: linear-gradient(45deg, #f9ce34, #ee2a7b, #6228d7); width: 32px; height: 32px; font-size: 13px; }
 .pv.ig .media img { aspect-ratio: 1 / 1; max-height: none; }
 .pv.ig .txt { padding: 8px 12px 10px; }
-/* Thumbnails are buttons that open the in-page lightbox (never a new window). */
+/* Thumbnails open the card's preview (never a new window). */
 .thumb { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .thumbs .orig { position: absolute; right: 4px; bottom: 4px; width: 110px; height: 110px; border: 2px solid #fff; outline: 1px solid var(--line); }
 .thumbs .orig img { width: 100%; height: 100%; border: 0; }
@@ -136,7 +146,18 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .lb .pv-side { overflow: auto; padding: 12px; border-left: 1px solid var(--line); background: #fff; display: grid; gap: 10px; align-content: start; }
 .lb .pv-side .kv dd { overflow-wrap: anywhere; }
 .lb .pv-side pre { max-height: none; }
+.lb .pv-side .row-actions { margin-top: 0; }
+.lb .item-nav { display: flex; align-items: center; gap: 6px; }
+/* Kho item: the post's images (‹ › between them) on the left, its facts, caption and actions on the right. */
+.lb .sp-layout { grid-template-columns: minmax(0, 1fr) 380px; }
+.lb .sp-stage { display: flex; align-items: center; justify-content: center; gap: 12px; min-width: 0; min-height: 0; padding: 12px; background: #111; }
+.lb .sp-stage img { max-width: calc(95vw - 380px - 140px); max-height: calc(92vh - 90px); object-fit: contain; min-width: 0; }
+.lb .sp-stage .meta { color: #ccc; }
+.lb .pv-side pre.sp-cap { max-height: 45vh; overflow: auto; border: 1px solid var(--line); padding: 6px 8px; margin: 0; }
+.lb .sp-dups { margin: 0; padding-left: 18px; font-size: 12px; }
+.lb .sp-dups a { overflow-wrap: anywhere; }
 @media (max-width: 900px) {
+  .lb .sp-stage img { max-width: calc(95vw - 140px); max-height: 60vh; }
   .lb .pv-layout { grid-template-columns: 1fr; overflow: auto; }
   .lb .pv-stage { overflow: visible; }
   .lb .pv-side { border-left: 0; border-top: 1px solid var(--line); }
@@ -176,7 +197,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <div class="toolbar">
       <div><label for="drBrand">Thương hiệu</label><select id="drBrand"><option value="">Tất cả</option></select></div>
       <div><label for="drStatus">Hiện</label><select id="drStatus">
-        <option value="">Tất cả</option><option value="written">Đã ghi vào thương hiệu</option><option value="ready">Qua kiểm tra, chưa ghi</option><option value="failed">Lỗi kiểm tra</option><option value="working">Đang làm</option><option value="rejected">Đã bỏ</option></select></div>
+        <option value="">Tất cả</option><option value="working">Đang làm</option><option value="ready">Sẵn sàng</option><option value="failed">Lỗi kiểm tra</option><option value="mc_draft">Đã gửi nháp</option><option value="scheduled">Đã hẹn giờ</option><option value="published">Đã đăng</option><option value="mc_error">Lỗi Metricool</option><option value="rejected">Đã bỏ</option></select></div>
       <button class="btn" type="button" id="drReload">Tải lại</button>
     </div>
     <div class="cards" id="draftList"></div>
@@ -187,10 +208,21 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div><label for="prMode">Chế độ</label><select id="prMode"></select></div>
       <div><label for="prAgent">Agent</label><select id="prAgent"></select></div>
       <div><label for="prBrand">Thương hiệu</label><select id="prBrand"></select></div>
-      <button class="btn primary" type="button" id="prCopy">Chép prompt</button><span class="meta" id="prMsg"></span>
+      <button class="btn primary" type="button" id="prCopy">Chép prompt</button><button class="btn" type="button" id="prReset">Khôi phục mặc định</button><span class="meta" id="prMsg"></span>
     </div>
-    <textarea class="prompt" id="prText" readonly></textarea>
-    <div class="meta">Mở thư mục C:\hoangpq\social-autopilot trong agent đã chọn rồi dán. Nội dung lấy từ docs/scheduled-prompt.md.</div>
+    <!-- Run options of the chosen mode (one row), written into the prompt as this run's options. -->
+    <div class="toolbar pr-opts" id="prResearch" hidden>
+      <div><label>Nguồn</label><details class="pr-src" id="prSrcBox"><summary class="btn" id="prSrcSum">Tất cả</summary><div class="pr-src-list" id="prSrc"></div></details></div>
+      <div><label for="prSince">Từ ngày</label><input type="date" id="prSince"></div>
+      <div><label for="prMax">Tối đa bài mỗi nguồn</label><input type="number" id="prMax" min="1" step="1" placeholder="không giới hạn"></div>
+      <div><label for="prKind">Kiểu</label><select id="prKind"><option value="new">Bài mới</option><option value="backfill">Lấy bài cũ</option><option value="full">Quét lại toàn bộ</option></select></div>
+    </div>
+    <div class="toolbar pr-opts" id="prMake" hidden>
+      <div><label for="prCount">Số bài cần làm</label><input type="number" id="prCount" min="1" step="1" placeholder="theo cài đặt"></div>
+      <div><label for="prSend">Gửi Metricool</label><select id="prSend"><option value="">Theo cài đặt</option><option value="draft">Nháp</option><option value="schedule">Hẹn giờ</option></select></div>
+    </div>
+    <textarea class="prompt" id="prText" spellcheck="false"></textarea>
+    <div class="meta">Sửa được trực tiếp trong ô trên; "Chép prompt" chép đúng nội dung đang có. "Khôi phục mặc định" tạo lại từ docs/scheduled-prompt.md và các ô chọn. Mở thư mục C:\hoangpq\social-autopilot trong agent đã chọn rồi dán.</div>
   </section>
 
   <section class="page" id="page-settings" hidden>
@@ -370,6 +402,19 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const ITEM_COLOR = { new: "c-green", used: "", rejected: "c-red" };
   const STATE_TEXT = { end: "hết trang", known: "tới bài đã có", since: "tới mốc ngày", limit: "đủ số bài", blocked: "bị chặn", partial: "dừng giữa chừng" };
   let resShown = 60;
+  // Cards that open in the overlay: a click anywhere except buttons, links, inputs and the Caption toggle; Enter too.
+  function wireCards(cards, open) {
+    cards.forEach((card, i) => {
+      card.classList.add("open-card");
+      card.tabIndex = 0;
+      card.onclick = (e) => { if (e.target.closest("a, button:not(.thumb), input, textarea, select, summary, .reject-box")) return; open(i); };
+      card.onkeydown = (e) => { if (e.target === card && e.key === "Enter") { e.preventDefault(); open(i); } };
+    });
+  }
+  // After the overlay closes: back to the card last shown (when it is still on the page).
+  function focusCard(sel, id) { $$(sel).find((c) => c.dataset.id === id)?.focus(); }
+  // ‹ Trước / Sau › of the overlay header, the same for both lists.
+  const itemNav = (i, n) => `<span class="item-nav"><button class="btn" type="button" data-item="-1"${i ? "" : " disabled"}>‹ Trước</button><span class="meta">${i + 1}/${n}</span><button class="btn" type="button" data-item="1"${i < n - 1 ? "" : " disabled"}>Sau ›</button></span>`;
   async function loadResearch() {
     const brand = $("#resBrand").value || store.get("resBrand"), status = $("#resStatus").value, source = $("#resSource").value;
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
@@ -384,7 +429,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const list = c.items.slice(0, resShown);
     $("#resBody").innerHTML = `<div class="meta">Kho ${esc(c.brand)}: ${k.total} bài · ${k.new} mới · ${k.used} đã dùng · ${k.rejected} đã bỏ. Đang hiện ${c.items.length} bài.</div>${progress}
       <div class="refs" style="margin-top:8px">${list.map((it) => `<div class="card ref" data-id="${esc(it.id)}">
-        <button class="thumb" type="button" data-lb title="Xem ảnh lớn"><img loading="lazy" src="${img(it.image_paths[0])}" alt="">${it.image_paths.length > 1 ? `<span class="count">${it.image_paths.length} ảnh</span>` : ""}</button>
+        <button class="thumb" type="button" title="Xem lớn"><img loading="lazy" src="${img(it.image_paths[0])}" alt="">${it.image_paths.length > 1 ? `<span class="count">${it.image_paths.length} ảnh</span>` : ""}</button>
         <div class="head"><span>${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>
           <span class="acts">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Khôi phục</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Bỏ</button>` : ""}</span></div>
         <div class="reject-box" hidden><input type="text" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-confirm>Bỏ</button></div>
@@ -394,9 +439,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       ${c.items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Xem thêm (${c.items.length - resShown})</button></div>` : ""}
       <fieldset style="margin-top:12px"><legend>Ý tưởng từ kho</legend>${c.ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Bài kho</th><th>Trạng thái</th><th>Sản phẩm</th><th>Cảnh</th><th>Bản nháp</th></tr></thead><tbody>${c.ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc((i.drafts || []).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">Chưa có ý tưởng (chế độ "Làm bài & đưa lên").</div>`}</fieldset>`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
-    for (const card of $$("#resBody .ref")) {
+    const cards = $$("#resBody .ref");
+    wireCards(cards, (i) => openStoreItem(c.brand, list.slice(), i));
+    for (const card of cards) {
       const it = c.items.find((x) => x.id === card.dataset.id);
-      $("[data-lb]", card).onclick = () => openLightbox(it.image_paths.map((p, i, a) => ({ type: "image", path: p, label: `${it.id}${a.length > 1 ? ` ${i + 1}/${a.length}` : ""}` })));
       const setStatus = async (status, note = "") => {
         const res = await postJson("/api/store-item", { brand: c.brand, id: it.id, status, note }).catch(() => offline);
         if (res.error) { card.insertAdjacentHTML("beforeend", `<div class="bad-text">${esc(res.error)}</div>`); return; }
@@ -406,6 +452,59 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       if ($("[data-confirm]", card)) $("[data-confirm]", card).onclick = () => setStatus("rejected", $(".reject-box input", card).value);
       if ($("[data-restore]", card)) $("[data-restore]", card).onclick = () => setStatus("new");
     }
+  }
+  // One store item in the overlay: images (‹ ›, ←/→) left; facts, caption, duplicates, Bỏ/Khôi phục right;
+  // ‹ Trước / Sau › (↑/↓) walk the filtered list without closing. The panel keeps its own copy of the list, so an item
+  // that leaves the filter after Bỏ stays here until the panel closes; the list behind reloads.
+  function openStoreItem(brand, items, start) {
+    let i = start, k = 0, msg = "";
+    const go = (step) => { if (items[i + step]) { i += step; k = 0; msg = ""; draw(); } };
+    const draw = () => {
+      const it = items[i], imgs = it.image_paths || [];
+      k = Math.min(k, Math.max(0, imgs.length - 1));
+      const nav = itemNav(i, items.length);
+      const step = (s, label) => (imgs.length > 1 ? `<button class="btn lb-nav" type="button" data-img="${s}" aria-label="${label}">${s < 0 ? "‹" : "›"}</button>` : "");
+      const stage = `<div class="sp-stage">${step(-1, "Ảnh trước")}${imgs.length ? `<img src="${img(imgs[k])}" alt="${esc(it.id)}">` : `<div class="meta">Không có ảnh</div>`}${step(1, "Ảnh sau")}</div>`;
+      const dups = it.duplicates || [];
+      const merged = (it.post_keys || []).length;
+      const link = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>`;
+      const side = `<dl class="kv">
+          <dt>Mã</dt><dd>${esc(it.id)}</dd>
+          <dt>Trạng thái</dt><dd><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.note ? ` <span class="meta">Lý do: ${esc(it.note)}</span>` : ""}</dd>
+          <dt>Nguồn</dt><dd>${it.source_url ? link(it.source_url, it.store || it.source_id) : esc(it.store || it.source_id)} <span class="meta">(${esc(it.source_id)})</span></dd>
+          <dt>Bài gốc</dt><dd>${it.post_url ? link(it.post_url, "Mở bài gốc ↗") : "-"}</dd>
+          <dt>Ngày đăng</dt><dd>${esc(it.posted_date || "-")}</dd>
+          <dt>Ngày lấy</dt><dd>${esc(String(it.captured || "-").slice(0, 16).replace("T", " "))}</dd>
+          <dt>Ảnh</dt><dd>${imgs.length ? `${k + 1}/${imgs.length}` : "0"}</dd>
+          ${it.main_product ? `<dt>Sản phẩm</dt><dd>${esc(it.main_product)}</dd>` : ""}${it.price_seen ? `<dt>Giá thấy</dt><dd>${esc(it.price_seen)}</dd>` : ""}
+          ${it.used_by?.length ? `<dt>Dùng cho</dt><dd>${esc(it.used_by.join(", "))}</dd>` : ""}
+        </dl>
+        <div><div class="meta">Caption</div><pre class="sp-cap">${esc(it.caption) || `<span class="muted">(không có caption)</span>`}</pre></div>
+        <div><div class="meta">Trùng lặp</div>${dups.length || merged > 1 ? `<ul class="sp-dups">${merged > 1 ? `<li>Một bài, ${merged} link (gộp khi lấy)</li>` : ""}${dups.map((x) => `<li>${esc(x.reason)}${x.detail ? ` (${esc(x.detail)})` : ""} · ${esc(x.source)} · ${esc(String(x.at).slice(0, 10))}${x.post_url ? ` · ${link(x.post_url, "bài trùng")}` : ""}</li>`).join("")}</ul>` : `<div class="meta">Không có bài trùng.</div>`}</div>
+        <div class="row-actions">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Khôi phục</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Bỏ</button>` : `<span class="meta">Đã dùng cho bài, không bỏ được.</span>`}</div>
+        <div class="reject-box" hidden><input type="text" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-confirm>Xác nhận bỏ</button></div>
+        <div class="msg">${msg}</div>`;
+      openOverlay(`Kho ${esc(brand)} · ${esc(it.id)}`, `<div class="pv-layout sp-layout">${stage}<div class="pv-side">${side}</div></div>`,
+        imgs.length > 1 ? (s) => { k = (k + s + imgs.length) % imgs.length; draw(); } : null, nav, go);
+      lbOnClose = () => focusCard("#resBody .ref", it.id);
+      for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
+      for (const b of $$("[data-img]", overlay)) b.onclick = () => lbKeys(Number(b.dataset.img));
+      const box = $(".pv-side", overlay);
+      const setStatus = async (status, note = "") => {
+        for (const b of $$(".btn", box)) b.disabled = true;
+        const res = await postJson("/api/store-item", { brand, id: it.id, status, note }).catch(() => offline);
+        if (res.error) { msg = `<span class="bad-text">${esc(res.error)}</span>`; draw(); return; }
+        items[i] = { ...it, ...res.item, image_paths: it.image_paths, duplicates: it.duplicates };
+        msg = `<span class="ok-text">${status === "new" ? "Đã khôi phục." : "Đã bỏ."}</span>`;
+        draw();
+        loadResearch();
+      };
+      if ($("[data-reject]", box)) $("[data-reject]", box).onclick = () => { const r = $(".reject-box", box); r.hidden = !r.hidden; if (!r.hidden) $("input", r).focus(); };
+      if ($("[data-confirm]", box)) $("[data-confirm]", box).onclick = () => setStatus("rejected", $(".reject-box input", box).value);
+      if ($(".reject-box input", box)) $(".reject-box input", box).onkeydown = (e) => { if (e.key === "Enter") setStatus("rejected", e.target.value); };
+      if ($("[data-restore]", box)) $("[data-restore]", box).onclick = () => setStatus("new");
+    };
+    draw();
   }
   $("#resStatus").value = store.get("resStatus") || "new";
   $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; resShown = 60; loadResearch(); };
@@ -425,9 +524,52 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
     const brand = $("#prBrand").value || "";
     $("#prBrand").innerHTML = `<option value="">Tất cả</option>` + promptData.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (đang tắt)"}</option>`).join("");
+    const research = /nghiên cứu/i.test(mode), make = /làm bài/i.test(mode);
+    $("#prResearch").hidden = !research;
+    $("#prMake").hidden = !make;
+    // Nguồn: the brand's enabled research sources (social.json); none ticked = all of them.
+    const b = promptData.brands.find((x) => x.id === brand);
+    const ticked = new Set($$("#prSrc input:checked").map((x) => x.value));
+    $("#prSrc").innerHTML = b ? (b.sources.map((s) => `<label><input type="checkbox" value="${esc(s)}"${ticked.has(s) ? " checked" : ""}>${esc(s)}</label>`).join("") || `<div class="meta" style="padding:4px 10px">Chưa có nguồn nào bật.</div>`)
+      : `<div class="meta" style="padding:4px 10px">Chọn một thương hiệu để chọn nguồn.</div>`;
+    for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
+    srcLabel();
+    $("#prSend").options[0].textContent = `Theo cài đặt (${promptData.metricool_default === "schedule" ? "Hẹn giờ" : "Nháp"})`;
+    prKey = `prEdit:${mode}|${agent}`;
     const p = promptData.prompts.find((x) => x.mode === mode && x.agent === agent);
-    $("#prText").value = p ? fillPrompt(p.text, brand) : "Không có prompt trong docs/scheduled-prompt.md.";
+    prBase = p ? fillPrompt(p.text, brand) : "";
+    const saved = store.get(prKey);
+    $("#prText").value = saved || buildPrompt();
   }
+  let prKey = "", prBase = "";
+  function srcLabel() {
+    const on = $$("#prSrc input:checked").map((x) => x.value);
+    $("#prSrcSum").textContent = on.length ? on.join(", ") : "Tất cả";
+  }
+  // The template + this run's options (only those set), as an instruction block the agent follows over the defaults.
+  function buildPrompt() {
+    if (!prBase) return "Không có prompt trong docs/scheduled-prompt.md.";
+    const lines = [], brand = $("#prBrand").value;
+    if (!$("#prResearch").hidden) {
+      const src = $$("#prSrc input:checked").map((x) => x.value), since = $("#prSince").value, max = parseInt($("#prMax").value, 10), kind = $("#prKind").value;
+      const flags = [src.length ? `--source ${src.join(",")}` : "", since ? `--since ${since}` : "", max > 0 ? `--max-posts ${max}` : "", kind !== "new" ? `--${kind}` : ""].filter(Boolean);
+      if (src.length) lines.push(`Chỉ crawl các nguồn: ${src.join(", ")}.`);
+      if (since) lines.push(`Chỉ lấy bài đăng từ ngày ${since} trở về sau.`);
+      if (max > 0) lines.push(`Tối đa ${max} bài mỗi nguồn.`);
+      if (kind === "backfill") lines.push("Kiểu: lấy bài CŨ chưa crawl (--backfill): lướt nhanh qua bài đã có, lấy bài cũ hơn bài cũ nhất trong kho.");
+      if (kind === "full") lines.push("Kiểu: quét lại toàn bộ trang (--full).");
+      if (flags.length) lines.push(`Lệnh bắt đầu: node scripts/research.mjs start --brand ${brand || "<id>"} ${flags.join(" ")}`);
+    }
+    if (!$("#prMake").hidden) {
+      const count = parseInt($("#prCount").value, 10), send = $("#prSend").value;
+      if (count > 0) lines.push(`Làm ${count} bài (node scripts/ideas.mjs init --brand ${brand || "<id>"} --count ${count}).`);
+      if (send === "draft") lines.push("Gửi Metricool dạng NHÁP cho lượt này (không dùng --schedule), bất kể settings.metricool.default_mode.");
+      if (send === "schedule") lines.push("Lượt này HẸN GIỜ THẬT trên Metricool (dùng --schedule khi tạo payload), bất kể settings.metricool.default_mode.");
+    }
+    return lines.length ? `${prBase}\n\nTùy chọn của lượt này (ưu tiên hơn mặc định ở trên):\n${lines.map((l) => `- ${l}`).join("\n")}` : prBase;
+  }
+  // An option changed: the prompt is rebuilt (an earlier hand edit of this mode x agent is dropped).
+  function regenerate() { store.set(prKey, ""); $("#prText").value = buildPrompt(); }
   async function loadPrompts() {
     const r = await getJson("/api/prompts").catch(() => offline);
     if (r.error) { $("#prText").value = r.error; return; }
@@ -436,7 +578,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   $("#prMode").onchange = () => { store.set("prMode", $("#prMode").value); drawPrompt(); };
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
-  $("#prBrand").onchange = drawPrompt;
+  $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
+  for (const id of ["#prSince", "#prMax", "#prKind", "#prCount", "#prSend"]) $(id).onchange = regenerate;
+  $("#prText").oninput = () => store.set(prKey, $("#prText").value);
+  document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
+  $("#prReset").onclick = () => {
+    regenerate();
+    $("#prMsg").textContent = "Đã tạo lại.";
+    setTimeout(() => { $("#prMsg").textContent = ""; }, 2000);
+  };
   $("#prCopy").onclick = async () => {
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
     $("#prMsg").textContent = "Đã chép.";
@@ -446,7 +596,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // ----- Bài đã tạo: image(s), status of the automatic checks, hosted image, Metricool; optional "Bỏ" before written -----
   const STATUS_TEXT = { ready: "Qua kiểm tra", approved: "Đã ghi vào thương hiệu", check_failed: "Lỗi kiểm tra", rejected: "Đã bỏ", needs_prompt: "Chờ prompt", needs_caption: "Chờ caption", generating: "Đang tạo ảnh", image_failed: "Lỗi ảnh", preparing: "Đang chuẩn bị", awaiting_approval: "Bản cũ (trước khi bỏ bước duyệt)" };
   const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "c-red", image_failed: "c-red", check_failed: "c-red" };
-  const GROUP = { written: (d) => !!d.brand_post, ready: (d) => d.status === "ready" && !d.brand_post, failed: (d) => ["check_failed", "image_failed"].includes(d.status), working: (d) => ["needs_prompt", "generating", "needs_caption", "preparing", "awaiting_approval"].includes(d.status), rejected: (d) => d.status === "rejected" };
+  const SENT = (d, st) => d.brand_post?.metricool === st;
+  const GROUP = {
+    working: (d) => ["needs_prompt", "generating", "needs_caption", "preparing", "awaiting_approval"].includes(d.status),
+    ready: (d) => ["ready", "approved"].includes(d.status) && !["draft", "scheduled", "published", "error"].includes(d.brand_post?.metricool),
+    failed: (d) => ["check_failed", "image_failed"].includes(d.status),
+    mc_draft: (d) => SENT(d, "draft"), scheduled: (d) => SENT(d, "scheduled"), published: (d) => SENT(d, "published"), mc_error: (d) => SENT(d, "error"),
+    rejected: (d) => d.status === "rejected",
+  };
   const MC_COLOR = { draft: "c-amber", scheduled: "c-green", published: "c-green", error: "c-red" };
   async function loadDrafts() {
     const brand = store.get("drBrand"), group = $("#drStatus").value;
@@ -455,18 +612,21 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!brandData.brands.length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
     $("#drBrand").innerHTML = `<option value="">Tất cả</option>` + brandData.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
     const list = r.drafts.filter((d) => !group || GROUP[group]?.(d));
-    $("#draftList").innerHTML = list.length ? list.map((d) => {
+    drList = list;
+    const n = (g) => r.drafts.filter(GROUP[g]).length;
+    const counts = `<div class="meta">${r.drafts.length} bài · ${n("working")} đang làm · ${n("ready")} sẵn sàng · ${n("failed")} lỗi kiểm tra · ${n("mc_draft")} đã gửi nháp · ${n("scheduled")} đã hẹn giờ · ${n("published")} đã đăng · ${n("mc_error")} lỗi Metricool · ${n("rejected")} đã bỏ. Đang hiện ${list.length} bài.</div>`;
+    $("#draftList").innerHTML = counts + (list.length ? list.map((d) => {
       const caps = Object.entries(d.captions || {});
       const swap = d.image_mode === "scene-swap";
       const bp = d.brand_post;
       const canCancel = !bp && d.status !== "rejected";
       return `<div class="card draft" data-id="${esc(d.id)}">
-        <div class="thumbs">${d.image_exists ? `<button class="thumb" type="button" data-lb="0" title="Xem ảnh lớn"><img src="${img(d.image)}" alt="Ảnh mới"></button>` : `<div class="none">Chưa có ảnh</div>`}
-          ${swap && d.reference_image ? `<button class="thumb orig" type="button" data-lb="${d.image_exists ? 1 : 0}" title="Ảnh gốc của shop"><img src="${img(d.reference_image)}" alt="Ảnh gốc"></button>` : ""}</div>
+        <div class="thumbs">${d.image_exists ? `<button class="thumb" type="button" title="Xem lớn"><img src="${img(d.image)}" alt="Ảnh mới"></button>` : `<div class="none">Chưa có ảnh</div>`}
+          ${swap && d.reference_image ? `<button class="thumb orig" type="button" title="Ảnh gốc của shop"><img src="${img(d.reference_image)}" alt="Ảnh gốc"></button>` : ""}</div>
         <div class="body">
-          <div class="head"><h3>${esc(bp?.post ? `${bp.post} · ` : "")}${esc(d.id)} <span class="status-tag ${STATUS_COLOR[d.status] || ""}">${esc(STATUS_TEXT[d.status] || d.status)}</span>${bp ? `<span class="status-tag ${MC_COLOR[bp.metricool] || ""}">${esc(MC_TEXT[bp.metricool] || bp.metricool || "-")}</span>` : ""}${swap ? `<span class="status-tag">scene-swap</span>` : ""}</h3>
+          <div class="head"><h3>${esc(bp?.post ? `${bp.post} · ` : "")}${esc(d.id)} ${draftTags(d)}</h3>
             <div class="acts"><button class="btn" type="button" data-act="preview">Xem trước</button>${canCancel ? `<button class="btn" type="button" data-act="cancel">Bỏ</button>` : ""}</div></div>
-          <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)} · ${esc((d.networks || []).join(", "))} · ${esc(d.idea)}</div>
+          <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)} · ${esc((d.networks || []).join(", "))} · ${esc(d.idea)}${plannedOf(d) !== "-" ? ` · đăng ${esc(plannedOf(d))}` : ""}</div>
           ${d.problems?.length ? `<ul class="missing">${d.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
           ${d.error ? `<div class="bad-text">${esc(d.error)}</div>` : ""}
           ${d.status === "rejected" ? `<div class="bad-text">Đã bỏ${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
@@ -474,18 +634,27 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           ${canCancel ? `<div class="reject-box" hidden><input class="note" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-act="cancel-go">Xác nhận bỏ</button></div>` : ""}
           <div class="msg"></div>
           <details><summary>Caption đăng (${caps.length}) và chi tiết</summary><div class="captions">${caps.map(([f, t]) => `<div class="cap"><div class="meta">${esc(f)}</div><pre>${esc(t)}</pre></div>`).join("") || `<div class="meta">Chưa có caption.</div>`}</div>
-            <div class="meta">${esc((d.languages || []).join(", "))} (${esc(d.language_mode || "-")})${d.inspiration_url ? ` · <a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">bài tham khảo</a>` : ""} · ${d.metadata_clean ? `metadata đã bỏ, điểm ảnh giữ nguyên: ${d.metadata_clean.pixels_identical ? "có" : "KHÔNG"}` : "chưa làm sạch metadata"}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}${swap ? ` · ${d.logo_check ? `đã xác nhận sạch logo (${esc(d.logo_check.by)})` : "chưa xác nhận sạch logo"}` : ""}</div>
             <div class="meta">${esc(d.dir)}${bp?.folder ? `<br>${esc(bp.folder)}` : ""}</div></details>
         </div>
       </div>`;
-    }).join("") : `<div class="meta">Không có bài nào.</div>`;
-    const byId = Object.fromEntries(r.drafts.map((d) => [d.id, d]));
-    for (const card of $$("#draftList .draft")) {
-      const d = byId[card.dataset.id];
-      for (const btn of $$("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? openPreview(d) : cancelDraft(card, btn.dataset.act));
-      for (const t of $$("[data-lb]", card)) t.onclick = () => openLightbox(mediaOf(d), Number(t.dataset.lb));
-    }
+    }).join("") : `<div class="meta">Không có bài nào ở bộ lọc này.</div>`);
+    const cards = $$("#draftList .draft");
+    wireCards(cards, (i) => openPreview(list[i], { list, i }));
+    cards.forEach((card, i) => {
+      for (const btn of $$("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? openPreview(list[i], { list, i }) : cancelDraft(card, list[i], btn.dataset.act, null));
+    });
   }
+  let drList = [];
+  const draftThumb = (d) => (d.image_exists ? d.image : (d.preview?.media || []).find((m) => m.type !== "video")?.path || "");
+  // Status column: checks (status), hosted image and Metricool once the post is written into the brand.
+  function draftTags(d) {
+    const bp = d.brand_post, tag = (t, c = "") => `<span class="status-tag ${c}">${esc(t)}</span>`;
+    return tag(STATUS_TEXT[d.status] || d.status, STATUS_COLOR[d.status]) + (d.problems?.length ? tag(`${d.problems.length} lỗi kiểm tra`, "c-red") : "")
+      + (bp ? tag(bp.media_url ? "Ảnh đã host" : "Chưa host ảnh", bp.media_url ? "c-green" : "c-amber") + tag(MC_TEXT[bp.metricool] || bp.metricool || "-", MC_COLOR[bp.metricool]) : "")
+      + (d.image_mode === "scene-swap" ? tag("scene-swap") : "");
+  }
+  // Planned time: what Metricool was given (metricool_sent publication), else nothing yet.
+  const plannedOf = (d) => { const m = (d.brand_post?.metricool_sent || []).find((x) => x.publication); return m ? `${String(m.publication).slice(0, 16).replace("T", " ")}${m.draft ? " (nháp)" : ""}` : "-"; };
   // The draft's media for the lightbox: the post's own images/videos ("Ảnh mới"), then the shop's original (scene-swap).
   function mediaOf(d) {
     const own = (d.preview?.media?.length ? d.preview.media : d.image_exists ? [{ type: "image", path: d.image }] : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? `Ảnh mới ${i + 1}/${all.length}` : "Ảnh mới" }));
@@ -498,14 +667,19 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   overlay.hidden = true;
   overlay.innerHTML = `<div class="lb-win" role="dialog" aria-modal="true"><div class="lb-head"><div class="lb-title"></div><span class="lb-extra"></span><button class="btn lb-close" type="button">✕ Đóng</button></div><div class="lb-body"></div></div>`;
   document.body.append(overlay);
-  let lbKeys = null;
-  function closeOverlay() { overlay.hidden = true; for (const c of [".lb-title", ".lb-extra", ".lb-body"]) $(c, overlay).innerHTML = ""; lbKeys = null; document.body.style.overflow = ""; }
-  // title: the header text; extra: header controls left of ✕ Đóng (channel tabs); body: the window's content.
-  function openOverlay(title, body, keys, extra = "") {
+  let lbKeys = null, lbItemKeys = null, lbOnClose = null;
+  function closeOverlay() {
+    overlay.hidden = true; for (const c of [".lb-title", ".lb-extra", ".lb-body"]) $(c, overlay).innerHTML = ""; lbKeys = lbItemKeys = null; document.body.style.overflow = "";
+    const f = lbOnClose; lbOnClose = null; f?.();
+  }
+  // title: the header text; extra: header controls left of ✕ Đóng (channel tabs, ‹ Trước / Sau ›); body: the window's
+  // content; keys: ←/→ (images, channels); itemKeys: ↑/↓ (previous/next item of the list).
+  function openOverlay(title, body, keys, extra = "", itemKeys = null) {
     $(".lb-title", overlay).innerHTML = title;
     $(".lb-extra", overlay).innerHTML = extra;
     $(".lb-body", overlay).innerHTML = body;
     lbKeys = keys || null;
+    lbItemKeys = itemKeys || null;
     const wasHidden = overlay.hidden;
     overlay.hidden = false;
     document.body.style.overflow = "hidden";
@@ -515,9 +689,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   overlay.addEventListener("click", (e) => { if (e.target === overlay || e.target.classList.contains("lb-stage")) closeOverlay(); });
   document.addEventListener("keydown", (e) => {
     if (overlay.hidden) return;
-    if (e.key === "Escape") closeOverlay();
-    else if (lbKeys && e.key === "ArrowLeft") lbKeys(-1);
+    if (e.key === "Escape") { closeOverlay(); return; }
+    if (e.target.closest?.("input, textarea, select")) return;
+    if (lbKeys && e.key === "ArrowLeft") lbKeys(-1);
     else if (lbKeys && e.key === "ArrowRight") lbKeys(1);
+    else if (lbItemKeys && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); lbItemKeys(e.key === "ArrowUp" ? -1 : 1); }
   });
   function openLightbox(items, start = 0) {
     if (!items.length) return;
@@ -547,7 +723,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (cut <= 0 || cut >= t.length) return esc(t);
     return `<span class="cut">${esc(t.slice(0, cut).trimEnd())}… <button class="more" type="button">Xem thêm</button></span><span class="rest" hidden>${esc(t)}</span>`;
   }
-  function openPreview(d) {
+  // nav: { list, i } when opened from the list: ‹ Trước / Sau › (↑/↓) walk it without closing.
+  function openPreview(d, nav = null) {
+    const go = nav ? (step) => { const j = nav.i + step; if (nav.list[j]) openPreview(nav.list[j], { list: nav.list, i: j }); } : null;
+    const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", swap = d.image_mode === "scene-swap";
     const p = d.preview || { posts: [], media: [] };
     const initial = esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
     const media = () => {
@@ -581,9 +760,21 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         <dt>Ngôn ngữ đăng</dt><dd>${esc(LANG_NAME((post?.langs || post?.texts?.map((t) => t.lang) || d.languages || []).join("+")) || "-")}${post?.mode || p.mode ? ` <span class="meta">(${esc(post?.mode || p.mode)})</span>` : ""}</dd>
         ${review.length ? `<dt>Chỉ để đọc</dt><dd>${esc(review.map((x) => LANG_NAME(x.lang)).join(", "))} <span class="meta">(không đăng)</span></dd>` : ""}
         <dt>Đang xem</dt><dd>${o ? `${esc(LANG_NAME(o.lang) || "-")} · ${o.review ? `<span class="warn-text">Chỉ để đọc, không đăng</span>` : `<span class="ok-text">Đăng</span>`}` : "-"}</dd>
+        <dt>Trạng thái</dt><dd>${draftTags(d)}</dd>
+        <dt>Giờ đăng</dt><dd>${esc(plannedOf(d))}</dd>
         <dt>Link ảnh</dt><dd>${mediaUrl ? `<a href="${esc(mediaUrl)}" target="_blank" rel="noopener">${esc(mediaUrl)}</a>` : `<span class="muted">Chưa có</span>`}</dd>
-      </dl>`;
-    const title = `Xem trước ${esc(d.id)} <span class="meta">(mô phỏng, chưa đăng)</span>`;
+      </dl>
+      ${bp ? hostBlock(d) + mcBlock(bp) : ""}
+      ${d.problems?.length ? `<ul class="missing">${d.problems.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${d.error ? `<div class="bad-text">${esc(d.error)}</div>` : ""}
+      ${d.status === "rejected" ? `<div class="bad-text">Đã bỏ${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
+      <div class="meta">${esc(d.languages?.join(", ") || "")} (${esc(d.language_mode || "-")})${d.inspiration_url ? ` · <a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">bài tham khảo</a>` : ""} · ${d.metadata_clean ? `metadata đã bỏ, điểm ảnh giữ nguyên: ${d.metadata_clean.pixels_identical ? "có" : "KHÔNG"}` : "chưa làm sạch metadata"}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}${swap ? ` · ${d.logo_check ? `đã xác nhận sạch logo (${esc(d.logo_check.by)})` : "chưa xác nhận sạch logo"}` : ""}</div>
+      ${swap && d.reference_image ? `<div class="row-actions"><button class="btn" type="button" data-orig>Xem ảnh gốc của shop</button></div>` : ""}
+      ${canCancel ? `<div class="row-actions"><button class="btn" type="button" data-act="cancel">Bỏ</button><span class="meta">Chỉ bỏ được khi chưa ghi vào thương hiệu.</span></div>
+        <div class="reject-box" hidden><input class="note" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-act="cancel-go">Xác nhận bỏ</button></div>` : ""}
+      <div class="msg"></div>
+      <div class="meta">${esc(d.dir)}${bp?.folder ? `<br>${esc(bp.folder)}` : ""}</div>`;
+    const title = `Xem trước ${esc(bp?.post ? `${bp.post} · ` : "")}${esc(d.id)} <span class="meta">(mô phỏng${bp?.metricool === "published" ? "" : ", chưa đăng"})</span>`;
     let lang = null; // the chosen language, kept when switching channel
     const keyOf = (o) => `${o.review ? "r" : "p"}:${o.lang}`;
     const draw = (k) => {
@@ -594,13 +785,20 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const chan = posts.length > 1 ? `<nav class="tabs">${posts.map((x, j) => `<button type="button" data-tab="${j}" aria-pressed="${j === k}">${esc(NET[x.network] || x.network)}</button>`).join("")}</nav>` : "";
       const langBar = opts.length > 1 ? `<nav class="tabs pv-langs" aria-label="Ngôn ngữ">${opts.map((x, j) => `<button type="button" data-lang="${j}" aria-pressed="${x === o}">${esc(LANG_NAME(x.lang) || "?")} <span class="meta">${x.review ? "Chỉ để đọc, không đăng" : "Đăng"}</span></button>`).join("")}</nav>` : "";
       openOverlay(title, `<div class="pv-layout"><div class="pv-stage"><div class="pv-col">${langBar}${post && o ? card(post, o) : `<div class="meta">Chưa bật kênh nào.</div>`}</div></div><div class="pv-side">${side(post, o)}</div></div>`,
-        posts.length > 1 ? (step) => draw((k + step + posts.length) % posts.length) : null, chan);
+        posts.length > 1 ? (step) => draw((k + step + posts.length) % posts.length) : null, chan + (nav ? itemNav(nav.i, nav.list.length) : ""), go);
+      if (nav) lbOnClose = () => focusCard("#draftList .draft", d.id);
+      for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
+      const sideBox = $(".pv-side", overlay);
+      for (const b of $$("[data-act]", sideBox)) b.onclick = () => cancelDraft(sideBox, d, b.dataset.act, nav);
+      if ($("[data-orig]", sideBox)) $("[data-orig]", sideBox).onclick = () => big(mediaOf(d).length - 1);
       for (const b of $$("[data-tab]", overlay)) b.onclick = () => draw(Number(b.dataset.tab));
       for (const b of $$("[data-lang]", overlay)) b.onclick = () => { lang = keyOf(opts[Number(b.dataset.lang)]); draw(k); };
       const box = $(".pv-stage", overlay);
       for (const more of $$(".more", box)) more.onclick = () => { const t = more.closest(".txt"); $(".cut", t).hidden = true; $(".rest", t).hidden = false; };
-      for (const m of $$("[data-pv]", box)) m.onclick = () => openLightbox(mediaOf(d), Number(m.dataset.pv));
+      for (const m of $$("[data-pv]", box)) m.onclick = () => big(Number(m.dataset.pv));
     };
+    // The large image: the lightbox in the same overlay; closing it comes back to this preview.
+    const big = (start) => { openLightbox(mediaOf(d), start); lbOnClose = () => openPreview(d, nav); };
     draw(0);
   }
   // Hosted image link (hosting runs automatically after the post is written into the brand; no button here).
@@ -620,13 +818,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Đã chép"; setTimeout(() => { b.textContent = "Chép"; }, 1500); } catch {}
   });
   // Optional "Bỏ" of a post before it is written into the brand (finalize.mjs cancel); nothing waits for it.
-  async function cancelDraft(card, act) {
-    const msg = $(".msg", card), box = $(".reject-box", card);
-    if (act === "cancel") { box.hidden = !box.hidden; if (!box.hidden) $(".note", card).focus(); return; }
-    for (const b of $$("[data-act]", card)) b.disabled = true;
-    const r = await postJson("/api/cancel", { id: card.dataset.id, note: $(".note", card)?.value.trim() || "" }).catch(() => offline);
-    if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; for (const b of $$("[data-act]", card)) b.disabled = false; return; }
-    loadDrafts();
+  // In the preview's side panel; afterwards the list reloads and the preview shows the post again (when still listed).
+  async function cancelDraft(panel, d, act, nav) {
+    const msg = $(".msg", panel), box = $(".reject-box", panel);
+    if (act === "cancel") { box.hidden = !box.hidden; if (!box.hidden) $(".note", panel).focus(); return; }
+    for (const b of $$("[data-act]", panel)) b.disabled = true;
+    const r = await postJson("/api/cancel", { id: d.id, note: $(".note", panel)?.value.trim() || "" }).catch(() => offline);
+    if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; for (const b of $$("[data-act]", panel)) b.disabled = false; return; }
+    await loadDrafts();
+    if (!nav) return; // from a card: the list reloaded is enough
+    const j = drList.findIndex((x) => x.id === d.id), at = j >= 0 ? j : Math.min(nav?.i || 0, drList.length - 1);
+    if (at >= 0) openPreview(drList[at], { list: drList, i: at }); else closeOverlay();
   }
   $("#drStatus").value = store.get("drStatus") || "";
   $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };

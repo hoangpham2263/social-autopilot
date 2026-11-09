@@ -16,7 +16,7 @@ import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
-import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile } from "../scripts/store.mjs";
+import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile } from "../scripts/store.mjs";
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +57,10 @@ function draftsData(brand, status) {
 function storeData(brand, status, source) {
   const r = listItems(brand, { status, source });
   const dir = storeDir(brand);
-  const items = r.items.slice().reverse().map((i) => ({ ...i, image_paths: i.images.map((f) => join(dir, f)) }));
+  // Posts not stored because they matched an item (duplicates.json), shown in the item's preview.
+  const dups = {};
+  for (const x of readJson(duplicatesFile(brand), { duplicates: [] }).duplicates || []) (dups[x.matched] ||= []).push({ at: x.at || "", source: x.source || "", post_url: x.post_url || "", reason: x.reason || x.rule || "", detail: x.detail || "" });
+  const items = r.items.slice().reverse().map((i) => ({ ...i, image_paths: i.images.map((f) => join(dir, f)), duplicates: dups[i.id] || [] }));
   const ideas = readJson(storeIdeasFile(brand), { ideas: [] }).ideas;
   return { brand, dir, counts: r.counts, sources: r.sources, progress: readProgress(brand).sources || {}, items, ideas };
 }
@@ -183,7 +186,7 @@ async function handle(req, res) {
     return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, sources: b.sources || [] })), metricool_default: settings().metricool?.default_mode || "draft" }));
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
   // Optional "Bỏ" of a generated post before it is written into the brand (finalize.mjs cancel). Nothing waits for it.
