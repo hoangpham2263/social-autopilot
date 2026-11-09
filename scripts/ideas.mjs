@@ -4,14 +4,27 @@
 // for the brand's own product; never the competitor's image, words, logo or shop name (prompts/idea-abstract.md).
 // Ideas live in workspace/store/<brand>/ideas.json (ids I001, I002, ... per brand).
 //   node scripts/ideas.mjs init   --brand <id> [--count N] [--items S0001,S0002] [--source <sid>]
-//                                 N new store items (default cadence.posts_per_week, else 3; newest first, sources mixed)
+//                                 N new store items (default: what the plan-ahead window still needs: settings
+//                                 planning.ahead_days x cadence.posts_per_day, minus posts already approved and not yet
+//                                 published and drafts still in work; newest first, sources mixed)
 //   node scripts/ideas.mjs set    --brand <id> --id I001 --json '{...}' | --file f   fill an idea; checked for copying
 //   node scripts/ideas.mjs pick   --brand <id> --id I001              mark for drafting
 //   node scripts/ideas.mjs reject --brand <id> --id I001 [--note ..] [--item rejected]   idea dropped; the store item
 //                                 stays "used" (or "rejected" with --item rejected), never back to "new"
 //   node scripts/ideas.mjs list   --brand <id> [--status s]
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, withLock, stamp, sharedWords, cleanText } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, withLock, stamp, sharedWords, cleanText, settings, listDrafts } from './lib.mjs';
+import { postsPerDay } from './metricool-csv.mjs';
+
+// How many new posts the brand still needs to cover the next planning.ahead_days days (default 7) at posts_per_day:
+// posts approved but not published, and drafts still being made or waiting for review, already count.
+export function postsNeeded(brand, s = settings()) {
+  const days = Number.isInteger(s.planning?.ahead_days) && s.planning.ahead_days > 0 ? s.planning.ahead_days : 7;
+  const want = days * postsPerDay(brand.social.cadence || {});
+  const published = (d) => { const bp = d.status.brand_post; if (!bp) return false; try { return readJson(bp.catalog, { posts: [] }).posts.find((p) => p.id === bp.id)?.status === 'published'; } catch { return false; } };
+  const covered = listDrafts(brand.id).filter((d) => d.status.status !== 'rejected' && !['check_failed', 'image_failed'].includes(d.status.status) && !published(d)).length;
+  return { days, want, covered, need: Math.max(0, want - covered) };
+}
 import { readStore, storeDir, storeIdeasFile, markUsed, setItemStatus } from './store.mjs';
 
 const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'];
@@ -64,7 +77,8 @@ function run(args, cmd, brand, file) {
         return it;
       });
     } else {
-      const n = Number(args.count) > 0 ? Number(args.count) : Number(brand.social.cadence?.posts_per_week) || 3;
+      const n = Number(args.count) > 0 ? Number(args.count) : postsNeeded(brand).need;
+      if (!n) return out({ brand: brand.id, added: [], note: `The next ${postsNeeded(brand).days} days are already covered: no new posts needed.` });
       chosen = pickNew(store.items, n, args.source && args.source !== true ? String(args.source) : '');
     }
     const added = [];

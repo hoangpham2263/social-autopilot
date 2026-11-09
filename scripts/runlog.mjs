@@ -40,7 +40,7 @@ function createPart(brandId, since) {
   const scheduled = [], errors = [];
   for (const d of drafts.filter((x) => x.status.brand_post)) {
     const w = writtenPost(d);
-    for (const m of w.metricool_sent || []) if (!m.draft && after(m.sent_at)) scheduled.push({ post: w.post, network: m.network, publication: m.publication || '', timezone: m.timezone || '' });
+    for (const m of w.metricool_sent || []) if (!m.draft && after(m.sent_at)) scheduled.push({ post: w.post, network: m.network, publication: m.publication || '', timezone: m.timezone || '', source: m.time_source || '' });
     if (w.metricool === 'error') errors.push(`${w.post}: Metricool error`);
   }
   const fresh = drafts.filter((d) => after(d.draft.created));

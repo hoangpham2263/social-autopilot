@@ -51,7 +51,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill. Brand chưa nối s
 
 ## Quy tắc
 
-- Luôn hẹn giờ thật, không làm nháp. Giờ đăng theo `cadence` của skill (mặc định America/New_York).
+- Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay.
 - Không logo trên sản phẩm, không nhãn AI.
 - Ảnh được host ở repo công khai `social-autopilot-sources` (link raw GitHub).
 - Agent không bao giờ tự duyệt bài.

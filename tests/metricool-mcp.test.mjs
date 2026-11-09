@@ -99,7 +99,7 @@ test('payload: exact createScheduledPost shape, posted language only, no AI labe
   assert.equal(info.text, 'Hello from POST-01\n\n#TestBrand');
   assert.doesNotMatch(info.text, /Xin chào|chỉ để duyệt/, 'reviewer-only language is never posted');
   assert.doesNotMatch(it.args.info, /isAiGenerated":true|made with AI|AIgenerated/i);
-  assert.match(it.record, /record --brand testbrand --post POST-01 .* --tz <publicationDate.timezone>$/);
+  assert.match(it.record, /record --brand testbrand --post POST-01 .* --tz <publicationDate.timezone> --time-source "catalog schedule"$/);
   assert.match(run('payload', '--brand', 'testbrand', '--draft').error, /removed/);
   // the automatic time never reuses the day taken by the sent post
   const r2 = run('payload', '--brand', 'testbrand', '--posts', 'POST-02');

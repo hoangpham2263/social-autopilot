@@ -32,7 +32,7 @@ Nguồn: `social.json` = `<skill>/project/social.json`; `catalog` = `<skill>/wor
 | Trường Metricool (MCP / CSV) | Bắt buộc | Kiểu, định dạng | Nguồn của tool |
 |---|---|---|---|
 | `blogId` / `Brand name` | Có | id / tên brand chính xác | `brands` (brand đã trỏ tới skill), hoặc `social.json.metricool.blog_id`. Brand `removed` bị chặn |
-| `date` (MCP) | Có | ISO kèm offset | Giờ đã lập (`schedule`, `cadence.slots` hoặc giờ tự động) + offset của `cadence.timezone` |
+| `date` (MCP) | Có | ISO kèm offset | Giờ đã lập (`schedule`, hoặc giờ tốt nhất: Metricool, không có thì bảng nghiên cứu) + offset của `cadence.timezone` |
 | `publicationDate.dateTime` / `Date`+`Time` | Có | `YYYY-MM-DDTHH:mm:ss` / `YYYY-MM-DD` + `HH:mm:ss` | Như trên; CSV quy đổi sang múi giờ brand |
 | `publicationDate.timezone` | Có | tên IANA | `cadence.timezone` (múi giờ khách) |
 | `text` / `Text` | Có | UTF-8, giữ `\n` | `folder/content-<lang>.txt` của ngôn ngữ đăng (`channels[].lang`); không bao giờ `review_langs`, không nhãn AI |

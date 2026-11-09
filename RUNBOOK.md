@@ -102,19 +102,24 @@ Không làm ý, không tạo bài, không gửi Metricool trong chế độ này
 
 Không mở Facebook. Cần `node`, Codex CLI (tạo ảnh) và MCP Metricool của agent.
 
-2.0. Đồng bộ brand Metricool (bước đầu của mọi lượt Mode 2):
+2.0. Đồng bộ brand Metricool và giờ đăng tốt nhất (bước đầu của mọi lượt Mode 2):
 - Gọi tool MCP `getBrandSettings`, lưu nguyên câu trả lời JSON vào một file (vd `workspace/tmp/brand-settings.json`), rồi:
   ```
   node scripts/metricool-mcp.mjs sync-brands --from workspace/tmp/brand-settings.json
   ```
 - Ghi `workspace/metricool-brands.json` (dạng: `config/metricool-brands.example.json`): tên, blogId, múi giờ, mạng đã nối của từng brand. **Giữ** liên kết skill (`skill_id`, `skill_path`) theo blogId; brand không còn trong tài khoản thành `removed: true`. Báo người dùng brand mới (`added`, cần Choose skill ở Overview) và brand đã mất (`removed`).
+- Với từng thương hiệu usable: gọi tool MCP `getBestTimeToPostByNetwork` cho brand Metricool của nó (mạng `facebook`), lưu JSON vào file rồi:
+  ```
+  node scripts/metricool-mcp.mjs sync-times --brand <id> --from workspace/tmp/best-times-<id>.json
+  ```
+  Giờ đăng lấy từ đây; Metricool chưa có dữ liệu thì tool dùng bảng nghiên cứu `config/best-times.json` (docs/metricool.md mục 3). Không đặt giờ tay.
 
 2.1. Gửi bài đã duyệt mà chưa gửi (từng thương hiệu usable):
 ```
 node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-xx,...]
 ```
 - Mỗi `items[]` = một bài đã duyệt (catalog `approved`) có `media_url`/`video_url`, chưa có `metricool.<network>.id`, qua `check-post.mjs` của skill. Bài không qua kiểm (check-post lỗi, giờ đã qua, nhãn AI, ký tự ẩn, link không https hay WebP...) nằm trong `blocked` kèm lý do; bài khác vẫn đi.
-- Luôn là **bài hẹn giờ thật** (`draft: false`, `autoPublish: true`) ở giờ slot của brand: catalog `schedule`, `cadence.slots`, hoặc giờ tự động (`docs/metricool.md`), theo múi giờ khách `cadence.timezone`; `info.publicationDate` mang múi giờ đó, Metricool tự quy đổi. Không có `--draft`/`--schedule`. Bài cũ từng gửi dạng nháp được gửi lại thành bài hẹn giờ (`record` ghi `replaced_draft`; xoá nháp cũ trong Metricool).
+- Luôn là **bài hẹn giờ thật** (`draft: false`, `autoPublish: true`) ở giờ tốt nhất: mỗi ngày `cadence.posts_per_day` bài theo giờ tốt nhất của Metricool, không có thì bảng nghiên cứu (`docs/metricool.md` mục 3), theo múi giờ khách `cadence.timezone`; `item.time_source` ghi nguồn chọn giờ; `info.publicationDate` mang múi giờ đó, Metricool tự quy đổi. Không có `--draft`/`--schedule`. Bài cũ từng gửi dạng nháp được gửi lại thành bài hẹn giờ (`record` ghi `replaced_draft`; xoá nháp cũ trong Metricool).
 - Với từng item: gọi tool `createScheduledPost` với **đúng** `args.blogId`, `args.date`, `args.info` (chuỗi JSON, không sửa). Rồi ngay (lệnh có sẵn trong `item.record`):
   ```
   node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <plannerUrl> --publication <publicationDate.dateTime> --tz <publicationDate.timezone>
@@ -134,7 +139,7 @@ node scripts/ideas.mjs set  --brand <id> --id I001 --json "{\"product_type\":\".
 node scripts/ideas.mjs pick --brand <id> --id I001
 node scripts/ideas.mjs reject --brand <id> --id I001 --note "<lý do>" [--item rejected]
 ```
-Mặc định `--count` = `cadence.posts_per_week` (không có thì 3), bài mới nhất trước, xen kẽ các nguồn. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
+Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.ahead_days` ngày tới (mặc định 7) với `cadence.posts_per_day` bài/ngày (trừ bài đã duyệt chưa đăng và bản nháp đang làm/chờ duyệt; đủ rồi thì không làm thêm), bài mới nhất trước, xen kẽ các nguồn. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
 
 2.4. Bản nháp và ảnh:
 ```

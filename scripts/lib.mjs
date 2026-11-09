@@ -129,6 +129,7 @@ export function saveSettings(input = {}) {
     const str = (v, name) => { if (typeof v !== 'string' || !v.trim()) throw new Error(`${name} không được trống.`); if (/token|secret|password/i.test(v)) throw new Error(`${name} không được chứa token/mật khẩu.`); return v.trim(); };
     const bool = (v, name) => { if (v === true || v === 'true') return true; if (v === false || v === 'false') return false; throw new Error(`${name} phải là true hoặc false (nhận ${JSON.stringify(v)}).`); };
     const obj = (v, name) => { if (v === undefined) return {}; if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(`${name} phải là object.`); return v; };
+    const pl = obj(input.planning, 'planning');
     const r = obj(input.research, 'research'), mc = obj(input.metricool, 'metricool'), cx = obj(input.codex, 'codex'), ff = obj(input.ffmpeg, 'ffmpeg'), rw = obj(input.remove_watermark, 'remove_watermark'), ih = obj(input.imageHost, 'imageHost');
     const cr = cur.research || {};
     const delay = [].concat(r.delay_seconds ?? cr.delay_seconds).map((x, i) => int(x, `research.delay_seconds[${i}]`));
@@ -137,6 +138,8 @@ export function saveSettings(input = {}) {
     void mc;
     const changes = {
       skillsRoot: str(input.skillsRoot ?? cur.skillsRoot, 'skillsRoot'),
+      // Plan ahead (days): Create & publish makes enough posts to cover this many days at posts_per_day.
+      planning: { ahead_days: int(pl.ahead_days ?? cur.planning?.ahead_days ?? 7, 'planning.ahead_days', 1) },
       // Research: only the human-like pause between page actions; there are no run or post limits.
       research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay },
       metricool: Object.fromEntries(Object.entries(cur.metricool || {}).filter(([k]) => k !== 'default_mode')),
@@ -499,6 +502,7 @@ export function inspectBrand(dir) {
   result.language_mode = social.language_policy?.mode || '';
   result.timezone = social.cadence?.timezone || '';
   result.posts_per_week = Number.isInteger(social.cadence?.posts_per_week) ? social.cadence.posts_per_week : null;
+  result.posts_per_day = Number.isInteger(social.cadence?.posts_per_day) && social.cadence.posts_per_day > 0 ? social.cadence.posts_per_day : Number.isInteger(social.cadence?.posts_per_week) && social.cadence.posts_per_week > 0 ? Math.ceil(social.cadence.posts_per_week / 7) : 1;
   result.avatar = !!brandAvatar(dir);
   result.page_name = pageName(social);
   result.metricool_timezone = typeof social.metricool?.timezone === 'string' ? social.metricool.timezone.trim() : '';

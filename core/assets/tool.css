@@ -119,3 +119,7 @@ details.select > .options .meta { padding: 4px 10px; }
 .btn > *, nav.tabs button > * { line-height: 1; }
 /* Segoe UI has a deep descender, so text centred by its line box sits low: lift it by moving 2px of the box below. */
 .btn, a.btn, button.btn, nav.tabs button, .seg .btn { padding-bottom: 2px; }
+/* A multi-select's summary clips its text with an ellipsis before the arrow (a flex summary cannot ellipsize). Native
+   selects keep 28px on the right for their arrow; text never runs under an icon. */
+details.select > summary { display: block; line-height: calc(var(--ctl-h) - 2px); padding: 0 28px 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+select { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; padding-right: 28px; }

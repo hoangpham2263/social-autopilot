@@ -36,5 +36,8 @@
     "providers": {
       "codex": "chatgpt"
     }
+  },
+  "planning": {
+    "ahead_days": 7
   }
 }

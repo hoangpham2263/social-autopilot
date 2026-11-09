@@ -18,7 +18,7 @@ Tài liệu chung cho mọi tài khoản Metricool. Không ghi id người dùng
 - `getBrandSettings`: brand, blogId, múi giờ, mạng đã nối. Bước đầu mỗi lượt Mode 2: lưu JSON trả về ra file → `node scripts/metricool-mcp.mjs sync-brands --from <file>`.
 - `createScheduledPost(blogId, date, info)`: tạo bài. `date` = ISO kèm offset; `info` = **chuỗi JSON** (lấy nguyên từ `payload`).
 - `getScheduledPosts(brandId, fromDate, toDate, timezone)`: đối chiếu trạng thái (PENDING / ERROR / PUBLISHED); tham số từ `metricool-mcp.mjs status`.
-- `getBestTimeToPostByNetwork`: tuỳ chọn; muốn dùng thì ghi giờ vào `cadence.slots` của skill.
+- `getBestTimeToPostByNetwork`: đầu mỗi lượt Create & publish (RUNBOOK 2.0), lưu bằng `metricool-mcp.mjs sync-times`; giờ đăng lấy từ đây (mục 3).
 - Không dùng: `createScheduledPostForReview` / `sendScheduledPostForReview` (duyệt bài làm trong app của tool), `updateScheduledPost` (chưa dùng).
 
 ### sync-brands
@@ -57,19 +57,29 @@ blogId của brand `removed` và mọi blogId gắn với skill khác; mạng ng
 
 ## 3. Giờ đăng
 
-### Giờ tự động (cadence.slots trống)
-Bài chưa có `schedule` trong catalog: `cadence.slots` có giờ thì dùng; trống thì rải `cadence.posts_per_week` (1-7, mặc định 3) vào các ngày tốt nhất của mạng đầu tiên trong kênh bật, theo **múi giờ khách** (`cadence.timezone`). Mỗi ngày tối đa một bài của thương hiệu; không trùng giờ đã có; bài thêm đi theo thứ tự mon, fri, wed, thu, tue, sat, sun. Bảng (`AUTO_TIMES` trong `scripts/metricool-csv.mjs`):
+### Giờ đăng tự động: mỗi ngày, giờ tốt nhất
+Thương hiệu đăng **mỗi ngày**, `cadence.posts_per_day` bài một ngày (mặc định 1; skill cũ chỉ có `posts_per_week` thì lấy `ceil(posts_per_week / 7)`). Không có giờ đặt tay: `cadence.slots` của skill bị bỏ qua. Giờ của từng ngày, ưu tiên theo thứ tự:
+1. **Giờ tốt nhất của Metricool cho brand** (dữ liệu khán giả của chính trang): đầu mỗi lượt Create & publish, agent gọi `getBestTimeToPostByNetwork` rồi `node scripts/metricool-mcp.mjs sync-times --brand <id> --from <file>` → `workspace/metricool-times/<brand>.json`. Lấy các khung điểm cao nhất của ngày đó (cần ít nhất 5 khung có điểm).
+2. **Bảng mặc định theo nghiên cứu** khi Metricool chưa có hoặc quá ít dữ liệu (trang mới): `config/best-times.json`, Facebook, khán giả Mỹ, giờ `America/New_York`, mỗi thứ trong tuần một danh sách giờ xếp từ tốt nhất. Không bao giờ dùng giờ cố định tuỳ ý.
 
-| Mạng | Ngày tốt | Giờ |
-|---|---|---|
-| Facebook | tue, wed, thu | 09:00, 10:00, 11:00 |
-| Instagram | tue, wed, fri | 11:00, 13:00, 10:00 |
-| TikTok | tue, thu, fri | 18:00, 19:00, 17:00 |
-| LinkedIn | tue, wed, thu | 08:00, 10:00, 12:00 |
-| Pinterest | fri, sat, sun | 20:00, 21:00, 14:00 |
-| YouTube | thu, fri, sat | 15:00, 17:00, 12:00 |
-| X, Threads, Bluesky | tue, wed, thu | 09:00, 12:00, 10:00 |
-| Google Business Profile | mon, wed, fri | 10:00, 11:00, 09:00 |
+Nhiều bài một ngày thì cách nhau ít nhất 3 giờ; không dùng lại giờ đã có bài; bài đã hẹn trong ngày tính vào số bài của ngày đó. Giờ được ghi kèm nguồn chọn (`Metricool best time` / `research default` / `catalog schedule`), hiện ở xem trước và tab Log.
+
+Bảng mặc định (giờ địa phương của khán giả, xếp từ tốt nhất):
+
+| Thứ | Giờ |
+|---|---|
+| Thứ 2 | 12:00, 21:00, 17:00, 09:00 |
+| Thứ 3 | 08:00, 12:00, 19:00, 15:00 |
+| Thứ 4 | 08:00, 12:00, 18:00, 15:00 |
+| Thứ 5 | 09:00, 12:00, 20:00, 15:00 |
+| Thứ 6 | 08:00, 12:00, 17:00, 20:00 |
+| Thứ 7 | 09:00, 22:00, 12:00, 16:00 |
+| Chủ nhật | 10:00, 13:00, 08:00, 18:00 |
+
+Nguồn (tổng hợp, ưu tiên giờ các nghiên cứu cùng chỉ ra; bỏ khung 5-6 giờ sáng):
+- [Sprout Social, Best times to post on Facebook](https://sproutsocial.com/insights/best-times-to-post-on-facebook/): dữ liệu 27/11/2025 - 27/02/2026, ~2 tỷ tương tác, ~307.000 trang, giờ địa phương. Thứ 2 12-13h; thứ 3, thứ 4 12-20h; thứ 5 12-14h và 20h; thứ 6 buổi trưa; thứ 7, chủ nhật không có đỉnh rõ.
+- [Buffer, Best time to post on Facebook](https://buffer.com/resources/best-time-to-post-on-facebook/): hơn 14 triệu bài, giờ địa phương. Thứ 2 21h, 22h, 19h; thứ 3 8h, 19h, 7h; thứ 4 8h, 9h, 18h; thứ 5 9h, 8h, 10h; thứ 6 8h, 7h, 6h; thứ 7 22h, 6h, 21h; chủ nhật 10h, 9h, 8h. Ngày tốt nhất thứ 4, kém nhất thứ 7.
+- [Hootsuite, Best time to post on Facebook](https://blog.hootsuite.com/best-time-to-post-on-facebook/): hơn 1 triệu bài, công bố 19/11/2025, theo giờ địa phương. Thứ 2 17h; thứ 3 5h; thứ 4, 5, 6, 7 6h; chủ nhật 8h.
 
 ### Múi giờ: lên lịch theo khách
 - Mọi giờ đăng lên lịch theo `cadence.timezone` (múi giờ khách xem).

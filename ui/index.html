@@ -70,6 +70,7 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 /* Page header row (brand edit): back button and title. */
 .page-head { display: flex; gap: 12px; align-items: center; margin: 0 0 24px; }
 .page-head h2 { margin: 0; font-size: 16px; }
+#brandForm .field.wide { max-width: 720px; }
 .missing.flush { margin: 0; }
 .tiles.spaced { margin-top: 8px; }
 fieldset.spaced { margin-top: 24px; }
@@ -385,6 +386,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // An action's result shows inside the card it changed (after the list reloads).
   let pendingMsg = null;
   const cardMsg = (key, text, bad = false) => { pendingMsg = { key, html: bad ? errLine(text) : `<span class="ok-text">${esc(text)}</span>` }; loadOverview(); };
+  // A publication time (wall clock in the brand timezone) still ahead; compared as text, close enough for "next post".
+  const w_future = (pub) => String(pub).slice(0, 16) >= new Date().toISOString().slice(0, 16);
   const loadOverview = safely("#ovList", async () => {
     const [q, b, lg] = await Promise.all([getJson("/api/queue"), getJson("/api/brands"), getJson("/api/runlogs?limit=50").catch(() => ({}))]).catch(() => [offline, {}, {}]);
     const lastRun = (id) => arr(lg?.logs).find((l) => arr(l.brands).some((x) => x.brand === id));
@@ -404,7 +407,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const s = skills[m.skill_id || ""], out = [];
       if (!s) out.push(m.skill_id && m.skill_path_missing ? "Skill folder not found (renamed or moved?)" : "No skill");
       if (s) {
-        if (!s.enabled) out.push("Not enabled (Edit, Run automatically)");
+        if (!s.enabled) out.push("Paused (Edit, untick Paused)");
         if (!arr(s.sources).length) out.push("No reference sources (Edit, Sources)");
         for (const c of arr(s.channels)) if (!arr(m.networks).includes(c)) out.push(`${net(c)} not connected in Metricool`);
         // The Metricool brand's timezone (synced) should be the audience timezone the skill plans in (cadence.timezone).
@@ -444,6 +447,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           ${x ? `<dt>Library</dt><dd>${kho}</dd>
           ${research || blocked ? `<dt>Last research</dt><dd>${research}${blocked}</dd>` : ""}
           <dt>Posts</dt><dd>${posts}</dd>` : ""}
+          ${(() => { const next = arr(x?.written).flatMap((w) => arr(w.metricool_sent)).filter((m) => !m.draft && m.publication && w_future(m.publication)).map((m) => m.publication).sort()[0]; return next ? `<dt>Next post</dt><dd>${esc(String(next).replace("T", " ").slice(0, 16))} <span class="meta">${esc(m.timezone || "")}</span></dd>` : ""; })()}
           ${s && lastRun(s.id) ? (() => { const l = lastRun(s.id), x = arr(l.brands).find((y) => y.brand === s.id); return `<dt>Last run</dt><dd><a href="#" data-log="${esc(l.id)}">${esc(when(l.ended))} · ${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(x?.headline || l.headline)}</a></dd>`; })() : ""}
           ${miss.length ? `<dt>Missing</dt><dd><ul class="missing flush">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
         </dl>
@@ -495,7 +499,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 
   // ----- Edit a brand: only what people change; the rest under Advanced (raw JSON) -----
   let editing = null;
-  const DAYS = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"], ["sat", "Sat"], ["sun", "Sun"]];
   const slug = (u) => "src-" + u.replace(/^https?:\/\/(www\.)?/, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 40);
   async function openBrand(id) {
     $("#brandMsg").textContent = "";
@@ -503,26 +506,20 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (r.error || !r.social) { $("#brandForm").innerHTML = ""; $("#brandTitle").textContent = id; $("#brandMsg").innerHTML = errLine(r.error || RESTART); show("brand"); return; }
     editing = { id, social: r.social, file: r.file };
     const s = r.social, cad = s.cadence || {};
-    const slots = arr(cad.slots), sources = arr(s.research?.sources), channels = arr(s.channels);
+    const sources = arr(s.research?.sources);
+    const perDay = Number.isInteger(cad.posts_per_day) && cad.posts_per_day > 0 ? cad.posts_per_day : Number.isInteger(cad.posts_per_week) && cad.posts_per_week > 0 ? Math.ceil(cad.posts_per_week / 7) : 1;
     $("#brandTitle").textContent = s.brand || id;
-    $("#brandForm").innerHTML = `<fieldset>
-      <div class="fields">
-        <div class="field"><span class="label">Run</span><div class="checks"><label><input type="checkbox" id="fEnabled"${s.enabled ? " checked" : ""}> Automatically</label></div></div>
-        <div class="field auto"><span class="label">Channels</span><div class="checks" id="fChannels">${channels.map((c, i) => `<label><input type="checkbox" data-c="${i}"${c.enabled ? " checked" : ""}> ${esc(c.network)}</label>`).join("") || `<span class="meta">No channels.</span>`}</div></div>
-        <div class="field"><label for="fPpw">Posts per week</label><input type="number" id="fPpw" min="0" step="1" value="${esc(cad.posts_per_week ?? "")}"></div>
+    // Posting times are automatic (Metricool's best times, else the research table); channels are the Metricool brand's.
+    $("#brandForm").innerHTML = `<div class="fields">
+        <div class="field"><label for="fPpd" title="Posts every day; times are chosen automatically (Metricool best times)">Posts per day</label><input type="number" id="fPpd" min="1" step="1" value="${esc(perDay)}"></div>
+        <div class="field"><span class="label">Status</span><div class="checks"><label title="A paused brand gets no new posts and nothing sent"><input type="checkbox" id="fPaused"${s.enabled ? "" : " checked"}> Paused</label></div></div>
         <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">Open skill folder</button></div>
-      </div>
-      <div class="fields">
-        <div class="field wide"><span class="label">Posting times (${esc(cad.timezone || "-")})</span><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div><div><button class="btn" type="button" id="addSlot">+ Time</button></div></div>
       </div>
       <div class="fields">
         <div class="field wide"><span class="label">Sources</span><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span><button class="btn" type="button" data-rmsrc="1">Remove</button></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
           <div class="slot"><input type="text" id="fNewSrc" placeholder="Add a source: paste the page URL"><button class="btn" type="button" id="addSrc">Add</button></div></div>
-      </div>
-    </fieldset>`;
+      </div>`;
     $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
-    $("#addSlot").onclick = () => $("#fSlots").insertAdjacentHTML("beforeend", slotRow({ day: "mon", time: "10:00" }));
-    $("#fSlots").onclick = (e) => { if (e.target.dataset.rm) e.target.closest(".slot").remove(); };
     $("#fSources").onclick = (e) => { if (e.target.dataset.rmsrc) { const row = e.target.closest(".slot"); if (row.dataset.i !== undefined) (editing.removed ||= []).push(Number(row.dataset.i)); row.remove(); } };
     $("#addSrc").onclick = () => {
       const u = $("#fNewSrc").value.trim();
@@ -531,21 +528,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       $("#fSources").insertAdjacentHTML("beforeend", `<div class="slot"><input type="checkbox" checked disabled><span class="src-url">${esc(u)} <span class="meta">(new, Save to keep)</span></span></div>`);
       $("#fNewSrc").value = ""; $("#brandMsg").textContent = "";
     };
-    const syncOff = () => { const off = !$("#fEnabled").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fEnabled" && el.id !== "fOpen") setDisabled(el, off, "Turn on Run automatically to change this"); };
-    $("#fEnabled").onchange = syncOff; syncOff();
+    const syncOff = () => { const off = $("#fPaused").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fPaused" && el.id !== "fOpen") setDisabled(el, off, "Paused: untick Paused to change this"); };
+    $("#fPaused").onchange = syncOff; syncOff();
     show("brand");
   }
-  const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" class="time" value="${esc(x.time || "")}" placeholder="10:00"><button class="btn" type="button" data-rm="1">Remove</button></div>`;
   $("#brandBack").onclick = () => show("overview");
   $("#brandSave").onclick = async () => {
     const msg = $("#brandMsg");
     const social = JSON.parse(JSON.stringify(editing.social));
-    social.enabled = $("#fEnabled").checked;
-    $$("#fChannels [data-c]").forEach((c) => { social.channels[Number(c.dataset.c)].enabled = c.checked; });
+    social.enabled = !$("#fPaused").checked;
     const cad = (social.cadence ||= {});
-    const ppw = $("#fPpw").value.trim();
-    if (ppw === "") delete cad.posts_per_week; else cad.posts_per_week = Math.max(0, parseInt(ppw, 10) || 0);
-    cad.slots = $$("#fSlots .slot").map((row) => ({ day: $("select", row).value, time: $("input", row).value.trim() })).filter((x) => x.time);
+    cad.posts_per_day = Math.max(1, parseInt($("#fPpd").value, 10) || 1);
     const src = (social.research ||= {}).sources ||= [];
     $$("#fSources .slot[data-i]").forEach((row) => { src[Number(row.dataset.i)].enabled = $("input", row).checked; });
     social.research.sources = src.filter((_, i) => !(editing.removed || []).includes(i));
@@ -711,8 +704,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
     srcLabel();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
-    $("#prCount").placeholder = b?.posts_per_week ? String(b.posts_per_week) : "cadence";
-    $("#prCount").title = b?.posts_per_week ? `Brand cadence: ${b.posts_per_week} per week` : "Empty = each brand's cadence";
+    $("#prCount").placeholder = "auto";
+    $("#prCount").title = `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
     const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
     prBase = p ? p.text : "";
     $("#prText").value = buildPrompt();
@@ -736,7 +729,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       if (kind === "full") lines.push("full rescan (--full)");
     } else {
       const count = parseInt($("#prCount").value, 10);
-      const def = arr(promptData.brands).find((x) => x.id === brand)?.posts_per_week;
+      const def = 0;
       if (count > 0 && count !== def) lines.push(`${count} posts (ideas.mjs init --count ${count})`);
     }
     return lines.length ? lines.join("; ") : "defaults";
@@ -805,7 +798,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         body = rows ? `<table class="edit"><thead><tr><th>Source</th><th>New</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="meta">No crawl.</div>`;
       } else {
         const c = b.create || {};
-        const sched = arr(c.scheduled).map((x) => `${esc(x.post)} · ${esc(String(x.publication).replace("T", " ").slice(0, 16))}`);
+        const sched = arr(c.scheduled).map((x) => `${esc(x.post)} · ${esc(String(x.publication).replace("T", " ").slice(0, 16))}${x.source ? ` <span class="meta">${esc(x.source)}</span>` : ""}`);
         const errs = [...arr(c.failed).map((x) => `${x.id}: ${x.reason}`), ...arr(c.errors), ...arr(b.errors)].map(esc);
         const n = Math.max(sched.length, arr(c.to_review).length, errs.length, 1);
         const cell = (list, i, cls = "") => `<td class="${cls}">${list[i] || ""}</td>`;
@@ -861,7 +854,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const fail = failedOf(d), review = drState === "review" && !fail, when = plannedOf(d);
       return tile({ id: d.id, img: draftThumb(d), title: titleOf(d),
         status: fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : "",
-        who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (when !== "-" ? when : drState === "queued" ? "next run" : "")].filter(Boolean).join(" · "),
+        who: [d.preview?.page_name || d.brand, when !== "-" ? when : ""].filter(Boolean).join(" · "), whoTip: [d.brand, fail || (when !== "-" ? when : drState === "queued" ? "next run" : "")].filter(Boolean).join(" · "),
         actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
     wireTiles($("#draftList"), (i) => openPreview(list[i], { list, i }));
@@ -1060,7 +1053,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (!arr(bp.metricool_sent).length) return "";
     const old = arr(bp.metricool_sent).filter((m) => m.draft);
     if (old.length && old.length === bp.metricool_sent.length) return `<div class="host meta">Old Metricool draft ${old.map((m) => esc(m.id || "")).join(", ")} (delete it in Metricool); the next run sends this post as a scheduled post.</div>`;
-    return `<div class="host">${bp.metricool_sent.map((m) => `<span class="muted">${esc(m.network)}:</span> ${m.draft ? "old draft" : "scheduled"} ${esc(String(m.publication || "").slice(0, 16).replace("T", " "))}${m.planner_url ? ` <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}`).join(" · ")}</div>`;
+    return `<div class="host">${bp.metricool_sent.map((m) => `<span class="muted">${esc(m.network)}:</span> ${m.draft ? "old draft" : "scheduled"} ${esc(String(m.publication || "").slice(0, 16).replace("T", " "))}${m.time_source ? ` <span class="meta">(${esc(m.time_source)})</span>` : ""}${m.planner_url ? ` <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}`).join(" · ")}</div>`;
   }
   document.addEventListener("click", async (e) => {
     const b = e.target.closest(".copy-link");
@@ -1131,12 +1124,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const s = r.settings || {}, rs = s.research || {}, dd = rs.dedupe || {}, delay = arr(rs.delay_seconds), cx = s.codex || {};
     const row = (k, v, tip = "") => `<dt title="${esc(tip || k)}">${esc(k)}</dt><dd>${v}</dd>`;
     $("#settingsView").innerHTML = `<dl class="kv">
-      ${row("Metricool", "Scheduled at each brand's slot time", "The tool always schedules real posts (no drafts)")}
+      ${row("Metricool", "Scheduled at the best times (Metricool, else research)", "The tool always schedules real posts (no drafts)")}
+      ${row("Plan ahead", `${esc(s.planning?.ahead_days ?? 7)} days`, "Create & publish makes enough posts to fill this many days")}
       ${s.imageHost ? row("Auto-host images", s.imageHost.auto_after_writeback !== false ? "Yes" : "No", "Push the image to the image repo right after the post is written into the brand") : ""}
       ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
     const num = (k, v, label, tip = "") => `<div class="field"><label title="${esc(tip || label)}">${esc(label)}</label><input type="number" min="0" step="1" data-s="${k}" value="${esc(v)}"></div>`;
     const text = (k, v, label, tip) => `<div class="field wide"><label title="${esc(tip)}">${esc(label)}</label><input data-s="${k}" value="${esc(v)}" title="${esc(tip)}"></div>`;
     $("#settingsForm").innerHTML = `<div class="fields">
+      <div class="field"><label title="Create &amp; publish makes enough posts to fill this many days ahead">Plan ahead (days)</label><input type="number" min="1" step="1" data-s="planning.ahead_days" value="${esc(s.planning?.ahead_days ?? 7)}"></div>
       ${s.imageHost ? `<div class="field"><span class="label" title="Push the image right after the post is written into the brand">Auto-host images</span><div class="checks"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> On</label></div></div>` : ""}
       </div>
       <details><summary>Advanced</summary>
@@ -1154,7 +1149,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   });
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Edit" : "Close"; };
   $("#settingsSave").onclick = async () => {
-    const out = { research: { delay_seconds: [] }, metricool: {}, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
+    const out = { planning: {}, research: { delay_seconds: [] }, metricool: {}, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
     for (const el of $$("#settingsForm [data-s]")) {
       const parts = el.dataset.s.split(".");
       const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;

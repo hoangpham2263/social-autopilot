@@ -52,15 +52,15 @@ TASK: Create & publish — brand: {{BRAND}} — agent: Claude Code
 OPTIONS: {{OPTIONS}}
 STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip):
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; node scripts/brands.mjs.
-2. 2.0 Sync Metricool brands: getBrandSettings → metricool-mcp.mjs sync-brands.
-3. 2.1 Schedule approved posts not yet sent (payload → createScheduledPost → record).
+2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
+3. 2.1 Schedule approved posts not yet sent at the best times (payload → createScheduledPost → record).
 4. 2.2 Reconcile sent posts (status → getScheduledPosts).
-5. 2.3-2.6 Make new posts: ideas → drafts and images (Codex CLI) → captions → automatic checks.
+5. 2.3-2.6 Make enough new posts for the next days: ideas → drafts and images (Codex CLI) → captions → checks.
 6. 2.7 Stop at "To review"; 2.8 report data: node scripts/queue.mjs.
 7. 2.9 Write the run log: node scripts/runlog.mjs add --mode create --agent "Claude Code".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
 STOP IF: a Metricool tool error (record nothing for that post), Codex image quota is used up.
-NEVER: approve posts, make Metricool drafts, add AI labels, put logos on products, use another blogId.
+NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId.
 ```
 
 ### Create & publish · Codex
@@ -70,15 +70,15 @@ TASK: Create & publish — brand: {{BRAND}} — agent: Codex
 OPTIONS: {{OPTIONS}}
 STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip):
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; check the Metricool MCP tools; node scripts/brands.mjs.
-2. 2.0 Sync Metricool brands: getBrandSettings → metricool-mcp.mjs sync-brands.
-3. 2.1 Schedule approved posts not yet sent (payload → createScheduledPost → record).
+2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
+3. 2.1 Schedule approved posts not yet sent at the best times (payload → createScheduledPost → record).
 4. 2.2 Reconcile sent posts (status → getScheduledPosts).
-5. 2.3-2.6 Make new posts: ideas → drafts and images → captions → automatic checks.
+5. 2.3-2.6 Make enough new posts for the next days: ideas → drafts and images → captions → checks.
 6. 2.7 Stop at "To review"; 2.8 report data: node scripts/queue.mjs.
 7. 2.9 Write the run log: node scripts/runlog.mjs add --mode create --agent "Codex".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
 STOP IF: no Metricool MCP tools (skip 2.0-2.2, still make posts, tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool).
-NEVER: approve posts, make Metricool drafts, add AI labels, put logos on products, use another blogId.
+NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId.
 ```
 
 ### Create & publish · ChatGPT

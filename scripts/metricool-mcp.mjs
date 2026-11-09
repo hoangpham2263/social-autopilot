@@ -17,11 +17,13 @@
 // (MCP copies them to static.metricool.com). A brand gets posts only when it is linked to a usable skill; a brand gone from
 // the account (removed in workspace/metricool-brands.json) is never a target.
 //   node scripts/metricool-mcp.mjs sync-brands --from <file with the getBrandSettings JSON>   (first step of every run)
+//   node scripts/metricool-mcp.mjs sync-times  --brand <id> --from <file with the getBestTimeToPostByNetwork JSON> [--network facebook]
+//        (before scheduling: the posting times come from Metricool's best times; no hand-set times)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, removedBlog, syncMetricoolBrands } from './lib.mjs';
-import { planPosts, findBrand, sentNetworks, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
+import { timesFile, planPosts, findBrand, sentNetworks, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
 
 // Networks whose createScheduledPost shape is known (facebookData / instagramData). Others: use the CSV route.
 export const MCP_NETWORKS = ['facebook', 'instagram'];
@@ -95,7 +97,7 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
     };
     if (plan.networkKeys.includes('facebook')) info.facebookData = { type: it.facebook_post_type };
     if (plan.networkKeys.includes('instagram')) info.instagramData = { type: it.video ? 'REEL' : 'POST', isAiGenerated: false };
-    const rec = ['node scripts/metricool-mcp.mjs record', `--brand ${brand.id}`, `--post ${p.id}`, '--id <id>', '--uuid <uuid>', '--planner-url <plannerUrl>', '--publication <publicationDate.dateTime>', '--tz <publicationDate.timezone>'].join(' ');
+    const rec = ['node scripts/metricool-mcp.mjs record', `--brand ${brand.id}`, `--post ${p.id}`, '--id <id>', '--uuid <uuid>', '--planner-url <plannerUrl>', '--publication <publicationDate.dateTime>', '--tz <publicationDate.timezone>', `--time-source "${it.when.source || ''}"`].join(' ');
     items.push({
       post: p.id, lang: it.texts[0].lang, networks: plan.networkKeys, draft, time_source: it.when.source, planned: it.planned,
       tool: 'createScheduledPost',
@@ -146,6 +148,8 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
   const publication = `${w.date}T${w.time}`;
   if (args.draft) throw new Error('--draft was removed: the tool always records real scheduled posts.');
   const draft = false;
+  // Which source chose the time ("Metricool best time" / "research default" / "catalog schedule"), shown in the app and the log.
+  const timeSource = args['time-source'] && args['time-source'] !== true ? String(args['time-source']).trim().slice(0, 60) : '';
   const channels = (brand.social.channels || []).filter((c) => c.enabled).map((c) => String(c.network).toLowerCase());
   const networks = args.networks && args.networks !== true ? String(args.networks).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) : [...new Set(channels)];
   const bad = networks.filter((n) => !MCP_NETWORKS.includes(n));
@@ -166,7 +170,7 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
     for (const n of networks) {
       const old = mc[n] || {};
       const same = old.id && String(old.id) === id;
-      mc[n] = { blog_id: blogId, id, uuid: (same && old.uuid) || uuid || '', planner_url: planner || (same ? old.planner_url : '') || '', publication, timezone: tz, draft, ...(old.draft === true && !same ? { replaced_draft: String(old.id) } : {}), sent_at: old.id && String(old.id) === id && old.sent_at ? old.sent_at : sentAt, ...(old.id && String(old.id) === id ? { updated_at: sentAt } : {}) };
+      mc[n] = { blog_id: blogId, id, uuid: (same && old.uuid) || uuid || '', planner_url: planner || (same ? old.planner_url : '') || '', publication, timezone: tz, draft, ...(timeSource ? { time_source: timeSource } : {}), ...(old.draft === true && !same ? { replaced_draft: String(old.id) } : {}), sent_at: old.id && String(old.id) === id && old.sent_at ? old.sent_at : sentAt, ...(old.id && String(old.id) === id ? { updated_at: sentAt } : {}) };
     }
     entry.metricool = mc;
     if (!draft) {
@@ -180,6 +184,50 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
     return { status: entry.status, metricool: entry.metricool, schedule: entry.schedule };
   });
   return { brand: brand.id, post: postId, ...result, check_post: checkPost(brand, postId) };
+}
+
+// ----- best times (getBestTimeToPostByNetwork) -----
+// Any JSON shape Metricool returns: a list (or { data | items | bestTimes | result: [...] }) of entries with a day
+// (0-6 Sunday first, 1-7 Monday first when 7 appears, or a name) and an hour (0-23, or "HH:MM"), and a score
+// (value / score / engagement / count). A matrix { monday: { "9": 12, ... } } works too.
+const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const dayOf = (v, mondayFirst) => {
+  if (typeof v === 'string' && !/^\d+$/.test(v)) { const k = v.trim().slice(0, 3).toLowerCase(); return DAY_NAMES.includes(k) ? k : ''; }
+  const n = Number(v);
+  if (!Number.isInteger(n)) return '';
+  return mondayFirst ? DAY_NAMES[n % 7] : DAY_NAMES[n] || '';
+};
+const hourOf = (v) => { const m = String(v ?? '').match(/^(\d{1,2})(?::(\d{2}))?/); if (!m) return ''; const h = Number(m[1]); return h < 24 ? `${String(h).padStart(2, '0')}:${m[2] || '00'}` : ''; };
+export function parseBestTimes(raw) {
+  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const list = Array.isArray(data) ? data : [data?.data, data?.items, data?.bestTimes, data?.result, data?.data?.items].find(Array.isArray);
+  const slots = [];
+  if (list) {
+    const mondayFirst = list.some((e) => Number(e?.day ?? e?.dayOfWeek ?? e?.weekday) === 7);
+    for (const e of list) {
+      if (!e || typeof e !== 'object') continue;
+      const day = dayOf(e.day ?? e.dayOfWeek ?? e.weekday ?? e.dayName, mondayFirst), time = hourOf(e.hour ?? e.time ?? e.hourOfDay);
+      const score = Number(e.value ?? e.score ?? e.engagement ?? e.count ?? e.interactions ?? 0) || 0;
+      if (day && time) slots.push({ day, time, score });
+    }
+  } else if (data && typeof data === 'object') {
+    for (const [d, hours] of Object.entries(data.data && typeof data.data === 'object' ? data.data : data)) {
+      const day = dayOf(d, false);
+      if (!day || !hours || typeof hours !== 'object') continue;
+      for (const [h, v] of Object.entries(hours)) { const time = hourOf(h); if (time) slots.push({ day, time, score: Number(v) || 0 }); }
+    }
+  }
+  return slots.sort((a, b) => b.score - a.score);
+}
+export function syncTimes(args) {
+  const brand = findBrand(need(args, 'brand'));
+  const slots = parseBestTimes(fs.readFileSync(need(args, 'from'), 'utf8'));
+  if (!slots.length) throw new Error('No best times found in the getBestTimeToPostByNetwork answer.');
+  let cfg = null;
+  try { cfg = (metricoolBrands().brands || []).find((b) => b.skill_id === brand.id) || null; } catch {}
+  const doc = { brand: brand.id, network: args.network && args.network !== true ? String(args.network) : 'facebook', timezone: cfg?.timezone || brand.timezone || '', updated_at: new Date().toISOString(), slots };
+  writeJson(timesFile(brand.id), doc);
+  return { brand: brand.id, file: timesFile(brand.id), timezone: doc.timezone, slots: slots.length, best: slots.slice(0, 5) };
 }
 
 // ----- status -----
@@ -217,11 +265,12 @@ if (isMain(import.meta.url)) main(async () => {
     if (cmd === 'payload') runPayload(args);
     else if (cmd === 'record') out(record(args));
     else if (cmd === 'status') out(status(args));
+    else if (cmd === 'sync-times') out(syncTimes(args));
     else if (cmd === 'sync-brands') {
       const file = need(args, 'from');
       const r = syncMetricoolBrands(fs.readFileSync(file, 'utf8'));
       out({ brands: r.brands.map(({ name, blog_id, skill_id, removed }) => ({ name, blog_id, skill_id, ...(removed ? { removed } : {}) })), added: r.added, removed: r.removed, updated_at: r.updated_at });
     }
-    else fail('Lệnh: payload --brand <id> [--posts POST-01,...] | record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url> --publication <dateTime> --tz <tz> | status --brand <id> | sync-brands --from <file>');
+    else fail('Lệnh: payload --brand <id> [--posts POST-01,...] | record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url> --publication <dateTime> --tz <tz> | status --brand <id> | sync-brands --from <file> | sync-times --brand <id> --from <file> [--network facebook]');
   } catch (e) { fail(e.message, e.problems ? { problems: e.problems } : {}); }
 });

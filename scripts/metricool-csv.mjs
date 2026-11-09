@@ -13,14 +13,15 @@
 //                         timezone in config/metricool-brands.json (skill_id), else cadence.timezone (warned, no conversion)
 //   cadence.timezone      the AUDIENCE timezone: every posting time (cadence.slots, automatic times, catalog schedule,
 //                         --date/--time) is planned in it and converted to the Metricool timezone when Date/Time are written
-//   cadence.slots[]       { day: mon..sun, time: HH:MM } used for posts without catalog schedule {date, time}
+//   posting times         Metricool's best times (workspace/metricool-times/<brand>.json, metricool-mcp.mjs sync-times),
+//                         else the automatic times below; a skill's cadence.slots is ignored (times are automatic)
 //   channels[] enabled    -> network columns; language_policy.mode + channels[].lang -> Text
 // Catalog post fields: status "approved"; media_url (string or array, max 10) or video_url (+ video_thumbnail_url);
 //   media_alt / image_alt (string or array) for alt text; schedule { date: YYYY-MM-DD, time: HH:MM[:SS] };
 //   facebook_post_type (default POST, REEL for a video).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands, skillDirs, linkedDir } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands, skillDirs, linkedDir, workspace } from './lib.mjs';
 
 // WebP in any form Metricool refuses ("Unsupported .webp format"): the extension anywhere in the URL, or a CDN format
 // parameter (format=webp, fm=webp, f=webp, output=webp, ...). With --check-urls a content-type image/webp is refused too.
@@ -302,58 +303,57 @@ async function checkMedia(rows, errors) {
 }
 
 // ----- posting times -----
-// Next free cadence slots, starting tomorrow (or today later than now with allowToday), planned in the audience timezone.
-function slotPicker(slots, tz, taken, { allowToday, now }) {
-  const clean = (Array.isArray(slots) ? slots : []).filter((s) => DAYS.includes(s?.day) && /^([01]\d|2[0-3]):[0-5]\d$/.test(s?.time || ''))
-    .map((s) => ({ day: s.day, time: `${s.time}:00` })).sort((a, b) => a.time.localeCompare(b.time));
-  const cur = nowIn(tz, now);
-  return () => {
-    if (!clean.length) return null;
-    for (let d = allowToday ? 0 : 1; d < 366; d++) {
-      const date = addDays(cur.date, d);
-      for (const s of clean) {
-        if (s.day !== weekday(date)) continue;
-        if (d === 0 && s.time <= cur.time) continue;
-        const key = `${date} ${s.time}`;
-        if (!taken.has(key)) { taken.add(key); return { date, time: s.time }; }
-      }
-    }
-    return null;
-  };
+// Every brand posts every day: cadence.posts_per_day posts a day (default 1; an older skill with only posts_per_week gets
+// ceil(posts_per_week / 7)). Each day's times, best first:
+//   1. Metricool's best times for the brand (getBestTimeToPostByNetwork, saved by metricool-mcp.mjs sync-times):
+//      workspace/metricool-times/<brand>.json = { brand, network, timezone, updated_at, slots: [{ day, time, score }] };
+//   2. otherwise the research default table config/best-times.json (per network and weekday, ranked hours, audience time).
+// Never arbitrary fixed times. A day with several posts gets them at least 3 hours apart; a date+time already used by
+// another post of the brand is never reused; posts already scheduled on a day count toward that day's posts.
+export const timesFile = (brand) => path.join(workspace, 'metricool-times', `${brand}.json`);
+export const bestTimes = (brand) => { const t = readJson(timesFile(brand), null); return t && Array.isArray(t.slots) && t.slots.length ? t : null; };
+export const researchTimes = () => readJson(path.join(toolRoot, 'config', 'best-times.json'), { networks: {} });
+export const postsPerDay = (cadence = {}) => (Number.isInteger(cadence.posts_per_day) && cadence.posts_per_day > 0 ? cadence.posts_per_day
+  : Number.isInteger(cadence.posts_per_week) && cadence.posts_per_week > 0 ? Math.ceil(cadence.posts_per_week / 7) : 1);
+// Metricool needs at least this many scored slots before its data is trusted over the research table.
+const MIN_METRICOOL_SLOTS = 5;
+const minutes = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+const hhmmss = (t) => (/^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t);
+
+// The ranked times of one weekday: Metricool's (score order) when it has data for the brand, else the research table.
+export function dayTimes(day, { best, research, network }) {
+  if (best && best.slots.length >= MIN_METRICOOL_SLOTS) {
+    const list = best.slots.filter((x) => x.day === day).sort((x, y) => (y.score || 0) - (x.score || 0)).map((x) => hhmmss(x.time));
+    if (list.length) return { times: [...new Set(list)], tz: best.timezone || '', source: 'Metricool best time' };
+  }
+  const net = research.networks?.[String(network || '').toLowerCase()] || research.networks?.facebook;
+  return { times: (net?.days?.[day] || []).map(hhmmss), tz: net?.timezone || '', source: 'research default' };
 }
 
-// Automatic posting times when cadence.slots is empty: good default days and hours per network, planned in the audience
-// timezone (cadence.timezone) and converted to the Metricool timezone on export (docs/metricool.md "Giờ đăng tự động"). The first network of the brand's enabled channels decides.
-export const AUTO_TIMES = {
-  Facebook: { days: ['tue', 'wed', 'thu'], times: ['09:00', '10:00', '11:00'] },
-  Instagram: { days: ['tue', 'wed', 'fri'], times: ['11:00', '13:00', '10:00'] },
-  TikTok: { days: ['tue', 'thu', 'fri'], times: ['18:00', '19:00', '17:00'] },
-  LinkedIn: { days: ['tue', 'wed', 'thu'], times: ['08:00', '10:00', '12:00'] },
-  Pinterest: { days: ['fri', 'sat', 'sun'], times: ['20:00', '21:00', '14:00'] },
-  Youtube: { days: ['thu', 'fri', 'sat'], times: ['15:00', '17:00', '12:00'] },
-  'Twitter/X': { days: ['tue', 'wed', 'thu'], times: ['09:00', '12:00', '10:00'] },
-  Threads: { days: ['tue', 'wed', 'thu'], times: ['09:00', '12:00', '10:00'] },
-  Bluesky: { days: ['tue', 'wed', 'thu'], times: ['09:00', '12:00', '10:00'] },
-  GBP: { days: ['mon', 'wed', 'fri'], times: ['10:00', '11:00', '09:00'] },
-};
-// Days added in this order when posts_per_week is larger than the network's best days.
-const EXTRA_DAYS = ['mon', 'fri', 'wed', 'thu', 'tue', 'sat', 'sun'];
-// cadence.posts_per_week (1-7, default 3) spread over the week's best days for the network; at most one post of the brand
-// a day (dates already used by its scheduled posts are skipped), never a date+time already used in the queue.
-export function autoPicker(network, postsPerWeek, tz, taken, { allowToday, now }) {
-  const table = AUTO_TIMES[network] || AUTO_TIMES.Facebook;
-  const n = Math.min(7, Math.max(1, Number.isInteger(postsPerWeek) ? postsPerWeek : 3));
-  const days = [...new Set([...table.days, ...EXTRA_DAYS])].slice(0, n);
-  const usedDates = new Set([...taken].map((k) => k.slice(0, 10)));
-  const cur = nowIn(tz, now);
+// Next free posting time (date, time in the audience timezone, and which source chose it).
+export function timePicker({ brandId, network, perDay, audienceTz, taken, allowToday, now, best = bestTimes(brandId), research = researchTimes() }) {
+  const n = Math.max(1, perDay || 1);
+  const byDate = {};
+  for (const k of taken) (byDate[k.slice(0, 10)] ||= []).push(k.slice(11));
+  // The timezone the times are in: Metricool's (brand timezone) or the research table's.
+  const net = research.networks?.[String(network || '').toLowerCase()] || research.networks?.facebook;
+  const srcTz = best && best.slots.length >= MIN_METRICOOL_SLOTS ? best.timezone : net?.timezone;
+  const tz = srcTz && validTz(srcTz) ? srcTz : audienceTz;
   return () => {
-    for (let d = allowToday ? 0 : 1; d < 366; d++) {
-      const date = addDays(cur.date, d);
-      if (!days.includes(weekday(date)) || usedDates.has(date)) continue;
-      const time = table.times.map((t) => `${t}:00`).find((t) => !(d === 0 && t <= cur.time) && !taken.has(`${date} ${t}`));
-      if (!time) continue;
-      taken.add(`${date} ${time}`); usedDates.add(date);
-      return { date, time };
+    for (let d = allowToday ? 0 : 1; d < 400; d++) {
+      const date = addDays(nowIn(tz, now).date, d);
+      const cur = nowIn(tz, now);
+      const { times, source } = dayTimes(weekday(date), { best, research, network });
+      for (const t of times) {
+        if (d === 0 && t <= cur.time) continue;
+        const local = tz === audienceTz ? { date, time: t } : convertZoned(date, t, tz, audienceTz);
+        const used = byDate[local.date] || [];
+        if (used.length >= n) break;
+        if (used.some((u) => Math.abs(minutes(u) - minutes(local.time)) < 180)) continue;
+        (byDate[local.date] ||= []).push(local.time);
+        taken.add(`${local.date} ${local.time}`);
+        return { ...local, source };
+      }
     }
     return null;
   };
@@ -487,12 +487,8 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
     const t = catalogSchedule(p, networkKeys, brand.audience_timezone) || sentTime(p, brand.audience_timezone);
     if (t && validDate(t.date) && validTime(t.time)) taken.add(`${t.date} ${t.time}`);
   }
-  // cadence.slots (when the brand lists any) override the automatic times.
-  const hasSlots = Array.isArray(social.cadence?.slots) && social.cadence.slots.length > 0;
-  const nextSlot = hasSlots
-    ? slotPicker(social.cadence.slots, brand.audience_timezone, taken, { allowToday: !!args['allow-today'], now })
-    : autoPicker(networks[0], social.cadence?.posts_per_week, brand.audience_timezone, taken, { allowToday: !!args['allow-today'], now });
-  const slotSource = hasSlots ? 'cadence.slots' : `tự động (${networks[0]}, ${brand.audience_timezone})`;
+  // Posting times: Metricool's best times, else the research table; posts_per_day a day. cadence.slots is ignored.
+  const nextSlot = timePicker({ brandId: brand.id, network: networks[0], perDay: postsPerDay(social.cadence), audienceTz: brand.audience_timezone, taken, allowToday: !!args['allow-today'], now });
   const override = args.date && args.date !== true ? { date: String(args.date), time: normTime(args.time === true ? '' : args.time || '') } : null;
 
   const items = [];
@@ -500,8 +496,8 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
     const own = catalogSchedule(p, networkKeys, brand.audience_timezone);
     let when = own ? { ...own, source: 'catalog schedule' } : null;
     if (!when && override) when = { ...override, source: '--date/--time' };
-    if (!when) { const s = nextSlot(); if (s) when = { ...s, source: slotSource }; }
-    if (!when) { problems.push(`${p.id}: không tìm được giờ đăng (catalog schedule, ${slotSource}, --date/--time).`); continue; }
+    if (!when) { const s = nextSlot(); if (s) when = s; }
+    if (!when) { problems.push(`${p.id}: no posting time found (catalog schedule, best times, --date/--time).`); continue; }
     const planned = { date: when.date, time: when.time, timezone: brand.audience_timezone };
     const images = list(p.media_url), video = list(p.video_url);
     if (images.length && video.length) { problems.push(`${p.id}: có cả media_url và video_url; Metricool không trộn ảnh với video.`); continue; }

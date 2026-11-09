@@ -97,7 +97,7 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   assert.ok(!/AI/i.test(p1.Text), 'no AI disclosure text');
   // Slots are planned in cadence.timezone (LA) and written in the Metricool timezone (Asia/Ho_Chi_Minh).
   const m1 = r.posts.find((x) => x.post === 'POST-01');
-  assert.match(m1.planned.time, /^(10:00:00|19:30:00)$/, 'time from cadence slot');
+  assert.equal(m1.time_source, 'research default', 'no Metricool best times here: the research table (config/best-times.json)');
   assert.equal(m1.planned.timezone, 'America/Los_Angeles');
   assert.deepEqual({ date: p1.Date, time: p1.Time }, lib.convertZoned(m1.planned.date, m1.planned.time, 'America/Los_Angeles', 'Asia/Ho_Chi_Minh'));
   assert.match(m1.time_note, /America\/Los_Angeles = .* Asia\/Ho_Chi_Minh trong Metricool/);

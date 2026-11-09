@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "note": "Research default posting times, used only when Metricool has no best-time data for the brand (getBestTimeToPostByNetwork). Per network and weekday, hours ranked best first, in the audience's local time (US audience: America/New_York). Built from the studies in sources; see docs/metricool.md, 'Giờ đăng'.",
+  "sources": [
+    { "name": "Sprout Social, Best times to post on Facebook (data Nov 27, 2025 to Feb 27, 2026, ~2 billion engagements, ~307,000 profiles, local time)", "url": "https://sproutsocial.com/insights/best-times-to-post-on-facebook/" },
+    { "name": "Buffer, Best time to post on Facebook (14+ million posts, local time)", "url": "https://buffer.com/resources/best-time-to-post-on-facebook/" },
+    { "name": "Hootsuite, Best time to post on Facebook (1+ million posts, published Nov 19, 2025, localized)", "url": "https://blog.hootsuite.com/best-time-to-post-on-facebook/" }
+  ],
+  "networks": {
+    "facebook": {
+      "timezone": "America/New_York",
+      "days": {
+        "mon": ["12:00", "21:00", "17:00", "09:00"],
+        "tue": ["08:00", "12:00", "19:00", "15:00"],
+        "wed": ["08:00", "12:00", "18:00", "15:00"],
+        "thu": ["09:00", "12:00", "20:00", "15:00"],
+        "fri": ["08:00", "12:00", "17:00", "20:00"],
+        "sat": ["09:00", "22:00", "12:00", "16:00"],
+        "sun": ["10:00", "13:00", "08:00", "18:00"]
+      }
+    }
+  }
+}
