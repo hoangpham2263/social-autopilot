@@ -123,3 +123,14 @@ Gửi người dùng một tin ngắn, mỗi thương hiệu:
 node scripts/dashboard.mjs
 ```
 Ghi lại `dashboard.html` (tĩnh, chỉ xem) từ `workspace/` và thư mục skill; không sửa gì khác. Chạy cả khi vòng dừng sớm, và sau mỗi lần duyệt/bỏ trong chat. Nhắc người dùng nhấp đúp `dashboard.html` (hoặc `open-dashboard.cmd`) để xem.
+
+## Phụ lục: xuất CSV cho Metricool (không import)
+
+```
+node scripts/metricool-csv.mjs export --brand <id> [--posts POST-01,POST-02] [--draft] [--lang en] [--date YYYY-MM-DD --time HH:MM] --out <file.csv>
+node scripts/metricool-csv.mjs validate <file.csv> [--brand <id>] [--allow-today] [--check-urls]
+```
+- Chỉ bài `approved` có `media_url` (chuỗi hoặc mảng, tối đa 10) hoặc `video_url`. Đúng 99 cột theo `docs/metricool-csv-template.csv`. Không ghi vào thư mục thương hiệu, không gửi gì tới Metricool.
+- `Brand name` = `social.json metricool.brand_name` (nhãn đúng trong Metricool, vd `Dreamy Vows`); giờ theo `metricool.timezone` (timezone của brand trong Metricool), giờ lấy từ catalog `schedule {date, time}`, `--date/--time`, hoặc `cadence.slots`.
+- `validate` báo lỗi theo từng dòng và exit 1 khi có bất kỳ lỗi nào (Metricool sẽ nhập tất cả thành nháp, ngày sai thành "hôm nay giờ hiện tại"). Link ảnh chứa `.webp` bị từ chối.
+- Metricool không chép ảnh ngoài: file trên repo ảnh phải còn đến khi bài đã đăng.
