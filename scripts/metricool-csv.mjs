@@ -421,6 +421,7 @@ export function assertLinked(brand) {
   let list = [];
   try { list = metricoolBrands().brands || []; } catch {}
   const byBlog = brand.blog_id && list.find((b) => String(b.blog_id) === String(brand.blog_id));
+  if (byBlog && (byBlog.excluded || byBlog.removed)) throw new Error(`Metricool brand "${byBlog.name}" is ${byBlog.excluded ? 'excluded' : 'no longer in the account'}: nothing is sent to it.`);
   if (byBlog && (byBlog.skill_id !== brand.id || path.resolve(linkedDir(byBlog)).toLowerCase() !== path.resolve(brand.dir).toLowerCase())) throw new Error(`Brand Metricool "${byBlog.name}" không nối với bộ skill ${brand.id} (Tổng quan: Chọn skill / Ngắt kết nối): không gửi gì lên Metricool.`);
 }
 export function planPosts(args, { now = new Date(), root = settings().skillsRoot, brand = null } = {}) {

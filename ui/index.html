@@ -88,11 +88,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .ref { display: grid; gap: 4px; align-content: start; }
 .ref .thumb { position: relative; }
 .ref .count { position: absolute; right: 4px; bottom: 4px; background: #fff; border: 1px solid var(--line); padding: 0 6px; font-size: 12px; }
-.ref .head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ref .head { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; min-width: 0; white-space: nowrap; }
+.ref .head .title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ref .head .status-tag, .ref .head .btn { flex: 0 0 auto; }
+.ref .head .btn { height: 24px; padding: 0 8px; }
+.ref > .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ref .head .acts { margin-left: auto; }
 .ref .none { aspect-ratio: 1 / 1; display: grid; place-items: center; border: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
 .ref .line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ref .head .status-tag + .status-tag { margin-left: -2px; }
+.ref .reject-box { position: relative; }
+.count-bad { color: rgb(176, 0, 0); }
 /* A click on a card (not on its buttons, links or Caption) opens it in the overlay; Enter too. */
 .card.open-card { cursor: pointer; }
 .card.open-card:hover { border-color: #0078d7; }
@@ -213,8 +219,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   <section class="page" id="page-posts" hidden>
     <div class="toolbar">
       <div><label for="drBrand">Brand</label><select id="drBrand"><option value="">All</option></select></div>
-      <div><label for="drStatus">Show</label><select id="drStatus">
-        <option value="">All</option><option value="review">Needs review</option><option value="working">Making</option><option value="approved">Approved · waiting to send</option><option value="scheduled">Scheduled</option><option value="published">Published</option><option value="failed">Failed</option><option value="rejected">Dropped</option></select></div>
+      <span class="seg" id="drState" role="group" aria-label="Show"></span>
+      <span class="meta" id="drExtra"></span>
     </div>
     <div id="draftList"></div>
   </section>
@@ -239,7 +245,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
       <button class="btn" type="button" id="prEdit">Edit</button>
       <button class="btn" type="button" id="prReset">Reset</button>
-      <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in C:\hoangpq\social-autopilot</span>
+      <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
     </div>
     <textarea class="prompt" id="prText" spellcheck="false" readonly></textarea>
   </section>
@@ -351,7 +357,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const num = (o, k) => o?.[k] || 0;
     const NET = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", linkedin: "LinkedIn", twitter: "X", threads: "Threads", pinterest: "Pinterest", gmb: "Google Business" };
     const net = (n) => NET[n] || n;
-    const mcBrands = arr(b.metricool?.brands);
+    const mcBrands = arr(b.metricool?.brands).filter((m) => !m.removed);
     // Every brand in one list: each Metricool brand (with its skill or not), then each skill not linked to a Metricool
     // brand. "Missing" = everything the brand still needs to run, in plain words; empty = ready.
     const skills = Object.fromEntries(arr(b.brands).map((s) => [s.id, s]));
@@ -396,8 +402,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} new`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} duplicates skipped`, arr(r.pending).length && `unfinished: ${esc(arr(r.pending).join(", "))}`]) : "";
       const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
       const written = arr(x?.written).length;
-      const posts = parts([written && `<a href="#" data-go="posts" data-brand="${esc(id)}">${written} written to the brand</a>`, num(d, "ready") && `<a href="#" data-go="posts" data-review="1" data-brand="${esc(id)}">${num(d, "ready")} need review</a>`, working && `${working} in progress`, failed && `<span class="bad-text">${failed} failed</span>`]) || none;
-      const sent = Object.keys(MC_TEXT).filter((k) => mc[k]).map((k) => `<span class="${k === "error" ? "bad-text" : ""}">${mc[k]} ${MC_TEXT[k]}</span>`).join(" · ");
+      const posted = mc.published || 0, review = num(d, "ready");
+      const go = (k, n, t) => `<a href="#" data-go="posts" data-state="${k}" data-brand="${esc(id)}">${t} (${n})</a>`;
+      const posts = written || review || posted ? [go("review", review, "To review"), go("queued", Math.max(0, written - posted), "Queued"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
       return `<div class="card ${miss.length ? "todo" : "ok"}">
         <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span>${esc(name)}</h3>${actions(row)}</div>
         <dl class="kv">
@@ -406,13 +413,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           ${x ? `<dt>Library</dt><dd>${kho}</dd>
           ${research || blocked ? `<dt>Last research</dt><dd>${research}${blocked}</dd>` : ""}
           <dt>Posts</dt><dd>${posts}</dd>
-          ${sent ? `<dt>Sent</dt><dd>${sent}</dd>` : ""}` : ""}
+` : ""}
           ${miss.length ? `<dt>Missing</dt><dd><ul class="missing" style="margin:0">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
         </dl>
         <div class="picker" data-panel hidden></div>
       </div>`;
     };
-    $("#ovList").innerHTML = rows.map(card).join("") || `<div class="meta">No brands yet.</div>`;
+    const acc = b.metricool || {};
+    const synced = acc.updated_at ? `Metricool brands updated ${esc(String(acc.updated_at).slice(0, 16).replace("T", " "))}` : "Run Create &amp; publish once to load the Metricool brands (it refreshes them from Metricool first).";
+    $("#ovList").innerHTML = `<div class="meta">${synced}</div>` + (rows.map(card).join("") || `<div class="meta">No brands yet.</div>`);
     for (const btn of $$("#ovList [data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
     for (const btn of $$("#ovList [data-unlink]")) btn.onclick = async () => {
       if (!confirm(`Unlink "${btn.dataset.unlink}"? The tool stops making and sending posts for this Metricool brand. The skill folder and the library stay.`)) return;
@@ -430,13 +439,13 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     for (const a of $$("#ovList [data-go]")) a.onclick = (e) => {
       e.preventDefault();
       if (a.dataset.go === "store") { $("#resBrand").innerHTML = `<option value="${esc(a.dataset.brand)}" selected></option>`; store.set("resBrand", a.dataset.brand); }
-      if (a.dataset.go === "posts") { store.set("drBrand", a.dataset.brand); store.set("drStatus", a.dataset.review ? "review" : ""); $("#drStatus").value = a.dataset.review ? "review" : ""; }
+      if (a.dataset.go === "posts") { store.set("drBrand", a.dataset.brand); drState = a.dataset.state || ""; store.set("drState", drState); }
       show(a.dataset.go);
     };
   });
 
   // ----- Edit a brand: only what people change; the rest under Advanced (raw JSON) -----
-  let editing = null, rawMode = false;
+  let editing = null;
   const DAYS = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"], ["sat", "Sat"], ["sun", "Sun"]];
   const slug = (u) => "src-" + u.replace(/^https?:\/\/(www\.)?/, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 40);
   async function openBrand(id) {
@@ -444,24 +453,23 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const r = await getJson(`/api/brand?id=${encodeURIComponent(id)}`).catch(() => offline);
     if (r.error || !r.social) { $("#brandForm").innerHTML = ""; $("#brandTitle").textContent = id; $("#brandMsg").innerHTML = errLine(r.error || RESTART); show("brand"); return; }
     editing = { id, social: r.social, file: r.file };
-    rawMode = false;
-    const s = r.social, pi = s.product_images || {}, rr = pi.reference_redraw || {};
-    const slots = arr(s.cadence?.slots), sources = arr(s.research?.sources);
+    const s = r.social, cad = s.cadence || {};
+    const slots = arr(cad.slots), sources = arr(s.research?.sources), channels = arr(s.channels);
     $("#brandTitle").textContent = s.brand || id;
-    $("#brandForm").innerHTML = `<fieldset id="simple">
+    $("#brandForm").innerHTML = `<fieldset>
       <div class="inline"><label><input type="checkbox" id="fEnabled"${s.enabled ? " checked" : ""}> Run automatically</label>
-        <label title="Redraw a library shop photo with a new scene (scene-swap)"><input type="checkbox" id="fRedraw"${rr.enabled ? " checked" : ""}> Allow scene-swap</label></div>
-      <div class="grid2"><div><label>AI scenes</label><select id="fAi"><option value="null"${pi.ai_scenes_allowed == null ? " selected" : ""}>not decided</option><option value="true"${pi.ai_scenes_allowed === true ? " selected" : ""}>yes</option><option value="false"${pi.ai_scenes_allowed === false ? " selected" : ""}>no</option></select></div></div>
-      <label>Posting times (${esc(s.cadence?.timezone || "-")})</label><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div>
+        <button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">Open skill folder</button></div>
+      <label>Channels</label><div class="inline" id="fChannels">${channels.map((c, i) => `<label><input type="checkbox" data-c="${i}"${c.enabled ? " checked" : ""}> ${esc(c.network)}</label>`).join("") || `<span class="meta">No channels.</span>`}</div>
+      <div class="grid2"><div><label for="fPpw">Posts per week</label><input type="number" id="fPpw" min="0" step="1" value="${esc(cad.posts_per_week ?? "")}"></div></div>
+      <label>Posting times (${esc(cad.timezone || "-")})</label><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div>
       <button class="btn" type="button" id="addSlot">+ Time</button>
-      <label>Sources</label><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
+      <label>Sources</label><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span><button class="btn" type="button" data-rmsrc="1">Remove</button></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
       <div class="slot"><input type="text" id="fNewSrc" placeholder="Add a source: paste the page URL"><button class="btn" type="button" id="addSrc">Add</button></div>
-    </fieldset>
-    <details><summary>Advanced (raw social.json)</summary>
-      <textarea class="prompt" id="fRaw" spellcheck="false">${esc(JSON.stringify(s, null, 2))}</textarea>
-      <div class="meta" id="rawNote">Editing here ignores the fields above when saving.</div></details>`;
+    </fieldset>`;
+    $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
     $("#addSlot").onclick = () => $("#fSlots").insertAdjacentHTML("beforeend", slotRow({ day: "mon", time: "10:00" }));
     $("#fSlots").onclick = (e) => { if (e.target.dataset.rm) e.target.closest(".slot").remove(); };
+    $("#fSources").onclick = (e) => { if (e.target.dataset.rmsrc) { const row = e.target.closest(".slot"); if (row.dataset.i !== undefined) (editing.removed ||= []).push(Number(row.dataset.i)); row.remove(); } };
     $("#addSrc").onclick = () => {
       const u = $("#fNewSrc").value.trim();
       if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">The URL must start with http(s)://</span>`; return; }
@@ -469,33 +477,28 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       $("#fSources").insertAdjacentHTML("beforeend", `<div class="slot"><input type="checkbox" checked disabled><span class="src-url">${esc(u)} <span class="meta">(new, Save to keep)</span></span></div>`);
       $("#fNewSrc").value = ""; $("#brandMsg").textContent = "";
     };
-    $("#fRaw").oninput = () => { rawMode = true; for (const el of $$("#simple input, #simple select, #simple button")) el.disabled = true; $("#rawNote").textContent = "Editing raw JSON: the fields above are off."; };
     show("brand");
   }
   const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" value="${esc(x.time || "")}" placeholder="10:00" style="max-width:80px;flex:0 0 80px"><button class="btn" type="button" data-rm="1">Remove</button></div>`;
   $("#brandBack").onclick = () => show("overview");
   $("#brandSave").onclick = async () => {
     const msg = $("#brandMsg");
-    let social;
-    try {
-      if (rawMode) social = JSON.parse($("#fRaw").value);
-      else {
-        social = JSON.parse(JSON.stringify(editing.social));
-        social.enabled = $("#fEnabled").checked;
-        const pi = (social.product_images ||= {});
-        pi.ai_scenes_allowed = { null: null, true: true, false: false }[$("#fAi").value];
-        (pi.reference_redraw ||= {}).enabled = $("#fRedraw").checked;
-        (social.cadence ||= {}).slots = $$("#fSlots .slot").map((row) => ({ day: $("select", row).value, time: $("input", row).value.trim() })).filter((x) => x.time);
-        const src = (social.research ||= {}).sources ||= [];
-        $$("#fSources .slot[data-i]").forEach((row) => { src[Number(row.dataset.i)].enabled = $("input", row).checked; });
-        for (const a of editing.added || []) if (!src.some((x) => x.id === a.id)) src.push(a);
-      }
-    } catch (e) { msg.innerHTML = `<span class="bad-text">Invalid JSON: ${esc(e.message)}</span>`; return; }
+    const social = JSON.parse(JSON.stringify(editing.social));
+    social.enabled = $("#fEnabled").checked;
+    $$("#fChannels [data-c]").forEach((c) => { social.channels[Number(c.dataset.c)].enabled = c.checked; });
+    const cad = (social.cadence ||= {});
+    const ppw = $("#fPpw").value.trim();
+    if (ppw === "") delete cad.posts_per_week; else cad.posts_per_week = Math.max(0, parseInt(ppw, 10) || 0);
+    cad.slots = $$("#fSlots .slot").map((row) => ({ day: $("select", row).value, time: $("input", row).value.trim() })).filter((x) => x.time);
+    const src = (social.research ||= {}).sources ||= [];
+    $$("#fSources .slot[data-i]").forEach((row) => { src[Number(row.dataset.i)].enabled = $("input", row).checked; });
+    social.research.sources = src.filter((_, i) => !(editing.removed || []).includes(i));
+    for (const a of editing.added || []) if (!social.research.sources.some((x) => x.id === a.id)) social.research.sources.push(a);
     msg.textContent = "Saving and running check-skill…";
     const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { social }).catch(() => offline);
     if (r.error) msg.innerHTML = errLine(r.error);
     else if (!r.saved) msg.innerHTML = `<span class="bad-text" title="${esc(arr(r.errors).join("\n"))}">Not saved; the previous file was kept (${arr(r.errors).length} problems).</span>`;
-    else { msg.innerHTML = `<span class="ok-text">Saved.${r.tool_ready ? " Ready for the tool." : ` Missing ${arr(r.missing).length} items.`}</span>`; editing.added = []; setTimeout(() => show("overview"), 900); }
+    else { msg.innerHTML = `<span class="ok-text">Saved.${r.tool_ready ? " Ready for the tool." : ` Missing ${arr(r.missing).length} items.`}</span>`; editing.added = []; editing.removed = []; setTimeout(() => show("overview"), 900); }
   };
 
   // ----- Library: the research store of each brand, kept apart per brand; "Drop" = never used for posts -----
@@ -531,13 +534,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const list = items.slice(0, resShown);
     $("#resBody").innerHTML = `<div class="meta">${k.total ?? 0} posts · ${k.new ?? 0} new · ${k.used ?? 0} used · ${k.rejected ?? 0} dropped. Showing ${items.length}.</div>${progress}
       <div class="refs" style="margin-top:8px">${list.map((it) => `<div class="card ref" data-id="${esc(it.id)}">
-        ${arr(it.image_paths).length ? `<button class="thumb" type="button" title="View"><img loading="lazy" src="${img(it.image_paths[0])}" alt="">${it.image_paths.length > 1 ? `<span class="count">${it.image_paths.length} images</span>` : ""}</button>` : `<div class="none">No image</div>`}
-        <div class="head"><span>${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>
-          <span class="acts">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : ""}</span></div>
-        <div class="reject-box" hidden><input type="text" placeholder="Reason (optional)"><button class="btn" type="button" data-confirm>Drop</button></div>
-        <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · posted ${esc(it.posted_date)}` : ""} · captured ${esc(String(it.captured || "").slice(0, 10))}${it.post_url ? ` · <a href="${esc(it.post_url)}" target="_blank" rel="noopener">Original</a>` : ""}</div>
-        ${arr(it.used_by).length ? `<div class="meta">Used for: ${esc(it.used_by.join(", "))}</div>` : ""}${it.note ? `<div class="meta">Drop reason: ${esc(it.note)}</div>` : ""}
-        <details><summary>Caption</summary><pre>${esc(it.caption)}</pre></details></div>`).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
+        ${arr(it.image_paths).length ? `<button class="thumb" type="button" title="View"><img loading="lazy" src="${img(it.image_paths[0])}" alt=""></button>` : `<div class="none">No image</div>`}
+        <div class="head"><span class="title">${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : ""}</div>
+        <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · ${esc(it.posted_date)}` : ""}</div></div>`).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
       ${items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}
       <fieldset style="margin-top:12px"><legend>Ideas from the library</legend>${ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Library post</th><th>Status</th><th>Product</th><th>Scene</th><th>Drafts</th></tr></thead><tbody>${ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc(arr(i.drafts).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No ideas yet ("Create & publish" mode).</div>`}</fieldset>`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
@@ -550,8 +549,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         if (res.error) { card.insertAdjacentHTML("beforeend", `<div>${errLine(res.error)}</div>`); return; }
         loadResearch();
       };
-      if ($("[data-reject]", card)) $("[data-reject]", card).onclick = () => { const box = $(".reject-box", card); box.hidden = !box.hidden; if (!box.hidden) $("input", box).focus(); };
-      if ($("[data-confirm]", card)) $("[data-confirm]", card).onclick = () => setStatus("rejected", $(".reject-box input", card).value);
+      if ($("[data-reject]", card)) $("[data-reject]", card).onclick = () => { if (confirm(`Drop ${it.id}? It will never be used for posts.`)) setStatus("rejected", ""); };
       if ($("[data-restore]", card)) $("[data-restore]", card).onclick = () => setStatus("new");
     }
   });
@@ -678,7 +676,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   function buildPrompt() {
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
-    return prBase.replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
+    return prBase.replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
   // The box is as tall as the window allows (flex) and never shorter than its text when there is room.
   function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
@@ -695,6 +693,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (r.error) { $("#prText").value = r.error; return; }
     if (!Array.isArray(r.prompts)) throw new Error("prompts missing");
     promptData = r;
+    hint = baseHint.replace("the tool folder", r.tool_root || "the tool folder"); $("#prMsg").textContent = hint;
     drawPrompt();
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
@@ -703,7 +702,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#prText").oninput = () => store.set(prKey, $("#prText").value);
   $("#prEdit").onclick = () => setEditing($("#prText").readOnly);
   document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
-  const hint = $("#prMsg").textContent;
+  const baseHint = $("#prMsg").textContent;
+  let hint = baseHint;
   const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
   $("#prReset").onclick = () => { regenerate(); flash("Reset."); };
   $("#prCopy").onclick = async () => {
@@ -715,41 +715,62 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const STATUS_TEXT = { ready: "Needs review", approved: "Approved", check_failed: "Failed checks", rejected: "Dropped", needs_prompt: "Making", needs_caption: "Making", generating: "Making", image_failed: "Image failed", preparing: "Making" };
   const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "", image_failed: "c-red", check_failed: "c-red" };
   const MC = (d) => d.brand_post?.metricool;
-  const GROUP = {
-    review: (d) => d.status === "ready" && !d.brand_post,
-    working: (d) => ["needs_prompt", "generating", "needs_caption", "preparing"].includes(d.status),
-    approved: (d) => !!d.brand_post && !["scheduled", "published", "error"].includes(MC(d)),
-    scheduled: (d) => MC(d) === "scheduled", published: (d) => MC(d) === "published",
-    failed: (d) => ["check_failed", "image_failed"].includes(d.status) || MC(d) === "error",
-    rejected: (d) => d.status === "rejected",
+  // What the user sees: To review (passed checks, waiting for Approve/Drop), Queued (approved: waiting for the next run
+  // or scheduled in Metricool), Posted (published). Failed posts stay in their state with a red dot and a short reason;
+  // drafts still being made and dropped posts are not shown (only "N in progress").
+  const failedOf = (d) => (["check_failed", "image_failed"].includes(d.status) ? (arr(d.problems)[0] || d.error || "Failed checks") : MC(d) === "error" ? "Metricool error" : d.brand_post?.host_error ? "Image not hosted" : "");
+  const stateOf = (d) => {
+    if (d.status === "rejected") return "";
+    if (d.brand_post) return MC(d) === "published" ? "posted" : "queued";
+    if (d.status === "ready" || ["check_failed", "image_failed"].includes(d.status)) return "review";
+    return "";
   };
-  const MC_COLOR = { draft: "c-amber", scheduled: "c-green", published: "c-green", error: "c-red" };
+  const STATES = [["review", "To review"], ["queued", "Queued"], ["posted", "Posted"]];
+  // A short title: POST-xx once saved, else the first caption line (or the idea), at most 40 characters.
+  const titleOf = (d) => {
+    if (d.brand_post?.post) return d.brand_post.post;
+    const t = String(arr(arr(d.preview?.posts)[0]?.texts)[0]?.text || d.idea || d.brand || "").split(/\r?\n/).find((l) => l.trim()) || d.id;
+    return t.length > 40 ? t.slice(0, 39).trimEnd() + "…" : t;
+  };
+  let drState = store.get("drState");
   const loadDrafts = safely("#draftList", async () => {
-    const brand = store.get("drBrand"), group = $("#drStatus").value;
+    const brand = store.get("drBrand");
     const r = await getJson(`/api/drafts?brand=${encodeURIComponent(brand || "")}`).catch(() => offline);
     if (r.error) { $("#draftList").innerHTML = errLine(r.error); return; }
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
     $("#drBrand").innerHTML = `<option value="">All</option>` + arr(brandData.brands).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
     const drafts = arr(r.drafts);
-    const list = drafts.filter((d) => !group || GROUP[group]?.(d));
+    const count = (k) => drafts.filter((d) => stateOf(d) === k).length;
+    if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : "queued";
+    $("#drState").innerHTML = STATES.map(([k, t]) => `<button class="btn" type="button" data-state="${k}" aria-pressed="${k === drState}">${t} (${count(k)})</button>`).join("");
+    for (const b of $$("#drState button")) b.onclick = () => { drState = b.dataset.state; store.set("drState", drState); loadDrafts(); };
+    const making = drafts.filter((d) => !stateOf(d) && d.status !== "rejected").length, failed = drafts.filter((d) => stateOf(d) && failedOf(d)).length;
+    $("#drExtra").innerHTML = [failed ? `<span class="count-bad">${failed} failed</span>` : "", making ? `${making} in progress` : ""].filter(Boolean).join(" · ");
+    const list = drafts.filter((d) => stateOf(d) === drState);
     drList = list;
-    const n = (g) => drafts.filter(GROUP[g]).length;
-    const counts = `<div class="meta">${[`${drafts.length} posts`, ...[["review", "need review"], ["working", "making"], ["approved", "approved, waiting to send"], ["scheduled", "scheduled"], ["published", "published"], ["failed", "failed"], ["rejected", "dropped"]].filter(([g]) => n(g)).map(([g, t]) => `${n(g)} ${t}`)].join(" · ")}. Showing ${list.length}.</div>`;
-    $("#draftList").innerHTML = counts + (list.length ? `<div class="refs" style="margin-top:8px">${list.map((d) => {
-      const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", thumb = draftThumb(d), nMedia = arr(d.preview?.media).length;
+    $("#draftList").innerHTML = list.length ? `<div class="refs">${list.map((d) => {
+      const thumb = draftThumb(d), fail = failedOf(d), review = drState === "review" && !fail;
+      const when = plannedOf(d);
+      const meta = [esc(d.brand), fail ? `<span class="bad-text" title="${esc(fail)}">${esc(fail)}</span>` : drState === "queued" ? (when !== "-" ? esc(when) : "next run") : when !== "-" ? esc(when) : ""].filter(Boolean).join(" · ");
       return `<div class="card ref draft" data-id="${esc(d.id)}">
-        ${thumb ? `<button class="thumb" type="button" title="Preview"><img loading="lazy" src="${img(thumb)}" alt="">${nMedia > 1 ? `<span class="count">${nMedia} images</span>` : ""}</button>` : `<div class="none">No image yet</div>`}
-        <div class="head"><span>${esc(bp?.post || d.idea || d.brand)}</span>${stepTag(d)}
-          <span class="acts"><button class="btn" type="button" data-act="preview">Preview</button>${canCancel ? `<button class="btn" type="button" data-act="cancel">Drop</button>` : ""}</span></div>
-        ${canCancel ? `<div class="reject-box" hidden><input class="note" placeholder="Reason (optional)"><button class="btn" type="button" data-act="cancel-go">Drop</button></div>` : ""}
-        <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)}${plannedOf(d) !== "-" ? ` · ${esc(plannedOf(d))}` : ""}</div>
+        ${thumb ? `<button class="thumb" type="button" title="Preview"><img loading="lazy" src="${img(thumb)}" alt=""></button>` : `<div class="none">No image yet</div>`}
+        <div class="head">${fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : ""}<span class="title" title="${esc(titleOf(d))}">${esc(titleOf(d))}</span>${review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ""}</div>
+        <div class="meta">${meta}</div>
         <div class="msg"></div>
       </div>`;
-    }).join("")}</div>` : `<div class="meta">Nothing matches this filter.</div>`);
+    }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
     const cards = $$("#draftList .draft");
     wireCards(cards, (i) => openPreview(list[i], { list, i }));
     cards.forEach((card, i) => {
-      for (const btn of $$("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? openPreview(list[i], { list, i }) : cancelDraft(card, list[i], btn.dataset.act, null));
+      for (const btn of $$("[data-act]", card)) btn.onclick = async () => {
+        const d = list[i], msg = $(".msg", card);
+        if (btn.dataset.act === "drop" && !confirm("Drop this post? It will not be used.")) return;
+        for (const b of $$("[data-act]", card)) b.disabled = true;
+        if (btn.dataset.act === "approve") msg.innerHTML = `<span class="meta">Saving and hosting…</span>`;
+        const res = btn.dataset.act === "approve" ? await postJson("/api/approve", { id: d.id }).catch(() => offline) : await postJson("/api/cancel", { id: d.id, note: "" }).catch(() => offline);
+        if (res.error) { msg.innerHTML = errLine(res.error); for (const b of $$("[data-act]", card)) b.disabled = false; return; }
+        loadDrafts();
+      };
     });
   });
   let drList = [];
@@ -955,8 +976,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const j = drList.findIndex((x) => x.id === d.id), at = j >= 0 ? j : Math.min(nav?.i || 0, drList.length - 1);
     if (at >= 0) openPreview(drList[at], { list: drList, i: at }); else closeOverlay();
   }
-  $("#drStatus").value = store.get("drStatus") || "";
-  $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
   $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
 
   // ----- Settings: Accounts (who is signed in: names only), Requirements (installed tools), then tool settings -----
@@ -999,7 +1018,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     loadAccounts();
   }
   $("#setRecheck").onclick = () => loadAccounts();
-  let mbText = "";
   const loadSettings = safely("#settingsView", async () => {
     loadAccounts();
     const [r, mb] = await Promise.all([getJson("/api/settings"), getJson("/api/metricool-brands")]).catch(() => [offline, {}]);
@@ -1009,10 +1027,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#settingsView").innerHTML = `<dl class="kv">
       ${row("Metricool", "Scheduled at each brand's slot time", "The tool always schedules real posts (no drafts)")}
       ${s.imageHost ? row("Auto-host images", s.imageHost.auto_after_writeback !== false ? "Yes" : "No", "Push the image to the image repo right after the post is written into the brand") : ""}
-      ${row("Metricool brands", `${arr(mb.brands).length}${arr(mb.brands).length ? `: ${esc(arr(mb.brands).map((b) => b.name).join(", "))}` : ""}`)}</dl>`;
+      ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
     const num = (k, v, label, tip = "") => `<div><label title="${esc(tip || label)}">${esc(label)}</label><input type="number" min="0" step="1" data-s="${k}" value="${esc(v)}"></div>`;
     const text = (k, v, label, tip) => `<div class="wide"><label title="${esc(tip)}">${esc(label)}</label><input data-s="${k}" value="${esc(v)}" title="${esc(tip)}"></div>`;
-    mbText = JSON.stringify(mb, null, 2);
     $("#settingsForm").innerHTML = `<div class="set-grid">
       ${s.imageHost ? `<div><label class="check" title="Push the image right after the post is written into the brand"><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> Auto-host images</label></div>` : ""}
       </div>
@@ -1027,7 +1044,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         <div><label title="Used for watermarks and reading WebP when deduping">ffmpeg command</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
         ${text("remove_watermark.script", s.remove_watermark?.script || "", "Metadata script", "Image metadata cleaner (remove-watermark-skill)")}
         ${s.imageHost ? text("imageHost.path", s.imageHost.path || "", "Image repo", "Image repo folder (imageHost.path)") + text("imageHost.rawBase", s.imageHost.rawBase || "", "Public link base", "Public link base of the images (imageHost.rawBase, https)") : ""}
-        <div class="wide"><label title="Metricool brands: name, blog_id, timezone, networks, skill_id or null, skill_path">Metricool brands (JSON)</label><textarea class="prompt" id="mbJson" spellcheck="false">${esc(mbText)}</textarea></div>
         </div></details>`;
   });
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Edit" : "Close"; };
@@ -1039,12 +1055,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       let o = out; for (const p of parts.slice(0, -1)) o = o[p] ||= {};
       o[parts.at(-1)] = v;
     }
-    let mb = null;
-    const mbRaw = $("#mbJson").value;
-    if (mbRaw !== mbText) { try { mb = JSON.parse(mbRaw); } catch (e) { $("#settingsMsg").innerHTML = `<span class="bad-text">Invalid Metricool brands JSON: ${esc(e.message)}</span>`; return; } }
     const r = await postJson("/api/settings", { settings: out }).catch(() => offline);
-    const m = !r.error && mb ? await postJson("/api/metricool-brands", mb).catch(() => offline) : {};
-    const err = r.error || m.error;
+    const err = r.error;
     $("#settingsMsg").innerHTML = err ? errLine(err) : `<span class="ok-text">Saved.</span>`;
     if (!err) { $("#settingsEditor").hidden = true; $("#settingsEdit").textContent = "Edit"; loadSettings(); }
   };

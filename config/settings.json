@@ -17,7 +17,7 @@
   },
   "imageHost": {
     "type": "github-repo",
-    "path": "C:\\hoangpq\\social-autopilot-sources",
+    "path": "../social-autopilot-sources",
     "pagesBase": "",
     "rawBase": "https://raw.githubusercontent.com/hoangpham2263/social-autopilot-sources/main",
     "branch": "main",
@@ -32,7 +32,7 @@
     "command": "ffmpeg"
   },
   "remove_watermark": {
-    "script": "C:/hoangpq/remove-watermark-skill/scripts/strip-png-metadata.mjs",
+    "script": "../remove-watermark-skill/scripts/strip-png-metadata.mjs",
     "providers": {
       "codex": "chatgpt"
     }

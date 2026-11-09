@@ -27,12 +27,12 @@ const run = (...args) => {
 };
 const addDays = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const FUTURE = addDays(30);
-const IMG = (n) => `https://hoangpham.is-a.dev/social-autopilot-sources/testbrand/2026/11/post-${n}.png`;
+const IMG = (n) => `https://raw.githubusercontent.com/example/sources/main/testbrand/2026/11/post-${n}.png`;
 const catalog = () => JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
 
 write(path.join(ws, 'metricool-brands.json'), JSON.stringify({ version: 1, brands: [
   { name: 'Test Brand', blog_id: '1111', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'testbrand' },
-  { name: 'Fortera Apparel', blog_id: '<blog_id_1>', timezone: 'America/New_York', networks: ['facebook'], skill_id: null },
+  { name: 'Other Brand', blog_id: '2222', timezone: 'America/New_York', networks: ['facebook'], skill_id: null, excluded: true },
 ] }));
 
 function setup({ posts, metricool = { brand_name: 'Test Brand', blog_id: '1111' }, channels = [{ network: 'facebook', lang: ['en'], enabled: true }], en } = {}) {
@@ -122,7 +122,7 @@ test('payload: draft false; instagram gets instagramData isAiGenerated false; vi
   assert.doesNotMatch(r.items[0].record, /--draft/);
 });
 
-test('payload: refuses an AI label, a past time, Fortera and unknown networks', () => {
+test('payload: refuses an AI label, a past time, an excluded brand and unknown networks', () => {
   setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } }], en: 'Hello\n\n#AIgenerated #TestBrand' });
   let r = run('payload', '--brand', 'testbrand');
   assert.equal(r.ok, false);
@@ -133,10 +133,10 @@ test('payload: refuses an AI label, a past time, Fortera and unknown networks', 
   assert.equal(r.ok, false);
   assert.match(r.error, /đã qua/);
 
-  setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }], metricool: { brand_name: 'Fortera Apparel', blog_id: '<blog_id_1>' } });
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }], metricool: { brand_name: 'Other Brand', blog_id: '2222' } });
   r = run('payload', '--brand', 'testbrand');
   assert.equal(r.ok, false);
-  assert.match(r.error, /Fortera/);
+  assert.match(r.error, /excluded/);
 
   setup({ posts: [{ id: 'POST-01', media_url: IMG(1) }], channels: [{ network: 'tiktok', lang: ['en'], enabled: true }] });
   r = run('payload', '--brand', 'testbrand');
@@ -193,7 +193,7 @@ test('record: always scheduled (schedule.<network> + status); a legacy Metricool
   assert.equal(st.query.toDate, '2026-12-19T23:59:59');
   assert.equal(st.query.timezone, 'Indian/Christmas');
 
-  // record refuses posts that are not approved/scheduled and Fortera
+  // record refuses posts that are not approved/scheduled
   r = run('record', '--brand', 'testbrand', '--post', 'POST-09', '--id', '1', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
   assert.equal(r.ok, false);
 });
@@ -221,4 +221,32 @@ test('payload: a failing post is blocked, the others still go; an old settings d
   try {
     assert.equal(run('payload', '--brand', 'testbrand').draft, false);
   } finally { fs.rmSync(path.join(ws, 'settings.json'), { force: true }); }
+});
+
+test('sync-brands: getBrandSettings rewrites the brand list, keeps skill links and excluded by blogId, flags removed brands', () => {
+  const file = path.join(ws, 'metricool-brands.json');
+  const before = fs.readFileSync(file, 'utf8');
+  try {
+    const answer = path.join(ws, 'brand-settings.json');
+    write(answer, JSON.stringify({ data: [
+      { id: 1111, label: 'Test Brand Renamed', timezone: 'Asia/Ho_Chi_Minh', userId: 42, facebook: 'page-1', instagram: '' },
+      { id: 3333, label: 'New Brand', timezone: 'Europe/Paris', networks: ['facebook', 'instagram'] },
+    ] }));
+    const r = run('sync-brands', '--from', answer);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const by = Object.fromEntries(saved.brands.map((b) => [b.blog_id, b]));
+    assert.equal(by['1111'].name, 'Test Brand Renamed');
+    assert.equal(by['1111'].skill_id, 'testbrand', 'skill link kept by blogId');
+    assert.deepEqual(by['1111'].networks, ['facebook']);
+    assert.equal(by['1111'].timezone, 'Asia/Ho_Chi_Minh');
+    assert.equal(by['3333'].skill_id, null);
+    assert.deepEqual(by['3333'].networks, ['facebook', 'instagram']);
+    assert.equal(by['2222'].removed, true);
+    assert.equal(by['2222'].excluded, true);
+    assert.equal(saved.account.user_id, '42');
+    assert.ok(saved.updated_at);
+    assert.deepEqual(r.added, ['New Brand']);
+    assert.equal(run('sync-brands', '--from', path.join(ws, 'missing.json')).ok, false);
+  } finally { fs.writeFileSync(file, before); }
 });

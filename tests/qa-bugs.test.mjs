@@ -57,3 +57,23 @@ test('QA: saveSettings keeps machine values for keys not sent', () => {
   assert.equal(path.resolve(saved.imageHost.path), path.resolve(host), 'imageHost.path reset to the default repo');
   assert.equal(saved.imageHost.verify.attempts, 1, 'imageHost.verify reset to defaults');
 });
+
+test('queue: a written post whose catalog entry is missing does not crash writtenPost/queueReport', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-queue-'));
+  const ws2 = path.join(dir, 'workspace'), sk = path.join(dir, 'skills'), brandDir = path.join(sk, 'qb-skills');
+  const w = (f, x) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, typeof x === 'string' ? x : JSON.stringify(x)); };
+  w(path.join(brandDir, 'SKILL.md'), '# q'); w(path.join(brandDir, 'project', 'project.md'), '# q');
+  w(path.join(brandDir, 'project', 'social.json'), { brand: 'QB', enabled: true, channels: [{ network: 'facebook', enabled: true, lang: ['en'] }], cadence: { timezone: 'Asia/Ho_Chi_Minh' } });
+  w(path.join(brandDir, 'scripts', 'check-skill.mjs'), "console.log('ok')");
+  w(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [] });
+  const d = path.join(ws2, 'drafts', 'qb', 'qb-20261109-01');
+  w(path.join(d, 'draft.json'), { id: 'qb-20261109-01', brand: 'qb', brand_dir: brandDir, inspiration: {}, languages: ['en'] });
+  w(path.join(d, 'status.json'), { status: 'approved', brand_post: { id: 'POST-09', folder: path.join(brandDir, 'workspace', 'posts', 'POST-09'), catalog: path.join(brandDir, 'workspace', 'catalog.json') } });
+  const r = spawnSync(process.execPath, [path.join(tool, 'scripts', 'queue.mjs')], { env: { ...process.env, SA_WORKSPACE: ws2, SA_SKILLS_ROOT: sk }, encoding: 'utf8', windowsHide: true });
+  const j = JSON.parse(r.stdout);
+  assert.equal(j.ok, true, r.stdout);
+  const written = j.brands.find((b) => b.brand === 'qb').written;
+  assert.equal(written.length, 1);
+  assert.ok(Array.isArray(written[0].metricool_sent));
+  fs.rmSync(dir, { recursive: true, force: true });
+});

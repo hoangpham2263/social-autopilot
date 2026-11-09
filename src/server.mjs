@@ -18,7 +18,7 @@ import { readSocial, saveSocial } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile } from "../scripts/store.mjs";
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
-import { listSources, DEFAULT_SOURCE } from "../scripts/skills.mjs";
+import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -202,7 +202,7 @@ async function handle(req, res) {
     return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, sources: b.sources || [], posts_per_week: b.posts_per_week ?? null })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, sources: b.sources || [], posts_per_week: b.posts_per_week ?? null })) }));
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
   // Optional "Bỏ" of a generated post before it is written into the brand (finalize.mjs cancel). Nothing waits for it.
@@ -221,6 +221,14 @@ async function handle(req, res) {
     if (x && !x.ok) throw new Error(x.error || "Not approved.");
     return { id, brand_post: x?.brand_post || null, image_host: x?.image_host || null };
   });
+  // Brand edit page, "Open skill folder": everything beyond the few fields of the app is edited there.
+  if (path === "/api/open-skill" && req.method === "POST") return api(res, async () => {
+    const id = String((await body(req)).id || "");
+    const b = discovered().brands.find((x) => x.id === id);
+    if (!b) throw new Error(`Unknown brand "${id}".`);
+    spawn(process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open", [b.dir], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+    return { ok: true };
+  });
   if (path === "/api/settings" && req.method === "GET") return api(res, () => ({ settings: rawSettings(), skillsRootResolved: settings().skillsRoot }));
   if (path === "/api/settings" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
@@ -231,8 +239,8 @@ async function handle(req, res) {
   // POST (session token), so no other page can list folders on this machine.
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
-  if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: DEFAULT_SOURCE }));
-  if (path === "/api/skills/sources" && req.method === "POST") return api(res, async () => listSources(String((await body(req)).from || "").trim() || DEFAULT_SOURCE));
+  if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: defaultSource() }));
+  if (path === "/api/skills/sources" && req.method === "POST") return api(res, async () => listSources(String((await body(req)).from || "").trim() || defaultSource()));
   if (path === "/file") return allowedFile(get("path")) ? sendFile(res, resolve(get("path"))) : (res.writeHead(404), res.end());
   // Cấu hình, Cập nhật, Tải lại (core/assets/hub.js). The Cấu hình page gets the session token like the main page.
   if (path === "/setup" && req.method === "GET") return sendHtml(res, join(root, "core", "setup", "page.html"));

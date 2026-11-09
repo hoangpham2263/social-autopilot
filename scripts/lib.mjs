@@ -168,10 +168,19 @@ export function saveSettings(input = {}) {
   });
 }
 
-// ----- Metricool brands: config/metricool-brands.json (defaults, in git) or workspace/metricool-brands.json (this machine) -----
-// The plan has no API, so the account's brands are listed by hand (name, blog_id, timezone, networks, skill_id or null).
-export const metricoolFile = () => { const own = path.join(workspace, 'metricool-brands.json'); return fs.existsSync(own) ? own : path.join(toolRoot, 'config', 'metricool-brands.json'); };
-export const metricoolBrands = () => readJson(metricoolFile());
+// ----- Metricool brands: workspace/metricool-brands.json (this machine and this Metricool account; never in git) -----
+// Refreshed at the start of every Create & publish run from the agent's Metricool getBrandSettings (metricool-mcp.mjs
+// sync-brands), so the tool works with any account. Each brand: name, blog_id, timezone, networks, skill_id/skill_path
+// (link to a brand skill, set on Overview), excluded (never send anything to it), removed (gone from the account).
+// config/metricool-brands.example.json shows the shape. No file yet = no brands ("Run once to load Metricool brands").
+export const metricoolFile = () => path.join(workspace, 'metricool-brands.json');
+export const metricoolBrands = () => readJson(metricoolFile(), { version: 1, account: {}, brands: [], never_synced: true });
+// A Metricool blog the tool must never create or change posts for: marked excluded, or gone from the account.
+export function excludedBlog(blogId) {
+  let list = [];
+  try { list = metricoolBrands().brands || []; } catch {}
+  return list.find((b) => String(b.blog_id) === String(blogId) && (b.excluded === true || b.removed === true)) || null;
+}
 export function saveMetricoolBrands(input) {
   const list = Array.isArray(input?.brands) ? input.brands : null;
   if (!list) throw new Error('Thiếu danh sách brands.');
@@ -186,7 +195,7 @@ export function saveMetricoolBrands(input) {
     if (!Number.isInteger(n) || n < 1) throw new Error('account.brand_limit phải là số nguyên >= 1.');
     account.brand_limit = n;
   }
-  if (account.brand_limit && list.length > account.brand_limit) throw new Error(`Gói Metricool chỉ có ${account.brand_limit} brand (account.brand_limit), danh sách có ${list.length}.`);
+  if (account.brand_limit && list.filter((b) => !b?.removed).length > account.brand_limit) throw new Error(`Gói Metricool chỉ có ${account.brand_limit} brand (account.brand_limit), danh sách có ${list.length}.`);
   const names = new Set(), skills = new Set();
   const brands = list.map((b, i) => {
     if (!b || typeof b !== 'object') throw new Error(`Brand thứ ${i + 1} không hợp lệ.`);
@@ -201,13 +210,54 @@ export function saveMetricoolBrands(input) {
     if (skill_id) { if (skills.has(skill_id)) throw new Error(`skill_id "${skill_id}" gắn cho hơn một brand.`); skills.add(skill_id); }
     // skill_path (optional): the linked skill folder when it is not a sub-folder of skillsRoot (Tổng quan, Chọn skill).
     const skill_path = skill_id && typeof b.skill_path === 'string' && b.skill_path.trim() ? b.skill_path.trim() : undefined;
-    return { name, blog_id: String(b.blog_id || '').trim(), timezone, networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id, ...(skill_path ? { skill_path } : {}), last_checked: String(b.last_checked || '').trim() };
+    return { name, blog_id: String(b.blog_id || '').trim(), timezone, networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id, ...(skill_path ? { skill_path } : {}),
+      ...(b.excluded === true ? { excluded: true } : {}), ...(b.removed === true ? { removed: true } : {}), last_checked: String(b.last_checked || '').trim() };
   });
-  const next = { version: 1, account, brands };
+  const next = { version: 1, account, brands, ...(input.updated_at || current.updated_at ? { updated_at: String(input.updated_at || current.updated_at) } : {}) };
   const file = path.join(workspace, 'metricool-brands.json');
   withLock(file, () => writeJson(file, next));
   return next;
 }
+// sync-brands: the agent's Metricool getBrandSettings answer (any JSON shape it returns: an array, or { data | brands |
+// items: [...] }) rewrites workspace/metricool-brands.json. Kept per blog_id: skill_id/skill_path (the skill links),
+// excluded. A brand gone from the account stays listed with removed: true (and is never sent to); new brands come in
+// unlinked. Only names/ids/timezones/networks are read; nothing that looks like a token is stored.
+const NET_KEYS = ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok', 'youtube', 'pinterest', 'threads', 'bluesky', 'gmb'];
+export function parseBrandSettings(raw) {
+  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const list = Array.isArray(data) ? data : [data?.data, data?.brands, data?.items, data?.result, data?.data?.brands].find(Array.isArray) || (data && (data.id || data.blogId) ? [data] : []);
+  return list.filter((b) => b && typeof b === 'object').map((b) => {
+    const nets = Array.isArray(b.networks) ? b.networks.map((n) => (typeof n === 'string' ? n : n?.network || n?.name)).filter(Boolean)
+      : NET_KEYS.filter((k) => { const v = b[k] ?? b[`${k}Connected`] ?? b[`${k}Account`]; return v && v !== 'false' && !(typeof v === 'object' && !Object.keys(v).length); });
+    return {
+      blog_id: String(b.blogId ?? b.blog_id ?? b.id ?? '').trim(),
+      name: String(b.label ?? b.title ?? b.name ?? b.brandName ?? '').trim(),
+      timezone: String(b.timezone ?? b.timeZone ?? '').trim(),
+      networks: [...new Set(nets.map((n) => String(n).toLowerCase()))],
+      user_id: String(b.userId ?? b.ownerUserId ?? b.user_id ?? '').trim(),
+    };
+  }).filter((b) => b.blog_id && b.name);
+}
+export function syncMetricoolBrands(raw, now = new Date()) {
+  const found = parseBrandSettings(raw);
+  if (!found.length) throw new Error('No Metricool brands found in the getBrandSettings answer.');
+  const cur = metricoolBrands();
+  const old = new Map((cur.brands || []).map((b) => [String(b.blog_id), b]));
+  const brands = found.map((f) => {
+    const o = old.get(f.blog_id) || {};
+    const timezone = validTimeZone(f.timezone) ? f.timezone : validTimeZone(o.timezone) ? o.timezone : 'UTC';
+    return { name: f.name, blog_id: f.blog_id, timezone, networks: f.networks.length ? f.networks : (o.networks || []), skill_id: o.skill_id || null,
+      ...(o.skill_path ? { skill_path: o.skill_path } : {}), ...(o.excluded === true ? { excluded: true } : {}), last_checked: today(TOOL_TZ, now) };
+  });
+  const removed = (cur.brands || []).filter((b) => !found.some((f) => f.blog_id === String(b.blog_id))).map((b) => ({ ...b, removed: true, skill_id: b.skill_id || null }));
+  const user = found.find((f) => f.user_id)?.user_id;
+  const account = { ...(cur.account || {}), ...(user ? { user_id: user } : {}), synced_at: now.toISOString() };
+  // Names must stay unique: a removed brand that shares a name with a current one gets a suffix.
+  for (const r of removed) if (brands.some((b) => b.name.toLowerCase() === r.name.toLowerCase())) r.name = `${r.name} (removed ${r.blog_id})`;
+  const saved = saveMetricoolBrands({ version: 1, account, brands: [...brands, ...removed], updated_at: now.toISOString() });
+  return { ...saved, added: brands.filter((b) => !old.has(b.blog_id)).map((b) => b.name), removed: removed.map((b) => b.name) };
+}
+
 // A brand skill folder: SKILL.md, project/project.md and project/social.json. Its id is the folder name without -skills.
 export const SKILL_FILES = ['SKILL.md', 'project/project.md', 'project/social.json'];
 export const isSkillDir = (dir) => SKILL_FILES.every((f) => fs.existsSync(path.join(dir, f)));
@@ -269,7 +319,7 @@ export function brandOverview(found = discoverBrands()) {
     const skill_path_missing = !!(m.skill_id && !isSkillDir(dir));
     return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone, metricool_timezone: skill.metricool_timezone || '' } : null, skill_missing: !!(m.skill_id && !skill), skill_path_missing, tz_mismatch, tz_conflict };
   });
-  return { account: cfg.account || {}, brands, skills_without_metricool: found.brands.filter((b) => !used.has(b.id)).map((b) => ({ id: b.id, brand: b.brand })) };
+  return { account: cfg.account || {}, updated_at: cfg.updated_at || null, never_synced: !cfg.updated_at, brands, skills_without_metricool: found.brands.filter((b) => !used.has(b.id)).map((b) => ({ id: b.id, brand: b.brand })) };
 }
 
 // ----- text cleaning -----

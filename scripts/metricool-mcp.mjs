@@ -14,15 +14,15 @@
 // sent again as a scheduled post. A post whose check-post.mjs fails is blocked, the others go.
 // The output is plain JSON for any agent's Metricool tool (Claude connector, ChatGPT connector, Codex MCP server).
 // Text = posted languages only (never language_policy.review_langs), never any AI label. Media must be public https links
-// (MCP copies them to static.metricool.com). Fortera Apparel (blogId <blog_id_1>, no skill) is never a target.
+// (MCP copies them to static.metricool.com). A Metricool brand marked excluded (or removed) in
+// workspace/metricool-brands.json is never a target.
+//   node scripts/metricool-mcp.mjs sync-brands --from <file with the getBrandSettings JSON>   (first step of every run)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, excludedBlog, syncMetricoolBrands } from './lib.mjs';
 import { planPosts, findBrand, sentNetworks, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
 
-// Never created/changed from this tool: Metricool brands that are not a skill of this tool (Fortera Apparel).
-export const FORBIDDEN_BLOG_IDS = ['<blog_id_1>'];
 // Networks whose createScheduledPost shape is known (facebookData / instagramData). Others: use the CSV route.
 export const MCP_NETWORKS = ['facebook', 'instagram'];
 const normTime = (t) => (/^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t);
@@ -36,11 +36,12 @@ export function offsetOf(date, time, tz) {
 }
 export const isoWithOffset = (date, time, tz) => `${date}T${normTime(time)}${offsetOf(date, time, tz)}`;
 
-// The brand's Metricool blogId, refusing any blog that belongs to another brand (or to no skill, like Fortera).
+// The brand's Metricool blogId, refusing an excluded/removed blog and any blog that belongs to another brand.
 export function targetBlog(brand) {
   const blog = brand.blog_id;
   if (!blog) throw new Error(`${brand.id}: chưa có Metricool blogId (social.json metricool.blog_id hoặc config/metricool-brands.json).`);
-  if (FORBIDDEN_BLOG_IDS.includes(blog)) throw new Error(`blogId ${blog} là Fortera Apparel: không bao giờ tạo/sửa bài cho brand này.`);
+  const ex = excludedBlog(blog);
+  if (ex) throw new Error(`blogId ${blog} ("${ex.name}") is ${ex.excluded ? 'excluded' : 'no longer in the Metricool account'}: never create or change posts for it.`);
   let owners = [];
   try { owners = (metricoolBrands().brands || []).filter((b) => String(b.blog_id) === blog); } catch {}
   const other = owners.find((b) => b.skill_id !== brand.id);
@@ -113,7 +114,7 @@ function runPayload(args) {
     brand: x.brand.id, blog_id: x.blogId, metricool_brand: x.brand.brand_name, audience_timezone: x.brand.audience_timezone, draft: x.draft,
     languages: x.plan.langs, networks: x.plan.networkKeys, items: x.items, blocked: x.blocked, skipped: x.plan.skipped, warnings: x.plan.warnings,
     next: x.items.length
-      ? 'Với từng item: gọi tool MCP Metricool createScheduledPost với đúng args (blogId, date, info; không sửa info), rồi chạy lệnh record với id, uuid, plannerUrl, publicationDate.dateTime, publicationDate.timezone Metricool trả về. Không bao giờ dùng blogId khác (Fortera <blog_id_1> cấm).'
+      ? 'Với từng item: gọi tool MCP Metricool createScheduledPost với đúng args (blogId, date, info; không sửa info), rồi chạy lệnh record với id, uuid, plannerUrl, publicationDate.dateTime, publicationDate.timezone Metricool trả về. Không bao giờ dùng blogId khác args.blogId.'
       : 'Không có bài nào cần gửi.',
   });
 }
@@ -216,6 +217,11 @@ if (isMain(import.meta.url)) main(async () => {
     if (cmd === 'payload') runPayload(args);
     else if (cmd === 'record') out(record(args));
     else if (cmd === 'status') out(status(args));
-    else fail('Lệnh: payload --brand <id> [--posts POST-01,...] | record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url> --publication <dateTime> --tz <tz> | status --brand <id>');
+    else if (cmd === 'sync-brands') {
+      const file = need(args, 'from');
+      const r = syncMetricoolBrands(fs.readFileSync(file, 'utf8'));
+      out({ brands: r.brands.map(({ name, blog_id, skill_id, excluded, removed }) => ({ name, blog_id, skill_id, ...(excluded ? { excluded } : {}), ...(removed ? { removed } : {}) })), added: r.added, removed: r.removed, updated_at: r.updated_at });
+    }
+    else fail('Lệnh: payload --brand <id> [--posts POST-01,...] | record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url> --publication <dateTime> --tz <tz> | status --brand <id> | sync-brands --from <file>');
   } catch (e) { fail(e.message, e.problems ? { problems: e.problems } : {}); }
 });

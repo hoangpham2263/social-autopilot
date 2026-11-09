@@ -1,4 +1,4 @@
-// Image cleaning with the remove-watermark skill (C:\hoangpq\remove-watermark-skill, path in config/settings.json
+// Image cleaning with the remove-watermark skill (a sibling folder remove-watermark-skill, path in config/settings.json
 // remove_watermark.script): a copy of the AI image without metadata chunks (C2PA caBX, EXIF, XMP, text), pixels byte for
 // byte the same. Runs right after Codex (draft.mjs image), after a watermark overlay, and again before writeback.
 // Rules of that skill (references/rules.md): metadata only, the original kept, no fake EXIF, local only, and never a
@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { main, out, isMain, parseArgs, need, settings, readJson, findDraft, setStatus, stamp } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, toolRoot, readJson, findDraft, setStatus, stamp } from './lib.mjs';
 
 // Chunks that draw the picture (the skill's KEEP list); anything else left in the output is metadata.
 const PICTURE = new Set(['IHDR', 'PLTE', 'IDAT', 'IEND', 'tRNS', 'iCCP', 'sRGB', 'gAMA', 'cHRM', 'sBIT', 'cICP', 'mDCV', 'cLLI']);
@@ -52,7 +52,8 @@ export function providerFor(generator, s = settings()) {
   if (!fs.existsSync(notes)) throw new Error(`remove-watermark-skill chưa hỗ trợ provider "${provider}" (thiếu ${notes}); không đoán cách xử lý.`);
   return { provider, notes };
 }
-const scriptPath = (s = settings()) => path.resolve(process.env.SA_STRIP_SCRIPT || s.remove_watermark?.script || '');
+// A relative path is from the tool folder (config/settings.json ships "../remove-watermark-skill/...").
+const scriptPath = (s = settings()) => path.resolve(toolRoot, process.env.SA_STRIP_SCRIPT || s.remove_watermark?.script || '');
 
 // The source of image.png: the watermark overlay when one was applied, else the Codex output.
 const sourceOf = (dir, status) => path.join(dir, status.watermark && fs.existsSync(path.join(dir, 'image-watermarked.png')) ? 'image-watermarked.png' : 'image-generated.png');

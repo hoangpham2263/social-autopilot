@@ -7,9 +7,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { main, out, parseArgs, need, isMain, readJson, SKILL_FILES, isSkillDir, skillIdOf, inspectBrand, metricoolBrands, linkMetricool, linkedDir } from './lib.mjs';
+import { main, out, parseArgs, need, isMain, settings, readJson, SKILL_FILES, isSkillDir, skillIdOf, inspectBrand, metricoolBrands, linkMetricool, linkedDir } from './lib.mjs';
 
-export const DEFAULT_SOURCE = 'C:\\hoangpq\\vaniecom-workspace\\skills';
+// Where Find looks first: the skills folder of the settings (skillsRoot); any other folder can be typed in.
+export const defaultSource = () => settings().skillsRoot;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
 const brandName = (dir) => { try { return readJson(path.join(dir, 'project', 'social.json')).brand || ''; } catch { return ''; } };
 
@@ -37,9 +38,9 @@ function readiness(dir) {
 }
 
 // Valid skill folders in <from>: <from> itself when it is one, else its sub-folders and their sub-folders (2 levels, so
-// C:\hoangpq\vaniecom-workspace finds skills\*), each with its readiness and the Metricool brand linked to that folder.
-export async function listSources(from = DEFAULT_SOURCE) {
-  const dir = path.resolve(String(from || DEFAULT_SOURCE));
+// a workspace folder finds its skills sub-folders), each with its readiness and the Metricool brand linked to that folder.
+export async function listSources(from = '') {
+  const dir = path.resolve(String(from || defaultSource()));
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`Folder not found: ${dir}`);
   let links = [];
   try { links = metricoolBrands().brands || []; } catch {}
@@ -68,7 +69,7 @@ export function validate(dir) {
 if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
   const cmd = args._[0];
-  if (cmd === 'list-sources') return out(await listSources(args.from && args.from !== true ? String(args.from) : DEFAULT_SOURCE));
+  if (cmd === 'list-sources') return out(await listSources(args.from && args.from !== true ? String(args.from) : defaultSource()));
   if (cmd === 'validate') return out(validate(need(args, 'path')));
   if (cmd === 'link') return out({ metricool: linkMetricool(need(args, 'brand'), need(args, 'path')) });
   if (cmd === 'unlink') return out({ metricool: linkMetricool(need(args, 'brand'), null) });

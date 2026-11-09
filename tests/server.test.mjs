@@ -19,6 +19,13 @@ const hdr = () => ({ 'content-type': 'application/json', 'x-sa-token': token });
 
 test.before(async () => {
   fs.mkdirSync(path.join(tmp, 'skills'), { recursive: true });
+  // This machine's Metricool brands (fake ids; the real list lives only in workspace/, never in git).
+  fs.mkdirSync(path.join(tmp, 'workspace'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'workspace', 'metricool-brands.json'), JSON.stringify({ version: 1, account: { user_id: '1' }, brands: [
+    { name: 'Brand A', blog_id: '1001', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'dreamyvows' },
+    { name: 'Brand B', blog_id: '1002', timezone: 'Indian/Christmas', networks: ['facebook'], skill_id: 'grenheim' },
+    { name: 'Brand C', blog_id: '1003', timezone: 'America/New_York', networks: ['facebook', 'instagram'], skill_id: null, excluded: true },
+  ] }));
   const real = path.resolve(tool, '..', 'vaniecom-workspace', 'skills', 'grenheim-skills');
   if (fs.existsSync(real)) fs.cpSync(real, path.join(tmp, 'skills', 'grenheim-skills'), { recursive: true, filter: (s) => !/[\\/]workspace[\\/]local([\\/]|$)|[\\/]\.git([\\/]|$)/.test(s) });
   server = spawn(process.execPath, [path.join(tool, 'src', 'server.mjs'), '--no-open'], { env: { ...process.env, SA_PORT: String(port), SA_WORKSPACE: path.join(tmp, 'workspace'), SA_SKILLS_ROOT: path.join(tmp, 'skills') }, stdio: 'ignore' });
@@ -43,12 +50,14 @@ test('serves the page, the shell assets and the data APIs', async () => {
   for (const p of ['/', '/core/assets/tool.css', '/core/assets/hub.js', '/icon.svg', '/setup']) assert.equal((await fetch(base + p)).status, 200, p);
   const brands = await (await fetch(`${base}/api/brands`)).json();
   assert.ok(Array.isArray(brands.brands));
-  // Every brand of the Metricool account is listed, with its skill (or none: Fortera Apparel has no skill yet).
+  // Every brand of the Metricool account is listed, with its skill (or none).
   const names = brands.metricool.brands.map((b) => b.name);
-  assert.deepEqual(names, ['Dreamy Vows', 'Grenheim', 'Fortera Apparel']);
-  const fortera = brands.metricool.brands.find((b) => b.name === 'Fortera Apparel');
-  assert.equal(fortera.skill, null);
-  assert.equal(fortera.tz_mismatch, false);
+  assert.deepEqual(names, ['Brand A', 'Brand B', 'Brand C']);
+  const other = brands.metricool.brands.find((b) => b.name === 'Brand C');
+  assert.equal(other.skill, null);
+  assert.equal(other.excluded, true);
+  assert.equal(other.tz_mismatch, false);
+  assert.equal(brands.metricool.never_synced, true);
   assert.ok(Array.isArray(brands.metricool.skills_without_metricool));
   assert.equal((await (await fetch(`${base}/api/metricool-brands`)).json()).brands.length, 3);
   assert.equal((await (await fetch(`${base}/api/drafts`)).json()).drafts.length, 0);

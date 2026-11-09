@@ -14,7 +14,8 @@ export function promptList(md = fs.readFileSync(path.join(toolRoot, 'docs', 'sch
   for (let m; (m = re.exec(md));) list.push({ mode: m[1].trim(), agent: m[2].trim(), text: m[3].trim() });
   return list;
 }
-export const fillPrompt = (text, brand) => String(text).replace(/\{\{BRAND\}\}/g, brand || ALL_BRANDS);
+// {{TOOL}} = this tool's folder (never a fixed path), {{BRAND}} = the brand or all, {{OPTIONS}} = this run's options.
+export const fillPrompt = (text, brand, options = 'defaults') => String(text).replace(/\{\{TOOL\}\}/g, toolRoot).replace(/\{\{BRAND\}\}/g, brand || ALL_BRANDS).replace(/\{\{OPTIONS\}\}/g, options);
 
 if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();
