@@ -113,3 +113,5 @@ details.select > .options .meta { padding: 4px 10px; }
    centred on both axes at the controls' height. */
 .btn, a.btn, button.btn, nav.tabs button, .seg .btn { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: var(--ctl-h); line-height: 1; padding-top: 0; padding-bottom: 0; vertical-align: middle; }
 .btn > *, nav.tabs button > * { line-height: 1; }
+/* Segoe UI has a deep descender, so text centred by its line box sits low: lift it by moving 2px of the box below. */
+.btn, a.btn, button.btn, nav.tabs button, .seg .btn { padding-bottom: 2px; }
