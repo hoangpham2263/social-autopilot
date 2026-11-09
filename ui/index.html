@@ -666,14 +666,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const research = isResearch(prMode);
     $("#prResearch").hidden = !research;
     $("#prMake").hidden = research;
-    // Sources: the brand's enabled research sources (social.json); none ticked = all of them.
+    // Sources: enabled research sources (social.json) of the chosen brand, or of every brand grouped by brand when
+    // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
     const b = brands.find((x) => x.id === brand);
     const ticked = new Set($$("#prSrc input:checked").map((x) => x.value));
-    $("#prSrc").innerHTML = b ? (arr(b.sources).map((s) => `<label><input type="checkbox" value="${esc(s)}"${ticked.has(s) ? " checked" : ""}>${esc(s)}</label>`).join("") || `<div class="meta">No enabled sources.</div>`)
-      : `<div class="meta">Pick a brand to choose sources.</div>`;
+    const group = (x) => arr(x.sources).map((s) => { const v = `${x.id}:${s}`; return `<label><input type="checkbox" value="${esc(v)}"${ticked.has(v) ? " checked" : ""}>${esc(s)}</label>`; }).join("");
+    const shown = b ? [b] : az(brands.filter((x) => arr(x.sources).length), (x) => x.name || x.id);
+    $("#prSrc").innerHTML = shown.map((x) => `${b ? "" : `<div class="opt-group">${esc(x.name || x.id)}</div>`}${group(x)}`).join("") || `<div class="meta">No enabled sources.</div>`;
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
-    // Sources need one brand: with "All" brands the picker is disabled (and cleared).
-    const box = $("#prSrcBox"); box.classList.toggle("disabled", !b); box.title = b ? "" : "Pick one brand to choose sources"; if (!b) { box.open = false; for (const c of $$("#prSrc input")) c.checked = false; srcLabel(); }
     srcLabel();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
     $("#prCount").placeholder = b?.posts_per_week ? String(b.posts_per_week) : "cadence";
@@ -684,7 +684,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     fitPrompt();
   }
   function srcLabel() {
-    const on = $$("#prSrc input:checked").map((x) => x.value);
+    const on = $$("#prSrc input:checked").map((x) => x.value.split(":").pop());
     $("#prSrcSum").textContent = on.length ? on.join(", ") : "All";
   }
   // This run's options as short lines (only those set); the steps themselves are in RUNBOOK.md.
@@ -692,7 +692,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const lines = [], brand = $("#prBrand").value;
     if (isResearch(prMode)) {
       const src = $$("#prSrc input:checked").map((x) => x.value), max = parseInt($("#prMax").value, 10), kind = $("#prKind").value;
-      if (src.length) lines.push(`sources ${src.join(", ")} (--source ${src.join(",")})`);
+      // Ticked sources per brand; brands with nothing ticked are skipped when some are ticked elsewhere.
+      const per = {}; for (const v of src) { const [bid, s] = v.split(":"); (per[bid] ||= []).push(s); }
+      for (const [bid, list] of Object.entries(per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
+      if (!brand && src.length) lines.push(`only the brands listed above`);
       if (max > 0) lines.push(`at most ${max} posts per source (--max-posts ${max})`);
       if (kind === "backfill") lines.push("backfill older posts (--backfill)");
       if (kind === "full") lines.push("full rescan (--full)");
