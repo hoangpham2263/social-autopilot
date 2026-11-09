@@ -228,7 +228,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     </div>
     <div class="fields" id="prResearch" hidden>
       <div class="field"><span class="label">Sources</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
-      <div class="field"><label for="prSince">Since</label><input type="date" id="prSince"></div>
       <div class="field"><label for="prMax" title="Max posts per source">Max posts</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
       <div class="field"><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
     </div>
@@ -237,8 +236,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     </div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
-      <button class="btn" type="button" id="prEdit">Edit</button>
-      <button class="btn" type="button" id="prReset">Reset</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
     </div>
     <textarea class="prompt" id="prText" spellcheck="false" readonly></textarea>
@@ -653,7 +650,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // ----- Prompt: the short prompts of docs/scheduled-prompt.md (mode x agent); brand and this run's options filled in.
   // The prompt is read-only until Edit; Reset rebuilds it from the template and the options. -----
   let promptData = { prompts: [], brands: [] };
-  let prMode = "", prKey = "", prBase = "";
+  let prMode = "", prBase = "";
   const isResearch = (m) => /research/i.test(m);
   function drawPrompt() {
     const prompts = arr(promptData.prompts), brands = arr(promptData.brands);
@@ -679,12 +676,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
     $("#prCount").placeholder = b?.posts_per_week ? String(b.posts_per_week) : "cadence";
     $("#prCount").title = b?.posts_per_week ? `Brand cadence: ${b.posts_per_week} per week` : "Empty = each brand's cadence";
-    prKey = `prEdit2:${prMode}|${agent}`;
     const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
     prBase = p ? p.text : "";
-    const saved = store.get(prKey);
-    $("#prText").value = saved || buildPrompt();
-    setEditing(false);
+    $("#prText").value = buildPrompt();
     fitPrompt();
   }
   function srcLabel() {
@@ -695,9 +689,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   function options() {
     const lines = [], brand = $("#prBrand").value;
     if (isResearch(prMode)) {
-      const src = $$("#prSrc input:checked").map((x) => x.value), since = $("#prSince").value, max = parseInt($("#prMax").value, 10), kind = $("#prKind").value;
+      const src = $$("#prSrc input:checked").map((x) => x.value), max = parseInt($("#prMax").value, 10), kind = $("#prKind").value;
       if (src.length) lines.push(`sources ${src.join(", ")} (--source ${src.join(",")})`);
-      if (since) lines.push(`posts since ${since} (--since ${since})`);
       if (max > 0) lines.push(`at most ${max} posts per source (--max-posts ${max})`);
       if (kind === "backfill") lines.push("backfill older posts (--backfill)");
       if (kind === "full") lines.push("full rescan (--full)");
@@ -714,14 +707,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   // The box is as tall as the window allows (flex) and never shorter than its text when there is room.
   function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
-  function setEditing(on) {
-    $("#prText").readOnly = !on;
-    $("#prEdit").textContent = on ? "Done" : "Edit";
-    $("#prEdit").setAttribute("aria-pressed", String(on));
-    if (on) $("#prText").focus();
-  }
-  // An option changed: the prompt is rebuilt (an earlier hand edit of this mode x agent is dropped).
-  function regenerate() { store.set(prKey, ""); $("#prText").value = buildPrompt(); setEditing(false); }
+  // An option changed: the prompt is rebuilt (read-only; no hand edits).
+  function regenerate() { $("#prText").value = buildPrompt(); }
   const loadPrompts = safely("#prMsg", async () => {
     const r = await getJson("/api/prompts").catch(() => offline);
     if (r.error) { $("#prText").value = r.error; return; }
@@ -732,14 +719,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
-  for (const id of ["#prSince", "#prMax", "#prKind", "#prCount"]) $(id).onchange = regenerate;
-  $("#prText").oninput = () => store.set(prKey, $("#prText").value);
-  $("#prEdit").onclick = () => setEditing($("#prText").readOnly);
+  for (const id of ["#prMax", "#prKind", "#prCount"]) $(id).onchange = regenerate;
   document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
   const baseHint = $("#prMsg").textContent;
   let hint = baseHint;
   const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
-  $("#prReset").onclick = () => { regenerate(); flash("Reset."); };
   $("#prCopy").onclick = async () => {
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
     flash("Copied.");
