@@ -120,3 +120,38 @@ Khoảng 5 thao tác, vài giây mỗi bước; cả test (gồm kiểm tra, xo�
 - Tool xuất CSV đúng 99 cột: dễ, làm hoàn toàn tự động.
 - Bước import cần trình duyệt đã đăng nhập (Playwright gắn Chrome của người dùng): mở calendar → ⋮ → Import CSV → upload → Import → Accept. Agent hẹn giờ làm được nhưng phụ thuộc phiên Chrome đang mở, giao diện có thể đổi, và một trình duyệt chỉ một agent dùng.
 - Vì import chỉ là `POST /api/v2/scheduler/posts` từ phiên web, về kỹ thuật có thể gọi thẳng bằng token phiên, nhưng đó là API nội bộ (gói Free không có API chính thức) → không nên dựa vào. Đường chính vẫn là MCP; CSV + Playwright là dự phòng, hoặc người dùng tự import file do tool xuất ra.
+
+## 6. Multi-brand CSV schedule test 2026-11-09
+
+Người dùng duyệt: hẹn giờ **thật** (Draft false) cho thứ Sáu 2026-11-13 để kiểm tra; người dùng tự xem và xoá trước giờ đăng. Theo yêu cầu đổi giữa chừng: **không dùng Fortera Apparel** (tài khoản đang chạy), chỉ Grenheim + Dreamy Vows; ảnh chỉ dùng link GitHub (`raw.githubusercontent.com/hoangpham2263/social-autopilot-sources/...`).
+
+**Kết quả: 1 file CSV nhập được cho nhiều brand.** Import từ calendar Grenheim, mỗi dòng vào đúng brand theo cột `Brand name`.
+
+### Brand trong tài khoản (đọc từ `/api/admin/simpleProfiles`)
+| Brand | blogId | Timezone | Mạng đã kết nối |
+|---|---|---|---|
+| Fortera Apparel | <blog_id_1> | America/New_York | Facebook, Instagram, YouTube |
+| Dreamy Vows | <blog_id_2> | Indian/Christmas (UTC+7) | Facebook |
+| Grenheim | <blog_id_3> | Indian/Christmas (UTC+7) | Facebook |
+
+### Bài đã hẹn (KHÔNG xoá, chờ người dùng kiểm tra)
+| Brand | Post id | Mạng | Trạng thái | Giờ đăng |
+|---|---|---|---|---|
+| Grenheim | 421308154 | Facebook (POST) | draft:false, provider PENDING (lịch ghi "Pending", nút "Schedule") | 2026-11-13 11:00 Indian/Christmas = 11:00 giờ VN = 04:00 UTC |
+| Dreamy Vows | 421308155 | Facebook (POST) | như trên | 2026-11-13 11:00 Indian/Christmas = 11:00 giờ VN = 04:00 UTC |
+
+Nội dung: Grenheim = caption POST-06 (coffee-table-gathering, đổi "chair" thành "stool") + ảnh `grenheim/2026/11/post-06.png`; Dreamy Vows = POST-01 (birthday-dinner-neon-sign) + ảnh `dreamyvows/2026/11/post-01.png`. File: `docs/examples/metricool-multibrand-test.csv`. Ảnh chụp: `docs/examples/metricool-multibrand-test/`.
+
+Xoá: mở calendar brand → bấm thẻ bài ngày 13/11 → nút thùng rác → Confirm (vào tab Deleted posts, khôi phục được).
+
+### Phát hiện
+- **Nhiều brand trong 1 CSV: chạy.** Preview hiện tên brand dưới mỗi dòng; request `POST /api/v2/scheduler/posts` gửi `targetBrandId` theo từng dòng (<blog_id_3>, <blog_id_2>) dù đang mở calendar Grenheim. Calendar mỗi brand chỉ hiện bài của brand đó. Fortera không bị đụng (Thứ Sáu trống).
+- **Timezone**: request ghi `timezone: Indian/Christmas` cho cả hai dòng. Hai brand cùng timezone nên chưa phân biệt được Metricool dùng timezone của brand đích hay của calendar đang mở. Nếu trộn brand khác timezone (vd Fortera New_York) cần kiểm tra lại; an toàn nhất là import từ calendar của brand có cùng timezone.
+- **Ảnh raw.githubusercontent.com: được nhận.** Không lỗi ở preview, preview hiện ảnh, thẻ lịch và trang Edit post hiện ảnh + nhãn ALT. Metricool **không** copy về static.metricool.com: `media` vẫn là URL GitHub, `saveExternalMediaFiles:false`; ảnh được tải từ GitHub lúc đăng → file trên GitHub phải còn đến giờ đăng.
+- **Kiểm tra ở preview (luật học được)**:
+  - URL ảnh chứa `.webp` (kể cả CDN Shopify trả JPEG qua `?format=jpg`) → lỗi "Unsupported .webp format. It may cause publishing to fail." Metricool xét chuỗi `.webp` trong URL, không xét content-type. Ảnh sản phẩm Grenheim trên Shopify đều là .webp → không dùng được trực tiếp.
+  - Có lỗi bất kỳ → banner "Some posts have errors. They will be imported as draft. If the post date is invalid, it will be scheduled today at current time." Dòng lỗi có icon đỏ (bấm vào để xem lý do). **Không bấm Import khi còn lỗi**: ngày sai sẽ bị đặt thành "hôm nay giờ hiện tại" (có thể đăng ngay).
+  - Ngày `YYYY-MM-DD` và giờ `HH:mm:ss` khớp mặc định của dropdown Date/Time format; `Draft false`, `Facebook true` viết thường đều được nhận.
+  - `Brand name` khớp đúng nhãn brand (`Grenheim`, `Dreamy Vows`).
+- Bản đầu có dòng Fortera + ảnh Shopify .webp: dừng ở preview, đóng dialog, **không import**.
+- Playwright: tab chạy ở trạng thái `visibilityState: hidden` nên animation menu Vuetify đứng (`pointer-events:none`), click thường không ăn và click force xuyên xuống ô lịch (mở "Create new post", đã Cancel, không lưu). Cách làm: thay `requestAnimationFrame` bằng `setTimeout`, set `pointer-events:auto` cho `.v-overlay__content`, rồi `page.mouse.click` theo toạ độ. Trang calendar đôi khi kẹt "Loading, please wait..." → `bringToFront()` + reload.
