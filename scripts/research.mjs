@@ -2,13 +2,18 @@
 // per enabled source of its own project/social.json (research.sources[]): the agent crawls the source's posts
 // (docs/research.md), this script opens the crawl, tells the agent where to stop, ingests what it saved into the brand's
 // STORE (workspace/store/<brand>/, scripts/store.mjs) and reports. No ideas or drafts in this mode.
-//   node scripts/research.mjs start  --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full]
-//        open (or reopen) today's crawl; writes <source>/known.json (posts already in the store) and each source's stop rule
+//   node scripts/research.mjs start  --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full | --backfill]
+//        open (or reopen) today's crawl; writes <source>/known.json (posts already in the store) and each source's stop rule.
+//        Default: only new posts on top (stop after 3 known in a row). --backfill: the OLDER posts not crawled yet (the
+//        first crawl was cut by --max-posts/--since or stopped early): scroll fast past known posts without opening them,
+//        collect once past the source's oldest_seen, until the end of the page / --since / --max-posts. A source whose
+//        progress says reached_end is skipped by --backfill (nothing older left).
 //   node scripts/research.mjs ingest --brand <id> [--source <sid>] [--date d] [--csv file]
 //        <source>/raw.json + downloaded images -> store (U+034F/zero-width cleaned, duplicates across crawls dropped)
 //   node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|blocked|partial [--note ..]
 //        how the crawl of a source ended (blocked/partial need --note)
-//   node scripts/research.mjs report --brand <id> [--date d]   new posts per source, sources done, sources blocked
+//   node scripts/research.mjs report --brand <id> [--date d]   per source: new on top, backfilled older, reached_end,
+//        whether older posts remain; sources done, sources blocked
 //   node scripts/research.mjs clean  --in <file> [--out <file>]   strip U+034F / zero-width / NBSP from CSV or text
 // The dated folder workspace/runs/<brand>/<date>/ stays as the crawl's log (run.json, known.json, raw.json, raw/,
 // ingest.json). No run or post limits unless the user asks (--since / --max-posts); behaviour safety stays: human-like
@@ -22,10 +27,14 @@ const logFile = () => path.join(workspace, 'research-log.json');
 const readLog = () => { const l = readJson(logFile(), {}); return { runs: l.runs || [], collected: l.collected || {} }; };
 export const STATES = { end: 'cuộn tới hết trang', known: 'dừng ở bài đã có trong kho', since: 'tới mốc --since', limit: 'đủ --max-posts', blocked: 'bị chặn (checkpoint/captcha/đăng nhập)', partial: 'dừng giữa chừng' };
 
+export const crawlMode = (mode = {}) => (mode.backfill ? 'backfill' : mode.full ? 'full' : 'new');
+const seenText = (p) => (p ? [p.date || 'không rõ ngày', p.post_id ? `mã ${p.post_id}` : '', p.post_url || ''].filter(Boolean).join(', ') : 'không rõ');
+
 // Where the crawling agent stops on a source (docs/research.md, "Khi nào dừng").
 export function stopRule(mode, known) {
   const rules = [];
-  if (mode.full || !known.count) rules.push(known.count ? 'cuộn tới hết trang (--full: không dừng ở bài đã có; bài đã có vẫn bị bỏ khi ingest)' : 'kho chưa có bài của nguồn này: cuộn tới hết trang');
+  if (mode.backfill && known.count) rules.push(`backfill: cuộn NHANH qua các bài đã có trong known.json (không mở, không tải, chỉ đối chiếu link/mã), bắt đầu lấy khi đã qua bài cũ nhất trong kho (oldest_seen: ${seenText(known.oldest_seen)}); từ đó lấy mọi bài chưa có, cuộn tới hết trang`);
+  else if (mode.full || !known.count) rules.push(known.count ? 'cuộn tới hết trang (--full: không dừng ở bài đã có; bài đã có vẫn bị bỏ khi ingest)' : 'kho chưa có bài của nguồn này: cuộn tới hết trang');
   else rules.push(`dừng khi gặp 3 bài liên tiếp đã có trong known.json (bài ghim đầu trang có thể cũ: bỏ qua, đi tiếp); bài mới nhất trong kho: ${known.newest_posted_date || 'không rõ ngày'}`);
   if (mode.since) rules.push(`dừng khi tới bài đăng trước ${mode.since}`);
   if (mode.max_posts) rules.push(`dừng sau ${mode.max_posts} bài mới`);
@@ -33,6 +42,15 @@ export function stopRule(mode, known) {
 }
 
 // The brand's date is in its timezone (cadence.timezone), never UTC.
+// Why --backfill skips a source ('' = crawl it): the page was already scrolled to the end once, or the oldest post
+// in the store is already older than --since.
+export function backfillSkip(mode, known, progress = {}) {
+  if (!mode.backfill) return '';
+  if (progress.reached_end) return 'đã cuộn tới hết trang trước đây (reached_end): không còn bài cũ hơn';
+  if (mode.since && known.oldest_seen?.date && known.oldest_seen.date < mode.since) return `bài cũ nhất trong kho (${known.oldest_seen.date}) đã trước --since ${mode.since}`;
+  return '';
+}
+
 function start(args, s) {
   const brand = loadBrand(need(args, 'brand'));
   const date = today(brand.timezone);
@@ -46,21 +64,28 @@ function start(args, s) {
   const sources = all.filter((x) => !only.length || only.includes(x.id));
   if (args.since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(args.since))) throw new Error('--since cần dạng YYYY-MM-DD.');
   if (args['max-posts'] !== undefined && !(Number.isInteger(Number(args['max-posts'])) && Number(args['max-posts']) > 0)) throw new Error('--max-posts cần số nguyên dương.');
-  const mode = { since: args.since ? String(args.since) : '', max_posts: args['max-posts'] ? Number(args['max-posts']) : 0, full: !!args.full };
+  if (args.full && args.backfill) throw new Error('--full và --backfill không dùng cùng lúc.');
+  const mode = { since: args.since ? String(args.since) : '', max_posts: args['max-posts'] ? Number(args['max-posts']) : 0, full: !!args.full, backfill: !!args.backfill };
   const before = readJson(runFile, null);
   const progress = readProgress(brand.id).sources || {};
+  const skipped = [];
+  const crawl = sources.map((x) => ({ x, known: knownPosts(brand.id, x.id) })).filter(({ x, known }) => {
+    const why = backfillSkip(mode, known, progress[x.id]);
+    if (why) skipped.push({ id: x.id, name: x.name, reason: why, oldest_seen: known.oldest_seen });
+    return !why;
+  });
   const run = {
-    ...(before || {}), brand: brand.id, date, started: before?.started || stamp(), restarted: before ? stamp() : undefined, status: 'open', mode,
-    fb_account: brand.social.research?.fb_account || '', delay_seconds: s.research.delay_seconds, store: storeDir(brand.id),
-    sources: sources.map((x) => {
+    ...(before || {}), brand: brand.id, date, started: before?.started || stamp(), restarted: before ? stamp() : undefined, status: crawl.length ? 'open' : 'done', mode, crawl_mode: crawlMode(mode),
+    fb_account: brand.social.research?.fb_account || '', delay_seconds: s.research.delay_seconds, store: storeDir(brand.id), skipped,
+    sources: crawl.map(({ x, known }) => {
       const sdir = path.join(dir, x.id);
       fs.mkdirSync(path.join(sdir, 'raw'), { recursive: true });
-      const known = knownPosts(brand.id, x.id);
       const knownFile = path.join(sdir, 'known.json');
       // known.json: this source's links (stop rule) + every link and Facebook id of the brand's store (skip before downloading).
       writeJson(knownFile, { brand: brand.id, source: x.id, written: stamp(), ...known });
       return { ...x, dir: sdir, raw_file: path.join(sdir, 'raw.json'), downloads: path.join(sdir, 'raw'), known_file: knownFile, known_count: known.count,
-        reached_end_before: !!progress[x.id]?.reached_end, stop_rule: stopRule(mode, known), result: null, new: 0, duplicates: 0 }; // each start is a new crawl of the source
+        reached_end_before: !!progress[x.id]?.reached_end, newest_seen: known.newest_seen, oldest_seen: known.oldest_seen,
+        stop_rule: stopRule(mode, known), result: null, new: 0, new_on_top: 0, backfilled: 0, duplicates: 0 }; // each start is a new crawl of the source
     }),
   };
   delete run.budget;
@@ -68,7 +93,10 @@ function start(args, s) {
   const log = readLog();
   log.runs.push({ brand: brand.id, date, started: stamp(), mode });
   writeJson(logFile(), log);
-  out({ reused: !!before, dir, run, next: 'Theo docs/research.md: với từng source, cuộn trang theo stop_rule, tải ảnh vào <source>/raw/, ghi <source>/raw.json, chạy research.mjs ingest --source <sid>, rồi research.mjs result --source <sid> --state <...>. Cuối cùng research.mjs report.' });
+  const next = !crawl.length ? 'Không còn source nào để backfill (xem run.skipped). Chạy research.mjs report.'
+    : mode.backfill ? 'Theo docs/research.md (Backfill): với từng source, cuộn nhanh qua bài đã có trong known.json (không mở), bắt đầu lấy khi đã qua oldest_seen, tải ảnh vào <source>/raw/, ghi <source>/raw.json, chạy research.mjs ingest --source <sid>, rồi research.mjs result --source <sid> --state <end|since|limit|partial>. Cuối cùng research.mjs report.'
+    : 'Theo docs/research.md: với từng source, cuộn trang theo stop_rule, tải ảnh vào <source>/raw/, ghi <source>/raw.json, chạy research.mjs ingest --source <sid>, rồi research.mjs result --source <sid> --state <...>. Cuối cùng research.mjs report.';
+  out({ reused: !!before, dir, run, next });
 }
 
 // <source>/raw.json: [{ post_url, caption, images: ["raw/1.jpg", ...] (or image: "raw/1.jpg"), posted_date?: YYYY-MM-DD,
@@ -139,6 +167,7 @@ function ingest(args) {
       ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0 }
       : addPosts(brand.id, src, posts, { run: run.date, since: mode.since || '', limit: left });
     src.new = (src.new || 0) + r.added.length;
+    if (mode.backfill) src.backfilled = (src.backfilled || 0) + r.added.length; else src.new_on_top = (src.new_on_top || 0) + r.added.length;
     src.duplicates = (src.duplicates || 0) + r.duplicates.length;
     day[`${brand.id}/${src.id}`] = (day[`${brand.id}/${src.id}`] || 0) + r.added.length;
     const entry = { at: stamp(), raw_posts: raw.length, added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
@@ -162,8 +191,9 @@ function result(args) {
   if (!STATES[state]) throw new Error(`--state phải là: ${Object.keys(STATES).join(', ')}.`);
   const note = args.note && args.note !== true ? cleanText(args.note).text : '';
   if (['blocked', 'partial'].includes(state) && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
-  src.result = { state, label: STATES[state], note, reached_end: state === 'end', new: src.new || 0, at: stamp() };
-  const progress = recordProgress(brand.id, sid, src.result);
+  if (state === 'known' && run.mode?.backfill) throw new Error('Lượt --backfill không dừng ở bài đã có: dùng end (hết trang), since, limit, partial hoặc blocked.');
+  src.result = { state, label: STATES[state], note, reached_end: state === 'end', new: src.new || 0, new_on_top: src.new_on_top || 0, backfilled: src.backfilled || 0, at: stamp() };
+  const progress = recordProgress(brand.id, sid, src.result, { date: run.date, mode: crawlMode(run.mode) });
   if (run.sources.every((x) => x.result)) run.status = run.sources.some((x) => x.result.state === 'blocked') ? 'done-with-blocked' : 'done';
   writeJson(runFile, run);
   out({ source: sid, result: src.result, progress, run_status: run.status, next: state === 'blocked' ? 'Dừng nghiên cứu ngay (không mở source nào nữa trong lượt này), chạy research.mjs report.' : 'Sang source tiếp theo, hoặc research.mjs report khi xong.' });
@@ -175,13 +205,17 @@ export function researchReport(brandId, date) {
   const run = day ? readJson(path.join(runDir(brandId, day), 'run.json'), null) : null;
   const store = readStore(brandId);
   const progress = readProgress(brandId).sources || {};
-  if (!run) return { brand: brandId, date: null, store: counts(store.items), sources: [], done: [], blocked: [], pending: [] };
+  if (!run) return { brand: brandId, date: null, store: counts(store.items), sources: [], skipped: [], done: [], blocked: [], pending: [] };
+  const left = (p) => (p?.reached_end ? 'đã lấy tới bài cũ nhất của trang' : 'còn bài cũ hơn chưa lấy: chạy research.mjs start --backfill');
   const sources = run.sources.map((x) => ({
-    id: x.id, name: x.name, url: x.url, new: x.new || 0, state: x.result?.state || 'pending', label: x.result?.label || 'chưa xong', note: x.result?.note || '',
-    duplicates: x.duplicates || 0, duplicates_text: `${x.duplicates || 0} bài trùng bỏ qua`, reached_end: !!progress[x.id]?.reached_end, store_items: store.items.filter((i) => i.source_id === x.id).length,
+    id: x.id, name: x.name, url: x.url, crawl_mode: crawlMode(run.mode), new: x.new || 0, new_on_top: x.new_on_top || 0, backfilled: x.backfilled || 0,
+    state: x.result?.state || 'pending', label: x.result?.label || 'chưa xong', note: x.result?.note || '',
+    duplicates: x.duplicates || 0, duplicates_text: `${x.duplicates || 0} bài trùng bỏ qua`, reached_end: !!progress[x.id]?.reached_end, reached_end_text: progress[x.id]?.reached_end ? 'có' : 'chưa',
+    older_posts: left(progress[x.id]), oldest_seen: progress[x.id]?.oldest_seen || null, store_items: store.items.filter((i) => i.source_id === x.id).length,
   }));
   return {
-    brand: brandId, date: day, status: run.status, mode: run.mode || {}, new_total: sources.reduce((a, x) => a + x.new, 0), duplicates_total: sources.reduce((a, x) => a + x.duplicates, 0), store: counts(store.items), sources,
+    brand: brandId, date: day, status: run.status, mode: run.mode || {}, crawl_mode: crawlMode(run.mode), skipped: run.skipped || [],
+    new_on_top_total: sources.reduce((a, x) => a + x.new_on_top, 0), backfilled_total: sources.reduce((a, x) => a + x.backfilled, 0), new_total: sources.reduce((a, x) => a + x.new, 0), duplicates_total: sources.reduce((a, x) => a + x.duplicates, 0), store: counts(store.items), sources,
     done: sources.filter((x) => !['pending', 'blocked', 'partial'].includes(x.state)).map((x) => x.id),
     blocked: sources.filter((x) => x.state === 'blocked').map((x) => `${x.id}: ${x.note}`),
     pending: sources.filter((x) => ['pending', 'partial'].includes(x.state)).map((x) => x.id),

@@ -3,7 +3,9 @@
 // "Tạo bài từ kho" reads it (ideas.mjs init takes only items with status "new" and marks them "used").
 //   workspace/store/<brand>/items.json      { brand, updated, next, items: [ item ] }
 //   workspace/store/<brand>/images/          <item-id>-<n>-<sha8>.<ext> (copies of the downloaded post images)
-//   workspace/store/<brand>/progress.json    per source: last crawl, reached_end, blocked, newest/oldest post seen
+//   workspace/store/<brand>/progress.json    per source: newest_seen / oldest_seen ({ date, post_id, post_url, item }),
+//                                            reached_end (scrolled to the end of the page once), blocked, last_run
+//                                            ({ run, mode: new|backfill|full, state, new_on_top, backfilled, at })
 //   workspace/store/<brand>/ideas.json       the brand's ideas (ideas.mjs), each tied to one store item
 // item: { id: "S0001", source_id, source_url, store, post_url, alt_urls?, post_key(s), post_ids, captured, posted_date,
 //         caption, caption_norm, caption_hash, main_product, price_seen, images: ["images/S0001-1-ab12cd34.jpg"],
@@ -158,13 +160,30 @@ export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, l
   return result;
 }
 
-// What the crawling agent needs to know where to stop on a source: links already in the store and the newest date.
+// The newest and the oldest post of a source in the store: { date, post_id, post_url, item } (null when none). By
+// posted_date; on equal dates (and for undated stores) the crawl order decides: a crawl scrolls from new to old, so
+// the first item stored is the newest and the last one the oldest.
+export function sourceBounds(items) {
+  if (!items.length) return { newest_seen: null, oldest_seen: null };
+  const pick = (i) => ({ date: validDate(i.posted_date) ? i.posted_date : '', post_id: (i.post_ids || [])[0] || '', post_url: i.post_url || '', item: i.id });
+  const dated = items.filter((i) => validDate(i.posted_date));
+  if (dated.length) {
+    const max = dated.reduce((m, i) => (i.posted_date > m ? i.posted_date : m), dated[0].posted_date);
+    const min = dated.reduce((m, i) => (i.posted_date < m ? i.posted_date : m), dated[0].posted_date);
+    return { newest_seen: pick(dated.find((i) => i.posted_date === max)), oldest_seen: pick(dated.findLast((i) => i.posted_date === min)) };
+  }
+  const runs = items.map((i) => String(i.run || '')).sort();
+  return { newest_seen: pick(items.find((i) => String(i.run || '') === runs.at(-1))), oldest_seen: pick(items.findLast((i) => String(i.run || '') === runs[0])) };
+}
+
+// What the crawling agent needs to know where to stop on a source: links already in the store, the newest and the
+// oldest post of the source (oldest_seen: where a backfill starts collecting).
 export function knownPosts(brand, sourceId) {
   const items = readStore(brand).items.filter((i) => !sourceId || i.source_id === sourceId);
   const dates = items.map((i) => i.posted_date).filter(Boolean).sort();
   // Duplicates are checked across every source of the brand, so the ids/links to skip before downloading are brand-wide.
   const all = readStore(brand).items;
-  return { source: sourceId || null, count: items.length, newest_posted_date: dates.at(-1) || '', oldest_posted_date: dates[0] || '', post_urls: items.map((i) => i.post_url).filter(Boolean),
+  return { source: sourceId || null, count: items.length, newest_posted_date: dates.at(-1) || '', oldest_posted_date: dates[0] || '', ...sourceBounds(items), post_urls: items.map((i) => i.post_url).filter(Boolean),
     brand_post_urls: all.flatMap((i) => [i.post_url, ...(i.alt_urls || [])]).filter(Boolean), brand_post_ids: [...new Set(all.flatMap((i) => i.post_ids || []))] };
 }
 
@@ -210,8 +229,10 @@ export function markUsed(brand, ids, by) {
   });
 }
 
-// Per-source crawl outcome (research.mjs result) kept with the store, so the next crawl knows what happened.
-export function recordProgress(brand, sourceId, result) {
+// Per-source crawl outcome (research.mjs result) kept with the store, so the next crawl knows what happened:
+// newest_seen / oldest_seen (from the store), reached_end (once true it stays: the oldest post was reached), last_run.
+// result: { state, label?, note?, reached_end, new, new_on_top?, backfilled? }; run: { date, mode }.
+export function recordProgress(brand, sourceId, result, run = {}) {
   const file = progressFile(brand);
   return withLock(file, () => {
     const p = readJson(file, { sources: {} });
@@ -222,6 +243,8 @@ export function recordProgress(brand, sourceId, result) {
       reached_end: !!(before.reached_end || result.reached_end), ...(result.reached_end ? { reached_end_at: stamp() } : {}),
       blocked: result.state === 'blocked' ? result.note || 'checkpoint/captcha' : '',
       items: k.count, newest_posted_date: k.newest_posted_date, oldest_posted_date: k.oldest_posted_date,
+      newest_seen: k.newest_seen, oldest_seen: k.oldest_seen,
+      last_run: { run: run.date || '', mode: run.mode || 'new', state: result.state, note: result.note || '', new_on_top: result.new_on_top || 0, backfilled: result.backfilled || 0, at: stamp() },
     };
     writeJson(file, p);
     return p.sources[sourceId];

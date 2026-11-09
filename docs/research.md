@@ -5,7 +5,8 @@ Agent làm phần duyệt trang (Playwright MCP trên Chrome đã đăng nhập)
 ## Trước khi bắt đầu
 - Công cụ: Claude Code hoặc Codex có Playwright MCP (`npx -y @playwright/mcp@latest --extension`) gắn vào Chrome đã đăng nhập Facebook bằng tài khoản phụ (`research.fb_account` trong social.json). Không tự đăng nhập, không nhập mật khẩu, không lưu cookie.
 - Chỉ mở các source mà `research.mjs start` trả về (`run.sources`), đúng thứ tự, của **một** thương hiệu. Một Chrome, một agent: không chạy song song.
-- Đọc `stop_rule` và `known_file` của từng source. `known.json` có `post_urls` (bài của nguồn này trong kho), `brand_post_urls` và `brand_post_ids` (mọi link/mã bài Facebook đã có trong kho của thương hiệu, mọi nguồn), `newest_posted_date`.
+- Đọc `stop_rule` và `known_file` của từng source. `known.json` có `post_urls` (bài của nguồn này trong kho), `brand_post_urls` và `brand_post_ids` (mọi link/mã bài Facebook đã có trong kho của thương hiệu, mọi nguồn), `newest_posted_date`, `newest_seen` và `oldest_seen` (bài mới nhất / cũ nhất của nguồn trong kho: `date`, `post_id`, `post_url`).
+- Hai kiểu lượt: **mặc định** chỉ lấy bài mới ở đầu trang (dừng sau 3 bài liên tiếp đã có); **`--backfill`** lấy các bài **cũ hơn** bài cũ nhất đã có (xem mục Backfill). Lần đầu có thể giới hạn bằng `--max-posts`/`--since`; các bài cũ hơn lấy dần bằng `--backfill`.
 
 ## Nhịp và an toàn
 - Nghỉ ngẫu nhiên trong `delay_seconds` (mặc định 5-15 giây) giữa **mọi** lần mở trang, cuộn, bấm; cuộn từng đoạn như người đọc, không cuộn liên tục.
@@ -19,6 +20,7 @@ Agent làm phần duyệt trang (Playwright MCP trên Chrome đã đăng nhập)
    - **tới mốc ngày** (`--since`): tới bài đăng trước ngày đó → `--state since`;
    - **đủ số bài** (`--max-posts N`): đã lấy N bài mới → `--state limit`;
    - dừng giữa chừng vì lý do khác (hết thời gian, trang lỗi) → `--state partial --note "<lý do>"`.
+   - Lượt `--backfill` không có `--state known` (bài đã có là chỗ phải cuộn qua, không phải chỗ dừng).
 3. Với **mỗi bài** trong lúc cuộn (`[data-ad-rendering-role="story_message"]` là phần chữ của bài):
    - Lấy link bài (`https://www.facebook.com/<trang>/posts/<id>`, `/permalink/...`, hoặc `https://www.facebook.com/photo/?fbid=...`). Nếu link hoặc mã số trong link (fbid, story_fbid, `/posts/<id>`, `pfbid...`) có trong `known.json` (`brand_post_urls`, `brand_post_ids`): **bỏ qua, không mở, không tải**.
    - Bài mới: mở bài (hoặc ảnh → "Xem bài viết"), bấm "Xem thêm" để có **caption đầy đủ**; lưu nguyên văn (U+034F và ký tự ẩn để `ingest` lọc).
@@ -39,6 +41,18 @@ Agent làm phần duyệt trang (Playwright MCP trên Chrome đã đăng nhập)
    ```
 5. `node scripts/research.mjs ingest --brand <id> --source <sid>` rồi `node scripts/research.mjs result --brand <id> --source <sid> --state <...>`. Sang source tiếp theo.
 6. Hết các source: `node scripts/research.mjs report --brand <id>` và báo người dùng.
+
+## Backfill: lấy dần các bài cũ hơn
+Lượt mặc định dừng sau 3 bài đã có, nên các bài **cũ hơn** những gì lần đầu đã crawl (lần đầu dùng `--max-posts` / `--since`, hoặc dừng giữa chừng) không bao giờ được lấy. `node scripts/research.mjs start --brand <id> --backfill [--source <sid>] [--since ..] [--max-posts N]` lấy chúng:
+- `workspace/store/<brand>/progress.json`, mỗi nguồn: `newest_seen`, `oldest_seen` (`date`, `post_id`, `post_url`), `reached_end` (đã cuộn tới hết trang một lần), `last_run` (kiểu lượt `new|backfill|full`, cách dừng, `new_on_top`, `backfilled`). Nguồn có `reached_end: true` bị `--backfill` bỏ qua (`run.skipped`, không còn bài cũ hơn); nguồn có `oldest_seen` đã trước `--since` cũng bỏ qua.
+- **Cuộn nhanh qua bài đã có** (từ đầu trang tới `oldest_seen`):
+  - Không mở bài, không bấm "Xem thêm", không tải ảnh. Chỉ đọc link/mã của các bài đang hiện trên trang và đối chiếu với `known.json` (`post_urls`, `brand_post_urls`, `brand_post_ids`).
+  - Đọc link bằng một lần `browser_evaluate` thay vì snapshot từng bài, vd `[...document.querySelectorAll('a[href*="/posts/"],a[href*="/permalink/"],a[href*="fbid="],a[href*="/videos/"]')].map(a => a.href)`; tìm `oldest_seen.post_id` hoặc `oldest_seen.post_url` trong danh sách đó.
+  - Mỗi lần cuộn nhiều màn hình (phím End hoặc `window.scrollBy(0, 3 * innerHeight)`), nghỉ ở cận dưới `delay_seconds` (vd 3-6 giây; vẫn ngẫu nhiên, không cuộn liên tục). Checkpoint/captcha: dừng như mọi lượt.
+  - Đã thấy `oldest_seen` trên trang (hoặc ngày đăng của bài đang hiện đã cũ hơn `oldest_seen.date`): về nhịp thường.
+- **Từ sau `oldest_seen`**: làm như crawl thường (mục trên, bước 3-5): bài chưa có trong `known.json` thì mở, lấy caption/ngày/ảnh; bài đã có thì bỏ qua. Lấy tới **hết trang** (`--state end`, ghi `reached_end`), tới mốc `--since` (`--state since`) hoặc đủ `--max-posts` bài (`--state limit`).
+- Không thấy được `oldest_seen` (bài đã bị xoá): dùng ngày, lấy từ bài đầu tiên cũ hơn `oldest_seen.date`.
+- Báo cáo (`research.mjs report`) theo nguồn: `new_on_top` (bài mới ở đầu trang), `backfilled` (bài cũ hơn lấy thêm), `reached_end_text` (có/chưa) và `older_posts` (còn bài cũ chưa lấy không: chạy `--backfill`).
 
 ## Bỏ trùng (tool tự làm khi ingest)
 Kho không bao giờ giữ một bài hai lần, trên mọi nguồn của thương hiệu:

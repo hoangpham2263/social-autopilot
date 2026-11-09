@@ -408,6 +408,60 @@ test('research has no limits by default: another brand starts after a big run, t
   assert.ok(!fs.existsSync(storeFile('grenheim')) || readItems('grenheim').every((i) => i.source_id === 'wood-a'));
 });
 
+// A first crawl cut by --max-posts leaves older posts; --backfill fetches them later, starting past oldest_seen.
+test('backfill: progress tracks newest/oldest seen, reached_end; backfill collects older posts and then skips the source', { skip: !haveReal && 'no brand skills to copy' }, () => {
+  const progress = () => JSON.parse(fs.readFileSync(path.join(ws, 'store', 'grenheim', 'progress.json'), 'utf8')).sources['wood-a'];
+  const caps = ['Kệ gỗ sồi treo tường ba tầng cho phòng khách nhỏ, hoàn thiện dầu tự nhiên', 'Bàn trà gỗ óc chó chân sắt sơn tĩnh điện, mặt bàn dày bốn phân', 'Tủ giày gỗ thông cửa lùa, có ngăn kéo nhỏ để chìa khoá và ví'];
+  const first = run('research.mjs', 'start', '--brand', 'grenheim', '--max-posts', '2');
+  const w = first.run.sources[0];
+  assert.equal(first.run.crawl_mode, 'new');
+  [0, 1].forEach((n) => write(path.join(w.dir, 'raw', `b${n}.png`), pattern([n * 40, 7, 90, n, 33, 210])));
+  write(w.raw_file, JSON.stringify([
+    { post_url: 'https://www.facebook.com/wooda/posts/30000005', caption: caps[0], image: 'raw/b0.png', posted_date: '2026-11-05' },
+    { post_url: 'https://www.facebook.com/wooda/posts/30000004', caption: caps[1], image: 'raw/b1.png', posted_date: '2026-11-04' },
+  ]));
+  assert.equal(run('research.mjs', 'ingest', '--brand', 'grenheim', '--source', 'wood-a').sources[0].added, 2);
+  run('research.mjs', 'result', '--brand', 'grenheim', '--source', 'wood-a', '--state', 'limit');
+  let p = progress();
+  assert.deepEqual([p.newest_seen.date, p.newest_seen.post_id, p.oldest_seen.date, p.oldest_seen.post_id], ['2026-11-05', '30000005', '2026-11-04', '30000004']);
+  assert.equal(p.reached_end, false);
+  assert.deepEqual([p.last_run.mode, p.last_run.state, p.last_run.new_on_top, p.last_run.backfilled], ['new', 'limit', 2, 0]);
+  let rep = run('research.mjs', 'report', '--brand', 'grenheim').sources[0];
+  assert.deepEqual([rep.new_on_top, rep.backfilled, rep.reached_end, rep.reached_end_text], [2, 0, false, 'chưa']);
+  assert.match(rep.older_posts, /--backfill/);
+
+  // Backfill: start tells where to start collecting (oldest_seen), known.json carries it too; "known" is no end for it.
+  assert.match(run('research.mjs', 'start', '--brand', 'grenheim', '--full', '--backfill').error, /--backfill/);
+  const bf = run('research.mjs', 'start', '--brand', 'grenheim', '--backfill');
+  const b = bf.run.sources[0];
+  assert.equal(bf.run.crawl_mode, 'backfill');
+  assert.match(b.stop_rule, /backfill: cuộn NHANH/);
+  assert.match(b.stop_rule, /2026-11-04, mã 30000004/);
+  assert.equal(b.oldest_seen.post_id, '30000004');
+  assert.equal(JSON.parse(fs.readFileSync(b.known_file, 'utf8')).oldest_seen.date, '2026-11-04');
+  assert.match(bf.next, /oldest_seen/);
+  assert.match(run('research.mjs', 'result', '--brand', 'grenheim', '--source', 'wood-a', '--state', 'known').error, /backfill/);
+  write(path.join(b.dir, 'raw', 'b2.png'), pattern([5, 150, 5, 150, 60, 60]));
+  write(b.raw_file, JSON.stringify([{ post_url: 'https://www.facebook.com/wooda/posts/30000001', caption: caps[2], image: 'raw/b2.png', posted_date: '2026-10-01' }]));
+  assert.equal(run('research.mjs', 'ingest', '--brand', 'grenheim', '--source', 'wood-a').sources[0].added, 1);
+  run('research.mjs', 'result', '--brand', 'grenheim', '--source', 'wood-a', '--state', 'end');
+  p = progress();
+  assert.equal(p.reached_end, true);
+  assert.deepEqual([p.oldest_seen.date, p.newest_seen.date], ['2026-10-01', '2026-11-05']);
+  assert.deepEqual([p.last_run.mode, p.last_run.new_on_top, p.last_run.backfilled], ['backfill', 0, 1]);
+  rep = run('research.mjs', 'report', '--brand', 'grenheim');
+  assert.deepEqual([rep.sources[0].new_on_top, rep.sources[0].backfilled, rep.sources[0].reached_end_text, rep.backfilled_total], [0, 1, 'có', 1]);
+  assert.match(rep.sources[0].older_posts, /bài cũ nhất/);
+
+  // reached_end: backfill skips the source; the default run (new posts on top) still crawls it.
+  const again = run('research.mjs', 'start', '--brand', 'grenheim', '--backfill');
+  assert.deepEqual(again.run.sources, []);
+  assert.equal(again.run.status, 'done');
+  assert.equal(again.run.skipped[0].id, 'wood-a');
+  assert.match(again.run.skipped[0].reason, /reached_end/);
+  assert.match(run('research.mjs', 'start', '--brand', 'grenheim').run.sources[0].stop_rule, /3 bài liên tiếp/);
+});
+
 test('clean script strips U+034F and zero-width characters from a CSV', () => {
   const file = path.join(tmp, 'dirty.csv');
   write(file, '﻿store,content\nA,"Xin͏ chào​ bạn"\n');

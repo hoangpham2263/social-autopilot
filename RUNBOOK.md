@@ -25,9 +25,9 @@ Cần trình duyệt đã đăng nhập Facebook (Playwright MCP + extension tro
 
 1.1. Mở lượt crawl cho một thương hiệu:
 ```
-node scripts/research.mjs start --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full]
+node scripts/research.mjs start --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full | --backfill]
 ```
-Mặc định: lấy **hết** bài (cuộn tới hết trang); lần sau dừng ở bài đã có trong kho. `--since` / `--max-posts` khi người dùng chọn khoảng; `--full` cuộn hết dù đã có. Mỗi source trong `run.sources` có `stop_rule` (khi nào dừng) và `known_file` (`known.json`: link bài của nguồn này + mọi link/mã bài Facebook đã có trong kho của thương hiệu: `brand_post_urls`, `brand_post_ids`).
+Mặc định: lấy **hết** bài (cuộn tới hết trang); lần sau chỉ lấy bài mới ở đầu trang (dừng sau 3 bài liên tiếp đã có trong kho). `--since` / `--max-posts` khi người dùng chọn khoảng; `--full` cuộn hết dù đã có (chậm). Lần đầu có thể giới hạn bằng `--max-posts`/`--since`; các bài cũ hơn lấy dần bằng `--backfill`: cuộn nhanh qua bài đã có (không mở), bắt đầu lấy khi đã qua `oldest_seen` (bài cũ nhất của nguồn trong kho), tới hết trang / `--since` / `--max-posts`; nguồn đã `reached_end` thì bỏ qua (`run.skipped`). Tiến độ từng nguồn: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen`, `reached_end`, `last_run`). Mỗi source trong `run.sources` có `stop_rule` (khi nào dừng) và `known_file` (`known.json`: link bài của nguồn này + mọi link/mã bài Facebook đã có trong kho của thương hiệu: `brand_post_urls`, `brand_post_ids`).
 
 1.2. Với từng source, theo `docs/research.md`: cuộn trang theo `stop_rule`; bài có link/mã trong `known.json` thì bỏ qua **trước khi tải**; mở bài mới lấy caption đầy đủ, ngày đăng, link bài (+ `alt_urls`), tải ảnh lớn nhất vào `<source>/raw/`, ghi `<source>/raw.json`. Nghỉ ngẫu nhiên `delay_seconds` giữa mọi thao tác.
 
@@ -41,13 +41,14 @@ Làm sạch caption (U+034F, ký tự ẩn), chỉ nhận ảnh jpg/png/webp th�
 ```
 node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|partial [--note "..."]
 ```
+Lượt `--backfill` không dùng `known`. `end` ghi `reached_end` (đã lấy tới bài cũ nhất).
 Gặp checkpoint, captcha, yêu cầu đăng nhập, "tạm thời bị chặn": dừng ngay, `--state blocked --note "<lý do>"`, không mở thêm source nào.
 
 1.5. Báo cáo:
 ```
 node scripts/research.mjs report --brand <id>
 ```
-Báo người dùng: bài mới từng nguồn, bài trùng bỏ qua, nguồn đã xong, nguồn bị chặn, tổng kho (mới/đã dùng/đã bỏ). Người dùng xem kho ở tab **Kho** của app (lọc theo trạng thái/nguồn, "Bỏ" bài không muốn dùng = `store.mjs reject`).
+Báo người dùng: từng nguồn bài mới ở đầu trang (`new_on_top`), bài cũ lấy thêm (`backfilled`), đã tới hết trang chưa (`reached_end_text`: còn bài cũ thì `older_posts` nhắc chạy `--backfill`), bài trùng bỏ qua, nguồn đã xong, nguồn bị chặn, nguồn backfill bỏ qua (`skipped`), tổng kho (mới/đã dùng/đã bỏ). Người dùng xem kho ở tab **Kho** của app (lọc theo trạng thái/nguồn, "Bỏ" bài không muốn dùng = `store.mjs reject`).
 
 Không làm ý, không tạo bài, không gửi Metricool trong chế độ này.
 

@@ -20,11 +20,11 @@ Chế độ: CHỈ NGHIÊN CỨU. Thương hiệu: {{BRAND}}.
 Thư mục: C:\hoangpq\social-autopilot. Đọc AGENTS.md, RUNBOOK.md (Chế độ 1) và docs/research.md, làm đúng từng bước.
 
 1. node scripts/brands.mjs; node scripts/sources.mjs. Chỉ thương hiệu usable; mỗi lần một thương hiệu, không song song.
-2. node scripts/research.mjs start --brand <id> (thêm --since YYYY-MM-DD, --max-posts N hoặc --full nếu tôi yêu cầu). Đọc run.sources: stop_rule, known_file.
-3. Với từng source, bằng Playwright MCP trên Chrome đã đăng nhập: mở trang, tab Bài viết/Ảnh, cuộn tới khi đúng stop_rule (hết trang, gặp 3 bài liên tiếp đã có trong known.json, tới mốc --since, đủ --max-posts). Bỏ qua bài có link/mã đã nằm trong known.json (brand_post_urls, brand_post_ids) TRƯỚC khi tải. Mở từng bài mới lấy caption đầy đủ, ngày đăng, link bài (và link ảnh trong alt_urls), tải ảnh lớn nhất vào <source>/raw/, ghi <source>/raw.json. Nghỉ ngẫu nhiên delay_seconds giữa mọi thao tác.
-4. node scripts/research.mjs ingest --brand <id> --source <sid>, rồi node scripts/research.mjs result --brand <id> --source <sid> --state <end|known|since|limit|partial> [--note "..."].
+2. node scripts/research.mjs start --brand <id> (thêm --since YYYY-MM-DD, --max-posts N, --full hoặc --backfill nếu tôi yêu cầu; lần đầu có thể giới hạn bằng --max-posts/--since; các bài cũ hơn lấy dần bằng --backfill). Đọc run.sources: stop_rule, known_file, oldest_seen; run.skipped là nguồn backfill bỏ qua (đã reached_end).
+3. Với từng source, bằng Playwright MCP trên Chrome đã đăng nhập: mở trang, tab Bài viết/Ảnh, cuộn tới khi đúng stop_rule (hết trang, gặp 3 bài liên tiếp đã có trong known.json, tới mốc --since, đủ --max-posts). Lượt --backfill: cuộn nhanh qua bài đã có (không mở, chỉ đối chiếu link/mã với known.json) tới khi qua oldest_seen rồi mới lấy, theo docs/research.md mục Backfill. Bỏ qua bài có link/mã đã nằm trong known.json (brand_post_urls, brand_post_ids) TRƯỚC khi tải. Mở từng bài mới lấy caption đầy đủ, ngày đăng, link bài (và link ảnh trong alt_urls), tải ảnh lớn nhất vào <source>/raw/, ghi <source>/raw.json. Nghỉ ngẫu nhiên delay_seconds giữa mọi thao tác.
+4. node scripts/research.mjs ingest --brand <id> --source <sid>, rồi node scripts/research.mjs result --brand <id> --source <sid> --state <end|known|since|limit|partial> [--note "..."] (lượt --backfill không dùng known).
 5. Gặp checkpoint, captcha, yêu cầu đăng nhập, "tạm thời bị chặn": dừng ngay, research.mjs result --state blocked --note "<lý do>", không mở thêm source nào.
-6. Cuối cùng: node scripts/research.mjs report --brand <id>; báo tôi bằng tiếng Việt: số bài mới từng nguồn, số bài trùng bỏ qua, nguồn đã xong (hết trang hay dừng ở bài cũ), nguồn bị chặn và lý do, tổng kho (mới/đã dùng/đã bỏ). Nhắc tôi xem kho ở tab Kho của app.
+6. Cuối cùng: node scripts/research.mjs report --brand <id>; báo tôi bằng tiếng Việt: từng nguồn số bài mới ở đầu trang (new_on_top), số bài cũ lấy thêm (backfilled), đã tới hết trang chưa (reached_end; còn bài cũ thì nhắc --backfill), số bài trùng bỏ qua, nguồn đã xong, nguồn bị chặn và lý do, tổng kho (mới/đã dùng/đã bỏ). Nhắc tôi xem kho ở tab Kho của app.
 
 Không làm ý tưởng, không tạo bài, không đăng gì, không gửi gì lên Metricool. Không đăng nhập hộ, không lưu cookie. Script trả ok:false thì ghi lý do và đi tiếp, không lách luật.
 ```
@@ -41,11 +41,11 @@ Trước hết kiểm tra bạn có công cụ trình duyệt (MCP playwright, g
 
 Nếu có:
 1. node scripts/brands.mjs; node scripts/sources.mjs. Chỉ thương hiệu usable, lần lượt từng thương hiệu.
-2. node scripts/research.mjs start --brand <id> [--since YYYY-MM-DD | --max-posts N | --full theo lời tôi]. Đọc stop_rule và known_file của từng source.
-3. Từng source: mở trang, tab Bài viết/Ảnh, cuộn tới khi đúng stop_rule; bỏ qua bài đã có trong known.json (brand_post_urls, brand_post_ids) trước khi tải; mở bài mới lấy caption đầy đủ, ngày đăng, link bài + alt_urls, tải ảnh lớn nhất vào <source>/raw/, ghi <source>/raw.json theo docs/research.md. Nghỉ ngẫu nhiên delay_seconds giữa mọi thao tác.
-4. node scripts/research.mjs ingest --brand <id> --source <sid>; node scripts/research.mjs result --brand <id> --source <sid> --state <end|known|since|limit|partial> [--note ".."].
+2. node scripts/research.mjs start --brand <id> [--since YYYY-MM-DD | --max-posts N | --full | --backfill theo lời tôi; lần đầu có thể giới hạn bằng --max-posts/--since; các bài cũ hơn lấy dần bằng --backfill]. Đọc stop_rule, known_file, oldest_seen của từng source; run.skipped là nguồn backfill bỏ qua.
+3. Từng source: mở trang, tab Bài viết/Ảnh, cuộn tới khi đúng stop_rule (lượt --backfill: cuộn nhanh qua bài đã có, không mở, tới khi qua oldest_seen rồi mới lấy; docs/research.md mục Backfill); bỏ qua bài đã có trong known.json (brand_post_urls, brand_post_ids) trước khi tải; mở bài mới lấy caption đầy đủ, ngày đăng, link bài + alt_urls, tải ảnh lớn nhất vào <source>/raw/, ghi <source>/raw.json theo docs/research.md. Nghỉ ngẫu nhiên delay_seconds giữa mọi thao tác.
+4. node scripts/research.mjs ingest --brand <id> --source <sid>; node scripts/research.mjs result --brand <id> --source <sid> --state <end|known|since|limit|partial> [--note ".."] (lượt --backfill không dùng known).
 5. Checkpoint/captcha/đăng nhập lại: dừng ngay, result --state blocked --note "<lý do>", không mở source khác.
-6. node scripts/research.mjs report --brand <id>; báo bằng tiếng Việt: bài mới từng nguồn, bài trùng bỏ qua, nguồn xong, nguồn bị chặn, tổng kho.
+6. node scripts/research.mjs report --brand <id>; báo bằng tiếng Việt: từng nguồn bài mới ở đầu trang (new_on_top), bài cũ lấy thêm (backfilled), đã tới hết trang chưa (reached_end; còn bài cũ thì nhắc --backfill), bài trùng bỏ qua, nguồn xong, nguồn bị chặn, tổng kho.
 
 Không tạo ý/bài, không đăng, không gửi Metricool. Lệnh ok:false thì ghi lại và đi tiếp.
 ```
