@@ -93,7 +93,7 @@ header .config + .update { margin-left: 0; }
 input[type=date], input[type=number] { font: inherit; font-size: var(--ctl-font); line-height: normal; }
 .field .checks { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; min-height: var(--ctl-h); }
 .field .checks label { display: flex; gap: 6px; align-items: center; margin: 0; font-size: var(--ctl-font); color: var(--ink); white-space: nowrap; }
-.field .inline-control { display: flex; gap: 8px; align-items: center; }
+.field .inline-control { display: flex; gap: 8px; align-items: center; min-height: var(--ctl-h); } /* text beside a control row sits on its centre line */
 .field .inline-control > input, .field .inline-control > select { flex: 1 1 auto; min-width: 0; }
 /* A multi-select that looks like a select: a <details class="select"> with a <summary> and a list of checkboxes. */
 details.select { position: relative; height: var(--ctl-h); } /* fixed: opening it must not push the row down */
