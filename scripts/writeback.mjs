@@ -79,10 +79,10 @@ function writeBackInner(id) {
     channels: draft.networks.map((n) => n.network),
     language_mode: draft.language_mode,
     inspiration: { ...(/^https?:\/\//.test(draft.inspiration.post_url || '') ? { url: draft.inspiration.post_url } : {}), source: draft.inspiration.source, source_shop: draft.inspiration.source_shop || '', mode: draft.image_mode || 'brand-image', source_url: draft.inspiration.source_url, run: draft.inspiration.run, ref: draft.inspiration.ref, idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}` },
-    // Scene-swap (user, 07/11/2026): ai_disclosure true, the label kept beside it.
+    // Bookkeeping only: a record that AI made the image. Never a label on the post or in the caption.
     ...(draft.image_mode === 'scene-swap'
-      ? { ai_disclosure: true, ai_disclosure_label: draft.ai_disclosure?.label || brand.social.product_images?.ai_disclosure_label || '' }
-      : { ai_disclosure: { ai_scene: true, tool: 'codex', label: draft.ai_disclosure?.label || brand.social.product_images?.ai_disclosure_label || '' } }),
+      ? { ai_disclosure: true }
+      : { ai_disclosure: { ai_scene: true, tool: 'codex' } }),
     approval: { by, date, note },
     source: `social-autopilot ${draft.id}`,
   };

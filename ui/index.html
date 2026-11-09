@@ -227,8 +227,7 @@ a.stat .d { color: var(--muted); font-size: 12px; }
         ${rowsTable("pisources", ["Loại", "Đường dẫn (trong skill, ngoài skill hoặc URL)", "Ghi chú"], s.product_images.sources, (r) => `
           <td><input data-f="kind" value="${esc(r.kind)}"></td><td><input data-f="path" value="${esc(r.path)}"></td><td><input data-f="note" value="${esc(r.note)}"></td>`)}
         <div class="grid2"><div><label>Cho dựng cảnh bằng AI (ai_scenes_allowed)</label><select data-k="product_images.ai_scenes_allowed">
-          <option value="null"${ai === null || ai === undefined ? " selected" : ""}>chưa chốt (null)</option><option value="true"${ai === true ? " selected" : ""}>có (true)</option><option value="false"${ai === false ? " selected" : ""}>không (false)</option></select></div>
-        <div><label>Nhãn công bố AI (ai_disclosure_label)</label><input data-k="product_images.ai_disclosure_label" value="${esc(s.product_images.ai_disclosure_label || "")}"></div></div>
+          <option value="null"${ai === null || ai === undefined ? " selected" : ""}>chưa chốt (null)</option><option value="true"${ai === true ? " selected" : ""}>có (true)</option><option value="false"${ai === false ? " selected" : ""}>không (false)</option></select></div></div>
         <label>Đổi cảnh ảnh của shop tham khảo (reference_redraw, mặc định tắt; rủi ro bản quyền/báo cáo vi phạm)</label>
         <div class="inline" style="margin-top:6px">${checkbox("product_images.reference_redraw.enabled", rr.enabled === true, "cho phép scene-swap")}
           ${checkbox("product_images.reference_redraw.require_logo_removal", rr.require_logo_removal !== false, "bắt buộc xác nhận đã xoá logo/watermark shop")}

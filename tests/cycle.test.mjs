@@ -51,7 +51,7 @@ test.before(() => {
   if (!haveReal) return;
   const on = (s, sources) => ({ ...s, enabled: true,
     research: { ...s.research, max_per_day: 1, sources },
-    product_images: { ...s.product_images, ai_scenes_allowed: true, ai_disclosure_label: 'Ảnh minh hoạ dựng bằng AI' },
+    product_images: { ...s.product_images, ai_scenes_allowed: true },
     cadence: { ...s.cadence, slots: [{ day: 'tue', time: '19:00' }] },
     approval: { ...s.approval, owner: 'Hoang' } });
   scratchBrand('dreamyvows-skills', (s) => on(s, [
@@ -154,7 +154,8 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.match(post.id, /^POST-\d+$/);
   assert.equal(catalog.posts.filter((p) => p.id === post.id).length, 1); // a new number, after the brand's own posts
   assert.equal(post.status, 'approved');
-  assert.equal(post.ai_disclosure.label, 'Ảnh minh hoạ dựng bằng AI');
+  assert.equal(post.ai_disclosure.label, undefined); // never an AI label on a post
+  assert.equal(post.ai_disclosure.ai_scene, true);
   assert.ok(fs.existsSync(path.join(brandDir, post.folder, 'image.png')));
   assert.ok(ok.check_post, "check-post.mjs of the skill must run");
   assert.equal(ok.check_post.errors, 0, JSON.stringify(ok.check_post));

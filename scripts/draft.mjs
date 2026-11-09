@@ -86,7 +86,7 @@ export function newDraft(args) {
     inspiration: { run: date, ref: refUsed.key || idea.ref, source: refUsed.source || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
     image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false } : {}),
     product_image: product, scene_image: scene, networks, languages: brand.languages, language_mode: mode,
-    image: 'image.png', captions: Object.fromEntries(brand.languages.map((l) => [l, `content-${l}.txt`])), ai_disclosure: { label: brand.social.product_images?.ai_disclosure_label || '', tool: 'codex' },
+    image: 'image.png', captions: Object.fromEntries(brand.languages.map((l) => [l, `content-${l}.txt`])), ai_disclosure: { tool: 'codex' },
   };
   writeJson(path.join(dir, 'draft.json'), draft);
   const second = scene
@@ -101,7 +101,6 @@ export function newDraft(args) {
     BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
     SECTIONS: [].concat(brand.social.caption_rules?.project_md_sections || []).join('; ') || '1, 3, 7, 8, 10, 11',
-    AI_LABEL: brand.social.product_images?.ai_disclosure_label || '(chưa có)',
     FILES: brand.languages.map((l) => `- content-${l}.txt`).join('\n'),
     WEBSITE: projectField(brand.project, 'Website') || '(chưa có)', HASHTAG: projectField(brand.project, 'Hashtag cố định') || '(chưa có)',
   }), 'utf8');

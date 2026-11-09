@@ -6,7 +6,7 @@ Viết caption bằng skill của thương hiệu, không bằng giọng riêng 
 2. Nội dung bài theo ý đã chọn dưới đây. Ý này là ý trừu tượng rút từ một bài tham khảo; **không** dùng câu chữ, giá, số điện thoại, tên shop của bài tham khảo.
 3. Chữ trên sản phẩm trong caption phải đúng chữ nhìn thấy trong `image.png`.
 4. Không bịa dữ kiện ngoài project.md (giá, thời gian giao, review khách).
-5. Ảnh là ảnh dựng cảnh bằng AI: công bố theo nhãn của thương hiệu: {{AI_LABEL}}.
+5. Ảnh là ảnh dựng cảnh bằng AI: KHÔNG thêm nhãn AI hay chữ công bố AI vào caption hay bài đăng.
 
 ## Ý đã chọn
 

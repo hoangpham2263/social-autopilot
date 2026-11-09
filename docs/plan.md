@@ -23,7 +23,7 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 - Dữ kiện thương hiệu chỉ nằm trong `skills\<brand>\project\social.json` (giọng, website, hashtag trong `project.md` cạnh nó); repo tool không chứa dữ kiện thương hiệu nào. Tên trường theo `project-skill-standard/README.md` (mục "Khai báo social"):
   - `research.sources[]`, `research.max_per_day`, `research.fb_account`;
   - `channels[]`, `language_policy`;
-  - `product_images`: `sources`, `ai_scenes_allowed`, `ai_disclosure_label`, `watermark`, `reference_redraw`;
+  - `product_images`: `sources`, `ai_scenes_allowed`, `watermark`, `reference_redraw`;
   - `caption_rules.project_md_sections`, `cadence`, `approval`.
 
   Giọng, website, hashtag lấy từ `project.md`. Tool không giữ dữ kiện thương hiệu nào và không có code riêng cho thương hiệu nào.
@@ -78,7 +78,7 @@ Việc của tool, cho từng thương hiệu: xem trang tham khảo → rút ý
 - `C:/hoangpq/remove-watermark-skill` (`strip-png-metadata.mjs`, provider `chatgpt` cho ảnh Codex) chạy sau Codex, sau watermark và trước writeback.
 - Giữ `image-generated.png` (ảnh gốc); `image.png` là bản sạch; report nằm bên cạnh.
 - `check` không đạt khi điểm ảnh bị đổi hoặc còn metadata.
-- Theo quy tắc của skill đó: chỉ bỏ metadata, không thêm EXIF giả, chỉ chạy trên máy, không tuyên bố đã qua được nhận diện AI. Khai báo AI giữ nguyên.
+- Theo quy tắc của skill đó: chỉ bỏ metadata, không thêm EXIF giả, chỉ chạy trên máy, không tuyên bố đã qua được nhận diện AI. Không gắn nhãn AI lên bài; `ai_disclosure` trong catalog chỉ để lưu vết.
 - `clean-image.mjs` của skill thương hiệu chỉ chạy khi `--check` chưa báo SẠCH.
 
 **Host ảnh** (người dùng chốt 09/11/2026)
@@ -108,7 +108,7 @@ Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<bra
 
 ## 6. Còn lại
 - Publish qua Metricool (mục 8), làm sau; app (và dashboard) có thể thêm lịch đăng khi đó.
-- Bật từng thương hiệu: điền `approval.owner`, `ai_scenes_allowed` và nhãn AI, `cadence.slots`, nguồn tham khảo (GRENHEIM), rồi đặt `enabled: true`.
+- Bật từng thương hiệu: điền `approval.owner`, `ai_scenes_allowed`, `cadence.slots`, nguồn tham khảo (GRENHEIM), rồi đặt `enabled: true`.
 - Watermark cần ffmpeg trên máy; lúc xây, ffmpeg chưa có trên PATH.
 - `research.max_per_day` > 1 chưa có tác dụng, vì mỗi ngày chỉ có một thư mục lượt.
 
@@ -118,7 +118,7 @@ Dữ kiện thương hiệu: chỉ ở C:/hoangpq/vaniecom-workspace/skills/<bra
 |---|---|---|
 | Điều khoản Meta cấm thu thập dữ liệu tự động khi chưa được phép, kể cả khi đã đăng nhập (https://developers.facebook.com/docs/development/terms-and-policies/automated-data-collection/, https://about.fb.com/news/2021/04/how-we-combat-scraping/) | Cao | Giới hạn trong code (bài/ngày cho mọi thương hiệu, lượt/ngày theo thương hiệu). Nhịp như người, dừng khi gặp checkpoint, dùng tài khoản phụ, chế độ `semi-auto`. |
 | Bản quyền ảnh, caption, thiết kế; scene-swap tăng rủi ro bị báo cáo | Cao | Ảnh đối thủ chỉ nằm trong `workspace/` (Git bỏ qua). Scene-swap tắt mặc định, bật theo từng thương hiệu, bắt xác nhận đã xoá logo, người duyệt xem ảnh gốc cạnh ảnh mới. |
-| Ảnh AI bị hiểu là ảnh khách thật | Trung bình | `ai_disclosure` và nhãn AI của thương hiệu; bỏ metadata không đổi việc khai báo. |
+| Ảnh AI bị hiểu là ảnh khách thật | Trung bình | Không gắn nhãn AI lên bài (người dùng chốt 09/11/2026); chỉ ghi `ai_disclosure` trong catalog để lưu vết nội bộ. |
 | Agent theo lịch và lệnh chạy tay ghi cùng lúc | Trung bình | Khoá file và ghi nguyên tử. |
 | Hạn mức Codex | Thấp | Trạng thái `image_failed` ghi lý do; vòng sau chạy tiếp. |
 

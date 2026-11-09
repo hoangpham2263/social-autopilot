@@ -2,8 +2,7 @@
 // remove_watermark.script): a copy of the AI image without metadata chunks (C2PA caBX, EXIF, XMP, text), pixels byte for
 // byte the same. Runs right after Codex (draft.mjs image), after a watermark overlay, and again before writeback.
 // Rules of that skill (references/rules.md): metadata only, the original kept, no fake EXIF, local only, and never a
-// claim that AI detection was bypassed. Removing metadata changes nothing about disclosure: the catalog keeps
-// ai_disclosure and the brand's ai_disclosure_label.
+// claim that AI detection was bypassed. The catalog keeps ai_disclosure as a plain record of AI use (no label on posts).
 // Draft folder: image-generated.png (Codex output, never written again) [-> image-watermarked.png] -> image.png (the post
 // image) + image-clean-report.json (the skill's report).
 //   node scripts/image-clean.mjs --id <draft>          clean again (idempotent: skipped when image.png is already the clean output)

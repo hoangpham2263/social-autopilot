@@ -20,7 +20,6 @@ const PLAIN = [
   [/language_policy/, 'Chưa chọn cách viết theo ngôn ngữ'],
   [/product_images\.sources/, 'Chưa có thư mục ảnh sản phẩm'],
   [/ai_scenes_allowed/, 'Chưa chọn có cho dựng cảnh bằng AI không'],
-  [/ai_disclosure_label/, 'Thiếu nhãn khai báo ảnh AI'],
   [/Giọng viết/, 'Hồ sơ thiếu tính cách giọng viết'],
   [/Hashtag cố định/, 'Hồ sơ thiếu hashtag cố định'],
   [/CTA/, 'Hồ sơ thiếu hướng kêu gọi (CTA)'],

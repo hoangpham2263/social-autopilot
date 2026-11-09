@@ -8,7 +8,7 @@ Một quy trình, ba mặt (cùng gọi các hàm trong `scripts/`):
 - **Dashboard tĩnh, chỉ xem (tuỳ chọn)**: `dashboard.html`, nhấp đúp `open-dashboard.cmd`; không cần app chạy; giao diện shadcn riêng. Xem mục Dashboard.
 
 - Thương hiệu: thư mục skill chuẩn trong `C:\hoangpq\vaniecom-workspace\skills\` (`skillsRoot`), có `project/social.json` với `enabled: true` và qua `scripts/check-skill.mjs --tool-ready` của skill. Thêm thương hiệu = đặt thư mục skill vào đó. Dữ kiện thương hiệu chỉ nằm trong `skills\<brand>\project\social.json` (và `project.md`); tool không giữ dữ kiện hay nguồn của thương hiệu nào.
-- Ảnh: Codex CLI tạo; logo không bao giờ nằm trên sản phẩm; watermark góc chỉ khi thương hiệu bật; metadata bỏ bằng `C:\hoangpq\remove-watermark-skill` (ảnh gốc giữ, điểm ảnh không đổi, vẫn khai báo AI). Scene-swap (đổi cảnh ảnh của shop tham khảo) chỉ khi thương hiệu bật `product_images.reference_redraw`.
+- Ảnh: Codex CLI tạo; logo không bao giờ nằm trên sản phẩm; watermark góc chỉ khi thương hiệu bật; metadata bỏ bằng `C:\hoangpq\remove-watermark-skill` (ảnh gốc giữ, điểm ảnh không đổi, không gắn nhãn AI lên bài). Scene-swap (đổi cảnh ảnh của shop tham khảo) chỉ khi thương hiệu bật `product_images.reference_redraw`.
 - Cần: Node.js 22+, Codex CLI đã đăng nhập, Playwright MCP gắn Chrome đã đăng nhập Facebook (nghiên cứu), ffmpeg (chỉ khi dùng watermark).
 - Kiểm tra: `npm test`.
 
