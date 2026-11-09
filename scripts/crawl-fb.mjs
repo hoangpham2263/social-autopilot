@@ -1,6 +1,8 @@
 // Mode 1 step 1.2, scripted: crawl every source of an open research run (research.mjs start) with Playwright driving
 // the user's own, already signed-in Chrome, then ingest. "Crawl everything fast, then filter" (RUNBOOK 1.3): no AI
 // agent clicking post by post; the agent only steps in when a source ends "blocked" or "error".
+//   node scripts/crawl-fb.mjs --check [--cdp http://127.0.0.1:9222]   FIRST step of Mode 1 (before research.mjs start): is the
+//        crawl Chrome reachable over CDP and signed into Facebook? JSON { ok, cdp, reachable, logged_in, browser, next }.
 //   node scripts/crawl-fb.mjs --brand <id> [--source a,b] [--date YYYY-MM-DD] [--cdp http://127.0.0.1:9222] [--redo]
 //        [--max-steps N]
 // Browser (settings research.browser): { cdp: "http://127.0.0.1:9222" } attaches to a Chrome started with
@@ -21,7 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, toolRoot, stamp } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, toolRoot, stamp } from './lib.mjs';
 import { openRun } from './research.mjs';
 import { postKey, postIds } from './store.mjs';
 import { SELECTORS, extractFeed, extractGrid, extractViewer, browserStep, parseFbDate, detectBlock, tabUrl, TAB_MODE } from './fb-extract.mjs';
@@ -321,8 +323,30 @@ async function crawlBrand(args) {
   }
 }
 
+// The crawl Chrome: reachable on its CDP port, and signed into Facebook (a c_user cookie for facebook.com)?
+// Reads only; opens no page. A failed check stops the run before research.mjs start, so the day's run is left alone.
+export async function checkChrome(cdp = 'http://127.0.0.1:9222') {
+  let version = null;
+  try { const r = await fetch(`${cdp.replace(/\/$/, '')}/json/version`, { signal: AbortSignal.timeout(4000) }); version = r.ok ? await r.json() : null; } catch { version = null; }
+  if (!version) return { ok: false, cdp, reachable: false, logged_in: false, next: 'Chrome for crawling is not running: start it with start-crawl-chrome.cmd (Windows) / start-crawl-chrome.command (macOS), or "Start crawl Chrome" in Settings (RUNBOOK "Chrome cho crawl").' };
+  let loggedIn = false;
+  try {
+    const chromium = await loadPlaywright();
+    const browser = await chromium.connectOverCDP(cdp, { timeout: 15000 });
+    const context = browser.contexts()[0];
+    loggedIn = !!context && (await context.cookies('https://www.facebook.com')).some((c) => c.name === 'c_user' && c.value);
+  } catch { loggedIn = false; }
+  return { ok: loggedIn, cdp, reachable: true, logged_in: loggedIn, browser: version.Browser || '', next: loggedIn ? 'OK: node scripts/research.mjs start --brand <id>.' : 'Chrome is running but not signed into Facebook: sign in once by hand with the secondary account in that window (RUNBOOK "Chrome cho crawl").' };
+}
+
 if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
+  if (args.check) {
+    const cfg = settings().research?.browser || {};
+    const r = await checkChrome(args.cdp && args.cdp !== true ? String(args.cdp) : cfg.cdp || 'http://127.0.0.1:9222');
+    if (r.ok) out(r); else fail(r.next, r);
+    process.exit(r.ok ? 0 : 1);
+  }
   await crawlBrand(args);
   process.exit(0); // the CDP connection would keep the process alive
 });

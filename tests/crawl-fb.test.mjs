@@ -163,7 +163,8 @@ test('reopened run archives old raw; re-ingest skips posts already ingested; cap
   // A same-day restart moves the earlier crawl's raw.json away: nothing old is re-ingested.
   const again = cli('research.mjs', 'start', '--brand', 'cf');
   assert.equal(again.reused, true);
-  assert.equal(again.archived[0].source, 'a');
+  assert.ok(again.archived.some((x) => x.source === 'a'), JSON.stringify(again.archived));
+  assert.ok(again.archived.some((x) => x.run), 'the previous run.json is kept too');
   assert.equal(fs.existsSync(a.raw_file), false);
   // Quota 0 for the second source: logged "skipped (quota)", not "dried up".
   cli('research.mjs', 'result', '--brand', 'cf', '--source', 'b', '--state', 'skipped');

@@ -13,13 +13,14 @@ TOOL: {{TOOL}}
 {{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md + project/project.md; node scripts/brands.mjs.
-2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
-3. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id> (Chrome with --remote-debugging-port, RUNBOOK "Chrome cho crawl"); step in only on blocked / error.
-4. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
-5. 1.4 Report data: node scripts/research.mjs report.
-6. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code".
-7. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: checkpoint, captcha or login prompt (crawl-fb records "blocked"; open no other source); Chrome not reachable (tell me how to start it).
+2. 1.0 Check the crawl Chrome FIRST: node scripts/crawl-fb.mjs --check (not ok → stop, do not start the crawl).
+3. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
+4. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id>; step in only on blocked / error.
+5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
+6. 1.4 Report data: node scripts/research.mjs report.
+7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code" (always, also after a stop).
+8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
+STOP IF: --check not ok (Chrome not running or not signed in: tell me how to start it); checkpoint, captcha or login prompt (crawl-fb records "blocked"). Then still do the run log (with the reason) and the report.
 NEVER: like, comment, follow or message; make ideas or posts; send anything to Metricool; sign in for me; store cookies.
 ```
 
@@ -32,13 +33,14 @@ TOOL: {{TOOL}}
 {{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md + project/project.md; node scripts/brands.mjs.
-2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
-3. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id> (Chrome with --remote-debugging-port, RUNBOOK "Chrome cho crawl"); step in only on blocked / error.
-4. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
-5. 1.4 Report data: node scripts/research.mjs report.
-6. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex".
-7. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: checkpoint, captcha or login prompt (crawl-fb records "blocked"; open no other source); Chrome not reachable (tell me how to start it).
+2. 1.0 Check the crawl Chrome FIRST: node scripts/crawl-fb.mjs --check (not ok → stop, do not start the crawl).
+3. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
+4. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id>; step in only on blocked / error.
+5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
+6. 1.4 Report data: node scripts/research.mjs report.
+7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex" (always, also after a stop).
+8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
+STOP IF: --check not ok (Chrome not running or not signed in: tell me how to start it); checkpoint, captcha or login prompt (crawl-fb records "blocked"). Then still do the run log (with the reason) and the report.
 NEVER: like, comment, follow or message; make ideas or posts; send anything to Metricool; sign in for me; store cookies.
 ```
 
@@ -65,7 +67,7 @@ STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip):
 6. 2.7 Stop at "To review"; 2.8 report data: node scripts/queue.mjs.
 7. 2.9 Write the run log: node scripts/runlog.mjs add --mode create --agent "Claude Code".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
-STOP IF: a Metricool tool error (record nothing for that post), Codex image quota is used up.
+STOP IF: a Metricool tool error (record nothing for that post), Codex image quota is used up. Then still do the run log (with the reason) and the report.
 NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId.
 ```
 
@@ -111,7 +113,7 @@ STEPS (follow RUNBOOK.md Mode 3; do them in order, do not skip):
 4. 2.2 Reconcile sent posts (status → getScheduledPosts); 2.8 report data: node scripts/queue.mjs.
 5. 3.1 Write the run log: node scripts/runlog.mjs add --mode publish --agent "Claude Code".
 6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
-STOP IF: a Metricool tool error (record nothing for that post).
+STOP IF: a Metricool tool error (record nothing for that post). Then still do the run log (with the reason) and the report.
 NEVER: make ideas or posts, open a browser, approve posts, make Metricool drafts, set posting times by hand, use another blogId.
 ```
 

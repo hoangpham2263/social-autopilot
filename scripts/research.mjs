@@ -80,6 +80,13 @@ function start(args, s) {
   // Reopened the same day: the earlier crawl's raw.json / raw/ / ingest.json of each source move to
   // <source>/archive/<time>/, so a new crawl never re-ingests old posts (they would count as fake duplicates).
   const archived = [];
+  // The previous run.json of the day is kept too (runs/<brand>/<date>/archive/<time>/run.json).
+  if (before) {
+    const to = path.join(dir, 'archive', stamp().replace(/[:.]/g, '-'));
+    fs.mkdirSync(to, { recursive: true });
+    fs.copyFileSync(runFile, path.join(to, 'run.json'));
+    archived.push({ run: true, to });
+  }
   if (before) for (const { x } of crawl) {
     const sdir = path.join(dir, x.id);
     const moving = ['raw.json', 'raw', 'ingest.json'].filter((f) => fs.existsSync(path.join(sdir, f)));

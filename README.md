@@ -19,11 +19,9 @@ Agent (Claude Code hoặc Codex) làm việc; app chỉ để xem, duyệt và q
 2. Kết nối **Metricool MCP** cho agent:
    - Claude Code: thêm connector Metricool trong claude.ai.
    - Codex: `codex mcp add metricool --url https://ai.metricool.com/mcp` rồi `codex mcp login metricool`.
-3. Research: chạy `npm install` một lần trong thư mục tool, rồi mở Chrome có cổng điều khiển với một profile riêng đã đăng nhập Facebook (tài khoản phụ):
-   - Windows: `"C:Program FilesGoogleChromeApplicationchrome.exe" --remote-debugging-port=9222 --user-data-dir="%LOCALAPPDATA%social-autopilot-chrome"`
-   - macOS: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/social-autopilot-chrome"`
+3. Research: chạy `npm install` một lần trong thư mục tool, rồi mở Chrome cho crawl bằng **`start-crawl-chrome.cmd`** (Windows) hoặc **`start-crawl-chrome.command`** (macOS), hoặc nút **Start crawl Chrome** ở Settings. Chrome mở với một profile riêng (`%LOCALAPPDATA%\social-autopilot-chrome` / `~/Library/Application Support/social-autopilot-chrome`) và cổng điều khiển 9222.
 
-   Lần đầu đăng nhập Facebook trong cửa sổ đó bằng tay; cookie nằm trong profile Chrome, không vào repo. Chi tiết: `RUNBOOK.md` mục "Chrome cho crawl".
+   Lần đầu đăng nhập Facebook (tài khoản phụ) trong cửa sổ đó bằng tay; cookie nằm trong profile Chrome, không vào repo. Kiểm tra: `node scripts/crawl-fb.mjs --check`. Chi tiết: `RUNBOOK.md` mục "Chrome cho crawl".
 4. Mở app: nhấp đúp `start-app.cmd` (Windows) hoặc `start-app.command` (macOS).
    Thiếu gì thì app tự mở tab **Settings** để báo.
 

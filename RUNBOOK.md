@@ -11,6 +11,7 @@ Trạng thái người dùng thấy: **To review** (chờ duyệt) / **Queued** 
 ## Rules for every run
 
 - Prompt ghi sẵn đường dẫn: `TOOL:` (thư mục tool) và mỗi thương hiệu một dòng `SKILL: <id> → <thư mục skill>`; agent không tự chọn skill, chỉ làm với các skill đó và đọc `SKILL.md`, `project/project.md`, `project/social.json` của từng skill ở bước Setup.
+- **Dừng (STOP) vẫn ghi nhật ký:** lượt nào dừng giữa chừng (bị chặn, Chrome không nối được, lỗi Metricool, hết lượt Codex...) **vẫn luôn** làm bước ghi nhật ký (`runlog.mjs add`, kèm lý do dừng qua `--notes` hoặc file JSON `errors`) rồi báo cáo. Bước ghi nhật ký không bao giờ bị bỏ.
 - Mỗi lượt (cả hai chế độ, mọi agent) theo đúng các bước đánh số của chế độ đó, không bỏ bước; **bước gần cuối luôn là ghi nhật ký** (`scripts/runlog.mjs`, 1.5 / 2.9), **bước cuối là báo cáo** với các mục cố định (1.6 / 2.10).
 
 - Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`), **lần lượt từng thương hiệu**, không song song. "all usable brands" = mọi thương hiệu usable.
@@ -59,11 +60,18 @@ Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo khô
 ### Chrome cho crawl (một lần trên máy)
 - `npm install` một lần trong thư mục tool (thư viện `playwright-core`; không tải trình duyệt).
 - Chrome mới không cho điều khiển profile mặc định, nên dùng **một profile riêng** cho crawl, đăng nhập Facebook tài khoản phụ (`research.fb_account`) trong profile đó **một lần, bằng tay**. Cookie nằm trong profile Chrome đó (ngoài repo), tool không bao giờ lưu cookie.
-- Mở Chrome có cổng điều khiển (chỉ nghe ở 127.0.0.1), để mở trong lúc crawl:
+- Lần đầu: chạy **`start-crawl-chrome.cmd`** (Windows) hoặc **`start-crawl-chrome.command`** (macOS) trong thư mục tool, hoặc nút **Start crawl Chrome** ở Settings → Requirements (dòng "Crawl Chrome" xanh khi Chrome đang chạy). Đăng nhập Facebook tài khoản phụ trong cửa sổ đó **một lần**. Các lần sau chỉ cần mở lại bằng launcher trước khi crawl.
+- Launcher làm đúng lệnh sau (Chrome có cổng điều khiển, chỉ nghe ở 127.0.0.1):
   - Windows: `"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%LOCALAPPDATA%\social-autopilot-chrome"`
   - macOS: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/social-autopilot-chrome"`
   - Kiểm tra: mở `http://127.0.0.1:9222/json/version` thấy JSON là được.
 - Settings (`workspace/settings.json`, mặc định ở `config/settings.json`): `research.browser.cdp` (mặc định `http://127.0.0.1:9222`). Hoặc `research.browser.user_data_dir` = thư mục profile riêng (ngoài thư mục tool): tool tự mở Chrome với profile đó (Chrome của profile đó phải đang tắt). Khác: `fallback_tabs` (`posts`, `photos`, `reels`), `stall_posts` (5), `max_scroll_steps` (300).
+
+1.0. Kiểm tra Chrome cho crawl (**bước đầu tiên**, trước `research.mjs start`):
+```
+node scripts/crawl-fb.mjs --check
+```
+JSON `{ ok, reachable, logged_in }`. Không `ok` (Chrome chưa chạy hoặc chưa đăng nhập Facebook): dừng, **không** chạy `research.mjs start` (lượt trong ngày không bị mở lại hay chuyển vào archive), báo người dùng mở Chrome bằng launcher; vẫn ghi nhật ký (1.5) với lý do "chrome unreachable" và báo cáo (1.6).
 
 1.1. Mở lượt crawl cho một thương hiệu:
 ```
@@ -72,7 +80,7 @@ node scripts/research.mjs start --brand <id> [--source a,b] [--since YYYY-MM-DD]
 - Mặc định: lần đầu lấy **hết** bài (cuộn tới hết trang); lần sau chỉ lấy bài mới ở đầu trang (dừng sau 3 bài liên tiếp đã có trong kho).
 - `--since`: giới hạn khi người dùng chọn. `--max-posts N`: **tối đa N bài mới cho cả thương hiệu** (không phải mỗi nguồn), chia đều **xoay vòng** cho các nguồn: mỗi vòng mỗi nguồn còn bài được một phần đều của số còn lại; nguồn cạn để phần dư cho nguồn khác. Nguồn chưa được mở vì hết phần ghi `skipped` ("Skipped (quota)", không phải "Dried up"). Brand = tất cả: mỗi thương hiệu được N.
 - `--backfill`: lấy dần các bài **cũ hơn** bài cũ nhất đã có (`oldest_seen`); nguồn đã `reached_end` thì bỏ qua (`run.skipped`). `--full`: cuộn hết dù đã có (chậm).
-- Mở lại cùng ngày: `raw.json`, `raw/`, `ingest.json` cũ của từng nguồn được chuyển vào `<source>/archive/<giờ>/` (JSON `archived`), không bao giờ bị ingest lại.
+- Mở lại cùng ngày: `run.json` cũ được giữ ở `runs/<brand>/<ngày>/archive/<giờ>/run.json`, và `raw.json`, `raw/`, `ingest.json` cũ của từng nguồn được chuyển vào `<source>/archive/<giờ>/` (JSON `archived`), không bao giờ bị ingest lại. Vì vậy luôn chạy 1.0 trước: kiểm tra hỏng thì đừng `start`.
 - Tiến độ từng nguồn: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen` theo ngày đăng, không có ngày thì theo thứ tự trên trang; bài lấy bằng backfill không bao giờ là `newest_seen`).
 
 1.2. Crawl bằng script (mọi source của lượt, đúng thứ tự):
@@ -85,7 +93,7 @@ node scripts/crawl-fb.mjs --brand <id> [--source a,b] [--cdp http://127.0.0.1:92
 - **Agent chỉ can thiệp khi:**
   - `blocked` (checkpoint, captcha, yêu cầu đăng nhập, "tạm thời bị chặn"): script đã dừng ngay, không mở nguồn nào nữa. Không thử lại trong ngày, không đăng nhập hộ; báo người dùng.
   - `error` (note bắt đầu `error:`): `error: selectors` = trang có bài nhưng không đọc được bài nào (Facebook đổi giao diện): sửa danh sách trong `scripts/fb-extract.mjs` (`SELECTORS`), hoặc crawl tay nguồn đó theo `docs/research.md` phần **Dự phòng** rồi `research.mjs ingest` + `result`. Lỗi khác: ghi vào nhật ký.
-  - Không nối được Chrome: báo người dùng mở Chrome theo mục "Chrome cho crawl".
+  - Không nối được Chrome (lẽ ra 1.0 đã bắt): báo người dùng mở Chrome bằng launcher (mục "Chrome cho crawl").
 
 1.3. Lọc một lượt (agent tự quyết, không mở trình duyệt):
 ```
