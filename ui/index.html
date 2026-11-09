@@ -23,24 +23,24 @@ main > header, main > nav, main > .setup-status { flex: 0 0 auto; }
 .page[hidden] { display: none; }
 .page:not([hidden]) { display: flex; flex-direction: column; }
 .page > /* Log: one compact row per run; the detail opens in the overlay. */
-.log-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); margin-bottom: -1px; cursor: pointer; min-width: 0; }
+.log-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); margin-bottom: -1px; cursor: pointer; min-width: 0; }
 .log-row:hover { border-color: #0078d7; position: relative; }
 .log-row .when { flex: 0 0 140px; white-space: nowrap; }
 .log-row .what { flex: 0 0 auto; white-space: nowrap; color: var(--muted); }
 .log-row .head { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dry { color: #b06000; }
-.dot-none { background: transparent; }
+.dot-amber { background: #b06000; }
 .lb .log-detail { flex: 1 1 auto; overflow: auto; padding: 16px; background: #fff; display: grid; gap: 12px; align-content: start; }
 .app-foot { margin-top: auto; }
 h3 .dot.after { margin: 0 0 0 8px; }
 /* Log: one compact row per run; the detail opens in the overlay. */
-.log-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); margin-bottom: -1px; cursor: pointer; min-width: 0; }
+.log-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); margin-bottom: -1px; cursor: pointer; min-width: 0; }
 .log-row:hover { border-color: #0078d7; position: relative; }
 .log-row .when { flex: 0 0 140px; white-space: nowrap; }
 .log-row .what { flex: 0 0 auto; white-space: nowrap; color: var(--muted); }
 .log-row .head { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dry { color: #b06000; }
-.dot-none { background: transparent; }
+.dot-amber { background: #b06000; }
 .lb .log-detail { flex: 1 1 auto; overflow: auto; padding: 16px; background: #fff; display: grid; gap: 12px; align-content: start; }
 .app-foot { flex: 0 0 auto; padding: 16px 0 4px; text-align: center; font-size: 11px; color: var(--muted); }
 nav.tabs { display: flex; margin: 0 0 12px; }
@@ -213,8 +213,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <button type="button" data-page="overview">Overview</button>
     <button type="button" data-page="store">Library</button>
     <button type="button" data-page="posts">Posts</button>
-    <button type="button" data-page="log">Log</button>
     <button type="button" data-page="prompt">Prompt</button>
+    <button type="button" data-page="log">Log</button>
     <button type="button" data-page="settings">Settings</button>
   </nav>
 
@@ -304,6 +304,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const arr = (x) => (Array.isArray(x) ? x : []);
+  // Inline 16px icons (Lucide-style paths, stroke currentColor) for buttons: icon("copy") + text. Same set as hub.js.
+  const ICONS = { copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>' };
+  const icon = (name) => `<svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+  for (const [sel, name] of [["#prCopy", "copy"]]) { const b = document.querySelector(sel); if (b) b.innerHTML = icon(name) + `<span>${b.textContent}</span>`; }
   // Every "Label (N)" in the app (Mode, Posts, Library, Log, Overview): one format, a no-break space before the count.
   const withCount = (label, n) => `${label}\u00a0(${n ?? 0})`;
   // A control a choice makes meaningless is greyed (tool.css disabled styling) with the reason as its tooltip.
@@ -517,7 +521,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#brandForm").innerHTML = `<div class="fields">
         <div class="field"><label for="fPpd" title="Posts every day; times are chosen automatically (Metricool best times)">Posts per day</label><input type="number" id="fPpd" min="1" step="1" value="${esc(perDay)}"></div>
         <div class="field"><span class="label">Status</span><div class="checks"><label title="A paused brand gets no new posts and nothing sent"><input type="checkbox" id="fPaused"${s.enabled ? "" : " checked"}> Paused</label></div></div>
-        <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">Open skill folder</button></div>
+        <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">${icon("folder")}<span>Open skill folder</span></button></div>
       </div>
       <div class="fields">
         <div class="field wide"><span class="label">Sources</span><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span><button class="btn" type="button" data-rmsrc="1">Remove</button></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
@@ -586,7 +590,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const c = r.current;
     if (!c && !brand && r.brands?.length) { const first = az(r.brands, (x) => x.name || x.id)[0]; $("#resBrand").value = first.id; store.set("resBrand", first.id); return loadResearch(); } // no brand chosen yet: open the first (A–Z)
     if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
-    $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
+    $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option value="${esc(s)}"${s === source ? " selected" : ""}>${esc(withCount(s, c.source_counts?.[s]))}</option>`).join("");
     setDisabled($("#resSource"), arr(c.sources).length < 2, "This brand has only one source");
     const k = c.counts || {};
     const SHOW = [["new", "Unused", k.new], ["used", "Used", k.used], ["rejected", "Dropped", k.rejected], ["", "All", k.total]];
@@ -695,7 +699,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
     const brand = $("#prBrand").value || "";
-    $("#prBrand").innerHTML = `<option value="">All</option>` + az(brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
+    const mk = modeKey(prMode), bc = (id) => modeCounts[id]?.[mk];
+    $("#prBrand").innerHTML = `<option value="">All</option>` + az(brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(bc(b.id) !== undefined ? withCount(b.name || b.id, bc(b.id)) : b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
     const research = isResearch(prMode);
     const publishOnly = /publish approved/i.test(prMode);
     $("#prResearch").hidden = !research;
@@ -704,7 +709,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
     const b = brands.find((x) => x.id === brand);
     const ticked = new Set($$("#prSrc input:checked").map((x) => x.value));
-    const group = (x) => arr(x.sources).map((s) => { const v = `${x.id}:${s}`; return `<label><input type="checkbox" value="${esc(v)}"${ticked.has(v) ? " checked" : ""}>${esc(s)}</label>`; }).join("");
+    const group = (x) => arr(x.sources).map((s) => { const v = `${x.id}:${s}`; return `<label><input type="checkbox" value="${esc(v)}"${ticked.has(v) ? " checked" : ""}>${esc(modeCounts[x.id] ? withCount(s, `${modeCounts[x.id].sources?.[s] || 0} unused`) : s)}</label>`; }).join("");
     const shown = b ? [b] : az(brands.filter((x) => arr(x.sources).length), (x) => x.name || x.id);
     $("#prSrc").innerHTML = shown.map((x) => `${b ? "" : `<div class="opt-group">${esc(x.name || x.id)}</div>`}${group(x)}`).join("") || `<div class="meta">No enabled sources.</div>`;
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
@@ -768,7 +773,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   async function loadModeCounts() {
     const r = await getJson("/api/prompt-counts").catch(() => ({}));
-    if (r.brands) { modeCounts = r.brands; showModeCounts(); }
+    if (r.brands) { const first = !Object.keys(modeCounts).length; modeCounts = r.brands; showModeCounts(); if (first && arr(promptData.prompts).length) drawPrompt(); }
   }
   const loadPrompts = safely("#prMsg", async () => {
     loadModeCounts();
@@ -798,17 +803,19 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const when = (t) => (t ? new Date(t).toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-");
   const loadLogs = safely("#lgList", async () => {
     const brand = store.get("lgBrand");
-    const r = await getJson(`/api/runlogs?brand=${encodeURIComponent(brand || "")}&mode=${encodeURIComponent(lgMode)}`).catch(() => offline);
+    const r = await getJson("/api/runlogs").catch(() => offline);
     if (r.error) { $("#lgList").innerHTML = errLine(r.error); return; }
     dryRuns = r.dried_up_runs || 3;
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
-    $("#lgBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
+    const allLogs = arr(r.logs), hasBrand = (l, id) => arr(l.brands).some((x) => x.brand === id);
+    const runs = (id) => allLogs.filter((l) => (!lgMode || l.mode === lgMode) && hasBrand(l, id)).length;
+    $("#lgBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(withCount(b.brand || b.id, `${runs(b.id)} runs`))}</option>`).join("");
     setDisabled($("#lgBrand"), arr(brandData.brands).length < 2, "Only one brand");
-    $("#lgMode").innerHTML = [["", "All"], ["research", "Research"], ["create", "Create & publish"], ["publish", "Publish"]].map(([v, t]) => `<button class="btn" type="button" data-mode="${v}" aria-pressed="${v === lgMode}">${t}</button>`).join("");
+    $("#lgMode").innerHTML = [["", "All"], ["research", "Research"], ["create", "Create & publish"], ["publish", "Publish"]].map(([v, t]) => `<button class="btn" type="button" data-mode="${v}" aria-pressed="${v === lgMode}">${esc(withCount(t, allLogs.filter((l) => (!brand || hasBrand(l, brand)) && (!v || l.mode === v)).length))}</button>`).join("");
     for (const b of $$("#lgMode button")) b.onclick = () => { lgMode = b.dataset.mode; store.set("lgMode", lgMode); loadLogs(); };
-    const logs = arr(r.logs);
+    const logs = allLogs.filter((l) => (!lgMode || l.mode === lgMode) && (!brand || hasBrand(l, brand)));
     $("#lgList").innerHTML = logs.map((l, i) => `<div class="log-row" data-i="${i}" tabindex="0">
-        ${l.result === "error" ? `<span class="dot dot-red" title="Errors"></span>` : `<span class="dot dot-none"></span>`}
+        <span class="dot ${l.result === "error" ? "dot-red" : l.result === "warning" ? "dot-amber" : "dot-green"}" title="${l.result === "error" ? "Errors" : l.result === "warning" ? "Blocked or unfinished" : "OK"}"></span>
         <span class="when">${esc(when(l.ended))}</span><span class="what">${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(arr(l.brands).map((b) => b.name || b.brand).join(", "))}</span>
         <span class="head" title="${esc(l.headline)}">${esc(l.headline)}</span></div>`).join("") || `<div class="meta">No runs logged yet. The last step of every agent run writes one (scripts/runlog.mjs).</div>`;
     for (const row of $$("#lgList .log-row")) {
@@ -867,12 +874,13 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   let drState = store.get("drState");
   const loadDrafts = safely("#draftList", async () => {
     const brand = store.get("drBrand");
-    const r = await getJson(`/api/drafts?brand=${encodeURIComponent(brand || "")}`).catch(() => offline);
+    const r = await getJson("/api/drafts").catch(() => offline);
     if (r.error) { $("#draftList").innerHTML = errLine(r.error); return; }
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
-    $("#drBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
+    const everyDraft = arr(r.drafts);
+    $("#drBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(withCount(b.brand || b.id, everyDraft.filter((d) => d.brand === b.id && stateOf(d) === (drState || "review")).length))}</option>`).join("");
     setDisabled($("#drBrand"), arr(brandData.brands).length < 2, "Only one brand");
-    const drafts = arr(r.drafts);
+    const drafts = everyDraft.filter((d) => !brand || d.brand === brand);
     const count = (k) => drafts.filter((d) => stateOf(d) === k).length;
     if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : "queued";
     $("#drState").innerHTML = STATES.map(([k, t]) => `<button class="btn" type="button" data-state="${k}" aria-pressed="${k === drState}">${esc(withCount(t, count(k)))}</button>`).join("");

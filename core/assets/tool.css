@@ -123,3 +123,6 @@ details.select > .options .meta { padding: 4px 10px; }
    selects keep 28px on the right for their arrow; text never runs under an icon. */
 details.select > summary { display: block; line-height: calc(var(--ctl-h) - 2px); padding: 0 28px 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 select { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; padding-right: 28px; }
+
+/* Button icons (hub.js header buttons, icon() in the pages): 16px, 6px before the text. */
+.btn .ico { flex: 0 0 auto; margin-right: 6px; }

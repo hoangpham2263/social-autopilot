@@ -23,14 +23,19 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
   if (!location.protocol.startsWith("http")) return;
   const header = document.querySelector("header");
   if (!header) return;
-  const btn = Object.assign(document.createElement("button"), { type: "button", className: "btn update", textContent: "Update" });
+  // Inline 16px icons (Lucide-style "refresh-cw" and "download"), stroke currentColor; a label is set with setLabel().
+  const ICON = { reload: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>', update: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>' };
+  const setLabel = (b, name, text) => { b.innerHTML = `<svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg><span></span>`; b.lastChild.textContent = text; };
+  const btn = Object.assign(document.createElement("button"), { type: "button", className: "btn update" });
+  setLabel(btn, "update", "Update");
   // Reload: the server starts again on the files as they are now and the page loads afresh (after an update, or when
   // the page looks out of date).
-  const reload = Object.assign(document.createElement("button"), { type: "button", className: "btn reload", textContent: "Reload" });
+  const reload = Object.assign(document.createElement("button"), { type: "button", className: "btn reload" });
+  setLabel(reload, "reload", "Reload");
   header.append(reload, btn);
   reload.onclick = async () => {
     reload.disabled = true;
-    reload.textContent = "Reloading…";
+    setLabel(reload, "reload", "Reloading…");
     const r = await fetch("/api/reload", saPost()).catch(() => null);
     if (!r || !r.ok) return location.reload();
     const wait = () => fetch("/api/root").then((x) => (x.ok ? location.reload() : setTimeout(wait, 400))).catch(() => setTimeout(wait, 400));
@@ -75,7 +80,7 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
   }
   refreshStatus();
   let next = "", current = "";
-  const show = () => { btn.textContent = next ? `Update ${next}` : "Update"; btn.classList.toggle("primary", !!next); };
+  const show = () => { setLabel(btn, "update", next ? `Update ${next}` : "Update"); btn.classList.toggle("primary", !!next); };
   const check = () => fetch("/api/update-check").then((r) => (r.ok ? r.json() : Promise.reject())).then((r) => { next = r.next || ""; current = r.current || ""; show(); return true; }).catch(() => false);
   setTimeout(check, 3000);
   setInterval(check, 6 * 3600 * 1000);

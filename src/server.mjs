@@ -68,7 +68,10 @@ function storeData(brand, status, source) {
   const ideas = readJson(storeIdeasFile(brand), { ideas: [] }).ideas;
   // Each reference page's avatar (captured by research ingest), served through /file (workspace images only).
   const avatars = Object.fromEntries(r.sources.map((s) => [s, sourceAvatar(brand, s)]).filter(([, a]) => a));
-  return { brand, dir, counts: r.counts, sources: r.sources, progress: readProgress(brand).sources || {}, items, ideas, avatars };
+  // Items per source in the current Show filter (Library Source dropdown).
+  const inStatus = listItems(brand, { status }).items;
+  const source_counts = Object.fromEntries(r.sources.map((s) => [s, inStatus.filter((i) => i.source_id === s).length]));
+  return { brand, dir, counts: r.counts, sources: r.sources, source_counts, progress: readProgress(brand).sources || {}, items, ideas, avatars };
 }
 
 // ----- HTTP -----
@@ -218,6 +221,8 @@ async function handle(req, res) {
         research: listItems(b.id).counts.new || 0,
         create: postsNeeded({ id: b.id, social: { cadence: { posts_per_day: b.posts_per_day } } }).need,
         publish: (qb.written || []).filter((w) => ["not_sent", "draft"].includes(w.metricool) && w.media_url).length,
+        // Unused library items per source (Prompt Sources list).
+        sources: listItems(b.id).items.filter((i) => i.status === "new").reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
       }];
     })) };
   });
