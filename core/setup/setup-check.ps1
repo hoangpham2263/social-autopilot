@@ -18,7 +18,7 @@ if ($engine) {
     } catch { $loggedIn = $false }
 }
 $steps = @(
-    [pscustomobject]@{ Id = 'login'; Title = 'Codex (ChatGPT)'; State = $(if (-not $engine) { 'wait' } elseif ($loggedIn) { 'ok' } else { 'fail' }); Account = ''; Uses = 'Tạo ảnh cảnh của thương hiệu'
+    [pscustomobject]@{ Id = 'login'; Title = 'Codex (ChatGPT)'; State = $(if (-not $engine) { 'wait' } elseif ($loggedIn) { 'ok' } else { 'fail' }); Uses = 'Tạo ảnh cảnh của thương hiệu'
         Detail = $(if (-not $engine) { 'Cài Codex trước.' } elseif ($loggedIn) { 'Đã đăng nhập.' } else { 'Chưa đăng nhập hoặc phiên đã hết hạn.' })
         Action = $(if ($engine) { 'login' } else { '' }) }
     [pscustomobject]@{ Id = 'node'; Title = 'Node.js'; State = $(if ($node) { 'ok' } else { 'fail' }); Detail = $(if ($node) { 'Đã cài.' } else { 'Chưa cài.' }); Action = $(if ($node) { '' } else { 'install' }) }

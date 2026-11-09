@@ -44,11 +44,9 @@ test('serves the page, the shell assets and the data APIs', async () => {
   const settings = await (await fetch(`${base}/api/settings`)).json();
   assert.match(settings.scheduledPrompt, /RUNBOOK\.md/);
   assert.equal((await fetch(`${base}/file?path=${encodeURIComponent(path.join(tool, 'icon.svg'))}`)).status, 404); // only workspace images
-  // Same look as the static dashboard: the page loads the dashboard's own stylesheet.
-  assert.match(await (await fetch(base + '/')).text(), /\/ui\/dashboard\.css/);
-  const css = await fetch(base + '/ui/dashboard.css');
-  assert.equal(css.status, 200);
-  assert.match(await css.text(), /--background/);
+  // The app is self-contained in ui/ and core/assets: it does not use the static dashboard's stylesheet.
+  assert.doesNotMatch(await (await fetch(base + '/')).text(), /dashboard.css/);
+  assert.equal((await fetch(base + '/ui/dashboard.css')).status, 404);
   // Image host: settings shown and saved with the rest; "Đưa ảnh lên" refuses anything that is not an approved post.
   assert.match(settings.settings.imageHost.rawBase, /^https:\/\//);
   const saved = await (await fetch(base + '/api/settings', { method: 'POST', body: JSON.stringify({ settings: settings.settings }) })).json();

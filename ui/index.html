@@ -5,89 +5,78 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Social Autopilot</title>
 <link rel="icon" href="/icon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist&family=Geist+Mono&display=swap">
-<!-- The static dashboard's stylesheet (tokens, container, header, cards, lists), served from
-     scripts/dashboard.template.html, so the app and dashboard.html look the same. Below: only what the app adds. -->
-<link rel="stylesheet" href="/ui/dashboard.css">
+<link rel="stylesheet" href="/core/assets/tool.css">
 <script src="/core/assets/hub.js" defer></script>
 <style>
-/* App-only parts on the dashboard's tokens: forms, tables, page tabs, Cấu hình status, update dialog.
-   One weight (400), states by border colour, no shadows. */
-.site-header .header-inner .btn { flex-shrink: 0; }
-.site-header .meta { margin-left: auto; }
-.page-tabs { justify-self: start; }
-.page { display: grid; gap: 1rem; }
-.toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
-.toolbar > div { min-width: 170px; }
-label { display: block; font-size: 12.5px; color: var(--muted-foreground); margin: 10px 0 4px; }
-.toolbar label { margin-top: 0; }
-input, textarea, select { width: 100%; font: inherit; font-size: 13.5px; color: var(--foreground); background: var(--background); border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); padding: 5px 8px; outline: none; transition: border-color .15s; }
-input:hover, textarea:hover, select:hover { border-color: var(--ring); }
-input:focus, textarea:focus, select:focus { border-color: var(--strong); }
-input[type=checkbox] { width: auto; accent-color: var(--primary); }
-select { height: 32px; }
-textarea { resize: vertical; min-height: 110px; }
-textarea.prompt { min-height: 260px; font: 12.5px/1.5 "Geist Mono", ui-monospace, Consolas, monospace; }
-.btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
-.btn.primary:hover { border-color: var(--ring); }
-.btn:disabled { opacity: .55; cursor: default; }
-fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 10px 14px 14px; margin: 0 0 1rem; min-width: 0; }
-legend { padding: 0 6px; font-size: 13.5px; }
+/* Thin management layer over scripts/: every value shown or saved goes through the same functions the scheduled agent
+   runs. Text weight 400 everywhere; states (hover, focus, selected, ok/missing) by border colour only, no shadows. */
+* { font-weight: 400; }
+b, strong, h1, h2, h3, th { font-weight: 400; }
+nav.tabs { display: flex; gap: 0; margin: 0 0 12px; }
+nav.tabs button { height: 32px; padding: 0 16px; font: inherit; background: #e1e1e1; border: 1px solid #adadad; margin-right: -1px; cursor: default; }
+nav.tabs button:hover { border-color: #0078d7; position: relative; }
+nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--accent); position: relative; }
+.page[hidden] { display: none; }
+.cards { display: grid; gap: 10px; }
+.card { background: #fff; border: 1px solid var(--line); padding: 10px 12px; box-shadow: none; }
+.card.ok { border-color: var(--accent); }
+.card.todo { border-color: #b06000; }
+.card h3 { margin: 0 0 4px; font-size: 15px; }
+.meta { color: var(--muted); font-size: 12px; }
+.missing { margin: 6px 0 0; padding-left: 18px; color: #b06000; font-size: 12px; }
+.ok-text { color: #006400; } .bad-text { color: rgb(176, 0, 0); } .warn-text { color: #b06000; }
+.row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+.toolbar label { margin: 0 0 4px; }
+.toolbar > div { min-width: 160px; }
+fieldset { border: 1px solid var(--line); background: #fff; padding: 10px 12px; margin: 0 0 12px; }
+legend { padding: 0 4px; color: var(--ink); }
 table.edit { width: 100%; border-collapse: collapse; }
-table.edit th { text-align: left; color: var(--muted-foreground); font-size: 12px; padding: 4px; }
-table.edit td { padding: 3px 4px; vertical-align: middle; border-top: 1px solid var(--border); font-size: 13px; }
-.table-wrap { overflow-x: auto; }
+table.edit th { text-align: left; color: var(--muted); font-size: 12px; padding: 4px; }
+table.edit td { padding: 3px 4px; vertical-align: middle; }
+table.edit input[type=checkbox] { width: auto; }
 .inline { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.inline label { display: flex; gap: 6px; align-items: center; margin: 0; color: var(--foreground); }
+.inline label { display: flex; gap: 6px; align-items: center; margin: 0; }
+.inline input[type=checkbox] { width: auto; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 12px; }
-.row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.card h3 { margin: 0; font-size: 14.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.card .meta { display: block; }
-.missing { margin: 0; padding-left: 18px; color: var(--amber); font-size: 12.5px; }
-.bad-text { color: var(--destructive); } .warn-text { color: var(--amber); }
-.cards.one { grid-template-columns: 1fr; }
 .refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.ref img, .draft img { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: var(--muted); display: block; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); }
-.ref pre, .draft pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13px; line-height: 1.5; margin: 0; max-height: 240px; overflow: auto; }
-.draft { grid-template-columns: 280px minmax(0, 1fr); gap: 14px; }
-.draft .side { display: grid; gap: 6px; align-content: start; }
-.draft .body { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.ref img, .draft img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--control); display: block; border: 1px solid var(--line); }
+.ref pre, .draft pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 6px 0 0; max-height: 220px; overflow: auto; }
+.draft { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; }
 .captions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
-.captions .cap { border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); padding: 6px 10px; display: grid; gap: 4px; }
-.host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12.5px; }
-.host a { overflow-wrap: anywhere; }
-.msg { min-height: 18px; white-space: pre-wrap; font-size: 12.5px; }
-.setup-status { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
-.setup-status:empty { display: none; }
-.setup-status .text { flex: 1; min-width: 0; }
-.setup-status.ok { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
-.setup-status.ok .mark { color: var(--green); }
-.setup-status.todo { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); }
-.setup-status.todo .mark { color: var(--amber); }
-.shade { position: fixed; inset: 0; z-index: 60; background: color-mix(in srgb, var(--foreground) 25%, transparent); display: flex; align-items: center; justify-content: center; padding: 16px; }
-.dialog { width: min(440px, 100%); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
-.dialog .status { min-height: 44px; border: 0; padding: 0; display: block; white-space: normal; }
-.dialog .status::before { display: none; }
-.dialog .bar { height: 8px; margin: 8px 0 20px; background: var(--muted); border-radius: 999px; overflow: hidden; }
-.dialog .bar > span { display: block; width: 22%; height: 100%; background: var(--primary); animation: hub-marquee 2.2s linear infinite; }
-.dialog .actions { display: flex; justify-content: flex-end; gap: 10px; }
-@keyframes hub-marquee { from { transform: translateX(-100%); } to { transform: translateX(460%); } }
+.captions .cap { border: 1px solid var(--line); padding: 6px 8px; }
+.status-tag { display: inline-block; padding: 1px 8px; border: 1px solid var(--line); font-size: 12px; }
+.status-tag.awaiting_approval { border-color: #0078d7; } .status-tag.approved { border-color: var(--accent); } .status-tag.rejected { border-color: rgb(176, 0, 0); }
+.msg { min-height: 20px; margin-top: 8px; white-space: pre-wrap; }
+textarea.prompt { min-height: 260px; font: 12.5px/1.5 Consolas, ui-monospace, monospace; }
+a { color: #0b57d0; }
 @media (max-width: 760px) { .draft { grid-template-columns: 1fr; } }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 0 0 12px; }
+a.stat { display: grid; gap: 2px; background: #fff; border: 1px solid var(--line); padding: 8px 12px; color: var(--ink); text-decoration: none; }
+a.stat:hover { border-color: #0078d7; }
+a.stat .v { font-size: 20px; } a.stat .v small { font-size: 12px; color: var(--muted); }
+a.stat .d { color: var(--muted); font-size: 12px; }
+.muted { color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+.status-tag.c-green { border-color: var(--accent); } .status-tag.c-amber { border-color: #b06000; } .status-tag.c-red { border-color: rgb(176, 0, 0); }
+.draft .side { display: grid; gap: 6px; align-content: start; }
+.draft .body { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.captions .cap { display: grid; gap: 4px; }
+.host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.host a { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
-<div class="site-header"><header class="container header-inner"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 16l5-5 4 4 7-8"/></svg></span><h1>Social Autopilot</h1><span class="meta" id="hdrMeta"></span></header></div>
-<main class="container main">
+<main>
+  <header><img src="/icon.svg" alt=""><h1>Social Autopilot</h1></header>
   <div id="setupStatus" class="setup-status"></div>
   <section class="stats" id="stats" aria-label="Tổng quan"></section>
-  <div class="tabs-list page-tabs" id="tabs" role="tablist">
-    <button type="button" role="tab" data-page="drafts">Bản nháp</button>
-    <button type="button" role="tab" data-page="brands">Thương hiệu</button>
-    <button type="button" role="tab" data-page="research">Nghiên cứu</button>
-    <button type="button" role="tab" data-page="settings">Cài đặt</button>
-  </div>
+  <nav class="tabs" id="tabs">
+    <button type="button" data-page="drafts">Bản nháp</button>
+    <button type="button" data-page="brands">Thương hiệu</button>
+    <button type="button" data-page="research">Nghiên cứu</button>
+    <button type="button" data-page="settings">Cài đặt</button>
+  </nav>
 
   <section class="page" id="page-brands" hidden>
     <div class="toolbar"><div class="meta" id="brandsRoot"></div><button class="btn" type="button" id="brandsReload">Kiểm tra lại</button></div>
@@ -118,7 +107,7 @@ table.edit td { padding: 3px 4px; vertical-align: middle; border-top: 1px solid 
         <option value="needs_caption">Chờ caption</option><option value="image_failed">Lỗi ảnh</option><option value="approved">Đã duyệt</option><option value="rejected">Đã bỏ</option></select></div>
       <div><label for="approver">Tên người duyệt</label><input id="approver" placeholder="phải khớp approval.owner"></div>
     </div>
-    <div class="cards one" id="draftList"></div>
+    <div class="cards" id="draftList"></div>
   </section>
 
   <section class="page" id="page-settings" hidden>
@@ -146,14 +135,14 @@ table.edit td { padding: 3px 4px; vertical-align: middle; border-top: 1px solid 
   const pages = ["brands", "brand", "research", "drafts", "settings"];
   function show(page) {
     for (const p of pages) $(`#page-${p}`).hidden = p !== page;
-    for (const b of document.querySelectorAll("#tabs button")) { const on = b.dataset.page === (page === "brand" ? "brands" : page); b.setAttribute("aria-selected", String(on)); b.classList.toggle("active", on); }
+    for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "brands" : page)));
     store.set("page", page === "brand" ? "brands" : page);
     ({ brands: loadBrands, research: loadResearch, drafts: loadDrafts, settings: loadSettings })[page]?.();
     loadStats();
   }
   for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => show(b.dataset.page);
 
-  // ----- Tổng quan (live, read again on every page load): the dashboard's three cards -----
+  // ----- Tổng quan (live, read again on every page load): three counters -----
   let brandCache = null;
   async function loadStats() {
     const [d, b] = await Promise.all([getJson("/api/drafts"), brandCache ? Promise.resolve(brandCache) : getJson("/api/brands")]).catch(() => [{}, {}]);
@@ -162,11 +151,10 @@ table.edit td { padding: 3px 4px; vertical-align: middle; border-top: 1px solid 
     const waiting = drafts.filter((x) => x.status === "awaiting_approval").length;
     const approved = drafts.filter((x) => x.brand_post);
     const hosted = approved.filter((x) => x.brand_post.media_url).length;
-    const stat = (page, status, k, v, desc, c) => `<a class="stat" href="#" data-go="${page}" data-status="${status}"><span class="k"><span class="dot" style="--c:var(--${c})"></span>${esc(k)}</span><span class="v">${v}</span><span class="d">${esc(desc)}</span></a>`;
-    $("#stats").innerHTML = stat("drafts", "awaiting_approval", "Chờ duyệt", waiting, "bản nháp đợi bạn xem", "amber") +
-      stat("brands", "", "Thương hiệu sẵn sàng", `${list.filter((x) => x.usable).length}<small>/${list.length}</small>`, "chạy được trong lịch", "green") +
-      stat("drafts", "approved", "Đã duyệt", approved.length, `${hosted} có link ảnh · chưa đăng (Metricool làm sau)`, "slate");
-    $("#hdrMeta").textContent = `Cập nhật ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`;
+    const stat = (page, status, k, v, desc) => `<a class="stat" href="#" data-go="${page}" data-status="${status}"><span class="k">${esc(k)}</span><span class="v">${v}</span><span class="d">${esc(desc)}</span></a>`;
+    $("#stats").innerHTML = stat("drafts", "awaiting_approval", "Chờ duyệt", waiting, "bản nháp đợi bạn xem") +
+      stat("brands", "", "Thương hiệu sẵn sàng", `${list.filter((x) => x.usable).length}<small>/${list.length}</small>`, "chạy được trong lịch") +
+      stat("drafts", "approved", "Đã duyệt", approved.length, `${hosted} có link ảnh · chưa đăng (Metricool làm sau)`);
     for (const a of document.querySelectorAll("#stats [data-go]")) a.onclick = (e) => {
       e.preventDefault();
       if (a.dataset.go === "drafts") { $("#drStatus").value = a.dataset.status; store.set("drStatus", a.dataset.status); }
@@ -185,8 +173,8 @@ table.edit td { padding: 3px 4px; vertical-align: middle; border-top: 1px solid 
     $("#brandsRoot").textContent = `Thư mục thương hiệu (skillsRoot): ${r.root}`;
     const skipped = r.skipped.map((s) => `<div class="meta">Bỏ qua ${esc(s.dir)}: ${esc(s.reason)}</div>`).join("");
     $("#brandList").innerHTML = (brands.length ? brands.map((b) => `
-      <div class="card">
-        <h3>${esc(b.brand || b.id)} <span class="tag">${esc(b.id)}</span> ${b.usable ? '<span class="status c-green">Sẵn sàng</span>' : b.enabled ? '<span class="status c-red">Bật nhưng còn thiếu</span>' : b.problems?.length ? '<span class="status c-amber">Tắt, còn thiếu</span>' : '<span class="status c-slate">Đủ, đang tắt</span>'}</h3>
+      <div class="card ${b.usable ? "ok" : "todo"}">
+        <h3>${esc(b.brand || b.id)} <span class="status-tag">${esc(b.id)}</span> ${b.usable ? '<span class="status-tag c-green">Sẵn sàng</span>' : b.enabled ? '<span class="status-tag c-red">Bật nhưng còn thiếu</span>' : b.problems?.length ? '<span class="status-tag c-amber">Tắt, còn thiếu</span>' : '<span class="status-tag ">Đủ, đang tắt</span>'}</h3>
         <div class="meta">${b.enabled ? "enabled: true" : "enabled: false"} · ${b.ready ? '<span class="ok-text">sẵn sàng cho tool</span>' : '<span class="warn-text">chưa sẵn sàng</span>'} · ${b.usable ? '<span class="ok-text">đang chạy trong lịch</span>' : "không chạy trong lịch"}</div>
         <div class="meta">Kênh: ${esc((b.channels || []).join(", ") || "chưa bật")} · Ngôn ngữ: ${esc((b.languages || []).join(", ") || "-")} (${esc(b.language_mode || "-")}) · Nguồn: ${(b.sources || []).length} · Người duyệt: ${esc(b.owner || "chưa có")} · Cảnh AI: ${esc(String(b.ai_scenes_allowed))}</div>
         <div class="meta">${esc(b.dir)}</div>
@@ -371,7 +359,7 @@ table.edit td { padding: 3px 4px; vertical-align: middle; border-top: 1px solid 
             <div class="warn-text">Ảnh gốc của shop ${esc(d.source_shop)}: so sánh, ảnh mới không được còn tên shop, logo, watermark, nhãn size.</div>
             <div class="meta">${d.logo_check ? `Đã xác nhận sạch logo: ${esc(d.logo_check.by)} · ${esc(d.logo_check.confirmed)}` : "Chưa xác nhận sạch logo."}</div>` : ""}</div>
         <div class="body">
-          <h3><span style="font-family:'Geist Mono',monospace;font-size:13px">${esc(d.id)}</span> <span class="status ${STATUS_COLOR[d.status] || "c-slate"}">${esc(STATUS_TEXT[d.status] || d.status)}</span> <span class="tag">${d.image_mode === "scene-swap" ? "scene-swap: ảnh shop, đổi cảnh" : "ảnh của thương hiệu"}</span></h3>
+          <h3><span>${esc(d.id)}</span> <span class="status-tag ${STATUS_COLOR[d.status] || ""}">${esc(STATUS_TEXT[d.status] || d.status)}</span> <span class="status-tag">${d.image_mode === "scene-swap" ? "scene-swap: ảnh shop, đổi cảnh" : "ảnh của thương hiệu"}</span></h3>
           <div class="meta">${esc(d.brand)} · ${esc(d.idea)} · kênh ${esc((d.networks || []).join(", "))} · ${esc((d.languages || []).join(", "))} (${esc(d.language_mode || "-")})</div>
           ${d.inspiration_url ? `<div class="meta">Cảm hứng: <a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">${esc(d.inspiration_url)}</a></div>` : ""}
           <div class="meta">${esc(d.dir)}</div>

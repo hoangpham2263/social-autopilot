@@ -158,12 +158,6 @@ async function handle(req, res) {
   if (path === "/api/run") return send(res, 200, { running: false });
   if (path === "/api/quit" && req.method === "POST") { send(res, 200, { ok: true }); setTimeout(() => process.exit(0), 200); return; }
   if (path === "/icon.svg") return sendFile(res, join(root, "icon.svg"));
-  // The static dashboard's stylesheet (scripts/dashboard.template.html), so the app and dashboard.html look the same.
-  if (path === "/ui/dashboard.css") {
-    const css = readFileSync(join(root, "scripts", "dashboard.template.html"), "utf8").match(/<style>([\s\S]*?)<\/style>/)?.[1] || "";
-    res.writeHead(200, { "content-type": TYPES[".css"], "cache-control": "no-store" });
-    return res.end(css);
-  }
   const asset = /^\/core\/assets\/([\w.-]+)$/.exec(path);
   if (asset) return CORE_ASSETS.includes(asset[1]) ? sendFile(res, join(root, "core", "assets", asset[1])) : (res.writeHead(404), res.end());
   const rel = path === "/" ? "index.html" : path.slice(1);
