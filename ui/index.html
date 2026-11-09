@@ -872,7 +872,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         const cell = (list, i, cls = "") => `<td class="${cls}">${list[i] || ""}</td>`;
         body = `<table class="edit"><thead><tr><th>Scheduled</th><th>To review</th><th>Errors</th></tr></thead><tbody>${Array.from({ length: n }, (_, i) => `<tr>${cell(sched, i)}${cell(arr(c.to_review).map((x) => esc(x.id)), i)}${cell(errs, i, "bad-text")}</tr>`).join("")}</tbody></table>`;
       }
-      return `<div class="card"><h3>${ext(b.page_url, b.name || b.brand)}</h3>${body}</div>`;
+      const extraLines = arr(b.warnings).map((w) => `<div class="warn-text">${esc(w)}</div>`).join("") + arr(b.resolved).map((w) => `<div class="meta">Resolved: ${esc(w)}</div>`).join("");
+      return `<div class="card"><h3>${ext(b.page_url, b.name || b.brand)}</h3>${body}${extraLines}</div>`;
     }).join("");
     const sub = [l.agent, l.duration_s ? `${Math.max(1, Math.round(l.duration_s / 60))} min` : ""].filter(Boolean).join(" · ");
     openOverlay(`${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(when(l.ended))} · ${esc(l.headline)}${sub ? ` <span class="meta">${esc(sub)}</span>` : ""}`, `<div class="log-detail"><div class="cards">${brands}</div></div>`);

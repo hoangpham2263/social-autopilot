@@ -90,7 +90,9 @@ function run(args, cmd, brand, file) {
     save();
     for (const [n, it] of chosen.entries()) markUsed(brand.id, it.id, added[n]);
     const left = readStore(brand.id).items.filter((x) => x.status === 'new').length;
-    return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: left, next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài "new": chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
+    // Library low: fewer unused posts than twice what this run took -> run Research soon (also in the run log).
+    const low = left < Math.max(1, chosen.length) * 2;
+    return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: left, ...(low ? { warning: `Library low: ${left} unused posts left; run Research.` } : {}), next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài "new": chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
   }
   if (cmd === 'set') {
     const idea = find();

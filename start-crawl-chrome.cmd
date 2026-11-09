@@ -14,3 +14,8 @@ if not exist "%CHROME%" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Applicatio
 if not exist "%CHROME%" set "CHROME=%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
 if not exist "%CHROME%" (echo Google Chrome not found. & pause & exit /b 1)
 start "" "%CHROME%" --remote-debugging-port=9222 --user-data-dir="%PROFILE%" https://www.facebook.com/
+rem The port must answer within a few seconds; otherwise a Chrome with this profile was already open without it.
+powershell -NoProfile -Command "for ($i = 0; $i -lt 10; $i++) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 http://127.0.0.1:9222/json/version | Out-Null; exit 0 } catch { Start-Sleep -Milliseconds 500 } }; exit 1" && (echo Crawl Chrome is running on port 9222. & exit /b 0)
+echo The control port 9222 did not open. A Chrome window with the crawl profile is probably already open without it: close every window of that Chrome, then run this again.
+pause
+exit /b 1

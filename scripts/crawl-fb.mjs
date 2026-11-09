@@ -328,6 +328,7 @@ async function crawlBrand(args) {
 export async function checkChrome(cdp = 'http://127.0.0.1:9222') {
   let version = null;
   try { const r = await fetch(`${cdp.replace(/\/$/, '')}/json/version`, { signal: AbortSignal.timeout(4000) }); version = r.ok ? await r.json() : null; } catch { version = null; }
+  if (version && !(version.Browser && version.webSocketDebuggerUrl)) version = null; // something else on that port
   if (!version) return { ok: false, cdp, reachable: false, logged_in: false, next: 'Chrome for crawling is not running: start it with start-crawl-chrome.cmd (Windows) / start-crawl-chrome.command (macOS), or "Start crawl Chrome" in Settings (RUNBOOK "Chrome cho crawl").' };
   let loggedIn = false;
   try {

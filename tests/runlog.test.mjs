@@ -99,3 +99,15 @@ test('a run stopped before its crawl: result "stopped" with the reason, no numbe
   const help = spawnSync(process.execPath, [path.join(tool, 'scripts', 'runlog.mjs'), '--help'], { env, encoding: 'utf8' });
   assert.match(help.stdout, /--reason/);
 });
+
+test('resolved errors do not turn a run red; --warning makes it amber', () => {
+  spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},1100)']);
+  const notes = path.join(tmp, 'resolved.json');
+  write(notes, { resolved: ['Metricool timeout, retried and sent'] });
+  const r = run('add', '--mode', 'publish', '--agent', 'Codex', '--started', '2099-06-03T00:00:00Z', '--file', notes, '--warning', 'one post had no image yet');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.notEqual(r.log.result, 'error');
+  assert.equal(r.log.result, 'warning');
+  assert.deepEqual(r.log.resolved, ['Metricool timeout, retried and sent']);
+  assert.deepEqual(r.log.warnings, ['one post had no image yet']);
+});

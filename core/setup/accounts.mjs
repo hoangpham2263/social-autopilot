@@ -30,7 +30,9 @@ export const ghLogin = (text) => String(text).match(/Logged in to (\S+) account 
 
 // The crawl Chrome (Mode 1): its CDP port answers (RUNBOOK "Chrome cho crawl").
 async function crawlChrome(cdp) {
-  try { const r = await fetch(`${cdp.replace(/\/$/, '')}/json/version`, { signal: AbortSignal.timeout(2500) }); return r.ok; } catch { return false; }
+  // Running only when a real Chrome answers /json/version (Browser and webSocketDebuggerUrl), never because the
+  // launcher was started.
+  try { const r = await fetch(`${cdp.replace(/\/$/, '')}/json/version`, { signal: AbortSignal.timeout(2500), cache: 'no-store' }); if (!r.ok) return false; const j = await r.json(); return !!(j && j.Browser && j.webSocketDebuggerUrl); } catch { return false; }
 }
 
 export async function accounts({ metricool = {}, cdp = 'http://127.0.0.1:9222' } = {}) {

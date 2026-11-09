@@ -12,13 +12,17 @@ import path from 'node:path';
 import { main, out, isMain, parseArgs, need, readJson, writeJson, workspace, discoverBrands, listDrafts, stamp } from './lib.mjs';
 
 const USAGE = `node scripts/runlog.mjs add --mode research|create|publish --agent "<Claude Code|Codex>" [--brand a,b] [--started <ISO>]
-     [--file <notes.json> | --stdin] [--notes "..."] [--reason "<why the run stopped>" | --stopped]
+     [--file <notes.json> | --stdin] [--notes "..."] [--reason "<why the run stopped>" | --stopped] [--warning "<text>"]
    The last-but-one step of every run, also after a stop (then give --reason: logged as "stopped", no older numbers).
-   notes.json: { "notes": "...", "errors": ["..."], "brands": { "<id>": { "notes": "...", "errors": ["..."] } } }
+   notes.json: { "notes": "...", "errors": ["..."], "resolved": ["fixed during the run"], "warnings": ["..."],
+                 "brands": { "<id>": { "notes": "...", "errors": [], "resolved": [], "warnings": [] } } }
+   errors = still open (red); resolved = fixed during the run (shown, not red); warnings = amber.
 node scripts/runlog.mjs list [--brand <id>] [--mode research|create|publish] [--limit N]
 node scripts/runlog.mjs show --id <log id>`;
 import { researchReport } from './research.mjs';
 import { writtenPost } from './queue.mjs';
+import { listItems } from './store.mjs';
+import { postsNeeded } from './ideas.mjs';
 
 export const runsDir = () => path.join(workspace, 'logs', 'runs');
 const MODES = ['research', 'create', 'publish']; // publish = Mode 3, Publish approved (reported like create)
@@ -75,6 +79,7 @@ const resultOf = (mode, b) => {
   const errs = (b.errors || []).length + (b.create?.errors || []).length + (b.research?.sources || []).filter((x) => x.state === 'error').length;
   if (errs) return 'error';
   if ((b.create?.failed || []).length) return 'error';
+  if ((b.warnings || []).length) return 'warning';
   if ((b.research?.sources || []).some((x) => x.state === 'blocked' || x.state === 'unfinished')) return 'warning';
   return 'ok';
 };
@@ -86,7 +91,7 @@ function lastEnded(mode) {
 }
 
 // reason (--reason / --stopped): the run stopped (Chrome unreachable, blocked, Metricool error...); logged as "stopped".
-export function addLog({ mode, agent = '', brands = [], started = '', notes = '', reason = '', extra = {}, now = new Date() }) {
+export function addLog({ mode, agent = '', brands = [], started = '', notes = '', reason = '', warning = '', extra = {}, now = new Date() }) {
   if (!MODES.includes(mode)) throw new Error('--mode must be research, create or publish.');
   const all = discoverBrands().brands.filter((b) => b.usable || brands.includes(b.id));
   const pick = brands.length ? all.filter((b) => brands.includes(b.id)) : all;
@@ -96,14 +101,18 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
     const x = extra.brands?.[b.id] || {};
     // The brand's Facebook page (its enabled facebook channel's url), linked from the Log.
     const page = (readJson(path.join(b.dir, 'project', 'social.json'), {}).channels || []).find((c) => c?.enabled && c.network === 'facebook' && /^https:\/\//.test(c.url || ''))?.url || '';
-    const entry = { brand: b.id, name: b.brand || b.id, page_url: page, notes: String(x.notes || ''), errors: [].concat(x.errors || []).map(String) };
+    // errors = still open (red); resolved = fixed during the run (shown, not red); warnings = amber.
+    const entry = { brand: b.id, name: b.brand || b.id, page_url: page, notes: String(x.notes || ''), errors: [].concat(x.errors || []).map(String), resolved: [].concat(x.resolved || []).map(String), warnings: [].concat(x.warnings || []).map(String) };
     if (mode === 'research') entry.research = researchPart(b.id, since); else entry.create = createPart(b.id, since);
+    if (mode !== 'research') { const unused = listItems(b.id).counts.new || 0, need = postsNeeded({ id: b.id, social: { cadence: { posts_per_day: b.posts_per_day } } }).want; if (unused < need * 2) entry.warnings.push(`Library low: ${unused} unused posts; run Research.`); }
     entry.headline = entry.research?.not_run ? 'not run' : brandHeadline(mode, entry);
     entry.result = resultOf(mode, entry);
     return entry;
   });
   const errors = [].concat(extra.errors || []).map(String);
-  const result = errors.length || per.some((b) => b.result === 'error') ? 'error' : per.some((b) => b.result === 'warning') ? 'warning' : 'ok';
+  const warnings = [...[].concat(extra.warnings || []), ...[].concat(warning || [])].map(String).filter(Boolean);
+  const resolved = [].concat(extra.resolved || []).map(String);
+  const result = errors.length || per.some((b) => b.result === 'error') ? 'error' : warnings.length || per.some((b) => b.result === 'warning') ? 'warning' : 'ok';
   const sum = (f) => per.reduce((a, b) => a + f(b), 0);
   const headline = mode === 'research'
     ? [`+${plural(sum((b) => b.research.new || 0), 'post')}`, keptText(sum((b) => b.research.kept || 0), sum((b) => b.research.filtered || 0)), sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length) && `${plural(sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length), 'source')} dried up`, sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length) && `${sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length)} blocked`].filter(Boolean).join(' · ')
@@ -114,7 +123,7 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
   const cleanHead = mode === 'publish' ? headline.replace(/ · \d+ to review/, '') : headline;
   // Stopped: the reason given, or a research run where no brand's crawl was started in this run.
   const stopReason = String(reason || '').trim() || (mode === 'research' && per.length && per.every((b) => b.research?.not_run) ? 'no crawl started' : '');
-  const log = { id, mode, agent: String(agent || ''), started: since, ended, duration_s: Math.max(0, Math.round((Date.parse(ended) - Date.parse(since)) / 1000)), result: stopReason ? 'stopped' : result, headline: stopReason ? `Stopped: ${stopReason}` : cleanHead, ...(stopReason ? { stop_reason: stopReason } : {}), notes: String(notes || extra.notes || ''), errors, brands: per };
+  const log = { id, mode, agent: String(agent || ''), started: since, ended, duration_s: Math.max(0, Math.round((Date.parse(ended) - Date.parse(since)) / 1000)), result: stopReason ? 'stopped' : result, headline: stopReason ? `Stopped: ${stopReason}` : cleanHead, ...(stopReason ? { stop_reason: stopReason } : {}), notes: String(notes || extra.notes || ''), errors, warnings, resolved, brands: per };
   writeJson(path.join(runsDir(), `${id}.json`), log);
   return log;
 }
@@ -153,7 +162,7 @@ if (isMain(import.meta.url)) main(() => {
     const file = str('file');
     const text = file ? fs.readFileSync(file, 'utf8') : !process.stdin.isTTY && args.stdin ? fs.readFileSync(0, 'utf8') : '';
     if (text.trim()) extra = JSON.parse(text);
-    return out({ log: addLog({ mode: need(args, 'mode'), agent: str('agent'), brands: str('brand').split(',').map((x) => x.trim()).filter(Boolean), started: str('started'), notes: str('notes'), reason: str('reason') || (args.stopped ? 'stopped' : ''), extra }) });
+    return out({ log: addLog({ mode: need(args, 'mode'), agent: str('agent'), brands: str('brand').split(',').map((x) => x.trim()).filter(Boolean), started: str('started'), notes: str('notes'), reason: str('reason') || (args.stopped ? 'stopped' : ''), warning: str('warning'), extra }) });
   }
   if (cmd === 'list') return out({ logs: listLogs({ brand: str('brand'), mode: str('mode'), limit: Number(str('limit')) || 0 }).map(({ id, mode, agent, ended, result, headline, brands }) => ({ id, mode, agent, ended, result, headline, brands: (brands || []).map((b) => b.brand) })) });
   if (cmd === 'show') return out({ log: showLog(need(args, 'id')) });

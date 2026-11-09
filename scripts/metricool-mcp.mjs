@@ -209,6 +209,12 @@ export function parseBestTimes(raw) {
     const mondayFirst = list.some((e) => Number(e?.day ?? e?.dayOfWeek ?? e?.weekday) === 7);
     for (const e of list) {
       if (!e || typeof e !== 'object') continue;
+      // Metricool's own shape: { dayOfWeek: 1 (Mon) .. 7 (Sun), bestTimesByHour: [{ hourOfDay, value }] }.
+      if (Array.isArray(e.bestTimesByHour)) {
+        const day = dayOf(e.dayOfWeek ?? e.day, true);
+        for (const h of e.bestTimesByHour) { const time = hourOf(h?.hourOfDay ?? h?.hour); if (day && time) slots.push({ day, time, score: Number(h?.value ?? h?.score ?? 0) || 0 }); }
+        continue;
+      }
       const day = dayOf(e.day ?? e.dayOfWeek ?? e.weekday ?? e.dayName, mondayFirst), time = hourOf(e.hour ?? e.time ?? e.hourOfDay);
       const score = Number(e.value ?? e.score ?? e.engagement ?? e.count ?? e.interactions ?? 0) || 0;
       if (day && time) slots.push({ day, time, score });

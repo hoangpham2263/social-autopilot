@@ -116,3 +116,11 @@ test('the research table: every weekday has primary and backup hours, none share
     assert.ok(!fb.backup[d].some((t) => fb.days[d].includes(t)), `${d}: a backup is not a primary hour`);
   }
 });
+
+test("parseBestTimes: Metricool's real shape { data: [{ dayOfWeek 1=Mon..7=Sun, bestTimesByHour: [{ hourOfDay, value }] }] }", () => {
+  const slots = parseBestTimes({ data: [
+    { dayOfWeek: 1, bestTimesByHour: [{ hourOfDay: 9, value: 12.5 }, { hourOfDay: 20, value: 30 }] },
+    { dayOfWeek: 7, bestTimesByHour: [{ hourOfDay: 11, value: 40 }] },
+  ] });
+  assert.deepEqual(slots.map((x) => `${x.day} ${x.time} ${x.score}`), ['sun 11:00 40', 'mon 20:00 30', 'mon 09:00 12.5']);
+});
