@@ -1,5 +1,10 @@
 * text=auto eol=lf
 *.cmd text eol=crlf
+*.command text eol=lf
 *.sh text eol=lf
 *.png binary
 *.jpg binary
+*.dll binary
+# Developer-only files stay out of the release ZIP.
+/tests export-ignore
+/.github export-ignore

@@ -1,6 +1,6 @@
 # RUNBOOK: một vòng social-autopilot
 
-Scripts + RUNBOOK là nguồn duy nhất của quy trình. Giao diện duy nhất là `dashboard.html` tĩnh, chỉ xem, dựng lại ở bước 7; mọi thao tác quản lý (duyệt, bỏ, sửa social.json) làm qua chat hoặc script.
+Scripts + RUNBOOK là nguồn duy nhất của quy trình. Người dùng quản lý trong **app** (`start-app.cmd` / `start-app.command`): duyệt/bỏ, sửa social.json, đưa ảnh lên, cài đặt; app gọi đúng các hàm script dưới đây. Agent làm cùng việc qua script hoặc chat. `dashboard.html` tĩnh (bước 7) là trang chỉ xem, tuỳ chọn.
 
 Dành cho agent (Claude Code scheduled task/routine, Codex/ChatGPT automation) được gọi theo lịch. Chạy từ thư mục `C:\hoangpq\social-autopilot`. Mọi script in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Script chạy lại không sinh trùng.
 
@@ -85,7 +85,7 @@ Người có thể sửa tay `status.json` của bản nháp (`"status": "approv
 ```
 node scripts/approve.mjs sync
 ```
-Dashboard chỉ để xem, không có nút duyệt; người duyệt trả lời trong chat. Không tự duyệt thay người.
+Người duyệt cũng có thể bấm Duyệt/Bỏ trong app (tab Bản nháp, nhập tên người duyệt; cùng luật, cùng hàm). Dashboard tĩnh chỉ để xem. Không tự duyệt thay người.
 
 ## Bước 5. Ghi vào thương hiệu
 
@@ -100,6 +100,7 @@ node scripts/host-image.mjs publish --brand <id> --post POST-xx
 - Chỉ nhận bài có trạng thái `approved`/`scheduled`/`published` trong `catalog.json` của thương hiệu; không bao giờ bản nháp hay ảnh tham khảo của đối thủ.
 - Kiểm lại ảnh không còn metadata (`image-clean` + `clean-image.mjs --check` của skill), chép vào `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "`<brand> <post-id>`", push, chờ link raw trả HTTP 200 đúng nội dung (thử lại vài lần vì GitHub raw chậm), rồi ghi `media_url` vào mục catalog của bài và chạy `check-post.mjs`.
 - `image_host.ok: false` không huỷ việc duyệt: ghi lỗi vào báo cáo, chạy lại lệnh trong `image_host.next` sau vài phút.
+- Trong app: bài đã duyệt hiện link ảnh, hoặc "chưa có link" và nút "Đưa ảnh lên" (cùng lệnh publish).
 - Khi Metricool đã lưu bản riêng của ảnh, có thể gỡ file: `node scripts/host-image.mjs remove --brand <id> --post POST-xx` (commit + push xoá file, bỏ `media_url`).
 - Chỉ đẩy file lên repo ảnh; không đăng, không gửi gì tới Metricool hay mạng xã hội.
 
@@ -116,7 +117,7 @@ Gửi người dùng một tin ngắn, mỗi thương hiệu:
 - đã duyệt và ghi vào thương hiệu (POST-xx, thư mục, link ảnh `media_url` hoặc "chưa có link" kèm lỗi host);
 - lỗi cần người xử lý (thiếu owner, Codex hết lượt, ảnh không đạt).
 
-## Bước 7. Dựng lại dashboard
+## Bước 7. Dựng lại dashboard (tuỳ chọn, trang chỉ xem)
 
 ```
 node scripts/dashboard.mjs

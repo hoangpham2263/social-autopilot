@@ -131,6 +131,13 @@ export function saveSettings(input) {
       providers: Object.fromEntries(Object.entries(input.remove_watermark?.providers ?? d.remove_watermark.providers).map(([k, v]) => [str(k, 'provider'), str(v, 'provider')])),
     },
   };
+  // Image host (host-image.mjs): the kind stays as configured; path, link base and the after-write-back switch editable.
+  const ih = input.imageHost || {}, dh = d.imageHost || {};
+  if (dh.type) {
+    const rawBase = str(ih.rawBase ?? dh.rawBase, 'imageHost.rawBase');
+    if (!/^https:\/\//.test(rawBase)) throw new Error('imageHost.rawBase phải là link https.');
+    next.imageHost = { ...dh, path: str(ih.path ?? dh.path, 'imageHost.path'), rawBase, auto_after_writeback: ih.auto_after_writeback === undefined ? dh.auto_after_writeback !== false : ih.auto_after_writeback === true || ih.auto_after_writeback === 'true' };
+  }
   if (!fs.existsSync(path.resolve(toolRoot, next.skillsRoot))) throw new Error(`skillsRoot không tồn tại: ${path.resolve(toolRoot, next.skillsRoot)}`);
   const file = path.join(workspace, 'settings.json');
   withLock(file, () => writeJson(file, next));

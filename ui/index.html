@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Social Autopilot</title>
+<link rel="icon" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist&family=Geist+Mono&display=swap">
+<!-- The static dashboard's stylesheet (tokens, container, header, cards, lists), served from
+     scripts/dashboard.template.html, so the app and dashboard.html look the same. Below: only what the app adds. -->
+<link rel="stylesheet" href="/ui/dashboard.css">
+<script src="/core/assets/hub.js" defer></script>
+<style>
+/* App-only parts on the dashboard's tokens: forms, tables, page tabs, Cấu hình status, update dialog.
+   One weight (400), states by border colour, no shadows. */
+.site-header .header-inner .btn { flex-shrink: 0; }
+.site-header .meta { margin-left: auto; }
+.page-tabs { justify-self: start; }
+.page { display: grid; gap: 1rem; }
+.toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.toolbar > div { min-width: 170px; }
+label { display: block; font-size: 12.5px; color: var(--muted-foreground); margin: 10px 0 4px; }
+.toolbar label { margin-top: 0; }
+input, textarea, select { width: 100%; font: inherit; font-size: 13.5px; color: var(--foreground); background: var(--background); border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); padding: 5px 8px; outline: none; transition: border-color .15s; }
+input:hover, textarea:hover, select:hover { border-color: var(--ring); }
+input:focus, textarea:focus, select:focus { border-color: var(--strong); }
+input[type=checkbox] { width: auto; accent-color: var(--primary); }
+select { height: 32px; }
+textarea { resize: vertical; min-height: 110px; }
+textarea.prompt { min-height: 260px; font: 12.5px/1.5 "Geist Mono", ui-monospace, Consolas, monospace; }
+.btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+.btn.primary:hover { border-color: var(--ring); }
+.btn:disabled { opacity: .55; cursor: default; }
+fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 10px 14px 14px; margin: 0 0 1rem; min-width: 0; }
+legend { padding: 0 6px; font-size: 13.5px; }
+table.edit { width: 100%; border-collapse: collapse; }
+table.edit th { text-align: left; color: var(--muted-foreground); font-size: 12px; padding: 4px; }
+table.edit td { padding: 3px 4px; vertical-align: middle; border-top: 1px solid var(--border); font-size: 13px; }
+.table-wrap { overflow-x: auto; }
+.inline { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.inline label { display: flex; gap: 6px; align-items: center; margin: 0; color: var(--foreground); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 12px; }
+.row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.card h3 { margin: 0; font-size: 14.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.card .meta { display: block; }
+.missing { margin: 0; padding-left: 18px; color: var(--amber); font-size: 12.5px; }
+.bad-text { color: var(--destructive); } .warn-text { color: var(--amber); }
+.cards.one { grid-template-columns: 1fr; }
+.refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.ref img, .draft img { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: var(--muted); display: block; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); }
+.ref pre, .draft pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13px; line-height: 1.5; margin: 0; max-height: 240px; overflow: auto; }
+.draft { grid-template-columns: 280px minmax(0, 1fr); gap: 14px; }
+.draft .side { display: grid; gap: 6px; align-content: start; }
+.draft .body { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.captions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.captions .cap { border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); padding: 6px 10px; display: grid; gap: 4px; }
+.host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12.5px; }
+.host a { overflow-wrap: anywhere; }
+.msg { min-height: 18px; white-space: pre-wrap; font-size: 12.5px; }
+.setup-status { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+.setup-status:empty { display: none; }
+.setup-status .text { flex: 1; min-width: 0; }
+.setup-status.ok { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
+.setup-status.ok .mark { color: var(--green); }
+.setup-status.todo { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); }
+.setup-status.todo .mark { color: var(--amber); }
+.shade { position: fixed; inset: 0; z-index: 60; background: color-mix(in srgb, var(--foreground) 25%, transparent); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dialog { width: min(440px, 100%); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.dialog .status { min-height: 44px; border: 0; padding: 0; display: block; white-space: normal; }
+.dialog .status::before { display: none; }
+.dialog .bar { height: 8px; margin: 8px 0 20px; background: var(--muted); border-radius: 999px; overflow: hidden; }
+.dialog .bar > span { display: block; width: 22%; height: 100%; background: var(--primary); animation: hub-marquee 2.2s linear infinite; }
+.dialog .actions { display: flex; justify-content: flex-end; gap: 10px; }
+@keyframes hub-marquee { from { transform: translateX(-100%); } to { transform: translateX(460%); } }
+@media (max-width: 760px) { .draft { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="site-header"><header class="container header-inner"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 16l5-5 4 4 7-8"/></svg></span><h1>Social Autopilot</h1><span class="meta" id="hdrMeta"></span></header></div>
+<main class="container main">
+  <div id="setupStatus" class="setup-status"></div>
+  <section class="stats" id="stats" aria-label="Tổng quan"></section>
+  <div class="tabs-list page-tabs" id="tabs" role="tablist">
+    <button type="button" role="tab" data-page="drafts">Bản nháp</button>
+    <button type="button" role="tab" data-page="brands">Thương hiệu</button>
+    <button type="button" role="tab" data-page="research">Nghiên cứu</button>
+    <button type="button" role="tab" data-page="settings">Cài đặt</button>
+  </div>
+
+  <section class="page" id="page-brands" hidden>
+    <div class="toolbar"><div class="meta" id="brandsRoot"></div><button class="btn" type="button" id="brandsReload">Kiểm tra lại</button></div>
+    <div class="cards" id="brandList"><div class="meta">Đang đọc…</div></div>
+  </section>
+
+  <section class="page" id="page-brand" hidden>
+    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Thương hiệu</button><h2 id="brandTitle"></h2></div>
+    <div class="meta" id="brandFile"></div>
+    <form id="brandForm"></form>
+    <div class="row-actions"><button class="btn primary" type="button" id="brandSave">Lưu social.json</button><span class="meta">Lưu xong tool chạy check-skill của skill; file sai thì trả lại bản cũ. Không lưu token/mật khẩu.</span></div>
+    <div class="msg" id="brandMsg"></div>
+  </section>
+
+  <section class="page" id="page-research" hidden>
+    <div class="toolbar">
+      <div><label for="resBrand">Thương hiệu</label><select id="resBrand"></select></div>
+      <div><label for="resDate">Lượt</label><select id="resDate"></select></div>
+    </div>
+    <div id="resBody" class="meta">Chọn thương hiệu.</div>
+  </section>
+
+  <section class="page" id="page-drafts" hidden>
+    <div class="toolbar">
+      <div><label for="drBrand">Thương hiệu</label><select id="drBrand"><option value="">Tất cả</option></select></div>
+      <div><label for="drStatus">Trạng thái</label><select id="drStatus">
+        <option value="awaiting_approval">Chờ duyệt</option><option value="">Tất cả</option><option value="needs_prompt">Chờ prompt</option>
+        <option value="needs_caption">Chờ caption</option><option value="image_failed">Lỗi ảnh</option><option value="approved">Đã duyệt</option><option value="rejected">Đã bỏ</option></select></div>
+      <div><label for="approver">Tên người duyệt</label><input id="approver" placeholder="phải khớp approval.owner"></div>
+    </div>
+    <div class="cards one" id="draftList"></div>
+  </section>
+
+  <section class="page" id="page-settings" hidden>
+    <form id="settingsForm" class="grid2"></form>
+    <div class="row-actions"><button class="btn primary" type="button" id="settingsSave">Lưu cài đặt</button><span class="meta">Ghi vào workspace/settings.json của máy này.</span></div>
+    <div class="msg" id="settingsMsg"></div>
+    <fieldset><legend>Prompt cho lịch chạy (Claude scheduled task / Codex automation)</legend>
+      <textarea class="prompt" id="schedPrompt" readonly></textarea>
+      <div class="row-actions" style="margin-top:8px"><button class="btn" type="button" id="copyPrompt">Chép prompt</button><span class="meta" id="copyMsg"></span></div>
+    </fieldset>
+    <p class="meta">Trang tĩnh chỉ xem (không cần app): <code>node scripts/dashboard.mjs</code> hoặc <code>open-dashboard.cmd</code>.</p>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const getJson = (url) => fetch(url, { cache: "no-store" }).then((r) => r.json());
+  const postJson = (url, data) => fetch(url, { method: "POST", body: JSON.stringify(data) }).then((r) => r.json());
+  const img = (p) => `/file?path=${encodeURIComponent(p)}`;
+  const store = { get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+  addEventListener("error", (e) => postJson("/api/client-error", { message: e.message, stack: e.error?.stack || "" }).catch(() => {}));
+
+  // ----- tabs -----
+  const pages = ["brands", "brand", "research", "drafts", "settings"];
+  function show(page) {
+    for (const p of pages) $(`#page-${p}`).hidden = p !== page;
+    for (const b of document.querySelectorAll("#tabs button")) { const on = b.dataset.page === (page === "brand" ? "brands" : page); b.setAttribute("aria-selected", String(on)); b.classList.toggle("active", on); }
+    store.set("page", page === "brand" ? "brands" : page);
+    ({ brands: loadBrands, research: loadResearch, drafts: loadDrafts, settings: loadSettings })[page]?.();
+    loadStats();
+  }
+  for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => show(b.dataset.page);
+
+  // ----- Tổng quan (live, read again on every page load): the dashboard's three cards -----
+  let brandCache = null;
+  async function loadStats() {
+    const [d, b] = await Promise.all([getJson("/api/drafts"), brandCache ? Promise.resolve(brandCache) : getJson("/api/brands")]).catch(() => [{}, {}]);
+    if (b.brands) brandCache = b;
+    const drafts = d.drafts || [], list = (b.brands || []);
+    const waiting = drafts.filter((x) => x.status === "awaiting_approval").length;
+    const approved = drafts.filter((x) => x.brand_post);
+    const hosted = approved.filter((x) => x.brand_post.media_url).length;
+    const stat = (page, status, k, v, desc, c) => `<a class="stat" href="#" data-go="${page}" data-status="${status}"><span class="k"><span class="dot" style="--c:var(--${c})"></span>${esc(k)}</span><span class="v">${v}</span><span class="d">${esc(desc)}</span></a>`;
+    $("#stats").innerHTML = stat("drafts", "awaiting_approval", "Chờ duyệt", waiting, "bản nháp đợi bạn xem", "amber") +
+      stat("brands", "", "Thương hiệu sẵn sàng", `${list.filter((x) => x.usable).length}<small>/${list.length}</small>`, "chạy được trong lịch", "green") +
+      stat("drafts", "approved", "Đã duyệt", approved.length, `${hosted} có link ảnh · chưa đăng (Metricool làm sau)`, "slate");
+    $("#hdrMeta").textContent = `Cập nhật ${new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`;
+    for (const a of document.querySelectorAll("#stats [data-go]")) a.onclick = (e) => {
+      e.preventDefault();
+      if (a.dataset.go === "drafts") { $("#drStatus").value = a.dataset.status; store.set("drStatus", a.dataset.status); }
+      show(a.dataset.go);
+    };
+  }
+
+  // ----- Thương hiệu -----
+  let brands = [];
+  async function loadBrands() {
+    $("#brandList").innerHTML = `<div class="meta">Đang chạy check-skill --tool-ready của từng skill…</div>`;
+    const r = await getJson("/api/brands");
+    if (r.error) { $("#brandList").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
+    brands = r.brands;
+    brandCache = r;
+    $("#brandsRoot").textContent = `Thư mục thương hiệu (skillsRoot): ${r.root}`;
+    const skipped = r.skipped.map((s) => `<div class="meta">Bỏ qua ${esc(s.dir)}: ${esc(s.reason)}</div>`).join("");
+    $("#brandList").innerHTML = (brands.length ? brands.map((b) => `
+      <div class="card">
+        <h3>${esc(b.brand || b.id)} <span class="tag">${esc(b.id)}</span> ${b.usable ? '<span class="status c-green">Sẵn sàng</span>' : b.enabled ? '<span class="status c-red">Bật nhưng còn thiếu</span>' : b.problems?.length ? '<span class="status c-amber">Tắt, còn thiếu</span>' : '<span class="status c-slate">Đủ, đang tắt</span>'}</h3>
+        <div class="meta">${b.enabled ? "enabled: true" : "enabled: false"} · ${b.ready ? '<span class="ok-text">sẵn sàng cho tool</span>' : '<span class="warn-text">chưa sẵn sàng</span>'} · ${b.usable ? '<span class="ok-text">đang chạy trong lịch</span>' : "không chạy trong lịch"}</div>
+        <div class="meta">Kênh: ${esc((b.channels || []).join(", ") || "chưa bật")} · Ngôn ngữ: ${esc((b.languages || []).join(", ") || "-")} (${esc(b.language_mode || "-")}) · Nguồn: ${(b.sources || []).length} · Người duyệt: ${esc(b.owner || "chưa có")} · Cảnh AI: ${esc(String(b.ai_scenes_allowed))}</div>
+        <div class="meta">${esc(b.dir)}</div>
+        ${b.problems?.length ? `<ul class="missing">${b.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
+        <div class="row-actions"><button class="btn" type="button" data-edit="${esc(b.id)}">Sửa social.json</button></div>
+      </div>`).join("") : `<div class="meta">Chưa có thương hiệu nào trong thư mục này.</div>`) + skipped;
+    for (const btn of document.querySelectorAll("[data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
+  }
+  $("#brandsReload").onclick = loadBrands;
+
+  // ----- Sửa social.json -----
+  const NETWORKS = ["facebook", "instagram", "tiktok", "pinterest", "youtube", "linkedin", "x", "threads", "bluesky", "twitch", "gbp"];
+  const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  const MODES = ["one-post-bilingual", "separate-posts", "single"];
+  const POSITIONS = ["bottom-right", "bottom-left", "top-right", "top-left"];
+  let editing = null; // { id, social }
+  const opt = (list, value) => list.map((v) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(v)}</option>`).join("");
+  const checkbox = (name, on, text) => `<label><input type="checkbox" data-k="${name}"${on ? " checked" : ""}> ${esc(text)}</label>`;
+
+  function rowsTable(id, head, rows, cell) {
+    return `<div class="table-wrap"><table class="edit" id="${id}"><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join("")}<th></th></tr></thead><tbody>${rows.map((r, i) => `<tr data-i="${i}">${cell(r, i)}<td><button class="btn" type="button" data-remove="${id}" data-i="${i}">Xoá</button></td></tr>`).join("")}</tbody></table></div>
+      <div class="row-actions"><button class="btn" type="button" data-add="${id}">+ Thêm</button></div>`;
+  }
+  function renderBrandForm() {
+    const s = editing.social;
+    s.research ||= {}; s.research.sources ||= []; s.channels ||= []; s.language_policy ||= {}; s.product_images ||= {}; s.product_images.sources ||= [];
+    s.cadence ||= {}; s.cadence.slots ||= []; s.approval ||= {};
+    const wm = s.product_images.watermark || {};
+    const rr = s.product_images.reference_redraw || {};
+    const ai = s.product_images.ai_scenes_allowed;
+    $("#brandForm").innerHTML = `
+      <fieldset><legend>Bật</legend><div class="inline">${checkbox("enabled", s.enabled === true, "enabled: lịch chạy dùng thương hiệu này (cần đủ mục --tool-ready)")}</div></fieldset>
+      <fieldset><legend>Nghiên cứu (research)</legend>
+        <div class="grid2"><div><label>Số lượt mỗi ngày (max_per_day, 0 = tắt)</label><input type="number" min="0" data-k="research.max_per_day" value="${esc(s.research.max_per_day ?? 0)}"></div>
+        <div><label>Tài khoản Facebook dùng để xem (fb_account, chỉ tên gợi nhớ)</label><input data-k="research.fb_account" value="${esc(s.research.fb_account || "")}"></div></div>
+        <label>Nguồn tham khảo (sources)</label>
+        ${rowsTable("sources", ["Bật", "id", "Tên", "Nền tảng", "URL", "Lấy gì", "Ghi chú"], s.research.sources, (r) => `
+          <td><input type="checkbox" data-f="enabled"${r.enabled ? " checked" : ""}></td><td><input data-f="id" value="${esc(r.id)}"></td><td><input data-f="name" value="${esc(r.name)}"></td>
+          <td><input data-f="platform" value="${esc(r.platform || "facebook")}"></td><td><input data-f="url" value="${esc(r.url)}"></td><td><input data-f="what_to_take" value="${esc(r.what_to_take)}"></td><td><input data-f="notes" value="${esc(r.notes)}"></td>`)}
+      </fieldset>
+      <fieldset><legend>Kênh đăng (channels) và ngôn ngữ</legend>
+        ${rowsTable("channels", ["Bật", "Mạng", "Tài khoản", "URL", "vn", "en"], s.channels, (r) => `
+          <td><input type="checkbox" data-f="enabled"${r.enabled ? " checked" : ""}></td><td><select data-f="network">${opt(NETWORKS, r.network)}</select></td>
+          <td><input data-f="account" value="${esc(r.account)}"></td><td><input data-f="url" value="${esc(r.url)}"></td>
+          <td><input type="checkbox" data-lang="vn"${(r.lang || []).includes("vn") ? " checked" : ""}></td><td><input type="checkbox" data-lang="en"${(r.lang || []).includes("en") ? " checked" : ""}></td>`)}
+        <div class="grid2"><div><label>Cách viết ngôn ngữ (language_policy.mode)</label><select data-k="language_policy.mode">${opt(MODES, s.language_policy.mode)}</select></div>
+        <div><label>Lý do (language_policy.note)</label><input data-k="language_policy.note" value="${esc(s.language_policy.note || "")}"></div></div>
+      </fieldset>
+      <fieldset><legend>Ảnh sản phẩm (product_images)</legend>
+        ${rowsTable("pisources", ["Loại", "Đường dẫn (trong skill, ngoài skill hoặc URL)", "Ghi chú"], s.product_images.sources, (r) => `
+          <td><input data-f="kind" value="${esc(r.kind)}"></td><td><input data-f="path" value="${esc(r.path)}"></td><td><input data-f="note" value="${esc(r.note)}"></td>`)}
+        <div class="grid2"><div><label>Cho dựng cảnh bằng AI (ai_scenes_allowed)</label><select data-k="product_images.ai_scenes_allowed">
+          <option value="null"${ai === null || ai === undefined ? " selected" : ""}>chưa chốt (null)</option><option value="true"${ai === true ? " selected" : ""}>có (true)</option><option value="false"${ai === false ? " selected" : ""}>không (false)</option></select></div>
+        <div><label>Nhãn công bố AI (ai_disclosure_label)</label><input data-k="product_images.ai_disclosure_label" value="${esc(s.product_images.ai_disclosure_label || "")}"></div></div>
+        <label>Đổi cảnh ảnh của shop tham khảo (reference_redraw, mặc định tắt; rủi ro bản quyền/báo cáo vi phạm)</label>
+        <div class="inline" style="margin-top:6px">${checkbox("product_images.reference_redraw.enabled", rr.enabled === true, "cho phép scene-swap")}
+          ${checkbox("product_images.reference_redraw.require_logo_removal", rr.require_logo_removal !== false, "bắt buộc xác nhận đã xoá logo/watermark shop")}
+          ${checkbox("product_images.reference_redraw.only_if_brand_can_produce", rr.only_if_brand_can_produce !== false, "chỉ khi thương hiệu làm được sản phẩm đó")}</div>
+        <label>Watermark logo (tuỳ chọn, mặc định tắt; chỉ ở góc ảnh, không bao giờ trên sản phẩm)</label>
+        <div class="grid2"><div class="inline" style="margin-top:6px">${checkbox("product_images.watermark.enabled", wm.enabled === true, "bật watermark")}</div>
+          <div><label>Vị trí</label><select data-k="product_images.watermark.position">${opt(POSITIONS, wm.position || "bottom-right")}</select></div>
+          <div><label>Độ đậm (0-1)</label><input type="number" min="0" max="1" step="0.05" data-k="product_images.watermark.opacity" value="${esc(wm.opacity ?? 0.6)}"></div>
+          <div><label>File logo (trong skill)</label><input data-k="product_images.watermark.file" value="${esc(wm.file || "")}" placeholder="project/sources/assets/logo/..."></div></div>
+      </fieldset>
+      <fieldset><legend>Nhịp đăng (cadence)</legend>
+        <div class="grid2"><div><label>Bài mỗi tuần</label><input type="number" min="0" data-k="cadence.posts_per_week" value="${esc(s.cadence.posts_per_week ?? 0)}"></div>
+        <div><label>Múi giờ (IANA)</label><input data-k="cadence.timezone" value="${esc(s.cadence.timezone || "")}" placeholder="America/Los_Angeles"></div></div>
+        <label>Giờ đăng (slots)</label>
+        ${rowsTable("slots", ["Ngày", "Giờ"], s.cadence.slots, (r) => `<td><select data-f="day">${opt(DAYS, r.day)}</select></td><td><input type="time" data-f="time" value="${esc(r.time)}"></td>`)}
+      </fieldset>
+      <fieldset><legend>Duyệt (approval)</legend>
+        <div class="grid2"><div><label>Người duyệt (owner)</label><input data-k="approval.owner" value="${esc(s.approval.owner || "")}"></div>
+        <div><label>Kênh duyệt</label><input data-k="approval.channel" value="${esc(s.approval.channel || "chat")}"></div></div>
+        <div class="inline" style="margin-top:8px">
+          <label><input type="checkbox" data-req="image"${(s.approval.require || []).includes("image") ? " checked" : ""}> duyệt ảnh</label>
+          <label><input type="checkbox" data-req="caption_each_lang"${(s.approval.require || []).includes("caption_each_lang") ? " checked" : ""}> duyệt caption từng ngôn ngữ</label>
+          ${checkbox("approval.auto_schedule_after_approval", s.approval.auto_schedule_after_approval === true, "tự hẹn giờ sau khi duyệt (chưa dùng: Metricool làm sau)")}</div>
+      </fieldset>`;
+    for (const b of document.querySelectorAll("[data-add]")) b.onclick = () => { collectBrandForm(); addRow(b.dataset.add); renderBrandForm(); };
+    for (const b of document.querySelectorAll("[data-remove]")) b.onclick = () => { collectBrandForm(); listOf(b.dataset.remove).splice(Number(b.dataset.i), 1); renderBrandForm(); };
+  }
+  const listOf = (id) => ({ sources: editing.social.research.sources, channels: editing.social.channels, pisources: editing.social.product_images.sources, slots: editing.social.cadence.slots })[id];
+  function addRow(id) {
+    const blank = { sources: { id: "", name: "", platform: "facebook", url: "", enabled: true, what_to_take: "", notes: "" }, channels: { network: "facebook", account: "", url: "", lang: ["en"], enabled: false }, pisources: { kind: "", path: "", note: "" }, slots: { day: "tue", time: "19:00" } }[id];
+    listOf(id).push(blank);
+  }
+  // Form -> the loaded social object; fields the form does not show (_help, metricool, caption_rules…) stay as they were.
+  function collectBrandForm() {
+    const s = editing.social;
+    const setPath = (obj, key, value) => { const parts = key.split("."); let o = obj; for (const p of parts.slice(0, -1)) o = o[p] ||= {}; o[parts.at(-1)] = value; };
+    for (const el of document.querySelectorAll("#brandForm [data-k]")) {
+      const k = el.dataset.k;
+      let v = el.type === "checkbox" ? el.checked : el.value;
+      if (el.type === "number") v = v === "" ? 0 : Number(v);
+      if (k === "product_images.ai_scenes_allowed") v = v === "null" ? null : v === "true";
+      setPath(s, k, v);
+    }
+    if (s.product_images.watermark && !s.product_images.watermark.enabled && !s.product_images.watermark.file) delete s.product_images.watermark;
+    if (!editing.hadRedraw && !s.product_images.reference_redraw?.enabled) delete s.product_images.reference_redraw;
+    for (const id of ["sources", "channels", "pisources", "slots"]) {
+      const list = listOf(id);
+      for (const tr of document.querySelectorAll(`#${id} tbody tr`)) {
+        const row = list[Number(tr.dataset.i)];
+        for (const el of tr.querySelectorAll("[data-f]")) row[el.dataset.f] = el.type === "checkbox" ? el.checked : el.value.trim();
+        const langs = [...tr.querySelectorAll("[data-lang]")];
+        if (langs.length) row.lang = langs.filter((x) => x.checked).map((x) => x.dataset.lang);
+      }
+    }
+    s.approval.require = [...document.querySelectorAll("#brandForm [data-req]")].filter((x) => x.checked).map((x) => x.dataset.req);
+    return s;
+  }
+  async function openBrand(id) {
+    show("brand");
+    $("#brandTitle").textContent = id;
+    $("#brandMsg").textContent = "";
+    $("#brandForm").innerHTML = `<div class="meta">Đang đọc…</div>`;
+    const r = await getJson(`/api/brand?id=${encodeURIComponent(id)}`);
+    if (r.error) { $("#brandForm").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
+    editing = { id, social: r.social, hadRedraw: !!r.social.product_images?.reference_redraw };
+    $("#brandTitle").textContent = `${r.social.brand || id}: social.json`;
+    $("#brandFile").textContent = r.file;
+    renderBrandForm();
+    showCheck(r.check.tool_ready ? "Sẵn sàng cho tool." : "", r.check.missing, r.check.errors);
+  }
+  function showCheck(head, missing = [], errors = []) {
+    $("#brandMsg").innerHTML = `${head ? `<div class="ok-text">${esc(head)}</div>` : ""}${errors.length ? `<div class="bad-text">Lỗi check-skill:</div><ul class="missing">${errors.map((e) => `<li class="bad-text">${esc(e)}</li>`).join("")}</ul>` : ""}${missing.length ? `<div class="warn-text">Còn thiếu cho tool (--tool-ready):</div><ul class="missing">${missing.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}`;
+  }
+  $("#brandBack").onclick = () => show("brands");
+  $("#brandSave").onclick = async () => {
+    const social = collectBrandForm();
+    $("#brandSave").disabled = true;
+    const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { social }).catch(() => ({ error: "Mất kết nối với app." }));
+    $("#brandSave").disabled = false;
+    if (r.error) return showCheck("", [], [r.error]);
+    if (!r.saved) return showCheck("Không lưu: file mới làm check-skill báo lỗi, đã trả lại bản cũ.", r.missing, r.errors);
+    showCheck(r.tool_ready ? "Đã lưu. Sẵn sàng cho tool." : "Đã lưu.", r.missing, []);
+  };
+
+  // ----- Nghiên cứu -----
+  let researchIndex = [];
+  async function loadResearch(brand = $("#resBrand").value || store.get("resBrand"), date = $("#resDate").value) {
+    const r = await getJson(`/api/runs?brand=${encodeURIComponent(brand || "")}&date=${encodeURIComponent(date || "")}`);
+    if (r.error) { $("#resBody").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
+    researchIndex = r.brands;
+    $("#resBrand").innerHTML = `<option value="">Chọn…</option>` + r.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.id)} (${b.runs.length} lượt)</option>`).join("");
+    const runs = r.brands.find((b) => b.id === brand)?.runs || [];
+    $("#resDate").innerHTML = runs.map((d) => `<option${d === r.current?.date ? " selected" : ""}>${esc(d)}</option>`).join("");
+    if (!r.current) { $("#resBody").innerHTML = `<div class="meta">${brand ? "Thương hiệu này chưa có lượt nghiên cứu." : "Chọn thương hiệu."}</div>`; return; }
+    const c = r.current;
+    const bySource = {};
+    for (const ref of c.refs) (bySource[ref.source] ||= []).push(ref);
+    const sources = c.run.sources || [];
+    $("#resBody").innerHTML = `<div class="meta">${esc(c.dir)} · trạng thái: ${esc(c.run.status || "-")} · bắt đầu ${esc(c.run.started || "-")}</div>` +
+      (sources.length ? sources : Object.keys(bySource).map((id) => ({ id }))).map((s) => `
+        <fieldset><legend>${esc(s.name || s.id)} <span class="meta">${esc(s.url || "")}</span></legend>
+          <div class="refs">${(bySource[s.id] || []).map((ref) => `<div class="card ref"><img loading="lazy" src="${img(ref.image_path)}" alt="">
+            <div class="meta">${esc(ref.key)}${ref.main_product ? ` · ${esc(ref.main_product)}` : ""}${ref.price_seen ? ` · ${esc(ref.price_seen)}` : ""}</div>
+            ${ref.post_url ? `<a href="${esc(ref.post_url)}" target="_blank" rel="noopener">Bài gốc</a>` : ""}<pre>${esc(ref.caption)}</pre></div>`).join("") || `<div class="meta">Chưa có bài (chưa ingest).</div>`}</div>
+        </fieldset>`).join("") +
+      `<fieldset><legend>Ý tưởng (ideas.json)</legend>${c.ideas.length ? `<table class="edit"><thead><tr><th>id</th><th>Tham khảo</th><th>Trạng thái</th><th>Sản phẩm</th><th>Cảnh</th><th>Góc</th><th>Khung bài</th></tr></thead><tbody>${c.ideas.map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.ref)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc(i.angle)}</td><td>${esc(i.caption_structure)}</td></tr>`).join("")}</tbody></table>` : `<div class="meta">Chưa có ý.</div>`}</fieldset>`;
+  }
+  $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resDate").innerHTML = ""; loadResearch($("#resBrand").value, ""); };
+  $("#resDate").onchange = () => loadResearch($("#resBrand").value, $("#resDate").value);
+
+  // ----- Bản nháp -----
+  $("#approver").value = store.get("approver");
+  $("#approver").onchange = () => store.set("approver", $("#approver").value.trim());
+  $("#drStatus").value = store.get("drStatus") || "awaiting_approval";
+  async function loadDrafts() {
+    if (!$("#drBrand").dataset.filled) {
+      const b = await getJson("/api/brands").catch(() => ({ brands: [] }));
+      $("#drBrand").innerHTML = `<option value="">Tất cả</option>` + (b.brands || []).map((x) => `<option value="${esc(x.id)}">${esc(x.id)}</option>`).join("");
+      $("#drBrand").value = store.get("drBrand");
+      $("#drBrand").dataset.filled = "1";
+    }
+    const r = await getJson(`/api/drafts?brand=${encodeURIComponent($("#drBrand").value)}&status=${encodeURIComponent($("#drStatus").value)}`);
+    if (r.error) { $("#draftList").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
+    $("#draftList").innerHTML = r.drafts.length ? r.drafts.map((d) => `
+      <div class="card draft" data-id="${esc(d.id)}">
+        <div class="side">${d.image_exists ? `<a href="${img(d.image)}" target="_blank"><img src="${img(d.image)}" alt=""></a><div class="meta">Ảnh mới</div>` : `<div class="meta">Chưa có ảnh</div>`}
+          ${d.image_mode === "scene-swap" ? `<a href="${img(d.reference_image)}" target="_blank" style="display:block;margin-top:6px"><img src="${img(d.reference_image)}" alt=""></a>
+            <div class="warn-text">Ảnh gốc của shop ${esc(d.source_shop)}: so sánh, ảnh mới không được còn tên shop, logo, watermark, nhãn size.</div>
+            <div class="meta">${d.logo_check ? `Đã xác nhận sạch logo: ${esc(d.logo_check.by)} · ${esc(d.logo_check.confirmed)}` : "Chưa xác nhận sạch logo."}</div>` : ""}</div>
+        <div class="body">
+          <h3><span style="font-family:'Geist Mono',monospace;font-size:13px">${esc(d.id)}</span> <span class="status ${STATUS_COLOR[d.status] || "c-slate"}">${esc(STATUS_TEXT[d.status] || d.status)}</span> <span class="tag">${d.image_mode === "scene-swap" ? "scene-swap: ảnh shop, đổi cảnh" : "ảnh của thương hiệu"}</span></h3>
+          <div class="meta">${esc(d.brand)} · ${esc(d.idea)} · kênh ${esc((d.networks || []).join(", "))} · ${esc((d.languages || []).join(", "))} (${esc(d.language_mode || "-")})</div>
+          ${d.inspiration_url ? `<div class="meta">Cảm hứng: <a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">${esc(d.inspiration_url)}</a></div>` : ""}
+          <div class="meta">${esc(d.dir)}</div>
+          <div class="meta">${d.metadata_clean ? `Metadata đã bỏ (${esc(d.metadata_clean.provider)}): ${esc((d.metadata_clean.removed || []).join(", ") || "không có")} · điểm ảnh giữ nguyên: ${d.metadata_clean.pixels_identical ? "có" : "KHÔNG"} · ảnh gốc giữ ở image-generated.png` : "Chưa làm sạch metadata."}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}</div>
+          ${d.problems?.length ? `<ul class="missing">${d.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
+          ${d.error ? `<div class="bad-text">${esc(d.error)}</div>` : ""}
+          <div class="captions">${Object.entries(d.captions || {}).map(([f, t]) => `<div class="cap"><div class="meta">${esc(f)}</div><pre>${esc(t)}</pre></div>`).join("") || `<div class="meta">Chưa có caption.</div>`}</div>
+          ${d.brand_post ? `<div class="ok-text">Đã ghi vào thương hiệu: ${esc(d.brand_post.id)} · ${esc(d.brand_post.folder)} · Publish (later: Metricool)</div>${hostBlock(d)}` : ""}
+          ${d.status === "rejected" ? `<div class="bad-text">Đã bỏ: ${esc(d.note)}</div>` : ""}
+          ${d.status === "awaiting_approval" ? `<div class="row-actions"><input class="note" placeholder="Ghi chú / lý do (bắt buộc khi bỏ)" style="flex:1 1 260px;width:auto">
+            <button class="btn primary" type="button" data-act="approve">Duyệt</button><button class="btn" type="button" data-act="reject">Bỏ</button></div>` : ""}
+          <div class="msg"></div>
+        </div>
+      </div>`).join("") : `<div class="meta">Không có bản nháp nào.</div>`;
+    for (const card of document.querySelectorAll("#draftList .draft")) {
+      for (const btn of card.querySelectorAll("[data-act]")) btn.onclick = () => decide(card, btn.dataset.act);
+      const host = card.querySelector("[data-host]");
+      if (host) host.onclick = () => hostImage(card, host);
+    }
+  }
+  const STATUS_TEXT = { awaiting_approval: "Chờ duyệt", approved: "Đã duyệt", rejected: "Đã bỏ", needs_prompt: "Chờ prompt", needs_caption: "Chờ caption", generating: "Đang tạo ảnh", image_failed: "Lỗi ảnh", preparing: "Đang chuẩn bị" };
+  const STATUS_COLOR = { awaiting_approval: "c-amber", approved: "c-green", rejected: "c-red", image_failed: "c-red" };
+  // Host step (host-image.mjs): the public link of the approved image, or "chưa có link" and "Đưa ảnh lên" (approved posts only).
+  function hostBlock(d) {
+    const u = d.brand_post?.media_url;
+    if (u) return `<div class="host"><span class="muted">Link ảnh (media_url):</span><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a><button class="btn copy-link" type="button" data-copy="${esc(u)}">Chép link</button></div>`;
+    if (d.status !== "approved") return "";
+    return `<div class="host"><span class="muted">Link ảnh: chưa có link</span><button class="btn primary" type="button" data-host="1">Đưa ảnh lên</button><span class="muted">repo ảnh công khai, chỉ bài đã duyệt; không đăng bài</span></div>`;
+  }
+  async function hostImage(card, btn) {
+    const msg = $(".msg", card);
+    btn.disabled = true;
+    msg.textContent = "Đang đưa ảnh lên repo ảnh và chờ link mở được (có thể mất vài phút)…";
+    const r = await postJson("/api/host-image", { id: card.dataset.id }).catch(() => ({ error: "Mất kết nối với app." }));
+    if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; btn.disabled = false; return; }
+    msg.innerHTML = `<span class="ok-text">Đã có link: ${esc(r.url)}${r.check_post?.errors ? ` · check-post: ${r.check_post.errors} lỗi` : ""}</span>`;
+    setTimeout(loadDrafts, 1500);
+  }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest(".copy-link");
+    if (!b) return;
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Đã chép"; b.classList.add("done"); setTimeout(() => { b.textContent = "Chép link"; b.classList.remove("done"); }, 1500); } catch {}
+  });
+
+  async function decide(card, act) {
+    const by = $("#approver").value.trim(), note = $(".note", card).value.trim(), msg = $(".msg", card);
+    if (!by) { msg.innerHTML = `<span class="bad-text">Nhập tên người duyệt (phải khớp approval.owner).</span>`; $("#approver").focus(); return; }
+    if (act === "reject" && !note) { msg.innerHTML = `<span class="bad-text">Bỏ bản nháp cần lý do.</span>`; $(".note", card).focus(); return; }
+    for (const b of card.querySelectorAll("[data-act]")) b.disabled = true;
+    msg.textContent = act === "approve" ? "Đang duyệt và ghi vào thương hiệu…" : "Đang bỏ…";
+    const r = await postJson(`/api/${act}`, { id: card.dataset.id, by, note }).catch(() => ({ error: "Mất kết nối với app." }));
+    if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; for (const b of card.querySelectorAll("[data-act]")) b.disabled = false; return; }
+    const checkErrors = r.check_post?.errors;
+    const host = r.image_host ? (r.image_host.ok ? ` · link ảnh: ${esc(r.image_host.url)}` : `</span><br><span class="warn-text">Chưa có link ảnh: ${esc(r.image_host.error)} (bấm "Đưa ảnh lên" để thử lại)`) : "";
+    msg.innerHTML = act === "approve" ? `<span class="ok-text">Đã duyệt: ${esc(r.brand_post?.id)} · ${esc(r.brand_post?.folder)}${checkErrors ? ` · check-post: ${checkErrors} lỗi` : " · check-post đạt"}${host}</span>` : `<span>Đã bỏ.</span>`;
+    setTimeout(loadDrafts, 1500);
+  }
+  $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
+  $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
+
+  // ----- Cài đặt -----
+  async function loadSettings() {
+    const r = await getJson("/api/settings");
+    if (r.error) { $("#settingsMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; return; }
+    const s = r.settings;
+    const num = (k, v, label) => `<div><label>${esc(label)}</label><input type="number" min="0" data-s="${k}" value="${esc(v)}"></div>`;
+    $("#settingsForm").innerHTML = `
+      <div style="grid-column:1/-1"><label>Thư mục thương hiệu (skillsRoot, tương đối với tool hoặc tuyệt đối)</label><input data-s="skillsRoot" value="${esc(s.skillsRoot)}"><div class="meta">Đang dùng: ${esc(r.skillsRootResolved)}</div></div>
+      ${num("research.max_sources_per_run", s.research.max_sources_per_run, "Nguồn tối đa mỗi lượt")}
+      ${num("research.max_posts_per_source", s.research.max_posts_per_source, "Bài tối đa mỗi nguồn")}
+      ${num("research.max_posts_per_day_all_brands", s.research.max_posts_per_day_all_brands, "Bài tối đa mỗi ngày, mọi thương hiệu")}
+      ${num("research.delay_seconds.0", s.research.delay_seconds[0], "Nghỉ tối thiểu (giây)")}
+      ${num("research.delay_seconds.1", s.research.delay_seconds[1], "Nghỉ tối đa (giây)")}
+      <div><label>Lệnh Codex</label><input data-s="codex.command" value="${esc(s.codex.command)}"></div>
+      ${num("codex.timeout_minutes", s.codex.timeout_minutes, "Codex chờ tối đa (phút)")}
+      <div><label>Lệnh ffmpeg (chỉ cho watermark)</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
+      <div style="grid-column:1/-1"><label>Script làm sạch metadata (remove-watermark-skill)</label><input data-s="remove_watermark.script" value="${esc(s.remove_watermark?.script || "")}"><div class="meta">Provider theo AI tạo ảnh: ${esc(Object.entries(s.remove_watermark?.providers || {}).map(([k, v]) => `${k} → ${v}`).join(", "))}. Chỉ bỏ metadata; ảnh vẫn là ảnh AI và vẫn khai báo AI.</div></div>
+      <div style="grid-column:1/-1" class="inline"><span class="meta">Luật duyệt:</span>${Object.entries(s.approval).map(([k, v]) => `<label><input type="checkbox" data-s="approval.${k}"${v ? " checked" : ""}> ${esc(k)}</label>`).join("")}</div>
+      ${s.imageHost ? `<div style="grid-column:1/-1"><label>Repo ảnh (imageHost.path, kiểu ${esc(s.imageHost.type)})</label><input data-s="imageHost.path" value="${esc(s.imageHost.path || "")}"></div>
+      <div style="grid-column:1/-1"><label>Gốc link công khai (imageHost.rawBase, https)</label><input data-s="imageHost.rawBase" value="${esc(s.imageHost.rawBase || "")}"></div>
+      <div style="grid-column:1/-1" class="inline"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> tự đưa ảnh lên ngay sau khi duyệt</label><span class="meta">Chỉ ảnh bài đã duyệt; không bao giờ bản nháp hay ảnh tham khảo.</span></div>` : ""}
+      <div style="grid-column:1/-1" class="meta">Publish: ${esc(s.publish?.note || "chưa có")}</div>`;
+    $("#schedPrompt").value = r.scheduledPrompt;
+  }
+  $("#settingsSave").onclick = async () => {
+    const out = { research: { delay_seconds: [] }, approval: {}, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
+    for (const el of document.querySelectorAll("#settingsForm [data-s]")) {
+      const parts = el.dataset.s.split(".");
+      const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
+      let o = out; for (const p of parts.slice(0, -1)) o = o[p] ||= {};
+      o[parts.at(-1)] = v;
+    }
+    const r = await postJson("/api/settings", { settings: out }).catch(() => ({ error: "Mất kết nối với app." }));
+    $("#settingsMsg").innerHTML = r.error ? `<span class="bad-text">${esc(r.error)}</span>` : `<span class="ok-text">Đã lưu.</span>`;
+    if (!r.error) loadSettings();
+  };
+  $("#copyPrompt").onclick = async () => {
+    try { await navigator.clipboard.writeText($("#schedPrompt").value); } catch { $("#schedPrompt").select(); document.execCommand("copy"); }
+    $("#copyMsg").textContent = "Đã chép.";
+    setTimeout(() => { $("#copyMsg").textContent = ""; }, 2000);
+  };
+
+  show(store.get("page") || "drafts");
+})();
+</script>
+</body>
+</html>

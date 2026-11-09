@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Headless per-brand social research, drafts and approval, run by a scheduled AI agent; static read-only dashboard.",
+  "description": "Per-brand social research, drafts, approval and image hosting: local app (src/server.mjs + ui/), scheduled-agent scripts, static read-only dashboard.",
   "engines": { "node": ">=22" },
   "scripts": {
+    "start": "node src/server.mjs",
     "test": "node --test \"tests/*.test.mjs\"",
     "dashboard": "node scripts/dashboard.mjs"
   }
