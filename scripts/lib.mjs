@@ -64,7 +64,7 @@ export function writeText(file, text) {
 }
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-// The UI server and a scheduled agent can run at the same time: every read-modify-write of a shared file
+// A scheduled agent and a manual chat run can overlap: every read-modify-write of a shared file
 // (status.json, ideas.json, research-log.json, the brand's catalog.json and social.json) runs inside this lock, a
 // <file>.lock folder (mkdir is atomic). A lock older than 2 minutes is a crashed run's and is taken over.
 export function withLock(file, fn, { timeoutMs = 20000, staleMs = 120000 } = {}) {

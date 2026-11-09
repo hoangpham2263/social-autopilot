@@ -1,6 +1,6 @@
 # social-autopilot – hướng dẫn cho agent
 
-Quy trình chạy headless: agent theo lịch làm theo `RUNBOOK.md`; mọi việc qua các script Node trong `scripts/`, mỗi script in một JSON (`ok`), chạy lại không sinh trùng, ghi vết vào `workspace/logs/<ngày>.log`. **Scripts + RUNBOOK là nguồn duy nhất.** Giao diện quản lý (`src/server.mjs` + `ui/`, vỏ `core/` của Product Review/Video) chỉ là lớp mỏng gọi đúng các hàm đó; không thêm logic quy trình vào server hay trang.
+Quy trình chạy headless: agent theo lịch làm theo `RUNBOOK.md`; mọi việc qua các script Node trong `scripts/`, mỗi script in một JSON (`ok`), chạy lại không sinh trùng, ghi vết vào `workspace/logs/<ngày>.log`. **Scripts + RUNBOOK là nguồn duy nhất.** Giao diện duy nhất là `dashboard.html` tĩnh, chỉ xem (`scripts/dashboard.mjs` dựng lại cuối mỗi vòng); không server, không app, không nút thao tác. Quản lý qua chat với agent hoặc script.
 
 ## Nguyên tắc (người dùng chốt 07/11/2026)
 - **Thương hiệu chỉ từ `skillsRoot`** (`config/settings.json`, mặc định `../vaniecom-workspace/skills`). Một thương hiệu = một thư mục skill chuẩn có `SKILL.md`, `project/project.md`, `project/social.json`. Chạy được khi `enabled: true` và `scripts/check-skill.mjs --tool-ready` của chính skill exit 0 (tool không tự kiểm lại khuôn).
@@ -11,19 +11,19 @@ Quy trình chạy headless: agent theo lịch làm theo `RUNBOOK.md`; mọi vi�
 - **Scene-swap** (opt-in, `product_images.reference_redraw.enabled: true`; người dùng chấp nhận rủi ro bản quyền): `draft.mjs new --ref-image` lấy ảnh tham khảo của chính thương hiệu đó, chỉ đổi cảnh (`prompts/scene-swap.txt`), bắt buộc `--brand-can-produce` khi `only_if_brand_can_produce`; `check` đòi `confirm-clean` (xem bằng mắt: không còn tên shop/logo/watermark/nhãn size/số điện thoại) và chặn caption nhắc tên shop; người duyệt thấy ảnh gốc của shop cạnh ảnh mới; catalog ghi `image_mode: scene-swap`, `inspiration.source_shop`, `ai_disclosure: true`.
 - **Không logo trên sản phẩm**: prompt luôn có lệnh NO LOGO (check cảnh báo nếu thiếu). Logo chỉ là watermark nhỏ ở góc, thêm sau (`draft.mjs watermark`, ffmpeg), chỉ khi `product_images.watermark.enabled`.
 - **Làm sạch metadata bằng remove-watermark-skill** (`settings.remove_watermark.script`, provider theo AI: `codex → chatgpt`): ngay sau Codex, sau watermark và trước writeback. `image-generated.png` (gốc, không sửa) → `image.png` (bản sạch) + `image-clean-report.json`; check không đạt khi điểm ảnh đổi hay còn chunk metadata. Theo quy tắc của skill đó: chỉ metadata, không EXIF giả, chỉ ở máy, không bao giờ nói đã qua nhận diện AI; khai báo AI (`ai_disclosure`, nhãn của thương hiệu) không đổi.
-- **Duyệt bằng code**: chỉ bản `awaiting_approval`, qua lại mọi kiểm tra, người duyệt khớp `approval.owner` (chat → `approve.mjs`, hoặc nút ở giao diện); từ chối cần lý do. Trước khi duyệt không ghi gì vào thư mục thương hiệu. Agent không tự duyệt thay người.
+- **Duyệt bằng code**: chỉ bản `awaiting_approval`, qua lại mọi kiểm tra, người duyệt khớp `approval.owner` (chat → `approve.mjs`; dashboard không có nút duyệt); từ chối cần lý do. Trước khi duyệt không ghi gì vào thư mục thương hiệu. Agent không tự duyệt thay người.
 - **Ghi vào thương hiệu** (`writeback.mjs`): `workspace/posts/POST-<slug>/` và một mục `approved` trong `workspace/catalog.json`, `clean-image.mjs` của skill chỉ chạy khi `--check` chưa SẠCH, rồi `check-post.mjs` của skill.
-- **Chạy cùng lúc**: giao diện và agent theo lịch có thể chạy song song; mọi đọc-sửa-ghi file chung đi qua `withLock` (thư mục `<file>.lock`) và ghi nguyên tử (`writeJson`/`writeText`).
+- **Chạy cùng lúc**: agent theo lịch và một lệnh chạy tay trong chat có thể chồng nhau; mọi đọc-sửa-ghi file chung đi qua `withLock` (thư mục `<file>.lock`) và ghi nguyên tử (`writeJson`/`writeText`).
 - **Publish (later: Metricool)**: chưa có code. Không đăng, không hẹn giờ.
 - Commit chỉ đứng tên người dùng (hoangpham2263 / teambao@vaniecom.com), không thêm dòng Claude/co-author.
 
 ## Cấu trúc
 - `scripts/lib.mjs`: settings (`config/settings.json` + `workspace/settings.json`), dò thương hiệu, khoá + ghi nguyên tử, làm sạch chữ (U+034F, zero-width, NBSP), CSV. `SA_WORKSPACE`, `SA_SKILLS_ROOT`, `SA_CODEX`, `SA_STRIP_SCRIPT`, `SA_FFMPEG` chỉ dùng cho test.
-- `brands.mjs`, `sources.mjs`: đọc. `social.mjs` (show/set social.json an toàn: chặn token, chạy check-skill, sai thì trả file cũ). `research.mjs` (start/ingest/clean/limits), `ideas.mjs`, `draft.mjs` (new/image/watermark/confirm-clean/check/show/list), `image-clean.mjs`, `queue.mjs` (báo cáo), `approve.mjs` (approve/reject/sync), `writeback.mjs`.
-- Giao diện: `src/server.mjs` (cổng 47000 + hash thư mục, `SA_PORT` đè), `ui/index.html`; vỏ `core/` (launcher WebView2, Cấu hình Node.js + Codex, Cập nhật, bridge 8795 không dùng tới).
+- `brands.mjs`, `sources.mjs`: đọc. `social.mjs` (show/set social.json an toàn: chặn token, chạy check-skill, sai thì trả file cũ). `research.mjs` (start/ingest/clean/limits), `ideas.mjs`, `draft.mjs` (new/image/watermark/confirm-clean/check/show/list), `image-clean.mjs`, `queue.mjs` (báo cáo), `approve.mjs` (approve/reject/sync), `writeback.mjs`, `dashboard.mjs` (chỉ đọc, dựng `dashboard.html`).
+- Dashboard: `scripts/dashboard.mjs` → `dashboard.html` tĩnh (dữ liệu nhúng, ảnh theo đường dẫn tương đối), mở bằng nhấp đúp (`open-dashboard.cmd`). Chỉ đọc `workspace/` và thư mục skill; không ghi gì ngoài `dashboard.html`.
 - `workspace/` (git bỏ qua): `settings.json`, `research-log.json`, `runs/<brand>/<date>/{run.json, ideas.json, <source-id>/{raw.json, raw/, refs/, refs.json, refs.csv}}`, `drafts/<brand>/<brand>-<yyyymmdd>-<nn>/{draft.json, status.json, prompt.txt, brief.md, codex.log, image-generated.png, [image-watermarked.png], image.png, image-clean-report.json, content-<lang>.txt}`, `logs/`.
 - Trạng thái bản nháp (`status.json`): `needs_prompt` → `generating` → `needs_caption` (hoặc `image_failed`) → `awaiting_approval` → `approved` (có `brand_post`) | `rejected`.
-- Phiên bản: `package.json` `version`. Cập nhật: `git pull` (chưa có repo GitHub; nút Cập nhật báo không kiểm tra được).
+- Phiên bản: `package.json` `version`. Cập nhật: `git pull`.
 
 <!-- app-lessons:start -->
 ## Bài học đã đúc kết
@@ -41,4 +41,8 @@ Bản thử bg-test (neon-competitors) đổi nền ảnh đối thủ: chỉ đ
 ### Prompt Codex phải tả sản phẩm từng chữ
 <!-- app-lesson: {"id":"codex-exact-product","scope":"draft","created_at":"2026-11-07"} -->
 Tả chữ từng ký tự và dấu, font, màu, vật liệu, dây, tỉ lệ so với đồ xung quanh; cấm thêm chân đế/logo/chữ; kiểm lại chữ sau khi tạo (Codex từng đọc "a" thành "o").
+
+### Giao diện tĩnh, chỉ xem; quản lý qua chat và script
+<!-- app-lesson: {"id":"static-readonly-ui","scope":"ui","created_at":"2026-11-09"} -->
+Không dựng app/server/cửa sổ cho tool chạy headless: giao diện là `dashboard.html` tĩnh, chỉ xem, dựng lại cuối mỗi vòng. Mọi thao tác (duyệt, bỏ, sửa social.json, chạy lại bước) đi qua chat với agent hoặc script, để chỉ có một đường quy trình.
 <!-- app-lessons:end -->

@@ -1,6 +1,6 @@
 # RUNBOOK: một vòng social-autopilot
 
-Scripts + RUNBOOK là nguồn duy nhất của quy trình. Giao diện (`start-app.cmd`) chỉ gọi đúng các hàm này để xem và quản lý; agent theo lịch không cần giao diện.
+Scripts + RUNBOOK là nguồn duy nhất của quy trình. Giao diện duy nhất là `dashboard.html` tĩnh, chỉ xem, dựng lại ở bước 7; mọi thao tác quản lý (duyệt, bỏ, sửa social.json) làm qua chat hoặc script.
 
 Dành cho agent (Claude Code scheduled task/routine, Codex/ChatGPT automation) được gọi theo lịch. Chạy từ thư mục `C:\hoangpq\social-autopilot`. Mọi script in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Script chạy lại không sinh trùng.
 
@@ -85,7 +85,7 @@ Người có thể sửa tay `status.json` của bản nháp (`"status": "approv
 ```
 node scripts/approve.mjs sync
 ```
-Người duyệt cũng có thể bấm **Duyệt / Bỏ** ở trang Bản nháp của giao diện (cùng hàm `approve.mjs`, cùng luật). Không tự duyệt thay người.
+Dashboard chỉ để xem, không có nút duyệt; người duyệt trả lời trong chat. Không tự duyệt thay người.
 
 ## Bước 5. Ghi vào thương hiệu
 
@@ -103,3 +103,10 @@ Gửi người dùng một tin ngắn, mỗi thương hiệu:
 - **chờ duyệt**: mỗi bản `id`, đường dẫn `image`, caption từng ngôn ngữ (nguyên văn), ý + link bài tham khảo; bản scene-swap thì kèm đường dẫn ảnh gốc của shop (`reference_image`) để người duyệt xem hai ảnh cạnh nhau; cách trả lời: "duyệt <id>" hoặc "bỏ <id>: lý do";
 - đã duyệt và ghi vào thương hiệu (POST-xx, thư mục);
 - lỗi cần người xử lý (thiếu owner, Codex hết lượt, ảnh không đạt).
+
+## Bước 7. Dựng lại dashboard
+
+```
+node scripts/dashboard.mjs
+```
+Ghi lại `dashboard.html` (tĩnh, chỉ xem) từ `workspace/` và thư mục skill; không sửa gì khác. Chạy cả khi vòng dừng sớm, và sau mỗi lần duyệt/bỏ trong chat. Nhắc người dùng nhấp đúp `dashboard.html` (hoặc `open-dashboard.cmd`) để xem.
