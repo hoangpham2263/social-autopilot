@@ -17,13 +17,19 @@
 //   node scripts/store.mjs reject  --brand <id> --id S0001 [--note "..."]      "bỏ": never picked for ideas
 //   node scripts/store.mjs restore --brand <id> --id S0001                     rejected -> new
 //   node scripts/store.mjs known   --brand <id> [--source <sid>]               post links already in the store
+//   node scripts/store.mjs classify --brand <id> [--limit 40] [--source <sid>]   the batch filter (RUNBOOK 1.3): unjudged
+//                                            "new" items, compact (id, source, caption excerpt, thumbnail path) + what
+//                                            to take per source; the agent judges them in one pass (text + thumbnails)
+//   node scripts/store.mjs verdict  --brand <id> --file verdicts.json      [{ id, fit: true|false, reason }]: fit:false
+//                                            -> rejected, note "filter: <reason>"; fit:true -> kept (filter recorded)
 //   node scripts/store.mjs migrate [--brand <id>]                             old runs/<brand>/<date>/<src>/refs.json -> store
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText, loadBrand } from './lib.mjs';
 import { imageHashes, hamming } from './phash.mjs';
 
 export const STATUSES = ['new', 'used', 'rejected'];
+export const MEDIA_TYPES = ['photo', 'album', 'video', 'text'];
 const validBrand = (b) => { if (!/^[a-z0-9][a-z0-9-]*$/.test(String(b || ''))) throw new Error('Mã thương hiệu không hợp lệ.'); return String(b); };
 export const storeDir = (brand) => path.join(workspace, 'store', validBrand(brand));
 // A reference page's avatar, saved by research.mjs ingest: store/<brand>/sources/<source>/avatar.<ext>; '' when none.
@@ -122,7 +128,7 @@ export const duplicatesFile = (brand) => path.join(storeDir(brand), 'duplicates.
 // posted_date?, main_product?, price_seen?, store? }], images already checked by the caller. A duplicate (rules above)
 // is not stored; it is logged with the item it matched. since = drop posts dated before it; limit = at most that many
 // new. Returns { added: [ids], duplicates: [..], dropped: [..], hidden, unhashed }.
-export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, log = true } = {}) {
+export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, log = true, crawlMode = '' } = {}) {
   const cfg = dedupeSettings();
   const phashes = imageHashes(posts.flatMap((p) => p.images), { ffmpeg: process.env.SA_FFMPEG || settings().ffmpeg?.command || '' });
   const result = withStore(brand, (s) => {
@@ -155,6 +161,10 @@ export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, l
         captured: p.captured || stamp(), posted_date: validDate(p.posted_date) ? p.posted_date : '',
         caption: caption.text, caption_norm: norm, caption_hash: cand.caption_hash, main_product: cleanText(p.main_product).text, price_seen: cleanText(p.price_seen).text,
         images, image_sha1: cand.sha1, image_phash: cand.phash, status: 'new', used_by: [], run,
+        // Image-only posts are kept; caption_empty tells the filter step (classify) there is no text to judge.
+        ...(caption.text.trim() ? {} : { caption_empty: true }),
+        ...(MEDIA_TYPES.includes(p.media_type) ? { media_type: p.media_type } : {}),
+        ...(crawlMode ? { crawl_mode: crawlMode } : {}), ...(Number.isInteger(p.page_pos) ? { page_pos: p.page_pos } : {}),
       });
       added.push(id);
     }
@@ -167,26 +177,37 @@ export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, l
   return result;
 }
 
-// The newest and the oldest post of a source in the store: { date, post_id, post_url, item } (null when none). By
-// posted_date; on equal dates (and for undated stores) the crawl order decides: a crawl scrolls from new to old, so
-// the first item stored is the newest and the last one the oldest.
+// The newest and the oldest post of a source in the store: { date, post_id, post_url, item } (null when none).
+// By posted_date. Without dates, by the post's place on the page (page_pos, crawl order as fallback): a crawl scrolls
+// from new to old. A backfill only ever brings OLDER posts, so a backfilled item is never the newest while the source
+// has other items (an undated top post must not lose "newest" to a dated backfilled one), and the oldest comes from
+// the backfilled items when there are any.
 export function sourceBounds(items) {
   if (!items.length) return { newest_seen: null, oldest_seen: null };
   const pick = (i) => ({ date: validDate(i.posted_date) ? i.posted_date : '', post_id: (i.post_ids || [])[0] || '', post_url: i.post_url || '', item: i.id });
-  const dated = items.filter((i) => validDate(i.posted_date));
-  if (dated.length) {
-    const max = dated.reduce((m, i) => (i.posted_date > m ? i.posted_date : m), dated[0].posted_date);
-    const min = dated.reduce((m, i) => (i.posted_date < m ? i.posted_date : m), dated[0].posted_date);
-    return { newest_seen: pick(dated.find((i) => i.posted_date === max)), oldest_seen: pick(dated.findLast((i) => i.posted_date === min)) };
-  }
-  const runs = items.map((i) => String(i.run || '')).sort();
-  return { newest_seen: pick(items.find((i) => String(i.run || '') === runs.at(-1))), oldest_seen: pick(items.findLast((i) => String(i.run || '') === runs[0])) };
+  const order = items.map((i, n) => ({ i, n, run: String(i.run || ''), pos: Number.isInteger(i.page_pos) ? i.page_pos : n, date: validDate(i.posted_date) ? i.posted_date : '' }));
+  const higher = (a, b) => (a.run !== b.run ? (a.run > b.run ? -1 : 1) : a.pos - b.pos || a.n - b.n); // newer on the page first
+  const top = order.filter((x) => x.i.crawl_mode !== 'backfill'), back = order.filter((x) => x.i.crawl_mode === 'backfill');
+  const pool = top.length ? top : order, dated = pool.filter((x) => x.date);
+  const newest = dated.length ? dated.slice().sort((a, b) => (a.date !== b.date ? (a.date > b.date ? -1 : 1) : higher(a, b)))[0] : pool.slice().sort(higher)[0];
+  const oldPool = back.length ? back : order, datedOld = oldPool.filter((x) => x.date);
+  // Undated: the lowest post of the first crawl (of the latest backfill when there are backfilled items).
+  const lowest = (a, b) => (a.run !== b.run ? ((back.length ? a.run > b.run : a.run < b.run) ? -1 : 1) : b.pos - a.pos || b.n - a.n);
+  const oldest = datedOld.length ? datedOld.slice().sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : b.pos - a.pos || b.n - a.n))[0] : oldPool.slice().sort(lowest)[0];
+  return { newest_seen: pick(newest.i), oldest_seen: pick(oldest.i) };
 }
 
 // What the crawling agent needs to know where to stop on a source: links already in the store, the newest and the
 // oldest post of the source (oldest_seen: where a backfill starts collecting).
+// Items stored before crawl_mode was recorded: a run date on which this brand only ran --backfill crawls
+// (workspace/research-log.json) marks its items as backfilled.
+function withCrawlMode(brand, items) {
+  const runs = (readJson(path.join(workspace, 'research-log.json'), {}).runs || []).filter((r) => r.brand === brand);
+  const back = new Set(runs.filter((r) => r.mode?.backfill).map((r) => r.date).filter((d) => !runs.some((r) => r.date === d && !r.mode?.backfill)));
+  return items.map((i) => (i.crawl_mode || !back.has(i.run) ? i : { ...i, crawl_mode: 'backfill' }));
+}
 export function knownPosts(brand, sourceId) {
-  const items = readStore(brand).items.filter((i) => !sourceId || i.source_id === sourceId);
+  const items = withCrawlMode(brand, readStore(brand).items.filter((i) => !sourceId || i.source_id === sourceId));
   const dates = items.map((i) => i.posted_date).filter(Boolean).sort();
   // Duplicates are checked across every source of the brand, so the ids/links to skip before downloading are brand-wide.
   const all = readStore(brand).items;
@@ -218,8 +239,54 @@ export function setItemStatus(brand, id, status, { note = '', by = 'user' } = {}
     if (status === 'new' && it.status !== 'rejected') throw new Error(`Chỉ khôi phục được bài đã bỏ (${id} đang "${it.status}").`);
     it.status = status;
     if (status === 'rejected') Object.assign(it, { note: String(note || '').trim(), rejected_by: String(by || 'user').trim() || 'user', rejected_at: stamp() });
-    else { delete it.note; delete it.rejected_by; delete it.rejected_at; }
+    else { delete it.note; delete it.rejected_by; delete it.rejected_at; if (it.filter) it.filter = { ...it.filter, restored_at: stamp() }; } // a restored filtered post is not judged again
     return { ...it };
+  });
+}
+
+// ----- batch filter after the crawl ("crawl everything fast, then filter") -----
+// classify: the next batch of "new" items without a verdict (item.filter), compact for one agent pass; with the brand's
+// rules: research.sources[].what_to_take and the project.md path (product scope). verdict: applies the agent's
+// [{ id, fit, reason }]: fit:false -> status rejected, note "filter: <reason>", rejected_by "filter"; fit:true -> stays
+// new with filter { fit: true }. Items already used/rejected or unknown are reported, the rest applied.
+export const RULES_OF_THUMB = [
+  'drop recruitment / job posts (tuyển dụng)',
+  'drop contests, minigames, giveaways',
+  'drop text-only posts and posts whose image is only text (no product)',
+  'drop reshares without the product in the media',
+  "drop products outside the brand's category (project.md product scope, the source's what_to_take)",
+  "keep: a real product photo of the brand's category, a usable scene / angle / caption structure",
+];
+const excerpt = (t, n = 220) => { const x = String(t || '').replace(/s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
+export function classifyBatch(brand, { limit = 40, source = '' } = {}) {
+  const all = readStore(brand).items.filter((i) => i.status === 'new' && !i.filter && (!source || i.source_id === source));
+  let rules = { project_md: '', sources: {} };
+  try { const b = loadBrand(brand, { allowDisabled: true }); rules = { project_md: path.join(b.dir, 'project', 'project.md'), sources: Object.fromEntries((b.social.research?.sources || []).map((x) => [x.id, { name: x.name || x.id, what_to_take: x.what_to_take || '', notes: x.notes || '' }])) }; } catch { /* brand not linked: rules from the agent's skill */ }
+  const batch = all.slice(0, limit > 0 ? limit : all.length);
+  return {
+    brand, total_unjudged: all.length, batch_size: batch.length, remaining_after: all.length - batch.length,
+    project_md: rules.project_md, sources: Object.fromEntries([...new Set(batch.map((i) => i.source_id))].map((id) => [id, rules.sources[id] || { name: id, what_to_take: '' }])),
+    rules_of_thumb: RULES_OF_THUMB,
+    items: batch.map((i) => ({ id: i.id, source: i.source_id, posted: i.posted_date || '', media: i.media_type || '', images: i.images.length, caption: i.caption_empty || !String(i.caption || '').trim() ? '(no caption)' : excerpt(i.caption), thumb: i.images[0] ? path.join(storeDir(brand), i.images[0]) : '' })),
+    next: all.length ? 'Judge every item (open the thumbs), write [{ "id": "S0001", "fit": true|false, "reason": "..." }] to a file, then store.mjs verdict --brand <id> --file <file>; repeat classify until total_unjudged is 0.' : 'Nothing left to judge.',
+  };
+}
+export function applyVerdicts(brand, list) {
+  if (!Array.isArray(list)) throw new Error('verdicts phải là mảng [{ id, fit, reason }].');
+  return withStore(brand, (s) => {
+    const kept = [], filtered = [], skipped = [];
+    for (const v of list) {
+      const it = s.items.find((x) => x.id === v?.id);
+      const reason = cleanText(String(v?.reason ?? '')).text.trim().slice(0, 300);
+      if (!it) { skipped.push({ id: v?.id ?? null, reason: 'không có trong kho' }); continue; }
+      if (typeof v.fit !== 'boolean') { skipped.push({ id: it.id, reason: 'fit phải là true hoặc false' }); continue; }
+      if (it.status !== 'new') { skipped.push({ id: it.id, reason: `đang "${it.status}"` }); continue; }
+      if (!v.fit && !reason) { skipped.push({ id: it.id, reason: 'fit:false cần reason' }); continue; }
+      it.filter = { fit: v.fit, reason, at: stamp() };
+      if (v.fit) kept.push(it.id);
+      else { Object.assign(it, { status: 'rejected', note: `filter: ${reason}`, rejected_by: 'filter', rejected_at: stamp() }); filtered.push(it.id); }
+    }
+    return { kept, filtered, skipped };
   });
 }
 
@@ -309,6 +376,8 @@ if (isMain(import.meta.url)) main(() => {
   if (cmd === 'show') { const it = findItem(brand, need(args, 'id')); return out({ item: { ...it, image_paths: it.images.map((f) => path.join(storeDir(brand), f)) } }); }
   if (cmd === 'reject') return out({ item: setItemStatus(brand, need(args, 'id'), 'rejected', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });
   if (cmd === 'restore') return out({ item: setItemStatus(brand, need(args, 'id'), 'new') });
+  if (cmd === 'classify') return out(classifyBatch(brand, { limit: args.limit === undefined ? 40 : Number(args.limit) || 0, source: args.source && args.source !== true ? String(args.source) : '' }));
+  if (cmd === 'verdict') { const r = applyVerdicts(brand, readJson(path.resolve(need(args, 'file')))); return out({ ...r, left: classifyBatch(brand, { limit: 0 }).total_unjudged }); }
   if (cmd === 'known') { const k = knownPosts(brand, args.source ? String(args.source) : ''); return out(k); }
-  throw new Error('Lệnh: list | show | reject | restore | known | migrate');
+  throw new Error('Lệnh: list | show | reject | restore | classify | verdict | known | migrate');
 });

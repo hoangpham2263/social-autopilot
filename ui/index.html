@@ -604,7 +604,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#resBody").innerHTML = `${progress}
       <div class="tiles spaced">${list.map((it) => tile({ id: it.id, img: arr(it.image_paths)[0] || "",
         title: String(it.caption || "").split(/\r?\n/).find((l) => l.trim()) || it.id,
-        who: pageOf(it), whoTip: `${pageOf(it)} · ${it.id}${it.posted_date ? ` · ${it.posted_date}` : ""}`,
+        status: it.status === "rejected" && it.filter?.fit === false ? `<span class="meta" title="${esc(it.filter.reason || "")}">filtered</span>` : "",
+        who: pageOf(it), whoTip: `${pageOf(it)} · ${it.id}${it.posted_date ? ` · ${it.posted_date}` : ""}${it.status === "rejected" && it.note ? ` · ${it.note}` : ""}`,
         actions: it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : "" })).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
       ${items.length > resShown ? `<div class="actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
@@ -643,12 +644,13 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const merged = arr(it.post_keys).length;
       const link = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>`;
       const side = `<dl class="kv">
-          <dt>Status</dt><dd><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.note ? ` <span class="meta">Reason: ${esc(it.note)}</span>` : ""}</dd>
+          <dt>Status</dt><dd><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span> ${it.note && !(it.status === "rejected" && it.filter?.fit === false) ? `<span class="meta">Reason: ${esc(it.note)}</span>` : ""}</dd>
+          ${it.filter ? `<dt>Filter</dt><dd>${it.filter.fit ? "Kept" : "<span class=\"bad-text\">Filtered out</span>"}${it.filter.reason ? `: ${esc(it.filter.reason)}` : ""}${it.filter.restored_at ? ` <span class="meta">(restored by you)</span>` : ""}</dd>` : ""}
           <dt>Source</dt><dd>${it.source_url ? link(it.source_url, it.store || it.source_id) : esc(it.store || it.source_id)}</dd>
           <dt>Original</dt><dd>${it.post_url ? link(it.post_url, "Open original ↗") : "-"}</dd>
           <dt>Posted</dt><dd>${esc(it.posted_date || "-")}</dd>
           <dt>Captured</dt><dd>${esc(String(it.captured || "-").slice(0, 16).replace("T", " "))}</dd>
-          <dt>Images</dt><dd>${imgs.length}</dd>
+          <dt>Images</dt><dd>${imgs.length}${it.media_type ? ` · ${esc(it.media_type)}` : ""}${it.caption_empty ? ` · no caption` : ""}</dd>
           ${it.main_product ? `<dt>Product</dt><dd>${esc(it.main_product)}</dd>` : ""}${it.price_seen ? `<dt>Price seen</dt><dd>${esc(it.price_seen)}</dd>` : ""}
           ${arr(it.used_by).length ? `<dt>Used for</dt><dd>${esc(it.used_by.join(", "))}</dd>` : ""}
         </dl>
@@ -798,7 +800,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 
   // ----- Log: every agent run (scripts/runlog.mjs), newest first; a click opens the per-brand / per-source detail -----
   const MODE_TEXT = { research: "Research", create: "Create & publish", publish: "Publish" };
-  const SRC_STATE = { "new posts": "", "dried up": "dry", "reached end": "", blocked: "bad-text", error: "bad-text", unfinished: "warn-text" };
+  const SRC_STATE = { "skipped (quota)": "", "new posts": "", "dried up": "dry", "reached end": "", blocked: "bad-text", error: "bad-text", unfinished: "warn-text" };
   let lgMode = store.get("lgMode") || "", dryRuns = 3;
   const when = (t) => (t ? new Date(t).toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-");
   const loadLogs = safely("#lgList", async () => {
@@ -823,17 +825,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       row.onclick = open; row.onkeydown = (e) => { if (e.key === "Enter") open(); };
     }
   });
-  // The detail, the same every run: per brand a small table. Research: Source | New | Status. Create: Scheduled |
+  // The detail, the same every run: per brand a small table. Research: Source | New | Kept | Filtered | Status. Create: Scheduled |
   // To review | Errors. Agent and duration only as small text in the header.
-  const STATUS_TEXT_RUN = { "new posts": "New posts", "dried up": "Dried up", "reached end": "New posts", blocked: "Blocked", error: "Error", unfinished: "Error" };
+  const STATUS_TEXT_RUN = { "skipped (quota)": "Skipped (quota)", "new posts": "New posts", "dried up": "Dried up", "reached end": "New posts", blocked: "Blocked", error: "Error", unfinished: "Error" };
   // An external link (opens like every other external link of the app); plain text when there is none.
   const ext = (url, text) => (/^https:\/\//.test(url || "") ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text));
   function openLog(l) {
     const brands = arr(l.brands).map((b) => {
       let body;
       if (l.mode === "research") {
-        const rows = arr(b.research?.sources).map((x) => { const st = STATUS_TEXT_RUN[x.state] || x.state; return `<tr><td>${ext(x.url, x.name || x.id)}</td><td>${x.new}</td><td class="${st === "Dried up" ? "dry" : st === "Blocked" || st === "Error" ? "bad-text" : ""}"${x.dry_runs >= dryRuns ? ` title="No new posts in ${x.dry_runs} runs: consider new sources"` : ""}>${esc(st)}${x.dry_runs >= dryRuns ? " · consider new sources" : ""}</td></tr>`; }).join("");
-        body = rows ? `<table class="edit"><thead><tr><th>Source</th><th>New</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="meta">No crawl.</div>`;
+        const rows = arr(b.research?.sources).map((x) => { const st = STATUS_TEXT_RUN[x.state] || x.state; return `<tr><td>${ext(x.url, x.name || x.id)}</td><td>${x.new}</td><td>${x.kept ?? 0}</td><td class="${x.low_keep ? "warn-text" : ""}"${x.low_keep ? ` title="Most posts of this source were filtered out: check its what_to_take or replace it"` : ""}>${x.filtered ?? 0}${x.low_keep ? " · low keep rate" : ""}</td><td class="${st === "Dried up" ? "dry" : st === "Blocked" || st === "Error" ? "bad-text" : ""}"${x.dry_runs >= dryRuns ? ` title="No new posts in ${x.dry_runs} runs: consider new sources"` : ""}>${esc(st)}${x.dry_runs >= dryRuns ? " · consider new sources" : ""}</td></tr>`; }).join("");
+        body = rows ? `<table class="edit"><thead><tr><th>Source</th><th>New</th><th>Kept</th><th>Filtered</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="meta">No crawl.</div>`;
       } else {
         const c = b.create || {};
         const sched = arr(c.scheduled).map((x) => `${ext(x.planner_url, x.post)} · ${esc(String(x.publication).replace("T", " ").slice(0, 16))}${x.source ? ` <span class="meta">${esc(x.source)}</span>` : ""}`);

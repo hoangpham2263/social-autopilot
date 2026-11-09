@@ -3,9 +3,9 @@
 File này là luật chung cho **mọi agent** (Claude Code đọc qua `CLAUDE.md`, Codex đọc trực tiếp; ChatGPT nhận qua prompt). Mọi việc qua các script Node trong `scripts/`: mỗi lệnh `node scripts/...` in một JSON (`ok`), chạy lại không sinh trùng, ghi vết vào `workspace/logs/<ngày>.log`. Không bước nào phụ thuộc một agent cụ thể; chỉ công cụ ngoài khác nhau (trình duyệt cho nghiên cứu, MCP Metricool cho bước gửi). **Scripts + `RUNBOOK.md` là nguồn duy nhất của quy trình**; prompt (tab Prompt, `docs/scheduled-prompt.md`) chỉ ngắn và trỏ về RUNBOOK. Tool chạy được trên mọi máy và mọi tài khoản Metricool: không hard-code đường dẫn tuyệt đối, id tài khoản, blogId hay thương hiệu.
 
 ## Hai chế độ
-1. **Research only** (chạy riêng, vd mỗi tuần; cần Chrome đã đăng nhập Facebook qua Playwright MCP): mỗi nguồn bật của thương hiệu → crawl (mặc định hết bài; `--since` / `--max-posts` / `--backfill` / `--full`) → `research.mjs ingest` vào kho `workspace/store/<brand>/`, bỏ trùng → `result` → `report`. Không làm ý/bài.
+1. **Research only** (chạy riêng, vd mỗi tuần; Chrome đã đăng nhập Facebook mở với `--remote-debugging-port`): `research.mjs start` → `crawl-fb.mjs` crawl hết nhanh bằng script (mặc định hết bài; `--since` / `--max-posts` chia xoay vòng / `--backfill` / `--full`), tự ingest vào kho `workspace/store/<brand>/` (bỏ trùng) và ghi `result`; agent chỉ xử lý nguồn blocked/error → lọc một lượt `store.mjs classify` + `verdict` → `report`. Crawl tay bằng Playwright MCP chỉ là dự phòng. Không làm ý/bài.
 2. **Create & publish** (khi người dùng bảo; không mở Facebook): `getBrandSettings` → `metricool-mcp.mjs sync-brands` → gửi bài **đã duyệt** chưa gửi thành bài **hẹn giờ thật** (`payload` → `createScheduledPost` → `record`; không bao giờ nháp) → đối chiếu (`status` → `getScheduledPosts`) → `ideas.mjs` → `draft.mjs new/image` → caption → `draft.mjs check` (`ready` = **To review**) → **dừng** → báo cáo. Người dùng duyệt trong app (Approve = `finalize.mjs approve --id <draft>`: ghi vào skill + host ảnh); lượt sau hẹn giờ các bài đó.
-3. **Nhật ký lượt chạy** (cả hai chế độ, mọi agent): bước gần cuối luôn là `node scripts/runlog.mjs add --mode research|create --agent "<agent>"` (RUNBOOK 1.6 / 2.9), rồi báo cáo với các mục cố định (1.7 / 2.10). Người dùng xem ở tab **Log**.
+3. **Nhật ký lượt chạy** (cả hai chế độ, mọi agent): bước gần cuối luôn là `node scripts/runlog.mjs add --mode research|create --agent "<agent>"` (RUNBOOK 1.5 / 2.9), rồi báo cáo với các mục cố định (1.6 / 2.10). Người dùng xem ở tab **Log**.
 
 Trạng thái người dùng thấy: **To review** / **Queued** / **Posted**; bài lỗi có dấu đỏ.
 
@@ -34,7 +34,7 @@ App (`start-app.cmd` Windows / `start-app.command` macOS → `src/server.mjs` + 
 ## Cấu trúc
 - `config/settings.json`, `config/metricool-brands.example.json` (dạng file máy `workspace/metricool-brands.json`).
 - `scripts/lib.mjs`: settings, dò thương hiệu, brand Metricool (sync, link), khoá + ghi nguyên tử, làm sạch chữ. `SA_WORKSPACE`, `SA_SKILLS_ROOT`, `SA_CODEX`, `SA_STRIP_SCRIPT`, `SA_FFMPEG`, `SA_IMAGE_HOST_CHECK_BASE` chỉ dùng cho test.
-- Mode 1: `research.mjs` (start/ingest/result/report/clean), `store.mjs`, `phash.mjs`.
+- Mode 1: `research.mjs` (start/ingest/result/report/clean), `crawl-fb.mjs` (crawl bằng script, Playwright qua CDP), `fb-extract.mjs` (mọi selector Facebook + hàm đọc trang thuần), `store.mjs` (kho, `classify`/`verdict`), `phash.mjs`.
 - Mode 2: `metricool-mcp.mjs` (sync-brands/payload/record/status), `ideas.mjs`, `draft.mjs`, `image-clean.mjs`, `finalize.mjs` (approve/cancel, chỉ người dùng), `writeback.mjs`, `host-image.mjs` (publish/remove), `metricool-csv.mjs` (dự phòng), `queue.mjs`.
 - Khác: `brands.mjs`, `sources.mjs`, `skills.mjs`, `social.mjs`, `prompts.mjs` (đọc `docs/scheduled-prompt.md`, điền `{{TOOL}}`, `{{BRAND}}`, `{{OPTIONS}}`), `preview.mjs`.
 - App: `src/server.mjs` (127.0.0.1, `SA_PORT` để đổi cổng) + `ui/index.html`; vỏ `core/`.

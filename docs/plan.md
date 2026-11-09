@@ -6,7 +6,7 @@ Các quyết định của người dùng dưới đây thắng mọi chỗ khá
 
 | Phần | Ai chạy | Gồm |
 |---|---|---|
-| **Mode 1: Research only** | Agent có trình duyệt đã đăng nhập Facebook (Claude Code + Playwright MCP, hoặc Codex có MCP trình duyệt), chạy riêng, vd mỗi tuần | `research.mjs start` → agent crawl theo `docs/research.md` → `ingest` vào kho (bỏ trùng) → `result` từng nguồn → `report`. Không ý/bài |
+| **Mode 1: Research only** | Claude Code hoặc Codex + Chrome đã đăng nhập Facebook (cổng `--remote-debugging-port`), chạy riêng, vd mỗi tuần | `research.mjs start` → `crawl-fb.mjs` crawl hết bằng script, tự `ingest` (bỏ trùng) + `result` → agent lọc một lượt (`store.mjs classify` / `verdict`) → `report`. Crawl tay bằng Playwright MCP chỉ dự phòng. Không ý/bài |
 | **Mode 2: Create & publish** | Claude Code hoặc Codex khi người dùng bảo (ChatGPT chỉ gửi bài đã duyệt từ JSON payload); không mở Facebook | `getBrandSettings` → `sync-brands` → `payload` → `createScheduledPost` (hẹn giờ thật) → `record` → `status`/`getScheduledPosts` → `ideas.mjs` → `draft.mjs` (ảnh Codex, caption) → `check` → **To review**, dừng → `queue.mjs` |
 | **App** | Người dùng | Overview (brand Metricool ↔ skill), Library, Posts (Approve / Drop), Prompt, Settings |
 

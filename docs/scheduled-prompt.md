@@ -1,4 +1,4 @@
-# Ready-to-paste prompts (2 modes, one per agent)
+# Ready-to-paste prompts (3 modes, one per agent)
 
 The only source of the prompts: the app (**Prompt** tab) and `node scripts/prompts.mjs show --mode "<mode>" --agent "<agent>" [--brand <id>]` read this file. Each prompt is a `### <mode> · <agent>` heading with a `text` block. Placeholders: `{{TOOL}}` = this tool's folder on the machine, `{{BRAND}}` = a brand id (example: `dreamyvows`) or "all usable brands", `{{OPTIONS}}` = this run's options (or "defaults"), `{{SKILLS}}` = one line per brand in scope, A-Z: `SKILL: <brand id> → <absolute skill folder> (read its SKILL.md + project/project.md + project/social.json)` (from the brand → skill links, `workspace/metricool-brands.json` `skill_path`).
 
@@ -12,15 +12,15 @@ OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; node scripts/brands.mjs.
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md + project/project.md; node scripts/brands.mjs.
 2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
-3. 1.2 Crawl each source with Playwright MCP (the Chrome signed into Facebook), as docs/research.md says.
-4. 1.3 Ingest + 1.4 record how each source ended (research.mjs ingest, research.mjs result).
-5. 1.5 Report data: node scripts/research.mjs report.
-6. 1.6 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code".
-7. 1.7 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.7.
-STOP IF: checkpoint, captcha or login prompt (record "blocked", open no other source).
-NEVER: make ideas or posts, send anything to Metricool, sign in for me, store cookies.
+3. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id> (Chrome with --remote-debugging-port, RUNBOOK "Chrome cho crawl"); step in only on blocked / error.
+4. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
+5. 1.4 Report data: node scripts/research.mjs report.
+6. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code".
+7. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
+STOP IF: checkpoint, captcha or login prompt (crawl-fb records "blocked"; open no other source); Chrome not reachable (tell me how to start it).
+NEVER: like, comment, follow or message; make ideas or posts; send anything to Metricool; sign in for me; store cookies.
 ```
 
 ### Research only · Codex
@@ -31,22 +31,22 @@ OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; check you have a browser MCP; node scripts/brands.mjs.
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md + project/project.md; node scripts/brands.mjs.
 2. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
-3. 1.2 Crawl each source with the browser MCP (the Chrome signed into Facebook), as docs/research.md says.
-4. 1.3 Ingest + 1.4 record how each source ended (research.mjs ingest, research.mjs result).
-5. 1.5 Report data: node scripts/research.mjs report.
-6. 1.6 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex".
-7. 1.7 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.7.
-STOP IF: no browser MCP (tell me how to add it, RUNBOOK "Công cụ theo agent"); checkpoint, captcha or login prompt.
-NEVER: make ideas or posts, send anything to Metricool, sign in for me, store cookies.
+3. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id> (Chrome with --remote-debugging-port, RUNBOOK "Chrome cho crawl"); step in only on blocked / error.
+4. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
+5. 1.4 Report data: node scripts/research.mjs report.
+6. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex".
+7. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
+STOP IF: checkpoint, captcha or login prompt (crawl-fb records "blocked"; open no other source); Chrome not reachable (tell me how to start it).
+NEVER: like, comment, follow or message; make ideas or posts; send anything to Metricool; sign in for me; store cookies.
 ```
 
 ### Research only · ChatGPT
 
 ```text
 TASK: Research only — brand: {{BRAND}} — agent: ChatGPT
-This mode runs node commands in {{TOOL}} and drives the Chrome signed into Facebook. If you cannot run commands on this machine, do nothing and reply only: "Research only needs Claude Code (Playwright MCP) or Codex with a browser MCP. Open the social-autopilot folder in one of them and paste the matching prompt from the app's Prompt tab."
+This mode runs node commands in {{TOOL}} and drives the Chrome signed into Facebook. If you cannot run commands on this machine, do nothing and reply only: "Research only needs Claude Code or Codex in the social-autopilot folder (it runs node scripts/crawl-fb.mjs against Chrome). Open the social-autopilot folder in one of them and paste the matching prompt from the app's Prompt tab."
 ```
 
 ### Create & publish · Claude Code

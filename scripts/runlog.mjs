@@ -1,10 +1,10 @@
 // Run log: after every agent run (Research only or Create & publish, any agent) one short report the user reads in the
 // app (Log tab). Built automatically from what the run left behind (research run.json + progress, the queue report:
 // drafts, posts written, Metricool records); the agent only adds notes and errors.
-//   node scripts/runlog.mjs add --mode research|create --agent "<Claude Code|Codex|...>" [--brand a,b] [--started <ISO>]
+//   node scripts/runlog.mjs add --mode research|create|publish --agent "<Claude Code|Codex|...>" [--brand a,b] [--started <ISO>]
 //        [--file <json> | stdin] [--notes "..."]
 //        agent JSON (optional): { "notes": "...", "errors": ["..."], "brands": { "<id>": { "notes": "...", "errors": [...] } } }
-//   node scripts/runlog.mjs list [--brand <id>] [--mode research|create] [--limit N]
+//   node scripts/runlog.mjs list [--brand <id>] [--mode research|create|publish] [--limit N]
 //   node scripts/runlog.mjs show --id <log id>
 // Files: workspace/logs/runs/<yyyymmdd-hhmmss>-<mode>.json (one per run).
 import fs from 'node:fs';
@@ -21,6 +21,7 @@ export const DRIED_UP_RUNS = 3;
 // One source's outcome in plain words.
 export function sourceState(x) {
   if (x.state === 'blocked') return 'blocked';
+  if (x.state === 'skipped') return 'skipped (quota)'; // never opened: the brand's --max-posts was used up first
   if (x.state === 'pending' || x.state === 'partial') return x.note && /lỗi|error/i.test(x.note) ? 'error' : 'unfinished';
   if (x.new > 0) return 'new posts';
   if (x.state === 'end' || x.reached_end) return x.new ? 'new posts' : 'reached end';
@@ -30,8 +31,8 @@ export function sourceState(x) {
 function researchPart(brandId) {
   const r = researchReport(brandId);
   if (!r.date) return { date: null, sources: [], new: 0, duplicates: 0 };
-  const sources = r.sources.map((x) => ({ id: x.id, name: x.name || x.id, url: x.url || '', new: x.new, duplicates: x.duplicates, backfilled: x.backfilled, reached_end: x.reached_end, state: sourceState(x), note: x.note || '' }));
-  return { date: r.date, crawl_mode: r.crawl_mode, sources, new: r.new_total || 0, duplicates: r.duplicates_total || 0, store: r.store };
+  const sources = r.sources.map((x) => ({ id: x.id, name: x.name || x.id, url: x.url || '', new: x.new, kept: x.kept || 0, filtered: x.filtered || 0, low_keep: !!x.low_keep, duplicates: x.duplicates, backfilled: x.backfilled, reached_end: x.reached_end, state: sourceState(x), note: x.note || '' }));
+  return { date: r.date, crawl_mode: r.crawl_mode, sources, new: r.new_total || 0, kept: r.kept_total || 0, filtered: r.filtered_total || 0, duplicates: r.duplicates_total || 0, store: r.store };
 }
 
 function createPart(brandId, since) {
@@ -50,10 +51,12 @@ function createPart(brandId, since) {
 }
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// "N kept · M filtered" once the batch filter judged something (store.mjs verdict).
+export const keptText = (kept = 0, filtered = 0) => (kept || filtered ? `${kept} kept · ${filtered} filtered` : '');
 export function brandHeadline(mode, b) {
   if (mode === 'research') {
     const r = b.research || {}, dry = (r.sources || []).filter((x) => x.state === 'dried up').length, blocked = (r.sources || []).filter((x) => x.state === 'blocked').length;
-    return [`+${plural(r.new || 0, 'post')}`, dry && `${plural(dry, 'source')} dried up`, blocked && `${blocked} blocked`, (b.errors || []).length && plural(b.errors.length, 'error')].filter(Boolean).join(' · ');
+    return [`+${plural(r.new || 0, 'post')}`, keptText(r.kept, r.filtered), dry && `${plural(dry, 'source')} dried up`, blocked && `${blocked} blocked`, (b.errors || []).length && plural(b.errors.length, 'error')].filter(Boolean).join(' · ');
   }
   const c = b.create || {}, errs = (c.failed || []).length + (c.errors || []).length + (b.errors || []).length;
   return [`${(c.scheduled || []).length} scheduled`, `${(c.to_review || []).length} to review`, errs && plural(errs, 'error')].filter(Boolean).join(' · ');
@@ -92,7 +95,7 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
   const result = errors.length || per.some((b) => b.result === 'error') ? 'error' : per.some((b) => b.result === 'warning') ? 'warning' : 'ok';
   const sum = (f) => per.reduce((a, b) => a + f(b), 0);
   const headline = mode === 'research'
-    ? [`+${plural(sum((b) => b.research.new || 0), 'post')}`, sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length) && `${plural(sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length), 'source')} dried up`, sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length) && `${sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length)} blocked`].filter(Boolean).join(' · ')
+    ? [`+${plural(sum((b) => b.research.new || 0), 'post')}`, keptText(sum((b) => b.research.kept || 0), sum((b) => b.research.filtered || 0)), sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length) && `${plural(sum((b) => b.research.sources.filter((x) => x.state === 'dried up').length), 'source')} dried up`, sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length) && `${sum((b) => b.research.sources.filter((x) => x.state === 'blocked').length)} blocked`].filter(Boolean).join(' · ')
     : [`${sum((b) => b.create.scheduled.length)} scheduled`, `${sum((b) => b.create.to_review.length)} to review`, (errors.length + sum((b) => b.errors.length + b.create.errors.length + b.create.failed.length)) && plural(errors.length + sum((b) => b.errors.length + b.create.errors.length + b.create.failed.length), 'error')].filter(Boolean).join(' · ');
   const id = `${ended.replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}-${mode}`;
   // Publish approved makes no posts: its headlines leave out "to review".
@@ -113,6 +116,7 @@ export function listLogs({ brand = '', mode = '', limit = 0 } = {}) {
   const streak = {};
   for (const l of logs.filter((x) => x.mode === 'research').slice().reverse()) for (const b of l.brands || []) for (const s of b.research?.sources || []) {
     const k = `${b.brand}/${s.id}`;
+    if (s.state === 'skipped (quota)') continue; // not opened: says nothing about the source
     streak[k] = s.new > 0 ? 0 : (streak[k] || 0) + 1;
   }
   for (const l of logs) for (const b of l.brands || []) for (const s of b.research?.sources || []) s.dry_runs = streak[`${b.brand}/${s.id}`] || 0;
@@ -120,7 +124,7 @@ export function listLogs({ brand = '', mode = '', limit = 0 } = {}) {
 }
 
 export function showLog(id) {
-  if (!/^[0-9]{8}-[0-9]{6}-(research|create)$/.test(String(id || ''))) throw new Error('Invalid log id.');
+  if (!/^[0-9]{8}-[0-9]{6}-(research|create|publish)$/.test(String(id || ''))) throw new Error('Invalid log id.');
   const log = listLogs().find((l) => l.id === id);
   if (!log) throw new Error(`No log ${id}.`);
   return log;
@@ -139,5 +143,5 @@ if (isMain(import.meta.url)) main(() => {
   }
   if (cmd === 'list') return out({ logs: listLogs({ brand: str('brand'), mode: str('mode'), limit: Number(str('limit')) || 0 }).map(({ id, mode, agent, ended, result, headline, brands }) => ({ id, mode, agent, ended, result, headline, brands: (brands || []).map((b) => b.brand) })) });
   if (cmd === 'show') return out({ log: showLog(need(args, 'id')) });
-  throw new Error('Lệnh: add --mode research|create --agent <name> [--brand a,b] [--started ISO] [--file json | --stdin] [--notes ..] | list [--brand] [--mode] [--limit] | show --id <id>');
+  throw new Error('Lệnh: add --mode research|create|publish --agent <name> [--brand a,b] [--started ISO] [--file json | --stdin] [--notes ..] | list [--brand] [--mode] [--limit] | show --id <id>');
 });
