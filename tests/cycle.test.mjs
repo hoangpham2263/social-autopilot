@@ -262,6 +262,8 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const signProblems = run('draft.mjs', 'check', '--id', draft.id).problems;
   assert.ok(signProblems.some((p) => /content-en/.test(p) && /"Love"/.test(p)), JSON.stringify(signProblems));
   assert.ok(signProblems.some((p) => /Your Names/.test(p)), JSON.stringify(signProblems));
+  write(capFile, goodCap.replace('#DreamyVows', 'Send us your logo or try your names in the designer.\n#DreamyVows'));
+  assert.ok(!run('draft.mjs', 'check', '--id', draft.id).problems.some((p) => /Your Names/.test(p)), 'a lower-case CTA is not a placeholder');
   write(capFile, goodCap);
   const re = run('draft.mjs', 'reprompt', '--id', draft.id, '--size', '91 cm (36 in) wide', '--sign-text', 'Emma & Liam');
   assert.equal(re.ok, true, JSON.stringify(re));

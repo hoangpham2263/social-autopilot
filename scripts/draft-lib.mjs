@@ -25,6 +25,8 @@ export function logoWarnings(prompt) {
 
 // The same delivery rules as the brand's check-post.mjs, plus a copy check against the reference caption, the
 // no-logo prompt rule (warning) and, when the brand asks for one, the watermark overlay.
+// Template placeholders in Title/upper case ("Your Names", "YOUR LOGO", "Your Bar Name"); a CTA like "send us your logo" is fine.
+const PLACEHOLDER_IN_CAPTION = /\bY(?:our|OUR)\s+(?:N(?:ames?|AMES?)(?:\s+H(?:ere|ERE))?|L(?:ogo|OGO)|B(?:ar|AR)(?:\s+N(?:ame|AME))?|B(?:usiness|USINESS)(?:\s+N(?:ame|AME))?|T(?:ext|EXT)|S(?:hop|HOP)(?:\s+N(?:ame|AME))?)\b/;
 export function checkDraft(dir, draft, status = {}) {
   const problems = [];
   const promptFile = path.join(dir, 'prompt.txt');
@@ -65,7 +67,7 @@ export function checkDraft(dir, draft, status = {}) {
     if (hits.length) problems.push(`${f} chép chữ bài tham khảo: "${hits[0]}"`);
     // Custom-text products: every caption (posted and reviewer-only) quotes the sign's real text; never a template placeholder ("Your Names").
     if (draft.sign_text && !text.toLowerCase().includes(String(draft.sign_text).toLowerCase())) problems.push(`${f} không nhắc đúng chữ trên bảng "${draft.sign_text}"`);
-    if (draft.custom_text && /\byour\s+(names?|logo|bar(\s+name)?|business(\s+name)?|name\s+here|shop(\s+name)?)\b/i.test(text)) problems.push(`${f} còn chữ mẫu kiểu "Your Names"/"Your Logo": dùng đúng chữ trên bảng`);
+    if (draft.custom_text && PLACEHOLDER_IN_CAPTION.test(text)) problems.push(`${f} còn chữ mẫu kiểu "Your Names"/"Your Logo": dùng đúng chữ trên bảng`);
     const shop = String(draft.inspiration.source_shop || '').trim();
     if (draft.image_mode === 'scene-swap' && shop.length > 2 && text.toLowerCase().includes(shop.toLowerCase())) problems.push(`${f} nhắc tên shop nguồn "${shop}"`);
   }
