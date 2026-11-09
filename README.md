@@ -21,3 +21,10 @@ workspace/             chỉ ở máy (git bỏ qua): runs/<brand>/<date>/<sourc
 ```
 
 ## Dashboard
+
+Trang tĩnh, chỉ để xem trạng thái: một file `dashboard.html` ở gốc tool (git bỏ qua vì chứa dữ liệu máy), dữ liệu nhúng sẵn dạng JSON, ảnh trỏ đường dẫn tương đối tới `workspace/` (không base64), mở bằng `file://`, không server, không gửi gì ra ngoài (chỉ tải font Geist nếu có mạng).
+
+- **Mở**: nhấp đúp `open-dashboard.cmd` (tạo lại rồi mở trong trình duyệt). Hoặc chạy `node scripts/dashboard.mjs` rồi mở `dashboard.html`. Mac: `node scripts/dashboard.mjs && open dashboard.html`.
+- **Có gì**: thẻ tổng quan (thương hiệu sẵn sàng / chưa, chờ duyệt, đang làm, đã duyệt, bài nghiên cứu hôm nay so với giới hạn); bảng thương hiệu (trạng thái, phần còn thiếu bằng lời thường kèm tên trường, kênh, ngôn ngữ, người duyệt, nguồn tham khảo đang bật); bản nháp chờ duyệt (ảnh, caption từng ngôn ngữ thu gọn được, link bài tham khảo, scene-swap có ảnh gốc của shop đặt cạnh ảnh mới, mã để nhắn agent "duyệt <id>"); đang làm; đã duyệt/đã bỏ; nghiên cứu gần đây; lỗi gần đây trong `workspace/logs`; giới hạn và cài đặt. Lọc theo thương hiệu bằng tab.
+- **Chỉ đọc**: script chỉ gọi hàm đọc của `scripts/` (brands, research limits, drafts, runs) và không ghi gì vào thư mục thương hiệu hay bản nháp. Duyệt, bỏ, sửa `social.json` làm trong chat với agent.
+- Trang ghi giờ tạo; dữ liệu cũ hơn 1 ngày thì hiện cảnh báo. `--out <file>` để ghi chỗ khác (test dùng).

@@ -10,14 +10,14 @@
 // across every brand (one shared Facebook account) (config/settings.json).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, sha1, latestRun, brandSources } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, sha1, latestRun, brandSources } from './lib.mjs';
 
 const logFile = () => path.join(workspace, 'research-log.json');
 const readLog = () => { const l = readJson(logFile(), {}); return { runs: l.runs || [], collected: l.collected || {} }; };
 const DAY = 24 * 3600 * 1000;
 const sum = (o, pred = () => true) => Object.entries(o || {}).filter(([k]) => pred(k)).reduce((a, [, v]) => a + v, 0);
 
-function limits(s, brand) {
+export function limits(s, brand) {
   const log = readLog();
   const date = today();
   const usedAll = sum(log.collected[date]);
@@ -142,7 +142,7 @@ function clean(args) {
   out({ in: file, out: target, rows, hidden_chars_removed: removed, nbsp_replaced: nbsp, cells_changed: cells });
 }
 
-main(() => {
+if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();
   const s = settings();
   const cmd = args._[0];

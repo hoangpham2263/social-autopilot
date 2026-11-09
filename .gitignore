@@ -2,3 +2,5 @@
 /workspace/
 node_modules/
 .DS_Store
+# Status page built by scripts/dashboard.mjs: local data (brand folders, drafts, paths).
+/dashboard.html

@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Social Autopilot</title>
+<meta name="generator" content="social-autopilot scripts/dashboard.mjs {{GENERATED}}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2318181b'/%3E%3Cpath d='M9 20l5-5 4 4 6-7' fill='none' stroke='%23fafafa' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!-- Optional: Geist from Google Fonts. Offline the page falls back to the system font and looks the same otherwise. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist&family=Geist+Mono&display=swap">
+<style>
+/* shadcn/ui (new-york, zinc) tokens as in hoangpham2263/job-hunt; house rules: one weight (400), states by border, no shadow. */
+:root {
+  --background: #ffffff; --foreground: #09090b; --card: #ffffff;
+  --muted: #f4f4f5; --muted-foreground: #71717a; --accent: #f4f4f5;
+  --border: #e4e4e7; --input: #e4e4e7; --ring: #a1a1aa; --strong: #18181b;
+  --primary: #18181b; --primary-foreground: #fafafa; --destructive: #dc2626;
+  --blue: #2563eb; --amber: #d97706; --green: #16a34a; --violet: #7c3aed; --slate: #64748b;
+  --radius: 0.5rem; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: #09090b; --foreground: #fafafa; --card: #09090b;
+    --muted: #27272a; --muted-foreground: #a1a1aa; --accent: #27272a;
+    --border: #27272a; --input: #27272a; --ring: #52525b; --strong: #d4d4d8;
+    --primary: #fafafa; --primary-foreground: #18181b; --destructive: #f87171;
+    --blue: #60a5fa; --amber: #fbbf24; --green: #4ade80; --violet: #a78bfa; --slate: #94a3b8; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --background: #09090b; --foreground: #fafafa; --card: #09090b; --muted: #27272a; --muted-foreground: #a1a1aa; --accent: #27272a;
+  --border: #27272a; --input: #27272a; --ring: #52525b; --strong: #d4d4d8; --primary: #fafafa; --primary-foreground: #18181b; --destructive: #f87171;
+  --blue: #60a5fa; --amber: #fbbf24; --green: #4ade80; --violet: #a78bfa; --slate: #94a3b8; color-scheme: dark;
+}
+* { box-sizing: border-box; border-color: var(--border); font-weight: 400; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--background); color: var(--foreground); font: 14px/1.5 "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-underline-offset: 3px; }
+h1 { font-size: 24px; line-height: 1.2; letter-spacing: -.02em; margin: 0; }
+h2 { font-size: 18px; letter-spacing: -.01em; margin: 0; }
+h3 { font-size: 15px; margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted-foreground); }
+.small { font-size: 12.5px; }
+.mono, code { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+code { padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--muted); overflow-wrap: anywhere; }
+[hidden] { display: none !important; }
+.i { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+:focus-visible { outline: none; }
+
+.container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 640px) { .container { padding: 0 24px; } }
+@media (min-width: 1024px) { .container { padding: 0 32px; } }
+
+.site-header { position: sticky; top: 0; z-index: 30; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--background) 92%, transparent); backdrop-filter: blur(8px); }
+.header-inner { height: 56px; display: flex; align-items: center; gap: 10px; }
+.logo { width: 28px; height: 28px; border-radius: 7px; background: var(--primary); color: var(--primary-foreground); display: grid; place-content: center; }
+.header-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.main { padding-top: 24px; padding-bottom: 64px; display: grid; gap: 20px; }
+.page-head { display: grid; gap: 6px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; height: 32px; padding: 0 12px; border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--input); background: var(--background); color: inherit; font: inherit; font-size: 13px; cursor: pointer; text-decoration: none; transition: border-color .15s; }
+.btn:hover { border-color: var(--ring); }
+.btn:focus-visible, .btn:active { border-color: var(--strong); }
+.btn.done { border-color: var(--green); color: var(--green); }
+
+.refresh { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted); font-size: 13px; }
+.refresh.stale { border-color: color-mix(in srgb, var(--amber) 50%, var(--border)); }
+.refresh.stale .when { color: var(--amber); }
+
+.tabs-list { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radius); background: var(--muted); max-width: 100%; overflow-x: auto; scrollbar-width: none; justify-self: start; }
+.tabs-list button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid transparent; border-radius: calc(var(--radius) - 2px); background: none;
+  font: inherit; font-size: 13px; color: var(--muted-foreground); cursor: pointer; white-space: nowrap; }
+.tabs-list button:hover { border-color: var(--border); color: var(--foreground); }
+.tabs-list button:focus-visible { border-color: var(--ring); }
+.tabs-list button.active { background: var(--background); color: var(--foreground); border-color: var(--border); }
+.tabs-list .n { font-family: "Geist Mono", monospace; font-size: 11.5px; color: var(--muted-foreground); }
+
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 768px) { .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .stats { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.stat { display: grid; gap: 2px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); text-decoration: none; transition: border-color .15s; }
+a.stat:hover { border-color: var(--ring); }
+.stat .k { font-size: 12.5px; color: var(--muted-foreground); display: flex; align-items: center; gap: 6px; }
+.stat .v { font-size: 26px; letter-spacing: -.02em; line-height: 1.2; }
+.stat .d { font-size: 12px; color: var(--muted-foreground); }
+.stat .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--c, var(--slate)); }
+
+.section { display: grid; gap: 10px; scroll-margin-top: 72px; }
+.section-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.section-head .count { font-family: "Geist Mono", monospace; font-size: 12px; color: var(--muted-foreground); padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; }
+.section-head .hint { margin-left: auto; }
+
+.table-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.table-scroll { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.table th { height: 40px; padding: 0 12px; text-align: left; color: var(--muted-foreground); white-space: nowrap; border-bottom: 1px solid var(--border); }
+.table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tbody tr:last-child td { border-bottom: 0; }
+.cell-main { display: grid; min-width: 140px; }
+.cell-main span { color: var(--muted-foreground); font-size: 12.5px; }
+.nowrap { white-space: nowrap; }
+.list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; min-width: 220px; }
+.list li { display: grid; }
+.list .field { font-family: "Geist Mono", monospace; font-size: 11.5px; color: var(--muted-foreground); }
+.ok-text { color: var(--green); }
+
+.status { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--c, var(--slate)); }
+.c-green { --c: var(--green); } .c-amber { --c: var(--amber); } .c-blue { --c: var(--blue); } .c-red { --c: var(--destructive); } .c-violet { --c: var(--violet); } .c-slate { --c: var(--slate); }
+.tag { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: 4px; background: var(--muted); font-size: 12px; white-space: nowrap; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.cards { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 14px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.card-head .id { font-family: "Geist Mono", monospace; font-size: 13px; }
+.card-head .right { margin-left: auto; }
+.pics { display: grid; gap: 10px; grid-template-columns: 1fr; }
+.pics.two { grid-template-columns: 1fr 1fr; }
+.pic { display: grid; gap: 4px; min-width: 0; }
+.pic a { display: block; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); overflow: hidden; background: var(--muted); transition: border-color .15s; }
+.pic a:hover { border-color: var(--ring); }
+.pic img { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: contain; }
+.pic .none { aspect-ratio: 1 / 1; display: grid; place-content: center; border: 1px dashed var(--border); border-radius: calc(var(--radius) - 2px); color: var(--muted-foreground); font-size: 12.5px; text-align: center; padding: 8px; }
+.pics:not(.two) .pic img, .pics:not(.two) .pic .none { max-height: 360px; }
+.info { margin: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 6px 12px; font-size: 13px; }
+.info dt { color: var(--muted-foreground); }
+.info dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+details.cap { border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); }
+details.cap summary { cursor: pointer; padding: 8px 12px; font-size: 13px; display: flex; align-items: center; gap: 8px; list-style: none; border: 1px solid transparent; border-radius: calc(var(--radius) - 2px); }
+details.cap summary::-webkit-details-marker { display: none; }
+details.cap summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+details.cap[open] summary::before { transform: rotate(45deg); }
+details.cap summary:hover { border-color: var(--ring); }
+details.cap pre { margin: 0; padding: 10px 12px 12px; border-top: 1px solid var(--border); white-space: pre-wrap; font: inherit; font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.alert { padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border)); border-radius: calc(var(--radius) - 2px); color: var(--amber); font-size: 13px; }
+.alert ul { margin: 4px 0 0; padding-left: 18px; }
+.alert.red { border-color: color-mix(in srgb, var(--destructive) 45%, var(--border)); color: var(--destructive); }
+.say { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; }
+
+.empty-state { display: grid; justify-items: center; gap: 4px; text-align: center; padding: 28px 16px; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--muted-foreground); }
+.empty-state .t { color: var(--foreground); }
+.grid2 { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
+.howto { border: 1px solid var(--border); border-radius: var(--radius); padding: 0 16px; }
+.howto summary { cursor: pointer; padding: 12px 0; }
+.howto ol { margin: 0 0 14px; padding-left: 20px; color: var(--muted-foreground); display: grid; gap: 4px; }
+.foot { color: var(--muted-foreground); font-size: 12.5px; }
+
+@media (max-width: 639px) {
+  h1 { font-size: 20px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .stat { padding: 10px 12px; }
+  .stat .v { font-size: 22px; }
+  .info { grid-template-columns: 1fr; gap: 0; }
+  .info dd { margin-bottom: 6px; }
+  .header-meta .hide-sm { display: none; }
+  .section-head .hint { margin-left: 0; width: 100%; }
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="container header-inner">
+    <span class="logo" aria-hidden="true"><svg class="i" viewBox="0 0 24 24"><path d="M4 16l5-5 4 4 7-8"/></svg></span>
+    <span>Social Autopilot</span>
+    <div class="header-meta small muted"><span class="hide-sm">Cập nhật</span><span id="genShort" class="mono"></span></div>
+  </div>
+</header>
+
+<main class="container main" id="app">
+  <noscript><div class="alert">Trang cần JavaScript để hiện dữ liệu.</div></noscript>
+</main>
+
+<script id="sa-data" type="application/json">/*__DATA__*/null</script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("sa-data").textContent || "null");
+  var app = document.getElementById("app");
+  if (!D) { app.innerHTML = '<div class="alert">Chưa có dữ liệu. Chạy <code>node scripts/dashboard.mjs</code>.</div>'; return; }
+
+  var STATUS = {
+    awaiting_approval: ["Chờ duyệt", "c-amber"], approved: ["Đã duyệt", "c-green"], rejected: ["Đã bỏ", "c-red"],
+    needs_prompt: ["Cần hoàn thiện prompt", "c-blue"], generating: ["Đang tạo ảnh", "c-violet"], needs_caption: ["Cần caption hoặc sửa", "c-blue"],
+    image_failed: ["Tạo ảnh lỗi", "c-red"], preparing: ["Đang chuẩn bị", "c-slate"]
+  };
+  var RUN = { open: ["Đang lấy bài", "c-blue"], ingested: ["Đã lấy xong", "c-green"] };
+  var IDEA = { todo: "chưa điền", ready: "sẵn sàng", picked: "đã chọn", drafted: "đã làm nháp", rejected: "đã bỏ" };
+  var LANG = { vn: "Tiếng Việt", vi: "Tiếng Việt", en: "English", de: "Deutsch", fr: "Français", ja: "日本語", ko: "한국어", zh: "中文" };
+  var IN_PROGRESS = ["needs_prompt", "generating", "needs_caption", "image_failed", "preparing"];
+
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function fmt(iso, withDate) {
+    if (!iso) return "";
+    var d = new Date(iso); if (isNaN(d)) return esc(iso);
+    var t = pad(d.getHours()) + ":" + pad(d.getMinutes());
+    return withDate === false ? t : t + " " + pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear();
+  }
+  function day(s) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? m[3] + "/" + m[2] + "/" + m[1] : esc(s); }
+  function badge(map, key) { var v = map[key] || [key, "c-slate"]; return '<span class="status ' + v[1] + '">' + esc(v[0]) + "</span>"; }
+  function pill(text, cls) { return '<span class="status ' + cls + '">' + esc(text) + "</span>"; }
+  function link(url, text) { return url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(text || url) + "</a>" : ""; }
+  function lang(l) { return LANG[l] || String(l).toUpperCase(); }
+  function brandName(id) { var b = D.brands.find(function (x) { return x.id === id; }); return b ? b.name : id; }
+  function empty(title, sub) { return '<div class="empty-state"><span class="t">' + esc(title) + "</span>" + (sub ? '<span class="small">' + sub + "</span>" : "") + "</div>"; }
+  function head(id, title, n, hint) {
+    return '<div class="section-head"><h2 id="' + id + '">' + esc(title) + "</h2>" + (n == null ? "" : '<span class="count">' + n + "</span>") + (hint ? '<span class="hint small muted">' + hint + "</span>" : "") + "</div>";
+  }
+
+  var KEY = "sa-dashboard-brand", filter = "";
+  try { filter = localStorage.getItem(KEY) || ""; } catch (e) {}
+  if (filter && !D.brands.some(function (b) { return b.id === filter; })) filter = "";
+  function mine(x) { return !filter || x.brand === filter || x.id === filter; }
+
+  function pic(url, path, label, alt) {
+    var body = url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener" title="' + esc(path) + '"><img loading="lazy" src="' + esc(url) + '" alt="' + esc(alt) + '"></a>' : '<div class="none">Chưa có ảnh</div>';
+    return '<div class="pic">' + body + (label ? '<span class="small muted">' + esc(label) + "</span>" : "") + "</div>";
+  }
+
+  function draftCard(d) {
+    var swap = d.image_mode === "scene-swap";
+    var pics = swap
+      ? '<div class="pics two">' + pic(d.reference_image, d.reference_path, "Ảnh gốc của shop" + (d.source_shop ? " (" + d.source_shop + ")" : ""), "Ảnh gốc") + pic(d.image, d.image_path, "Ảnh mới của thương hiệu", "Ảnh mới") + "</div>"
+      : '<div class="pics">' + pic(d.image, d.image_path, "", "Ảnh bài") + "</div>";
+    var caps = d.captions.length ? d.captions.map(function (c, i) {
+      return '<details class="cap"' + (i === 0 ? " open" : "") + "><summary>Caption " + esc(lang(c.lang)) + ' <span class="muted small">' + c.text.length + " ký tự</span></summary><pre>" + esc(c.text) + "</pre></details>";
+    }).join("") : '<div class="alert">Chưa có caption.</div>';
+    var info = '<dl class="info"><dt>Ý tưởng</dt><dd>' + esc(d.idea) + "</dd>" +
+      "<dt>Kênh</dt><dd>" + (d.networks.map(function (n) { return '<span class="tag">' + esc(n) + "</span>"; }).join(" ") || "—") + "</dd>" +
+      "<dt>Cảm hứng từ</dt><dd>" + (link(d.inspiration, "Bài tham khảo") || "—") + "</dd>" +
+      "<dt>Kiểu ảnh</dt><dd>" + (swap ? "Đổi cảnh ảnh của shop (scene-swap)" + (d.logo_check ? ' <span class="ok-text small">· đã xác nhận sạch logo' + (d.logo_check.by ? " (" + esc(d.logo_check.by) + ")" : "") + "</span>" : "") : "Ảnh của thương hiệu") + "</dd>" +
+      "<dt>Tạo lúc</dt><dd>" + fmt(d.created) + "</dd>" +
+      "<dt>Thư mục</dt><dd><code>" + esc(d.dir) + "</code></dd></dl>";
+    var warn = d.problems && d.problems.length ? '<div class="alert">Cần xem lại:<ul>' + d.problems.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul></div>" : "";
+    var say = "duyệt " + d.id;
+    return '<article class="card" data-brand="' + esc(d.brand) + '">' +
+      '<div class="card-head"><span class="id">' + esc(d.id) + '</span><span class="tag">' + esc(brandName(d.brand)) + "</span>" + (swap ? '<span class="tag">scene-swap</span>' : "") + '<span class="right">' + badge(STATUS, d.status) + "</span></div>" +
+      pics + info + warn + '<div style="display:grid;gap:6px">' + caps + "</div>" +
+      '<div class="say"><span class="muted">Nhắn agent:</span><code>' + esc(say) + '</code><button class="btn copy" type="button" data-copy="' + esc(say) + '">Chép</button><span class="muted small">hoặc</span><code>bỏ ' + esc(d.id) + ': lý do</code></div>' +
+      "</article>";
+  }
+
+  function render() {
+    var brands = D.brands.filter(mine), drafts = D.drafts.filter(mine), runs = D.runs.filter(mine);
+    var waiting = drafts.filter(function (d) { return d.status === "awaiting_approval"; });
+    var working = drafts.filter(function (d) { return IN_PROGRESS.indexOf(d.status) >= 0; });
+    var done = drafts.filter(function (d) { return d.status === "approved" || d.status === "rejected" || d.brand_post; });
+    var approved = drafts.filter(function (d) { return d.brand_post; });
+    var ready = brands.filter(function (b) { return b.usable; });
+    var age = (Date.now() - new Date(D.generated_at)) / 36e5;
+    var h = [];
+
+    h.push('<div class="page-head"><h1>Bảng trạng thái</h1><p class="muted">Trang chỉ để xem. Duyệt, bỏ hay sửa cài đặt thương hiệu: nhắn agent trong chat.</p></div>');
+    h.push('<div class="refresh' + (age > 24 ? " stale" : "") + '"><span>Dữ liệu lúc <span class="when">' + fmt(D.generated_at) + (age > 24 ? " (đã cũ hơn 1 ngày)" : "") + '</span></span><span class="muted">·</span><span>Làm mới: bấm đúp <code>open-dashboard.cmd</code> hoặc chạy</span><code>' + esc(D.refresh) + '</code><button class="btn copy" type="button" data-copy="' + esc(D.refresh) + '">Chép lệnh</button></div>');
+
+    if (D.brands.length > 1) {
+      h.push('<div class="tabs-list" role="tablist" aria-label="Lọc theo thương hiệu"><button type="button" role="tab" data-brand=""' + (filter ? "" : ' class="active" aria-selected="true"') + '>Tất cả <span class="n">' + D.brands.length + "</span></button>" +
+        D.brands.map(function (b) {
+          var n = D.drafts.filter(function (d) { return d.brand === b.id && d.status === "awaiting_approval"; }).length;
+          return '<button type="button" role="tab" data-brand="' + esc(b.id) + '"' + (filter === b.id ? ' class="active" aria-selected="true"' : "") + ">" + esc(b.name) + (n ? ' <span class="n">' + n + " chờ</span>" : "") + "</button>";
+        }).join("") + "</div>");
+    }
+
+    var L = D.limits;
+    function stat(href, k, v, d, c) { return '<a class="stat" href="#' + href + '"><span class="k"><span class="dot" style="--c:var(--' + c + ')"></span>' + esc(k) + '</span><span class="v">' + v + '</span><span class="d">' + d + "</span></a>"; }
+    h.push('<section class="stats" aria-label="Tổng quan">' +
+      stat("s-brands", "Thương hiệu sẵn sàng", ready.length, "trên " + brands.length + " thương hiệu", "green") +
+      stat("s-brands", "Chưa sẵn sàng", brands.length - ready.length, "đang tắt hoặc còn thiếu", "amber") +
+      stat("s-waiting", "Chờ duyệt", waiting.length, "bản nháp đợi bạn xem", "amber") +
+      stat("s-working", "Đang làm", working.length, "chưa xong ảnh hoặc caption", "blue") +
+      stat("s-done", "Đã duyệt", approved.length, "đã ghi vào thương hiệu, chưa đăng", "green") +
+      stat("s-research", "Bài nghiên cứu hôm nay", L.used_today + "/" + L.max_posts_per_day, "mọi thương hiệu, còn " + L.remaining, "slate") +
+      "</section>");
+
+    // Awaiting approval
+    h.push('<section class="section">' + head("s-waiting", "Chờ duyệt", waiting.length, "Bấm ảnh để xem cỡ lớn") +
+      (waiting.length ? '<div class="cards">' + waiting.map(draftCard).join("") + "</div>" : empty("Không có bản nháp nào chờ duyệt", "Vòng chạy theo lịch sẽ thêm bản nháp mới ở đây.")) + "</section>");
+
+    // Brands
+    var rows = brands.map(function (b) {
+      var st = b.usable ? pill("Sẵn sàng", "c-green") : !b.enabled && b.ready ? pill("Đang tắt", "c-slate") : !b.enabled ? pill("Tắt · còn thiếu", "c-amber") : pill("Bật nhưng còn thiếu", "c-red");
+      var miss = b.missing.length ? '<ul class="list">' + b.missing.map(function (m) { return "<li><span>" + esc(m.text) + "</span>" + (m.field ? '<span class="field">' + esc(m.field) + "</span>" : "") + "</li>"; }).join("") + "</ul>"
+        : '<span class="ok-text">Đủ</span>' + (b.enabled ? "" : '<div class="small muted">Bật bằng enabled: true trong social.json</div>');
+      var src = b.sources.length ? '<div class="tags">' + b.sources.map(function (x) { return x.url ? '<a class="tag" href="' + esc(x.url) + '" target="_blank" rel="noopener" title="' + esc(x.what_to_take) + '">' + esc(x.name) + "</a>" : '<span class="tag">' + esc(x.name) + "</span>"; }).join("") + "</div>" : '<span class="muted">Chưa có</span>';
+      var rt = b.research_today ? b.research_today.collected + " bài · " + b.research_today.runs + "/" + b.max_per_day + " lượt" : "—";
+      var opts = [b.ai_scenes_allowed === true ? "Dựng cảnh AI" : b.ai_scenes_allowed === false ? "Không dựng cảnh AI" : "", b.scene_swap ? "Scene-swap" : "", b.watermark ? "Watermark" : ""].filter(Boolean);
+      return "<tr><td><div class=\"cell-main\"><span style=\"color:var(--foreground);font-size:13.5px\">" + esc(b.name) + "</span><span>" + esc(b.id) + "</span></div></td>" +
+        '<td class="nowrap">' + st + "</td><td>" + miss + "</td>" +
+        "<td>" + (b.channels.length ? '<div class="tags">' + b.channels.map(function (c) { return '<span class="tag">' + esc(c) + "</span>"; }).join("") + "</div>" : '<span class="muted">—</span>') +
+        (b.languages.length ? '<div class="small muted" style="margin-top:4px">' + b.languages.map(lang).join(", ") + "</div>" : "") + "</td>" +
+        "<td>" + (b.owner ? esc(b.owner) : '<span class="muted">Chưa có</span>') + "</td>" +
+        "<td>" + src + '<div class="small muted" style="margin-top:4px">' + b.sources.length + " bật / " + b.sources_total + " khai báo</div></td>" +
+        '<td class="nowrap">' + rt + (b.posts_per_week ? '<div class="small muted">' + b.posts_per_week + " bài/tuần</div>" : "") + "</td>" +
+        "<td>" + (opts.length ? '<div class="tags">' + opts.map(function (o) { return '<span class="tag">' + esc(o) + "</span>"; }).join("") + "</div>" : '<span class="muted">—</span>') + "</td></tr>";
+    }).join("");
+    var skipped = !filter && D.skipped.length ? '<p class="small muted">Bỏ qua (không phải thư mục thương hiệu): ' + D.skipped.map(function (s) { return esc(s.dir.split(/[\\/]/).pop()) + " (" + esc(s.reason) + ")"; }).join(", ") + "</p>" : "";
+    h.push('<section class="section">' + head("s-brands", "Thương hiệu", brands.length, "Thư mục: <code>" + esc(D.skills_root) + "</code>") +
+      (brands.length ? '<div class="table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Thương hiệu</th><th>Trạng thái</th><th>Còn thiếu</th><th>Kênh · ngôn ngữ</th><th>Người duyệt</th><th>Nguồn tham khảo</th><th>Nghiên cứu hôm nay</th><th>Ảnh</th></tr></thead><tbody>' + rows + "</tbody></table></div></div>" : empty("Không tìm thấy thương hiệu nào", "Kiểm tra skillsRoot trong cài đặt.")) +
+      skipped + "</section>");
+
+    // In progress
+    h.push('<section class="section">' + head("s-working", "Đang làm", working.length) +
+      (working.length ? '<div class="table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Mã</th><th>Thương hiệu</th><th>Trạng thái</th><th>Ý tưởng</th><th>Ghi chú</th><th>Cập nhật</th></tr></thead><tbody>' +
+        working.map(function (d) {
+          var notes = [d.error].concat(d.problems || []).filter(Boolean);
+          return '<tr><td class="mono nowrap">' + esc(d.id) + "</td><td>" + esc(brandName(d.brand)) + '</td><td class="nowrap">' + badge(STATUS, d.status) + "</td><td>" + esc(d.idea) + "</td><td>" + (notes.length ? '<ul class="list">' + notes.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>" : '<span class="muted">—</span>') + '</td><td class="nowrap small muted">' + fmt(d.updated || d.created) + "</td></tr>";
+        }).join("") + "</tbody></table></div></div>" : empty("Không có bản nháp nào đang làm")) + "</section>");
+
+    // Approved / rejected
+    h.push('<section class="section">' + head("s-done", "Đã duyệt và đã bỏ", done.length, "Chưa đăng ở đâu: Publish (Metricool) làm sau") +
+      (done.length ? '<div class="table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Mã</th><th>Thương hiệu</th><th>Kết quả</th><th>Bài trong thương hiệu</th><th>Người duyệt · ghi chú</th><th>Lúc</th></tr></thead><tbody>' +
+        done.map(function (d) {
+          return '<tr><td class="mono nowrap">' + esc(d.id) + "</td><td>" + esc(brandName(d.brand)) + '</td><td class="nowrap">' + badge(STATUS, d.brand_post ? "approved" : d.status) + "</td><td>" + (d.brand_post ? '<div class="cell-main"><span style="color:var(--foreground);font-size:13.5px" class="mono">' + esc(d.brand_post.id) + "</span><span>" + esc(d.brand_post.folder) + "</span></div>" : '<span class="muted">—</span>') + "</td><td>" + esc(d.by || "—") + (d.note ? '<div class="small muted">' + esc(d.note) + "</div>" : "") + '</td><td class="nowrap small muted">' + fmt(d.approved || d.rejected || d.updated) + "</td></tr>";
+        }).join("") + "</tbody></table></div></div>" : empty("Chưa có bài nào được duyệt hay bỏ")) + "</section>");
+
+    // Research
+    h.push('<section class="section">' + head("s-research", "Nghiên cứu gần đây", runs.length, "Tối đa " + L.max_sources_per_run + " nguồn mỗi lượt, " + L.max_posts_per_source + " bài mỗi nguồn") +
+      (runs.length ? '<div class="table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Ngày</th><th>Thương hiệu</th><th>Trạng thái</th><th>Nguồn · số bài lấy</th><th>Ý tưởng</th></tr></thead><tbody>' +
+        runs.map(function (r) {
+          var ideas = Object.keys(r.ideas).map(function (k) { return '<span class="tag">' + esc(IDEA[k] || k) + " " + r.ideas[k] + "</span>"; }).join("");
+          return '<tr><td class="nowrap">' + day(r.date) + "</td><td>" + esc(brandName(r.brand)) + '</td><td class="nowrap">' + badge(RUN, r.status) + '</td><td><div class="tags">' +
+            r.sources.map(function (x) { return '<span class="tag" title="' + esc(x.url) + '">' + esc(x.name) + " · " + (x.raw ? x.refs + " bài" : "chưa lấy") + "</span>"; }).join("") + '</div><div class="small muted" style="margin-top:4px">Tổng ' + r.refs + " bài</div></td><td>" + (ideas ? '<div class="tags">' + ideas + "</div>" : '<span class="muted">Chưa có</span>') + "</td></tr>";
+        }).join("") + "</tbody></table></div></div>" : empty("Chưa có lượt nghiên cứu nào", "Lượt đầu tiên mở khi có thương hiệu sẵn sàng.")) + "</section>");
+
+    // Errors
+    if (!filter && D.errors.length) {
+      h.push('<section class="section">' + head("s-errors", "Lỗi gần đây", D.errors.length, "Từ workspace/logs") + '<div class="table-card"><div class="table-scroll"><table class="table"><thead><tr><th>Lúc</th><th>Lệnh</th><th>Lỗi</th></tr></thead><tbody>' +
+        D.errors.map(function (e) { return '<tr><td class="nowrap small muted">' + fmt(e.at) + '</td><td class="mono">' + esc(e.script + " " + e.args) + "</td><td>" + esc(e.error) + "</td></tr>"; }).join("") + "</tbody></table></div></div></section>");
+    }
+
+    // Settings
+    var S = D.settings, A = S.approval || {};
+    function yes(v) { return v ? "Có" : "Không"; }
+    h.push('<section class="section">' + head("s-settings", "Giới hạn và cài đặt") + '<div class="grid2">' +
+      '<div class="panel"><h3>Nghiên cứu (giới hạn trong code)</h3><dl class="info">' +
+        "<dt>Mỗi ngày</dt><dd>" + L.max_posts_per_day + " bài cho mọi thương hiệu (đã dùng " + L.used_today + ")</dd>" +
+        "<dt>Mỗi lượt</dt><dd>" + L.max_sources_per_run + " nguồn, " + L.max_posts_per_source + " bài mỗi nguồn</dd>" +
+        "<dt>Nghỉ giữa thao tác</dt><dd>" + (L.delay_seconds || []).join("–") + " giây</dd>" +
+        "<dt>Đăng bài</dt><dd>" + esc(S.publish) + "</dd></dl></div>" +
+      '<div class="panel"><h3>Duyệt</h3><dl class="info">' +
+        "<dt>Đúng người duyệt</dt><dd>" + yes(A.require_owner_match) + "</dd>" +
+        "<dt>Bắt buộc có ảnh</dt><dd>" + yes(A.require_image) + "</dd>" +
+        "<dt>Đủ caption</dt><dd>" + yes(A.require_all_captions) + "</dd>" +
+        "<dt>Bỏ cần lý do</dt><dd>" + yes(A.reject_requires_note) + "</dd></dl></div>" +
+      '<div class="panel" style="grid-column:1/-1"><h3>Đường dẫn và công cụ</h3><dl class="info">' +
+        "<dt>Thương hiệu</dt><dd><code>" + esc(S.skillsRootResolved) + "</code></dd>" +
+        "<dt>Dữ liệu chạy</dt><dd><code>" + esc(D.workspace) + "</code></dd>" +
+        "<dt>Tạo ảnh</dt><dd><code>" + esc((S.codex && S.codex.command) || "") + "</code> · tối đa " + esc((S.codex && S.codex.timeout_minutes) || "") + " phút</dd>" +
+        "<dt>Làm sạch metadata</dt><dd><code>" + esc(S.remove_watermark) + "</code></dd>" +
+        "<dt>Watermark</dt><dd><code>" + esc(S.ffmpeg) + "</code></dd>" +
+        "<dt>Cài đặt riêng máy</dt><dd>" + (S.local_override ? "Có (workspace/settings.json đè config/settings.json)" : "Không (dùng config/settings.json)") + "</dd></dl></div>" +
+      "</div></section>");
+
+    h.push('<details class="howto"><summary>Cách dùng</summary><ol>' +
+      "<li>Agent chạy theo lịch: nghiên cứu, làm ảnh và caption, cuối vòng tự làm mới trang này.</li>" +
+      "<li>Xem mục <b>Chờ duyệt</b>. Ổn thì nhắn agent <code>duyệt &lt;mã&gt;</code>, không ổn thì <code>bỏ &lt;mã&gt;: lý do</code>.</li>" +
+      "<li>Thương hiệu còn thiếu: nhắn agent điền phần thiếu vào social.json của thương hiệu đó.</li>" +
+      "<li>Không có gì được đăng tự động. Bài đã duyệt nằm trong thư mục <code>workspace/posts</code> của thương hiệu.</li></ol></details>");
+    h.push('<p class="foot">Tạo bởi <code>scripts/dashboard.mjs</code> lúc ' + fmt(D.generated_at) + ". Trang tĩnh, không gửi dữ liệu đi đâu.</p>");
+
+    app.innerHTML = h.join("");
+  }
+
+  document.getElementById("genShort").textContent = fmt(D.generated_at);
+  app.addEventListener("click", function (e) {
+    var tab = e.target.closest("[role=tab]");
+    if (tab) {
+      filter = tab.getAttribute("data-brand") || "";
+      try { localStorage.setItem(KEY, filter); } catch (err) {}
+      render();
+      return;
+    }
+    var btn = e.target.closest(".copy");
+    if (btn) {
+      var text = btn.getAttribute("data-copy");
+      var ok = function () { btn.classList.add("done"); btn.textContent = "Đã chép"; setTimeout(function () { btn.classList.remove("done"); btn.textContent = "Chép"; }, 1500); };
+      var fallback = function () { var t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); ok(); } catch (err) {} t.remove(); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fallback); else fallback();
+    }
+  });
+  render();
+})();
+</script>
+</body>
+</html>
