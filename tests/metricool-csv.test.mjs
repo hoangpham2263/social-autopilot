@@ -48,7 +48,7 @@ function setup({ metricool = { brand_name: 'Test Brand', timezone: 'Asia/Ho_Chi_
     write(path.join(brandDir, folder(p.id), 'content-en.txt'), p.en ?? `Hello "${p.id}",\nsecond line, with comma`);
   }
   write(path.join(brandDir, 'workspace', 'catalog.json'), JSON.stringify({
-    posts: posts.map((p) => ({ folder: folder(p.id), captions: { vn: 'content-vn.txt', en: 'content-en.txt' }, caption_status: { vn: 'approved', en: 'approved' }, status: 'approved', ...p, en: undefined })),
+    posts: posts.map((p) => ({ folder: folder(p.id), captions: { vn: 'content-vn.txt', en: 'content-en.txt' }, caption_status: { vn: 'approved', en: 'approved' }, status: 'approved', source: `social-autopilot test-${p.id}`, ...p, en: undefined })),
   }));
 }
 // A valid row object (keyed by header) that tests then break one field at a time.

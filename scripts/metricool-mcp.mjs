@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, removedBlog, syncMetricoolBrands } from './lib.mjs';
-import { timesFile, planPosts, findBrand, sentNetworks, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
+import { timesFile, planPosts, findBrand, sentNetworks, toolMade, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
 
 // Networks whose createScheduledPost shape is known (facebookData / instagramData). Others: use the CSV route.
 export const MCP_NETWORKS = ['facebook', 'instagram'];
@@ -161,6 +161,7 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
     const catalog = readJson(catalogFile);
     const entry = (catalog.posts || []).find((p) => p.id === postId);
     if (!entry) throw new Error(`Catalog của ${brand.id} không có ${postId}.`);
+    if (!toolMade(entry)) throw new Error(`${postId} là bài riêng của skill (không do tool tạo): tool không ghi gì cho bài này.`);
     if (!['approved', 'scheduled'].includes(entry.status)) throw new Error(`${postId}: trạng thái "${entry.status}", chỉ ghi cho bài approved/scheduled.`);
     const mc = entry.metricool && typeof entry.metricool === 'object' && !Array.isArray(entry.metricool) ? entry.metricool : {};
     for (const n of networks) {
@@ -240,7 +241,7 @@ export function status(args, { root = settings().skillsRoot } = {}) {
   const posts = [];
   const dates = [];
   let tz = '';
-  for (const p of catalog.posts || []) {
+  for (const p of (catalog.posts || []).filter(toolMade)) { // only the tool's posts
     const nets = sentNetworks(p);
     if (!nets.length) continue;
     const networks = Object.fromEntries(nets.map((n) => [n, p.metricool[n]]));

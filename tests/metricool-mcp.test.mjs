@@ -50,7 +50,7 @@ function setup({ posts, metricool = { brand_name: 'Test Brand', blog_id: '1111' 
     write(path.join(brandDir, folder(p.id), 'content-en.txt'), en ?? `Hello from ${p.id}\n\n#TestBrand`);
     write(path.join(brandDir, folder(p.id), 'content-vn.txt'), `Xin chào ${p.id} (chỉ để duyệt)`);
   }
-  write(catalogFile, JSON.stringify({ posts: posts.map((p) => ({ folder: folder(p.id), captions: { en: 'content-en.txt' }, review_captions: { vn: 'content-vn.txt' }, caption_status: { en: 'approved' }, status: 'approved', ...p })) }, null, 2));
+  write(catalogFile, JSON.stringify({ posts: posts.map((p) => ({ folder: folder(p.id), captions: { en: 'content-en.txt' }, review_captions: { vn: 'content-vn.txt' }, caption_status: { en: 'approved' }, status: 'approved', source: `social-autopilot test-${p.id}`, ...p })) }, null, 2));
 }
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -264,4 +264,23 @@ test('payload --limit N: at most N approved posts, oldest approved first; the re
   const w = run('payload', '--brand', 'testbrand', '--window', 'evening');
   assert.equal(w.ok, true, JSON.stringify(w));
   assert.ok(w.items.every((i) => /in window/.test(i.time_source)), JSON.stringify(w.items.map((i) => i.time_source)));
+});
+
+test('skill-owned posts (no "social-autopilot" source) are never sent, recorded or exported, even when approved with media', () => {
+  setup({ posts: [
+    { id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } },
+    { id: 'POST-02', media_url: IMG(2), source: undefined }, // made by hand in the skill
+    { id: 'POST-05', media_url: IMG(5), source: 'skill manual' },
+  ] });
+  let r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.items.map((i) => i.post), ['POST-01']);
+  assert.ok(![...r.skipped, ...r.blocked].some((x) => /POST-0[25]/.test(JSON.stringify(x))), 'not even listed');
+  r = run('payload', '--brand', 'testbrand', '--posts', 'POST-02');
+  assert.equal(r.ok, false, 'asked by id: still refused');
+  r = run('record', '--brand', 'testbrand', '--post', 'POST-02', '--id', '7', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /riêng của skill/);
+  r = run('status', '--brand', 'testbrand');
+  assert.ok(!JSON.stringify(r.posts || []).includes('POST-02'));
 });

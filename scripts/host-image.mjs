@@ -27,6 +27,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { main, out, isMain, parseArgs, need, settings, toolRoot, workspace, inside, withLock, loadBrand, readJson, writeJson, today, stamp, findDraft } from './lib.mjs';
 import { metadataChunks } from './image-clean.mjs';
+import { toolMade } from './metricool-csv.mjs';
 
 const APPROVED = ['approved', 'scheduled', 'published'];
 const URL_FIELDS = ['media_url', 'video_url', 'video_thumbnail_url'];
@@ -80,6 +81,7 @@ function postOf(brandId, postId) {
   const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
   const entry = readJson(catalogFile, { posts: [] }).posts.find((p) => p.id === postId);
   if (!entry) throw new Error(`Catalog của ${brand.id} không có ${postId}.`);
+  if (!toolMade(entry)) throw new Error(`${postId} là bài riêng của skill (không do tool tạo): tool không host ảnh cho bài này.`);
   return { brand, catalogFile, entry };
 }
 

@@ -78,7 +78,7 @@ function post(id, status, image = png(16, 16, [20, 160, 90])) {
   write(path.join(brandDir, folder, 'image.png'), image);
   for (const l of ['vn', 'en']) write(path.join(brandDir, folder, `content-${l}.txt`), `Bảng neon thử host (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
   const catalog = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
-  catalog.posts.push({ id, folder, group: 'standard', status, created: '2026-11-09', image: 'image.png', image_dimensions: [16, 16],
+  catalog.posts.push({ id, folder, group: 'standard', status, source: `social-autopilot test-${id}`, created: '2026-11-09', image: 'image.png', image_dimensions: [16, 16],
     captions: { vn: 'content-vn.txt', en: 'content-en.txt' }, approval: status === 'approved' ? { by: 'Hoang', date: '2026-11-09', note: '' } : undefined });
   fs.writeFileSync(catalogFile, JSON.stringify(catalog, null, 2));
 }
@@ -89,7 +89,7 @@ function videoPost(id) {
   write(path.join(brandDir, folder, 'image.png'), png(16, 16, [90, 30, 160]));
   for (const l of ['vn', 'en']) write(path.join(brandDir, folder, `content-${l}.txt`), `Video thử host (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
   const catalog = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
-  catalog.posts.push({ id, folder, group: 'standard', status: 'approved', created: '2026-11-09', video: 'video.mp4', image: 'image.png', image_dimensions: [16, 16],
+  catalog.posts.push({ id, folder, group: 'standard', status: 'approved', source: `social-autopilot test-${id}`, created: '2026-11-09', video: 'video.mp4', image: 'image.png', image_dimensions: [16, 16],
     captions: { vn: 'content-vn.txt', en: 'content-en.txt' }, approval: { by: 'Hoang', date: '2026-11-09', note: '' } });
   fs.writeFileSync(catalogFile, JSON.stringify(catalog, null, 2));
 }

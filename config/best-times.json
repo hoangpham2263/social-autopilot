@@ -1,10 +1,19 @@
 {
   "version": 1,
-  "note": "Research default posting times, used only when Metricool has no best-time data for the brand (getBestTimeToPostByNetwork). Per network and weekday, hours ranked best first, in the audience's local time (US audience: America/New_York). Built from the studies in sources; see docs/metricool.md, 'Giờ đăng'.",
+  "note": "Research default posting times, used only when Metricool has no best-time data for the brand (getBestTimeToPostByNetwork). Every list is in strict priority order, highest engagement first, in the audience's local time (US audience: America/New_York). days = primary hours per weekday; backup = the next-best hours the same studies name for that weekday; acceptable_curve = every hour 07:00-22:00 ranked by the overall Facebook engagement curve of those studies, the third tier (each day takes the hours not already primary or backup, in curve order). See docs/metricool.md, 'Giờ đăng'.",
   "sources": [
-    { "name": "Sprout Social, Best times to post on Facebook (data Nov 27, 2025 to Feb 27, 2026, ~2 billion engagements, ~307,000 profiles, local time)", "url": "https://sproutsocial.com/insights/best-times-to-post-on-facebook/" },
-    { "name": "Buffer, Best time to post on Facebook (14+ million posts, local time)", "url": "https://buffer.com/resources/best-time-to-post-on-facebook/" },
-    { "name": "Hootsuite, Best time to post on Facebook (1+ million posts, published Nov 19, 2025, localized)", "url": "https://blog.hootsuite.com/best-time-to-post-on-facebook/" }
+    {
+      "name": "Sprout Social, Best times to post on Facebook (data Nov 27, 2025 to Feb 27, 2026, ~2 billion engagements, ~307,000 profiles, local time)",
+      "url": "https://sproutsocial.com/insights/best-times-to-post-on-facebook/"
+    },
+    {
+      "name": "Buffer, Best time to post on Facebook (14+ million posts, local time)",
+      "url": "https://buffer.com/resources/best-time-to-post-on-facebook/"
+    },
+    {
+      "name": "Hootsuite, Best time to post on Facebook (1+ million posts, published Nov 19, 2025, localized)",
+      "url": "https://blog.hootsuite.com/best-time-to-post-on-facebook/"
+    }
   ],
   "networks": {
     "facebook": {
@@ -17,7 +26,17 @@
         "fri": ["08:00", "12:00", "17:00", "20:00"],
         "sat": ["09:00", "22:00", "12:00", "16:00"],
         "sun": ["10:00", "13:00", "08:00", "18:00"]
-      }
+      },
+      "backup": {
+        "mon": ["22:00", "13:00", "19:00"],
+        "tue": ["07:00", "13:00", "17:00", "20:00", "14:00", "16:00", "18:00"],
+        "wed": ["09:00", "13:00", "16:00", "20:00", "14:00", "17:00", "19:00"],
+        "thu": ["08:00", "10:00", "13:00", "14:00"],
+        "fri": ["07:00", "13:00", "11:00"],
+        "sat": ["21:00"],
+        "sun": ["09:00"]
+      },
+      "acceptable_curve": ["12:00", "09:00", "10:00", "11:00", "13:00", "08:00", "14:00", "15:00", "18:00", "19:00", "17:00", "16:00", "20:00", "07:00", "21:00", "22:00"]
     }
   }
 }

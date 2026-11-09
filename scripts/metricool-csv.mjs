@@ -310,6 +310,10 @@ async function checkMedia(rows, errors) {
 //   2. otherwise the research default table config/best-times.json (per network and weekday, ranked hours, audience time).
 // Never arbitrary fixed times. A day with several posts gets them at least 3 hours apart; a date+time already used by
 // another post of the brand is never reused; posts already scheduled on a day count toward that day's posts.
+// Backup hours: when a day's primary times cannot hold posts_per_day 3 hours apart, the day's backup hours are tried
+// (Metricool's next-highest scored slots first, then the research table's "backup" list), then its "acceptable" hours
+// (the rest of the overall engagement curve, acceptable_curve), still 3 hours apart; then backup and acceptable hours
+// 2 hours apart; only then does the post move to the next day. Every list is used best first. Never random times.
 export const timesFile = (brand) => path.join(workspace, 'metricool-times', `${brand}.json`);
 export const bestTimes = (brand) => { const t = readJson(timesFile(brand), null); return t && Array.isArray(t.slots) && t.slots.length ? t : null; };
 export const researchTimes = () => readJson(path.join(toolRoot, 'config', 'best-times.json'), { networks: {} });
@@ -317,17 +321,32 @@ export const postsPerDay = (cadence = {}) => (Number.isInteger(cadence.posts_per
   : Number.isInteger(cadence.posts_per_week) && cadence.posts_per_week > 0 ? Math.ceil(cadence.posts_per_week / 7) : 1);
 // Metricool needs at least this many scored slots before its data is trusted over the research table.
 const MIN_METRICOOL_SLOTS = 5;
+// Metricool's top slots of a day are its primary times; its lower-scored slots of that day are backups.
+const METRICOOL_PRIMARY = 4;
 const minutes = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
 const hhmmss = (t) => (/^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t);
 
 // The ranked times of one weekday: Metricool's (score order) when it has data for the brand, else the research table.
+// backup: [{ time, source }] ranked, never one of the primary times.
 export function dayTimes(day, { best, research, network }) {
-  if (best && best.slots.length >= MIN_METRICOOL_SLOTS) {
-    const list = best.slots.filter((x) => x.day === day).sort((x, y) => (y.score || 0) - (x.score || 0)).map((x) => hhmmss(x.time));
-    if (list.length) return { times: [...new Set(list)], tz: best.timezone || '', source: 'Metricool best time' };
-  }
   const net = research.networks?.[String(network || '').toLowerCase()] || research.networks?.facebook;
-  return { times: (net?.days?.[day] || []).map(hhmmss), tz: net?.timezone || '', source: 'research default' };
+  const researchBackup = (net?.backup?.[day] || []).map(hhmmss);
+  // Third tier: the remaining hours of the overall engagement curve (07:00-22:00) in curve order, never a primary or backup hour.
+  const acceptableOf = (primary, backup) => (net?.acceptable_curve || []).map(hhmmss).filter((t) => !primary.includes(t) && !backup.some((x) => x.time === t)).map((time) => ({ time, source: 'research acceptable' }));
+  const backups = (primary, first = []) => [...new Set([...first, ...researchBackup.map((t) => `r${t}`)])]
+    .map((k) => (k[0] === 'r' ? { time: k.slice(1), source: 'research backup' } : { time: k.slice(1), source: 'Metricool backup' }))
+    .filter((x, i, all) => !primary.includes(x.time) && all.findIndex((y) => y.time === x.time) === i);
+  if (best && best.slots.length >= MIN_METRICOOL_SLOTS) {
+    const list = [...new Set(best.slots.filter((x) => x.day === day).sort((x, y) => (y.score || 0) - (x.score || 0)).map((x) => hhmmss(x.time)))];
+    if (list.length) {
+      const times = list.slice(0, METRICOOL_PRIMARY);
+      const backup = backups(times, list.slice(METRICOOL_PRIMARY).map((t) => `m${t}`));
+      return { times, tz: best.timezone || '', source: 'Metricool best time', backup, acceptable: acceptableOf(times, backup) };
+    }
+  }
+  const times = (net?.days?.[day] || []).map(hhmmss);
+  const backup = backups(times);
+  return { times, tz: net?.timezone || '', source: 'research default', backup, acceptable: acceptableOf(times, backup) };
 }
 
 // Time windows a run may ask for (--window), in the timezone of the times (Metricool's brand timezone / the table's).
@@ -350,21 +369,25 @@ export function timePicker({ brandId, network, perDay, audienceTz, taken, allowT
     for (let d = allowToday ? 0 : 1; d < 400; d++) {
       const date = addDays(nowIn(tz, now).date, d);
       const cur = nowIn(tz, now);
-      let { times, source } = dayTimes(weekday(date), { best, research, network });
+      let { times, source, backup = [], acceptable = [] } = dayTimes(weekday(date), { best, research, network });
+      const tag = win ? ' in window' : '';
       if (win) {
-        times = times.filter(inWin);
-        if (!times.length) times = [`${String(Math.round((win[0] + win[1]) / 2)).padStart(2, '0')}:00:00`];
-        source = `${source} in window`;
+        times = times.filter(inWin); backup = backup.filter((x) => inWin(x.time)); acceptable = acceptable.filter((x) => inWin(x.time));
+        if (!times.length && !backup.length && !acceptable.length) times = [`${String(Math.round((win[0] + win[1]) / 2)).padStart(2, '0')}:00:00`];
       }
-      for (const t of times) {
+      // Strict order, each list best first: primary, backup, acceptable hours 3 h apart; then backup and acceptable
+      // hours 2 h apart; only then the next day.
+      const primary = times.map((time) => ({ time, source }));
+      for (const [list, gap] of [[primary, 180], [backup, 180], [acceptable, 180], [backup, 120], [acceptable, 120]]) for (const x of list) {
+        const t = x.time;
         if (d === 0 && minutes(t) < minutes(cur.time) + leadMinutes + (leadMinutes ? 0 : 1)) continue;
         const local = tz === audienceTz ? { date, time: t } : convertZoned(date, t, tz, audienceTz);
         const used = byDate[local.date] || [];
         if (used.length >= n) break;
-        if (used.some((u) => Math.abs(minutes(u) - minutes(local.time)) < 180)) continue;
+        if (used.includes(local.time) || used.some((u) => Math.abs(minutes(u) - minutes(local.time)) < gap)) continue;
         (byDate[local.date] ||= []).push(local.time);
         taken.add(`${local.date} ${local.time}`);
-        return { ...local, source };
+        return { ...local, source: `${x.source}${tag}` };
       }
     }
     return null;
@@ -390,6 +413,10 @@ function captionText(brand, post, langs, mode, separator) {
 
 // Networks of a post already scheduled on Metricool through MCP (catalog metricool.<network>.id, written by
 // metricool-mcp.mjs record). A legacy Metricool draft (draft: true) does not count: it is sent again as a scheduled post.
+// A post the tool made (writeback.mjs writes source "social-autopilot <draft id>"). Every other catalog entry belongs
+// to the skill (made by hand in the skill): never planned, exported, scheduled or published by the tool.
+export const toolMade = (p) => /^social-autopilot(\s|$)/.test(String(p?.source || ''));
+
 export function sentNetworks(post) {
   const mc = post?.metricool;
   if (!mc || typeof mc !== 'object' || Array.isArray(mc)) return [];
@@ -467,7 +494,7 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
 
   // Posts.
   const catalog = readJson(path.join(brand.dir, 'workspace', 'catalog.json'));
-  const all = catalog.posts || [];
+  const all = (catalog.posts || []).filter(toolMade); // only the tool's own posts
   const isSent = (p) => networkKeys.some((n) => sentNetworks(p).includes(n));
   const sentReason = (p) => `đã gửi lên Metricool (metricool.${sentNetworks(p).join('/')}.id)`;
   const wanted = args.posts && args.posts !== true ? String(args.posts).split(',').map((s) => s.trim()).filter(Boolean) : null;
@@ -477,7 +504,7 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
     posts = [];
     for (const id of wanted) {
       const p = all.find((x) => x.id === id);
-      if (!p) problems.push(`${id}: không có trong catalog.`);
+      if (!p) problems.push(`${id}: không có trong catalog (hoặc là bài riêng của skill, tool không đăng).`);
       else if (isSent(p)) skipped.push({ post: id, reason: sentReason(p) });
       else if (p.status !== 'approved') problems.push(`${id}: trạng thái "${p.status}", chỉ xuất bài approved.`);
       else if (!list(p.media_url).length && !list(p.video_url).length) problems.push(`${id}: chưa có media_url/video_url (chạy host-image.mjs publish).`);

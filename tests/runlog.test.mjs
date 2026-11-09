@@ -20,7 +20,7 @@ write(path.join(brandDir, 'SKILL.md'), '# rb');
 write(path.join(brandDir, 'project', 'project.md'), '# rb');
 write(path.join(brandDir, 'project', 'social.json'), { brand: 'RB', enabled: true, channels: [{ network: 'facebook', enabled: true, lang: ['en'], url: 'https://www.facebook.com/rb' }], cadence: { timezone: 'America/New_York' }, research: { sources: [{ id: 'a', name: 'A', url: 'https://x.test/a', enabled: true }] } });
 write(path.join(brandDir, 'scripts', 'check-skill.mjs'), "console.log('ok')");
-write(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [{ id: 'POST-01', status: 'scheduled', metricool: { facebook: { id: '9', planner_url: 'https://app.metricool.com/planner?x=9', draft: false, publication: '2026-12-01T10:00:00', timezone: 'America/New_York', sent_at: '2099-01-01T00:00:00Z' } } }] });
+write(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [{ id: 'POST-01', source: 'social-autopilot rb-20261109-03', status: 'scheduled', metricool: { facebook: { id: '9', planner_url: 'https://app.metricool.com/planner?x=9', draft: false, publication: '2026-12-01T10:00:00', timezone: 'America/New_York', sent_at: '2099-01-01T00:00:00Z' } } }] });
 const crawl = (date, sources) => write(path.join(ws, 'runs', 'rb', date, 'run.json'), { date, status: 'done', mode: {}, sources });
 
 test('research: per source new / dried up / blocked; dried-up streak across runs', () => {

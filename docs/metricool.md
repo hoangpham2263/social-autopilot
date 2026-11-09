@@ -62,7 +62,11 @@ Thương hiệu đăng **mỗi ngày**, `cadence.posts_per_day` bài một ngày
 1. **Giờ tốt nhất của Metricool cho brand** (dữ liệu khán giả của chính trang): đầu mỗi lượt Create & publish, agent gọi `getBestTimeToPostByNetwork` rồi `node scripts/metricool-mcp.mjs sync-times --brand <id> --from <file>` → `workspace/metricool-times/<brand>.json`. Lấy các khung điểm cao nhất của ngày đó (cần ít nhất 5 khung có điểm).
 2. **Bảng mặc định theo nghiên cứu** khi Metricool chưa có hoặc quá ít dữ liệu (trang mới): `config/best-times.json`, Facebook, khán giả Mỹ, giờ `America/New_York`, mỗi thứ trong tuần một danh sách giờ xếp từ tốt nhất. Không bao giờ dùng giờ cố định tuỳ ý.
 
-Nhiều bài một ngày thì cách nhau ít nhất 3 giờ; không dùng lại giờ đã có bài; bài đã hẹn trong ngày tính vào số bài của ngày đó. Giờ được ghi kèm nguồn chọn (`Metricool best time` / `research default` / `catalog schedule`), hiện ở xem trước và tab Log.
+Nhiều bài một ngày thì cách nhau ít nhất 3 giờ; không dùng lại giờ đã có bài; bài đã hẹn trong ngày tính vào số bài của ngày đó.
+
+**Giờ dự phòng (backup).** Khi giờ chính của ngày (Metricool hoặc bảng nghiên cứu) không xếp đủ `posts_per_day` bài cách nhau 3 giờ, tool thử giờ dự phòng của chính ngày đó trước khi dời bài sang ngày sau: (1) các khung điểm thấp hơn của Metricool (khung thứ 5 trở đi của ngày; 4 khung điểm cao nhất là giờ chính), (2) danh sách `backup` của `config/best-times.json`; rồi (3) giờ acceptable; vẫn cách nhau 3 giờ; còn thiếu thì giờ dự phòng rồi acceptable, cách nhau ít nhất 2 giờ. Không bao giờ chọn giờ ngẫu nhiên.
+
+Giờ được ghi kèm nguồn chọn (`Metricool best time` / `Metricool backup` / `research default` / `research backup` / `research acceptable` / `catalog schedule`), hiện ở xem trước và tab Log.
 
 Bảng mặc định (giờ địa phương của khán giả, xếp từ tốt nhất):
 
@@ -75,6 +79,20 @@ Bảng mặc định (giờ địa phương của khán giả, xếp từ tốt 
 | Thứ 6 | 08:00, 12:00, 17:00, 20:00 |
 | Thứ 7 | 09:00, 22:00, 12:00, 16:00 |
 | Chủ nhật | 10:00, 13:00, 08:00, 18:00 |
+
+Giờ dự phòng (`backup`, xếp từ tốt nhất; giờ phụ của cùng các nghiên cứu, không trùng giờ chính, bỏ khung 5-6 giờ sáng):
+
+| Thứ | Giờ dự phòng | Theo |
+|---|---|---|
+| Thứ 2 | 22:00, 13:00, 19:00 | Buffer 22h, 19h; Sprout 12-13h |
+| Thứ 3 | 07:00, 13:00, 17:00, 20:00, 14:00, 16:00, 18:00 | Buffer 7h; Sprout 12-20h |
+| Thứ 4 | 09:00, 13:00, 16:00, 20:00, 14:00, 17:00, 19:00 | Buffer 9h; Sprout 12-20h |
+| Thứ 5 | 08:00, 10:00, 13:00, 14:00 | Buffer 8h, 10h; Sprout 12-14h |
+| Thứ 6 | 07:00, 13:00, 11:00 | Buffer 7h; Sprout buổi trưa |
+| Thứ 7 | 21:00 | Buffer 21h (Sprout không có đỉnh rõ) |
+| Chủ nhật | 09:00 | Buffer 9h |
+
+Tầng 3 **acceptable** (`acceptable_curve`): mọi giờ 07:00-22:00 xếp theo đường tương tác Facebook chung của ba nghiên cứu (trưa mạnh nhất, rồi buổi sáng, rồi đầu buổi tối, đêm muộn yếu nhất): 12, 09, 10, 11, 13, 08, 14, 15, 18, 19, 17, 16, 20, 07, 21, 22 giờ. Mỗi ngày lấy các giờ chưa là giờ chính hay dự phòng của ngày đó, giữ nguyên thứ tự này; ngày nào nghiên cứu ít giờ (thứ 7, chủ nhật, thứ 2, thứ 6) vẫn có ít nhất 6 giờ dự phòng + acceptable. Mọi danh sách đều theo thứ tự ưu tiên tuyệt đối (tương tác cao nhất trước); bộ chọn giờ luôn thử: giờ chính → dự phòng → acceptable (cách 3 giờ), rồi dự phòng → acceptable (cách 2 giờ), rồi mới sang ngày sau. Tab Settings hiện bảng "Posting times" (đọc) với đủ ba tầng theo từng ngày.
 
 Nguồn (tổng hợp, ưu tiên giờ các nghiên cứu cùng chỉ ra; bỏ khung 5-6 giờ sáng):
 - [Sprout Social, Best times to post on Facebook](https://sproutsocial.com/insights/best-times-to-post-on-facebook/): dữ liệu 27/11/2025 - 27/02/2026, ~2 tỷ tương tác, ~307.000 trang, giờ địa phương. Thứ 2 12-13h; thứ 3, thứ 4 12-20h; thứ 5 12-14h và 20h; thứ 6 buổi trưa; thứ 7, chủ nhật không có đỉnh rõ.
