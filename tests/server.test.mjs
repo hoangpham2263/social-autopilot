@@ -58,24 +58,29 @@ test('serves the page, the shell assets and the data APIs', async () => {
   // Prompt tab: every mode x agent prompt of docs/scheduled-prompt.md, with {{BRAND}} to fill.
   const pr = await (await fetch(`${base}/api/prompts`)).json();
   const modes = [...new Set(pr.prompts.map((p) => p.mode))];
-  assert.deepEqual(modes, ['Chỉ nghiên cứu', 'Làm bài & đưa lên']);
+  assert.deepEqual(modes, ['Research only', 'Create & publish']);
   for (const m of modes) assert.deepEqual(pr.prompts.filter((p) => p.mode === m).map((p) => p.agent), ['Claude Code', 'Codex', 'ChatGPT'], m);
-  assert.ok(pr.prompts.every((p) => p.text.includes('{{BRAND}}') && p.text.length > 200), 'every prompt has the brand slot');
+  assert.ok(pr.prompts.every((p) => p.text.includes('{{BRAND}}') && p.text.split(String.fromCharCode(10)).length <= 10), 'every prompt is short and has the brand slot');
+  assert.ok(pr.prompts.filter((p) => p.agent !== 'ChatGPT').every((p) => p.text.includes('{{OPTIONS}}') && /RUNBOOK.md Mode [12]/.test(p.text)), 'prompts point to the RUNBOOK');
   assert.ok(pr.all_brands);
   assert.ok(Array.isArray((await (await fetch(`${base}/api/queue`)).json()).brands));
   const settings = await (await fetch(`${base}/api/settings`)).json();
-  assert.equal(settings.settings.metricool.default_mode, 'draft');
+  assert.equal(settings.settings.metricool?.default_mode, undefined); // no Metricool draft mode: always scheduled
   assert.equal(settings.settings.approval, undefined);
   assert.equal((await fetch(`${base}/file?path=${encodeURIComponent(path.join(tool, 'icon.svg'))}`)).status, 404); // only workspace images
-  // Image host: settings shown and saved with the rest. No approval or hosting button in the app any more.
+  // Image host: settings shown and saved with the rest. Approve exists again (review step); no hosting button.
   assert.match(settings.settings.imageHost.rawBase, /^https:\/\//);
   const saved = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: settings.settings }) })).json();
   assert.equal(saved.settings.imageHost.type, 'github-repo', JSON.stringify(saved));
-  for (const p of ['/api/approve', '/api/reject', '/api/host-image']) assert.equal((await fetch(base + p, { method: 'POST', headers: hdr(), body: '{}' })).status, 404, p);
-  const bad = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: { metricool: { default_mode: 'now' } } }) })).json();
-  assert.match(bad.error, /default_mode/);
-  const sched = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: { metricool: { default_mode: 'schedule' } } }) })).json();
-  assert.equal(sched.settings.metricool.default_mode, 'schedule');
+  assert.match((await (await fetch(base + '/api/approve', { method: 'POST', headers: hdr(), body: JSON.stringify({ id: 'grenheim-20261109-01' }) })).json()).error, /Unknown post/);
+  for (const p of ['/api/reject', '/api/host-image']) assert.equal((await fetch(base + p, { method: 'POST', headers: hdr(), body: '{}' })).status, 404, p);
+  // An old metricool.default_mode is dropped on save.
+  const sched = await (await fetch(base + '/api/settings', { method: 'POST', headers: hdr(), body: JSON.stringify({ settings: { metricool: { default_mode: 'draft' } } }) })).json();
+  assert.equal(sched.settings.metricool?.default_mode, undefined, JSON.stringify(sched));
+  // Settings, Accounts: names only, never a token.
+  const acc = await (await fetch(base + '/api/accounts')).json();
+  assert.ok(Array.isArray(acc.requirements) && acc.codex && acc.github && acc.metricool, JSON.stringify(acc));
+  assert.doesNotMatch(JSON.stringify(acc), /token|eyJ/i);
   const cancel = await fetch(base + '/api/cancel', { method: 'POST', headers: hdr(), body: JSON.stringify({ id: 'grenheim-20261109-01' }) });
   assert.equal(cancel.status, 400);
   assert.match((await cancel.json()).error, /Không có bản nháp/);

@@ -47,7 +47,7 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.3; padding: 6px 1
 /* Header: [← Menu] Title … [Tải lại] [Cấu hình] [Cập nhật], at the top right as in Product Review (24px from the edge). */
 header .reload { margin-left: auto; }
 header .config { margin-left: auto; }
-header .reload + .config { margin-left: 0; }
+header .reload + .config, header .reload + .update { margin-left: 0; }
 header .update { margin-left: auto; }
 header .config + .update { margin-left: 0; }
 /* Menu: whether Cấu hình is done (hub.js), above the tools; the tools need every step done. */

@@ -72,7 +72,7 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   ] });
   const before = fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8');
   const file = path.join(outDir, 'export.csv');
-  const r = run('export', '--brand', 'testbrand', '--draft', '--out', file);
+  const r = run('export', '--brand', 'testbrand', '--out', file);
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.rows, 2);
   assert.equal(r.brand_name, 'Test Brand');
@@ -90,7 +90,7 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   const p1 = rows.find((x) => x['Picture Url 1'] === IMG(1));
   const p2 = rows.find((x) => x['Picture Url 1'] === IMG(2));
   assert.equal(p1.Text, 'Xin chào POST-01\n\nHello "POST-01",\nsecond line, with comma');
-  assert.equal(p1.Draft, 'true'); assert.equal(p1.Facebook, 'true'); assert.equal(p1.Instagram, '');
+  assert.equal(p1.Draft, 'false'); assert.equal(p1.Facebook, 'true'); assert.equal(p1.Instagram, '');
   assert.equal(p1['Alt text picture 1'], 'Alt "one"');
   assert.equal(p1['Facebook Post Type'], 'POST');
   for (const col of lib.AI_LABEL_COLUMNS) assert.equal(p1[col], 'false', col);
@@ -106,7 +106,7 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   assert.equal(p2['Picture Url 2'], IMG(3));
   // Quoting: booleans bare, text quoted with doubled quotes and real newlines.
   assert.ok(raw.includes('"Xin chào POST-01\n\nHello ""POST-01"",\nsecond line, with comma"'));
-  assert.ok(/,true,true,/.test(raw));
+  assert.ok(/,false,true,/.test(raw)); // Draft false (always scheduled), Facebook true
   assert.equal(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'), before, 'catalog untouched');
   // The exported file validates.
   const v = run('validate', file, '--brand', 'testbrand');

@@ -1,16 +1,17 @@
 // Metricool MCP route (Starter plan has no REST API): this script never talks to Metricool. It prepares the exact
 // arguments the AGENT passes to its Metricool MCP tool createScheduledPost (any agent: Claude, ChatGPT, Codex), records what Metricool
 // answered into the brand catalog, and lists sent posts so the agent can reconcile them with getScheduledPosts.
-//   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-01,POST-02] [--draft|--schedule] [--lang en]
+//   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-01,POST-02] [--lang en]
 //          [--date YYYY-MM-DD --time HH:MM] [--allow-today]
 //   node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url>
-//          --publication <YYYY-MM-DDTHH:MM[:SS]> --tz <timezone> [--draft] [--networks facebook] [--force]
+//          --publication <YYYY-MM-DDTHH:MM[:SS]> --tz <timezone> [--networks facebook] [--force]
 //   node scripts/metricool-mcp.mjs status --brand <id>
 // payload: one item per approved post with media_url/video_url and no metricool.<network>.id yet. Posting times come from
 // the shared planner of metricool-csv.mjs (catalog schedule, --date/--time, cadence.slots or automatic times), planned in
 // the audience timezone (cadence.timezone). publicationDate carries that timezone, so Metricool converts it itself (no
-// manual conversion as in the CSV route). Default draft:true (settings metricool.default_mode "draft"); "schedule" or
-// --schedule sends draft:false (autoPublish at the time). A post whose check-post.mjs fails is blocked, the others go.
+// manual conversion as in the CSV route). Always a REAL scheduled post (draft:false, autoPublish at the brand's slot time;
+// user, 09/11/2026: the tool never makes Metricool drafts). A post recorded earlier as a Metricool draft (legacy) is
+// sent again as a scheduled post. A post whose check-post.mjs fails is blocked, the others go.
 // The output is plain JSON for any agent's Metricool tool (Claude connector, ChatGPT connector, Codex MCP server).
 // Text = posted languages only (never language_policy.review_langs), never any AI label. Media must be public https links
 // (MCP copies them to static.metricool.com). Fortera Apparel (blogId <blog_id_1>, no skill) is never a target.
@@ -50,11 +51,9 @@ export function targetBlog(brand) {
 function payloadItems(args, { now = new Date(), root = settings().skillsRoot } = {}) {
   const brand = findBrand(need(args, 'brand'), root);
   if (!brand.enabled) throw new Error(`social.json enabled: false (${brand.id}): không gửi gì lên Metricool.`);
-  if (args.draft && args.schedule) throw new Error('Chọn một: --draft hoặc --schedule.');
+  if (args.draft || args.schedule) throw new Error('--draft/--schedule were removed: the tool always schedules real posts at the brand\'s slot time.');
   const blogId = targetBlog(brand);
-  // Default: a Metricool DRAFT (nothing goes live by itself); settings metricool.default_mode "schedule" switches to real
-  // scheduling; --draft / --schedule override it for one call.
-  const draft = args.schedule ? false : args.draft ? true : defaultMode() !== 'schedule';
+  const draft = false;
   const plan = planPosts(args, { now, root, brand });
   const tz = brand.audience_timezone;
   const unsupported = plan.networkKeys.filter((n) => !MCP_NETWORKS.includes(n));
@@ -95,7 +94,7 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
     };
     if (plan.networkKeys.includes('facebook')) info.facebookData = { type: it.facebook_post_type };
     if (plan.networkKeys.includes('instagram')) info.instagramData = { type: it.video ? 'REEL' : 'POST', isAiGenerated: false };
-    const rec = ['node scripts/metricool-mcp.mjs record', `--brand ${brand.id}`, `--post ${p.id}`, '--id <id>', '--uuid <uuid>', '--planner-url <plannerUrl>', '--publication <publicationDate.dateTime>', '--tz <publicationDate.timezone>', ...(draft ? ['--draft'] : [])].join(' ');
+    const rec = ['node scripts/metricool-mcp.mjs record', `--brand ${brand.id}`, `--post ${p.id}`, '--id <id>', '--uuid <uuid>', '--planner-url <plannerUrl>', '--publication <publicationDate.dateTime>', '--tz <publicationDate.timezone>'].join(' ');
     items.push({
       post: p.id, lang: it.texts[0].lang, networks: plan.networkKeys, draft, time_source: it.when.source, planned: it.planned,
       tool: 'createScheduledPost',
@@ -119,7 +118,6 @@ function runPayload(args) {
   });
 }
 
-export const defaultMode = () => (settings().metricool?.default_mode === 'schedule' ? 'schedule' : 'draft');
 
 // ----- record -----
 const isUrl = (v) => { try { return new URL(v).protocol === 'https:'; } catch { return false; } };
@@ -145,7 +143,8 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
   const w = wallIn(pub, tz, tz);
   if (!w) throw new Error(`--publication "${pub}" phải là YYYY-MM-DDTHH:MM[:SS].`);
   const publication = `${w.date}T${w.time}`;
-  const draft = !!args.draft;
+  if (args.draft) throw new Error('--draft was removed: the tool always records real scheduled posts.');
+  const draft = false;
   const channels = (brand.social.channels || []).filter((c) => c.enabled).map((c) => String(c.network).toLowerCase());
   const networks = args.networks && args.networks !== true ? String(args.networks).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) : [...new Set(channels)];
   const bad = networks.filter((n) => !MCP_NETWORKS.includes(n));
@@ -159,12 +158,14 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
     const mc = entry.metricool && typeof entry.metricool === 'object' && !Array.isArray(entry.metricool) ? entry.metricool : {};
     for (const n of networks) {
       const old = mc[n];
-      if (old?.id && String(old.id) !== id && !args.force) throw new Error(`${postId}: metricool.${n}.id đã là ${old.id} (khác ${id}). Kiểm trong Metricool; ghi đè bằng --force.`);
+      // A legacy Metricool draft of this post is replaced by the scheduled post (the draft stays in Metricool; delete it there).
+      if (old?.id && String(old.id) !== id && old.draft !== true && !args.force) throw new Error(`${postId}: metricool.${n}.id đã là ${old.id} (khác ${id}). Kiểm trong Metricool; ghi đè bằng --force.`);
     }
     const sentAt = stamp();
     for (const n of networks) {
       const old = mc[n] || {};
-      mc[n] = { blog_id: blogId, id, uuid: uuid || old.uuid || '', planner_url: planner || old.planner_url || '', publication, timezone: tz, draft, sent_at: old.id && String(old.id) === id && old.sent_at ? old.sent_at : sentAt, ...(old.id && String(old.id) === id ? { updated_at: sentAt } : {}) };
+      const same = old.id && String(old.id) === id;
+      mc[n] = { blog_id: blogId, id, uuid: (same && old.uuid) || uuid || '', planner_url: planner || (same ? old.planner_url : '') || '', publication, timezone: tz, draft, ...(old.draft === true && !same ? { replaced_draft: String(old.id) } : {}), sent_at: old.id && String(old.id) === id && old.sent_at ? old.sent_at : sentAt, ...(old.id && String(old.id) === id ? { updated_at: sentAt } : {}) };
     }
     entry.metricool = mc;
     if (!draft) {
@@ -203,7 +204,7 @@ export function status(args, { root = settings().skillsRoot } = {}) {
   return {
     brand: brand.id, blog_id: brand.blog_id, posts, query,
     next: open.length
-      ? 'Gọi getScheduledPosts với query, khớp theo id. PENDING (hoặc draft): không làm gì. ERROR: báo lỗi cho người dùng (id, plannerUrl, lý do). PUBLISHED: chạy node <thư mục skill>/scripts/mark-published.mjs <POST> <yyyy-mm-dd theo audience_time> [link bài] --lang <ngôn ngữ đăng>. Bài nháp đã được người hẹn giờ trong Metricool (draft false, có giờ): chạy record lại không --draft với cùng --id.'
+      ? 'Gọi getScheduledPosts với query, khớp theo id. PENDING: không làm gì. Bài còn metricool.<network>.draft true (nháp cũ): payload sẽ gửi lại thành bài hẹn giờ thật. ERROR: báo lỗi cho người dùng (id, plannerUrl, lý do). PUBLISHED: chạy node <thư mục skill>/scripts/mark-published.mjs <POST> <yyyy-mm-dd theo audience_time> [link bài] --lang <ngôn ngữ đăng>. Nháp cũ đã được người hẹn giờ trong Metricool (draft false, có giờ): chạy record lại với cùng --id.'
       : 'Không có bài nào đang chờ trên Metricool.',
   };
 }
@@ -215,6 +216,6 @@ if (isMain(import.meta.url)) main(async () => {
     if (cmd === 'payload') runPayload(args);
     else if (cmd === 'record') out(record(args));
     else if (cmd === 'status') out(status(args));
-    else fail('Lệnh: payload --brand <id> [--posts POST-01,...] [--draft|--schedule] | record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url> --publication <dateTime> --tz <tz> [--draft] | status --brand <id>');
+    else fail('Lệnh: payload --brand <id> [--posts POST-01,...] | record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url> --publication <dateTime> --tz <tz> | status --brand <id>');
   } catch (e) { fail(e.message, e.problems ? { problems: e.problems } : {}); }
 });

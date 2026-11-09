@@ -39,9 +39,9 @@ test('list-sources finds skills 2 levels deep, skips node_modules, reports readi
   assert.deepEqual(Object.keys(by).sort(), ['good', 'half', 'off']);
   assert.equal(by.good.ready, true);
   assert.equal(by.half.ready, false);
-  assert.deepEqual(by.half.problems, ['thiếu nguồn tham khảo', 'thiếu kênh']);
+  assert.deepEqual(by.half.problems, ['missing: nguồn tham khảo', 'missing: kênh']);
   assert.equal(by.off.ready, false);
-  assert.ok(by.off.problems.some((p) => /Chưa bật/.test(p)));
+  assert.ok(by.off.problems.some((p) => /Not enabled/.test(p)));
 });
 
 test('link is by path; a renamed folder shows as missing, with no fallback', () => {

@@ -61,10 +61,10 @@ test('isoWithOffset: audience timezone offset (PST/PDT) and +07:00', () => {
   assert.equal(mcp.isoWithOffset('2026-11-17', '01:00', 'Indian/Christmas'), '2026-11-17T01:00:00+07:00');
 });
 
-test('payload: exact createScheduledPost shape, posted language only, no AI label, draft by default, skips sent posts', () => {
+test('payload: exact createScheduledPost shape, posted language only, no AI label, always scheduled, skips sent posts', () => {
   setup({ posts: [
     { id: 'POST-01', media_url: IMG(1), media_alt: 'A pink neon sign', schedule: { facebook: { date_time: `${FUTURE}T10:00`, timezone: 'America/Los_Angeles' } } },
-    { id: 'POST-02', media_url: IMG(2), metricool: { facebook: { blog_id: '1111', id: '999', publication: `${FUTURE}T09:00:00`, timezone: 'America/Los_Angeles', draft: true } } },
+    { id: 'POST-02', media_url: IMG(2), metricool: { facebook: { blog_id: '1111', id: '999', publication: `${FUTURE}T09:00:00`, timezone: 'America/Los_Angeles', draft: false } } },
     { id: 'POST-03' }, // no media: skipped with a warning
     { id: 'POST-04', status: 'awaiting_review', media_url: IMG(4) },
   ] });
@@ -84,7 +84,7 @@ test('payload: exact createScheduledPost shape, posted language only, no AI labe
   assert.equal(typeof it.args.info, 'string');
   const info = JSON.parse(it.args.info);
   assert.deepEqual(Object.keys(info).sort(), ['autoPublish', 'descendants', 'draft', 'facebookData', 'firstCommentText', 'hasNotReadNotes', 'media', 'mediaAltText', 'providers', 'publicationDate', 'shortener', 'smartLinkData', 'text']);
-  assert.equal(info.draft, true);
+  assert.equal(info.draft, false);
   assert.equal(info.autoPublish, true);
   assert.deepEqual(info.media, [IMG(1)]);
   assert.deepEqual(info.mediaAltText, ['A pink neon sign']);
@@ -99,19 +99,20 @@ test('payload: exact createScheduledPost shape, posted language only, no AI labe
   assert.equal(info.text, 'Hello from POST-01\n\n#TestBrand');
   assert.doesNotMatch(info.text, /Xin chào|chỉ để duyệt/, 'reviewer-only language is never posted');
   assert.doesNotMatch(it.args.info, /isAiGenerated":true|made with AI|AIgenerated/i);
-  assert.match(it.record, /record --brand testbrand --post POST-01 .* --draft$/);
+  assert.match(it.record, /record --brand testbrand --post POST-01 .* --tz <publicationDate.timezone>$/);
+  assert.match(run('payload', '--brand', 'testbrand', '--draft').error, /removed/);
   // the automatic time never reuses the day taken by the sent post
   const r2 = run('payload', '--brand', 'testbrand', '--posts', 'POST-02');
   assert.equal(r2.ok, true);
   assert.equal(r2.items.length, 0);
 });
 
-test('payload: --schedule sends draft false; instagram gets instagramData isAiGenerated false; video is a REEL', () => {
+test('payload: draft false; instagram gets instagramData isAiGenerated false; video is a REEL', () => {
   setup({
     channels: [{ network: 'facebook', lang: ['en'], enabled: true }, { network: 'instagram', lang: ['en'], enabled: true }],
-    posts: [{ id: 'POST-01', video_url: 'https://hoangpham.is-a.dev/social-autopilot-sources/testbrand/2026/11/post-01.mp4', schedule: { facebook: { date_time: `${FUTURE}T18:30`, timezone: 'America/Los_Angeles' } } }],
+    posts: [{ id: 'POST-01', video_url: 'https://raw.githubusercontent.com/hoangpham2263/social-autopilot-sources/main/testbrand/2026/11/post-01.mp4', schedule: { facebook: { date_time: `${FUTURE}T18:30`, timezone: 'America/Los_Angeles' } } }],
   });
-  const r = run('payload', '--brand', 'testbrand', '--schedule');
+  const r = run('payload', '--brand', 'testbrand');
   assert.equal(r.ok, true, JSON.stringify(r));
   const info = JSON.parse(r.items[0].args.info);
   assert.equal(info.draft, false);
@@ -143,35 +144,44 @@ test('payload: refuses an AI label, a past time, Fortera and unknown networks', 
   assert.match(r.error, /chưa hỗ trợ mạng tiktok/);
 });
 
-test('record: draft keeps approved; scheduled writes schedule.<network> + status; payload then skips; status lists the query', () => {
-  setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { facebook: { date_time: `${FUTURE}T10:00`, timezone: 'America/Los_Angeles' } } }, { id: 'POST-02', media_url: IMG(2) }] });
-  let r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '421362711', '--uuid', '3757973938339334504', '--planner-url', 'https://app.metricool.com/planner?x=1', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles', '--draft');
+test('record: always scheduled (schedule.<network> + status); a legacy Metricool draft is sent again and replaced; status lists the query', () => {
+  // POST-01 was recorded earlier as a Metricool draft (old flow): it counts as not sent, so payload plans it again.
+  setup({ posts: [
+    { id: 'POST-01', media_url: IMG(1), schedule: { facebook: { date_time: `${FUTURE}T10:00`, timezone: 'America/Los_Angeles' } }, metricool: { facebook: { blog_id: '1111', id: '421362711', uuid: '3757973938339334504', planner_url: 'https://app.metricool.com/planner?x=1', publication: `${FUTURE}T10:00:00`, timezone: 'America/Los_Angeles', draft: true } } },
+    { id: 'POST-02', media_url: IMG(2) },
+  ] });
+  const again = run('payload', '--brand', 'testbrand');
+  assert.equal(again.ok, true, JSON.stringify(again));
+  assert.deepEqual(again.items.map((i) => i.post).sort(), ['POST-01', 'POST-02']);
+  assert.equal(run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '1', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles', '--draft').ok, false, '--draft is gone');
+
+  // the scheduled post replaces the old draft (no --force needed), as Metricool answered it in its timezone
+  let r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '500', '--uuid', 'u-500', '--planner-url', 'https://app.metricool.com/planner?x=2', '--publication', '2026-12-18T01:00', '--tz', 'Indian/Christmas');
   assert.equal(r.ok, true, JSON.stringify(r));
   let p = catalog().posts.find((x) => x.id === 'POST-01');
-  assert.equal(p.status, 'approved');
-  const rec = p.metricool.facebook;
-  assert.deepEqual({ ...rec, sent_at: undefined }, { blog_id: '1111', id: '421362711', uuid: '3757973938339334504', planner_url: 'https://app.metricool.com/planner?x=1', publication: `${FUTURE}T10:00:00`, timezone: 'America/Los_Angeles', draft: true, sent_at: undefined });
-  assert.ok(!Number.isNaN(Date.parse(rec.sent_at)));
+  assert.equal(p.status, 'scheduled');
+  assert.deepEqual(p.schedule, { facebook: { date_time: '2026-12-18T01:00:00', timezone: 'Indian/Christmas' } });
+  assert.equal(p.metricool.facebook.draft, false);
+  assert.equal(p.metricool.facebook.id, '500');
+  assert.equal(p.metricool.facebook.uuid, 'u-500');
+  assert.equal(p.metricool.facebook.replaced_draft, '421362711');
+  assert.ok(!Number.isNaN(Date.parse(p.metricool.facebook.sent_at)));
 
-  // already sent: payload skips it and plans only POST-02
+  // already scheduled: payload skips it and plans only POST-02
   const pay = run('payload', '--brand', 'testbrand');
   assert.equal(pay.ok, true, JSON.stringify(pay));
   assert.deepEqual(pay.items.map((i) => i.post), ['POST-02']);
-  assert.deepEqual(pay.skipped.map((s) => s.post), ['POST-01']);
+  assert.deepEqual(pay.skipped.map((s) => s.post), []); // scheduled posts are no longer "approved": not planned again
 
   // another id for the same network is refused without --force
   r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '5', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
   assert.equal(r.ok, false);
   assert.match(r.error, /--force/);
-
-  // scheduled (not draft), as Metricool answered it in the brand's Metricool timezone
-  r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '421362711', '--publication', '2026-12-18T01:00', '--tz', 'Indian/Christmas');
+  // the same id again keeps the uuid of the first record
+  r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '500', '--publication', '2026-12-18T01:00', '--tz', 'Indian/Christmas');
   assert.equal(r.ok, true, JSON.stringify(r));
   p = catalog().posts.find((x) => x.id === 'POST-01');
-  assert.equal(p.status, 'scheduled');
-  assert.deepEqual(p.schedule, { facebook: { date_time: '2026-12-18T01:00:00', timezone: 'Indian/Christmas' } });
-  assert.equal(p.metricool.facebook.draft, false);
-  assert.equal(p.metricool.facebook.uuid, '3757973938339334504', 'kept from the first record');
+  assert.equal(p.metricool.facebook.uuid, 'u-500', 'kept from the first record');
 
   const st = run('status', '--brand', 'testbrand');
   assert.equal(st.ok, true);
@@ -188,7 +198,7 @@ test('record: draft keeps approved; scheduled writes schedule.<network> + status
   assert.equal(r.ok, false);
 });
 
-test('payload: a failing post is blocked, the others still go; default mode from settings (draft unless "schedule")', () => {
+test('payload: a failing post is blocked, the others still go; an old settings default_mode is ignored', () => {
   setup({ posts: [
     { id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } },
     { id: 'POST-02', media_url: IMG(2), schedule: { date: '2020-01-01', time: '10:00' } },
@@ -198,7 +208,7 @@ test('payload: a failing post is blocked, the others still go; default mode from
   assert.deepEqual(r.items.map((i) => i.post), ['POST-01']);
   assert.equal(r.blocked.length, 1);
   assert.match(r.blocked[0], /POST-02.*đã qua/);
-  assert.equal(r.draft, true);
+  assert.equal(r.draft, false);
   // The brand skill's check-post.mjs is part of the gate: errors block the post.
   write(path.join(brandDir, 'scripts', 'check-post.mjs'), "console.log(JSON.stringify({ errors: process.argv[2] === 'POST-01' ? 1 : 0, results: [] }));");
   setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } }, { id: 'POST-03', media_url: IMG(3), schedule: { date: FUTURE, time: '11:00' } }] });
@@ -206,10 +216,9 @@ test('payload: a failing post is blocked, the others still go; default mode from
   r = run('payload', '--brand', 'testbrand');
   assert.deepEqual(r.items.map((i) => i.post), ['POST-03']);
   assert.match(r.blocked[0], /POST-01: check-post/);
-  // settings metricool.default_mode "schedule": real scheduling unless --draft.
-  write(path.join(ws, 'settings.json'), JSON.stringify({ metricool: { default_mode: 'schedule' } }));
+  // an old settings metricool.default_mode "draft" changes nothing: always scheduled.
+  write(path.join(ws, 'settings.json'), JSON.stringify({ metricool: { default_mode: 'draft' } }));
   try {
     assert.equal(run('payload', '--brand', 'testbrand').draft, false);
-    assert.equal(run('payload', '--brand', 'testbrand', '--draft').draft, true);
   } finally { fs.rmSync(path.join(ws, 'settings.json'), { force: true }); }
 });

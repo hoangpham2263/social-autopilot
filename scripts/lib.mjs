@@ -131,14 +131,13 @@ export function saveSettings(input = {}) {
     const cr = cur.research || {};
     const delay = [].concat(r.delay_seconds ?? cr.delay_seconds).map((x, i) => int(x, `research.delay_seconds[${i}]`));
     if (delay.length !== 2 || delay[0] > delay[1]) throw new Error('research.delay_seconds phải là [min, max] với min <= max.');
-    // Metricool: draft (default; nothing goes live by itself) or schedule (real scheduling).
-    const mode = mc.default_mode ?? cur.metricool?.default_mode ?? 'draft';
-    if (!['draft', 'schedule'].includes(mode)) throw new Error('metricool.default_mode phải là "draft" hoặc "schedule".');
+    // Metricool: always real scheduling (no draft mode any more); an old metricool.default_mode is dropped.
+    void mc;
     const changes = {
       skillsRoot: str(input.skillsRoot ?? cur.skillsRoot, 'skillsRoot'),
       // Research: only the human-like pause between page actions; there are no run or post limits.
       research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay },
-      metricool: { ...(cur.metricool || {}), default_mode: mode },
+      metricool: Object.fromEntries(Object.entries(cur.metricool || {}).filter(([k]) => k !== 'default_mode')),
       codex: { command: str(cx.command ?? cur.codex?.command, 'codex.command'), timeout_minutes: int(cx.timeout_minutes ?? cur.codex?.timeout_minutes, 'codex.timeout_minutes', 1) },
       ffmpeg: { command: str(ff.command ?? cur.ffmpeg?.command, 'ffmpeg.command') },
       remove_watermark: { script: str(rw.script ?? cur.remove_watermark?.script, 'remove_watermark.script') },
@@ -162,6 +161,7 @@ export function saveSettings(input = {}) {
     // No approval step any more (user, 09/11/2026): older settings files lose their approval block on save.
     delete next.approval;
     next.research = changes.research;
+    next.metricool = changes.metricool;
     if (changes.remove_watermark.providers) next.remove_watermark.providers = changes.remove_watermark.providers;
     writeJson(file, next);
     return next;
@@ -221,15 +221,15 @@ const samePath = (x, y) => path.resolve(x).toLowerCase() === path.resolve(y).toL
 export function linkMetricool(name, skillDir) {
   const cfg = metricoolBrands();
   const b = (cfg.brands || []).find((x) => x.name === name);
-  if (!b) throw new Error(`Không có brand Metricool "${name}".`);
+  if (!b) throw new Error(`Unknown Metricool brand "${name}".`);
   let skill_id = null, skill_path;
   if (skillDir) {
     const dir = path.resolve(String(skillDir).trim());
-    if (!isSkillDir(dir)) throw new Error(`${dir} không phải bộ skill (cần ${SKILL_FILES.join(', ')}).`);
+    if (!isSkillDir(dir)) throw new Error(`${dir} is not a skill folder (needs ${SKILL_FILES.join(', ')}).`);
     skill_id = skillIdOf(dir);
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(skill_id)) throw new Error(`Tên thư mục skill "${path.basename(dir)}" không hợp lệ (chữ thường, số, gạch nối).`);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(skill_id)) throw new Error(`Skill folder name "${path.basename(dir)}" is not valid (lowercase letters, digits, hyphens).`);
     const other = cfg.brands.find((x) => x !== b && (x.skill_id === skill_id || (x.skill_path && samePath(x.skill_path, dir))));
-    if (other) throw new Error(`Bộ skill "${skill_id}" đang nối với brand "${other.name}".`);
+    if (other) throw new Error(`Skill "${skill_id}" is already linked to "${other.name}".`);
     skill_path = dir.split(path.sep).join('/');
   }
   return saveMetricoolBrands({ ...cfg, brands: cfg.brands.map((x) => { if (x !== b) return x; const { skill_path: _, ...rest } = x; return { ...rest, skill_id, ...(skill_path ? { skill_path } : {}) }; }) });
@@ -396,6 +396,7 @@ export function inspectBrand(dir) {
   result.languages = brandLanguages(social);
   result.language_mode = social.language_policy?.mode || '';
   result.timezone = social.cadence?.timezone || '';
+  result.posts_per_week = Number.isInteger(social.cadence?.posts_per_week) ? social.cadence.posts_per_week : null;
   result.metricool_timezone = typeof social.metricool?.timezone === 'string' ? social.metricool.timezone.trim() : '';
   result.review_languages = reviewLanguages(social);
   result.sources = brandSources(social).map((x) => x.id);
@@ -405,7 +406,7 @@ export function inspectBrand(dir) {
   else {
     const r = spawnSync(process.execPath, [checker, '--tool-ready'], { cwd: dir, encoding: 'utf8', windowsHide: true });
     result.ready = r.status === 0;
-    if (!result.ready) result.problems.push(...String(r.stdout).split(/\r?\n/).filter((l) => /^\s+- |^LỖI /.test(l)).map((l) => l.replace(/^\s+- /, 'thiếu ').trim()));
+    if (!result.ready) result.problems.push(...String(r.stdout).split(/\r?\n/).filter((l) => /^\s+- |^LỖI /.test(l)).map((l) => l.replace(/^\s+- /, 'missing: ').trim()));
   }
   result.usable = result.enabled && result.ready;
   return result;

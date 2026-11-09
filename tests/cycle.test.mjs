@@ -1,6 +1,6 @@
 // One whole cycle against a throw-away brand skill and workspace (never the real brand folders):
 // brands -> sources -> research start/ingest into the store (dedupe, cleaning, incremental) -> store ideas -> draft
-// (fake Codex) -> automatic checks -> finalize (write-back, host). No approval step.
+// (fake Codex) -> automatic checks ("Needs review") -> a person approves (finalize.mjs approve: write-back, host).
 // npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -249,12 +249,12 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   fs.writeFileSync(vnFile, vnText.replace('#DreamyVows', 'Ảnh tạo bằng AI\n#DreamyVows'));
   const labelled = run('draft.mjs', 'check', '--id', draft.id);
   assert.ok(labelled.problems.some((p) => /nhãn AI/.test(p) && /content-vn/.test(p)), JSON.stringify(labelled.problems));
-  // No human gate: finalize checks again, so a label slipped in after check stops that post (check_failed).
+  // Approve checks again, so a label slipped in after check stops that post (check_failed).
   assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'needs_caption');
   fs.writeFileSync(vnFile, vnText);
   assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'ready');
   fs.writeFileSync(vnFile, vnText.replace('#DreamyVows', 'made with AI\n#DreamyVows'));
-  const stopped = run('finalize.mjs', 'run', '--id', draft.id);
+  const stopped = run('finalize.mjs', 'approve', '--id', draft.id);
   assert.deepEqual(stopped.failed, [draft.id]);
   assert.match(stopped.results[0].error, /nhãn AI/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(draft.dir, 'status.json'), 'utf8')).status, 'check_failed');
@@ -263,10 +263,10 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   // Nothing in the brand before finalize; write-back refuses a draft not finalized.
   assert.equal(JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.filter((p) => p.source === `social-autopilot ${draft.id}`).length, 0);
   assert.equal(run('writeback.mjs', '--id', draft.id).ok, false);
-  const fin = run('finalize.mjs', 'run', '--brand', 'dreamyvows');
-  assert.deepEqual(fin.results.map((r) => r.id), []); // check_failed is not "ready": run check first
+  // No bulk approval: a person approves each post.
+  assert.match(run('finalize.mjs', 'approve', '--brand', 'dreamyvows').error, /No bulk approval/);
   assert.equal(run('draft.mjs', 'check', '--id', draft.id).status, 'ready');
-  const done = run('finalize.mjs', 'run', '--brand', 'dreamyvows');
+  const done = run('finalize.mjs', 'approve', '--id', draft.id);
   assert.deepEqual(done.done, [draft.id], JSON.stringify(done));
   const ok = done.results[0];
   const catalog = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'));
@@ -274,7 +274,7 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.match(post.id, /^POST-\d+$/);
   assert.equal(catalog.posts.filter((p) => p.id === post.id).length, 1); // a new number, after the brand's own posts
   assert.equal(post.status, 'approved');
-  assert.equal(post.approval.by, 'auto');
+  assert.equal(post.approval.by, 'user');
   assert.equal(post.inspiration.store_item, itemId);
   assert.deepEqual(Object.keys(post.captions), ['en']); // posted captions only
   assert.deepEqual(post.review_captions, { vn: 'content-vn.txt' });
@@ -289,7 +289,7 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.ok(ok.image_host.next.endsWith(`host-image.mjs publish --brand dreamyvows --post ${post.id}`), ok.image_host.next);
   assert.equal(git(tmp, '--git-dir', hostBare, 'log', '-1', '--format=%s', 'main'), `dreamyvows ${post.id}`);
   assert.equal(post.media_url, undefined);
-  assert.equal(run('finalize.mjs', 'run', '--id', draft.id).results[0].reused, true);
+  assert.equal(run('finalize.mjs', 'approve', '--id', draft.id).results[0].reused, true);
   // Report: the written post with "chưa có link" and the host error + command; not sent to Metricool yet.
   const w = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').written.find((x) => x.id === draft.id);
   assert.equal(w.media_url, null);

@@ -10,7 +10,7 @@ import { researchReport } from './research.mjs';
 
 // Metricool state of a catalog entry, from what metricool-mcp.mjs record / mark-published wrote.
 export function metricoolState(entry) {
-  if (!entry) return { state: 'none' };
+  if (!entry) return { state: 'none', sent: [] };
   const sent = Object.entries(entry.metricool || {}).map(([network, m]) => ({ network, ...m }));
   if (entry.status === 'published') return { state: 'published', sent };
   if (sent.some((m) => m.error)) return { state: 'error', sent };

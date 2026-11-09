@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,10 +10,16 @@
 <style>
 /* Thin management layer over scripts/: every value shown or saved goes through the same functions the scheduled agent
    runs. Text weight 400 everywhere; states by border colour only, no shadows. Controls (inputs, selects, buttons, tabs)
-   all take the one size defined in core/assets/tool.css (--ctl-h, --ctl-pad, --ctl-border, --ctl-font). */
+   all take the one size defined in core/assets/tool.css (--ctl-h, --ctl-pad, --ctl-border, --ctl-font).
+   Layout: the window is one flex column (header, tabs, the page); the page fills the rest of the height and scrolls
+   inside, so there is no dead space below the content. */
 * { font-weight: 400; }
 b, strong, h1, h2, h3, th { font-weight: 400; }
 a { color: #0b57d0; }
+html, body { height: 100%; }
+main { height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
+main > header, main > nav, main > .setup-status { flex: 0 0 auto; }
+.page { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .page[hidden] { display: none; }
 nav.tabs { display: flex; margin: 0 0 12px; }
 nav.tabs button { height: var(--ctl-h); padding: var(--ctl-pad); font: inherit; font-size: var(--ctl-font); background: #e1e1e1; border: var(--ctl-border); margin-right: -1px; cursor: default; }
@@ -32,15 +38,15 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .status-tag.c-green { border-color: var(--accent); } .status-tag.c-amber { border-color: #b06000; } .status-tag.c-red { border-color: rgb(176, 0, 0); }
 .card .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .picker { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
-.picker .find-row { display: flex; gap: 8px; margin: 0 0 6px; } .picker .find-row input { flex: 1 1 auto; min-width: 0; }
+.picker .find-row, .find-row { display: flex; gap: 8px; margin: 0 0 6px; } .find-row input { flex: 1 1 auto; min-width: 0; }
 .picker .found label { display: flex; gap: 6px; align-items: center; margin: 0; padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; } .dot-green { background: #1f8f3a; } .dot-red { background: rgb(176, 0, 0); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; flex: 0 0 auto; } .dot-green { background: #006400; } .dot-red { background: rgb(176, 0, 0); } .dot-grey { background: var(--line); }
 .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 /* Toolbar: label and control on one line. */
 .toolbar { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 .toolbar > div { display: flex; align-items: center; gap: 8px; }
 .toolbar label { margin: 0; white-space: nowrap; }
-.toolbar select, .toolbar input { width: auto; min-width: 160px; }
+.toolbar select, .toolbar input { width: auto; min-width: 140px; }
 fieldset { border: 1px solid var(--line); background: #fff; padding: 10px 12px; margin: 0 0 12px; min-width: 0; }
 legend { padding: 0 4px; color: var(--ink); }
 table.edit { width: 100%; border-collapse: collapse; }
@@ -52,7 +58,7 @@ table.edit td { padding: 3px 4px; vertical-align: middle; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 12px; }
 .msg { white-space: pre-wrap; }
 .msg:empty { display: none; }
-textarea.prompt { min-height: 260px; font: 12.5px/1.5 Consolas, ui-monospace, monospace; }
+textarea.prompt { min-height: 200px; font: 12.5px/1.5 Consolas, ui-monospace, monospace; }
 details > summary { cursor: default; color: var(--muted); font-size: 12px; }
 details[open] > summary { margin-bottom: 6px; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
@@ -61,18 +67,22 @@ details[open] > summary { margin-bottom: 6px; }
 .slot select, .slot input { width: auto; }
 .slot input[type=text], .src-url { flex: 1 1 auto; min-width: 0; }
 .card .head-row { display: flex; align-items: center; gap: 8px; } .card .head-row h3 { flex: 1 1 auto; margin: 0 0 4px; }
-#prText { width: 100%; }
-/* Prompt run options: one compact row; Nguồn is a dropdown of checkboxes. */
-.pr-opts input[type=number] { min-width: 0; width: 130px; } .pr-opts input[type=date] { min-width: 0; width: 150px; }
+/* Prompt: one options row, then Copy / Edit / Reset, then the prompt filling the rest of the window. */
+#page-prompt:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+#page-prompt .toolbar { flex: 0 0 auto; }
+.seg { display: inline-flex; } .seg .btn { margin-right: -1px; } .seg .btn[aria-pressed="true"] { background: #fff; border-color: var(--accent); position: relative; }
+.pr-opts input[type=number] { min-width: 0; width: 90px; } .pr-opts input[type=date] { min-width: 0; width: 140px; }
+#prText { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
+#prText[readonly] { background: #fafafa; }
 .pr-src { position: relative; }
-.pr-src > summary { list-style: none; min-width: 160px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; color: var(--ink); font-size: var(--ctl-font); }
+.pr-src > summary { list-style: none; min-width: 120px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; color: var(--ink); font-size: var(--ctl-font); }
 .pr-src > summary::-webkit-details-marker { display: none; }
 details.pr-src[open] > summary { margin-bottom: 0; }
 .pr-src-list { position: absolute; z-index: 5; top: calc(var(--ctl-h) - 1px); left: 0; min-width: 220px; max-height: 260px; overflow: auto; background: #fff; border: 1px solid #8a8a8a; padding: 4px 0; }
 .pr-src-list label { display: flex; gap: 8px; align-items: center; margin: 0; padding: 4px 10px; white-space: nowrap; }
 .pr-src-list label:hover { background: var(--hover); }
 pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
-/* Nghiên cứu */
+/* Library */
 .refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .ref img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--control); display: block; border: 1px solid var(--line); }
 .ref { display: grid; gap: 4px; align-content: start; }
@@ -88,9 +98,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .card.open-card:hover { border-color: #0078d7; }
 .card.open-card:focus { outline: 1px solid #0078d7; outline-offset: -1px; }
 .host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; }
-.host a { overflow-wrap: anywhere; }
 .reject-box { display: flex; gap: 6px; align-items: center; } .reject-box input { flex: 1 1 auto; min-width: 0; width: auto; }
-/* Xem trước: static mocks of a Facebook feed post and an Instagram post (no external calls). */
+/* Preview: static mocks of a Facebook feed post and an Instagram post (no external calls). */
 .pv { width: 360px; max-width: 100%; background: #fff; border: 1px solid #dadde1; border-radius: 8px; font: 14px/1.34 "Segoe UI", Helvetica, Arial, sans-serif; color: #050505; overflow: hidden; }
 .pv .pv-tag { font-size: 11px; color: #65676b; padding: 6px 12px 0; }
 .pv .pv-head { display: flex; gap: 8px; align-items: center; padding: 8px 12px; }
@@ -114,8 +123,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .pv.ig .txt { padding: 8px 12px 10px; }
 /* Thumbnails open the card's preview (never a new window). */
 .thumb { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; }
-/* Overlay: a near-fullscreen window (95vw x 92vh) holding the lightbox (image/video, prev/next) or the Xem trước panel.
-   Its header carries the title, channel tabs and ✕ Đóng; Esc or a click on the backdrop also closes. */
+/* Overlay: a near-fullscreen window (95vw x 92vh) holding the lightbox (image/video, prev/next) or the Preview panel.
+   Its header carries the title, channel tabs and ✕ Close; Esc or a click on the backdrop also closes. */
 .lb { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, .75); display: grid; place-items: center; }
 .lb[hidden] { display: none; }
 .lb .lb-win { width: 95vw; height: 92vh; background: var(--control); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
@@ -128,18 +137,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .lb .lb-stage { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 0; padding: 12px; background: #111; }
 .lb .lb-stage img, .lb .lb-stage video { max-width: calc(95vw - 140px); max-height: calc(92vh - 90px); object-fit: contain; min-width: 0; }
 .lb .lb-nav { font-size: 20px; }
-/* Xem trước: the post at Facebook's feed width (500px) on the left, the draft's facts on the right (below when narrow). */
+/* Preview: the post at Facebook's feed width on the left, the post's facts on the right (below when narrow). */
 .lb .pv-layout { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
 .lb .pv-stage { overflow: auto; background: #f0f2f5; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
 .lb .pv-col { width: 540px; max-width: 100%; flex: 0 0 auto; display: grid; gap: 10px; align-content: start; }
 .lb .pv-langs { margin: 0; }
 .lb .pv-langs .meta { margin-left: 4px; }
 .lb .pv-stage .pv { width: 100%; font-size: 15px; }
-/* In the overlay the post's image takes the full post width (the column scrolls), as in the feed. */
 .lb .pv-stage .pv .media.n1 img { max-height: none; height: auto; object-fit: contain; background: #f0f2f5; }
 .pv .txt a { color: #385898; text-decoration: none; } .pv .txt a:hover { text-decoration: underline; }
 .pv .txt .tag { color: #385898; }
-/* Several images of a store post: one at a time at full width, ‹ › and n/m over it (like a carousel). */
+/* Several images of a library post: one at a time at full width, ‹ › and n/m over it (like a carousel). */
 .pv .car { position: relative; background: #f0f2f5; }
 .pv .car img { width: 100%; height: auto; display: block; cursor: zoom-in; }
 .pv .car .car-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; border: 1px solid #ced0d4; background: #fff; font-size: 20px; line-height: 1; cursor: pointer; color: #050505; }
@@ -150,9 +158,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .lb .pv-side pre { max-height: none; }
 .lb .pv-side .row-actions { margin-top: 0; }
 .lb .item-nav { display: flex; align-items: center; gap: 6px; }
-/* Kho item: the post's images (‹ › between them) on the left, its facts, caption and actions on the right. */
 .lb .sp-layout { grid-template-columns: minmax(0, 1fr) 380px; }
-.lb .sp-dups {.lb .sp-dups { margin: 0; padding-left: 18px; font-size: 12px; }
+.lb .sp-dups { margin: 0; padding-left: 18px; font-size: 12px; }
 .lb .sp-dups a { overflow-wrap: anywhere; }
 @media (max-width: 900px) {
   .lb .pv-layout { grid-template-columns: 1fr; overflow: auto; }
@@ -160,99 +167,106 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   .lb .pv-side { border-left: 0; border-top: 1px solid var(--line); }
 }
 .pv [data-pv] { cursor: zoom-in; }
-/* Cài đặt: short labels in a fixed column, a 2-column form, one compact row per skill. */
-#page-settings .kv { grid-template-columns: 160px minmax(0, 1fr); }
+/* Settings: short labels in a fixed column, compact rows, a 2-column form. */
+#page-settings .kv { grid-template-columns: 160px minmax(0, 1fr); align-items: center; }
 #page-settings .kv dt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#page-settings .kv dd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: var(--ctl-h); }
 #page-settings .set-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-items: end; }
 #page-settings .set-grid > div { min-width: 0; }
 #page-settings .set-grid .wide { grid-column: 1 / -1; }
 #page-settings .set-grid label { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 0 4px; }
 #page-settings .set-grid label.check { display: flex; gap: 6px; align-items: center; height: var(--ctl-h); margin: 0; }
 #page-settings details > summary { margin: 10px 0 6px; }
-#page-settings .skill-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
-#page-settings .skill-row .id { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#page-settings .skill-pick label { display: flex; gap: 6px; align-items: center; margin: 0; padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#page-settings .find-row { display: flex; gap: 8px; margin: 6px 0; } #page-settings .find-row input { flex: 1 1 auto; min-width: 0; }
+#page-settings legend .btn { margin-left: 8px; height: 24px; }
 @media (max-width: 600px) {
   #page-settings .kv, #page-settings .set-grid { grid-template-columns: 1fr; }
-  #page-settings .kv dd { margin-bottom: 6px; }
 }
 </style>
 </head>
 <body>
 <main>
   <header><img src="/icon.svg" alt=""><h1>Social Autopilot</h1></header>
-  <div id="setupStatus" class="setup-status"></div>
+  <div id="setupStatus" class="setup-status" hidden></div>
   <nav class="tabs" id="tabs">
-    <button type="button" data-page="overview">Tổng quan</button>
-    <button type="button" data-page="store">Kho</button>
-    <button type="button" data-page="posts">Bài đã tạo</button>
+    <button type="button" data-page="overview">Overview</button>
+    <button type="button" data-page="store">Library</button>
+    <button type="button" data-page="posts">Posts</button>
     <button type="button" data-page="prompt">Prompt</button>
-    <button type="button" data-page="settings">Cài đặt</button>
+    <button type="button" data-page="settings">Settings</button>
   </nav>
 
   <section class="page" id="page-overview" hidden>
     <div class="msg" id="ovMsg"></div>
-    <div class="cards" id="ovList"><div class="meta">Đang đọc…</div></div>
+    <div class="cards" id="ovList"><div class="meta">Loading…</div></div>
   </section>
 
   <section class="page" id="page-store" hidden>
     <div class="toolbar">
-      <div><label for="resBrand">Kho</label><select id="resBrand"></select></div>
-      <div><label for="resStatus">Hiện</label><select id="resStatus">
-        <option value="new">Mới</option><option value="used">Đã dùng</option><option value="rejected">Đã bỏ</option><option value="">Tất cả</option></select></div>
-      <div><label for="resSource">Nguồn</label><select id="resSource"></select></div>
+      <div><label for="resBrand">Library</label><select id="resBrand"></select></div>
+      <div><label for="resStatus">Show</label><select id="resStatus">
+        <option value="new">New</option><option value="used">Used</option><option value="rejected">Dropped</option><option value="">All</option></select></div>
+      <div><label for="resSource">Source</label><select id="resSource"></select></div>
     </div>
-    <div id="resBody" class="meta">Chọn thương hiệu.</div>
+    <div id="resBody" class="meta">Pick a brand.</div>
   </section>
 
   <section class="page" id="page-posts" hidden>
     <div class="toolbar">
-      <div><label for="drBrand">Thương hiệu</label><select id="drBrand"><option value="">Tất cả</option></select></div>
-      <div><label for="drStatus">Hiện</label><select id="drStatus">
-        <option value="">Tất cả</option><option value="working">Đang làm</option><option value="ready">Sẵn sàng</option><option value="failed">Lỗi kiểm tra</option><option value="mc_draft">Đã gửi nháp</option><option value="scheduled">Đã hẹn giờ</option><option value="published">Đã đăng</option><option value="mc_error">Lỗi Metricool</option><option value="rejected">Đã bỏ</option></select></div>
+      <div><label for="drBrand">Brand</label><select id="drBrand"><option value="">All</option></select></div>
+      <div><label for="drStatus">Show</label><select id="drStatus">
+        <option value="">All</option><option value="review">Needs review</option><option value="working">Making</option><option value="approved">Approved · waiting to send</option><option value="scheduled">Scheduled</option><option value="published">Published</option><option value="failed">Failed</option><option value="rejected">Dropped</option></select></div>
     </div>
     <div id="draftList"></div>
   </section>
 
   <section class="page" id="page-prompt" hidden>
-    <div class="toolbar">
-      <div><label for="prMode">Chế độ</label><select id="prMode"></select></div>
+    <!-- One options row: mode, agent, brand, then only the options of the chosen mode. -->
+    <div class="toolbar pr-opts">
+      <span class="seg" id="prMode" role="group" aria-label="Mode"></span>
       <div><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div><label for="prBrand">Thương hiệu</label><select id="prBrand"></select></div>
-      <button class="btn primary" type="button" id="prCopy">Chép prompt</button><button class="btn" type="button" id="prReset">Khôi phục mặc định</button><span class="meta" id="prMsg"></span>
+      <div><label for="prBrand">Brand</label><select id="prBrand"></select></div>
+      <span id="prResearch" hidden style="display:contents">
+        <div><label>Sources</label><details class="pr-src" id="prSrcBox"><summary class="btn" id="prSrcSum">All</summary><div class="pr-src-list" id="prSrc"></div></details></div>
+        <div><label for="prSince">Since</label><input type="date" id="prSince"></div>
+        <div><label for="prMax" title="Max posts per source">Max posts</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
+        <div><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
+      </span>
+      <span id="prMake" hidden style="display:contents">
+        <div><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
+      </span>
     </div>
-    <!-- Run options of the chosen mode (one row), written into the prompt as this run's options. -->
-    <div class="toolbar pr-opts" id="prResearch" hidden>
-      <div><label>Nguồn</label><details class="pr-src" id="prSrcBox"><summary class="btn" id="prSrcSum">Tất cả</summary><div class="pr-src-list" id="prSrc"></div></details></div>
-      <div><label for="prSince">Từ ngày</label><input type="date" id="prSince"></div>
-      <div><label for="prMax">Tối đa bài mỗi nguồn</label><input type="number" id="prMax" min="1" step="1" placeholder="không giới hạn"></div>
-      <div><label for="prKind">Kiểu</label><select id="prKind"><option value="new">Bài mới</option><option value="backfill">Lấy bài cũ</option><option value="full">Quét lại toàn bộ</option></select></div>
+    <div class="toolbar">
+      <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
+      <button class="btn" type="button" id="prEdit">Edit</button>
+      <button class="btn" type="button" id="prReset">Reset</button>
+      <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in C:\hoangpq\social-autopilot</span>
     </div>
-    <div class="toolbar pr-opts" id="prMake" hidden>
-      <div><label for="prCount">Số bài cần làm</label><input type="number" id="prCount" min="1" step="1" placeholder="theo cài đặt"></div>
-      <div><label for="prSend">Gửi Metricool</label><select id="prSend"><option value="">Theo cài đặt</option><option value="draft">Nháp</option><option value="schedule">Hẹn giờ</option></select></div>
-    </div>
-    <textarea class="prompt" id="prText" spellcheck="false"></textarea>
-    <div class="meta">Dán vào Claude Code/Codex.</div>
+    <textarea class="prompt" id="prText" spellcheck="false" readonly></textarea>
   </section>
 
   <section class="page" id="page-settings" hidden>
-    <fieldset><legend>Cài đặt tool</legend>
+    <fieldset><legend>Accounts</legend>
+      <dl class="kv" id="setAccounts"><dt>Codex (ChatGPT)</dt><dd class="meta">Checking…</dd></dl>
+      <div class="msg" id="setLoginMsg"></div>
+    </fieldset>
+    <fieldset><legend>Requirements<button class="btn" type="button" id="setRecheck">Re-check</button></legend>
+      <dl class="kv" id="setReqs"><dt>Node.js</dt><dd class="meta">Checking…</dd></dl>
+    </fieldset>
+    <fieldset><legend>Tool settings</legend>
       <div id="settingsView"></div>
-      <div class="row-actions"><button class="btn" type="button" id="settingsEdit">Sửa</button></div>
+      <div class="row-actions"><button class="btn" type="button" id="settingsEdit">Edit</button></div>
       <div id="settingsEditor" hidden>
         <form id="settingsForm"></form>
-        <div class="row-actions"><button class="btn primary" type="button" id="settingsSave" title="Ghi vào workspace/settings.json của máy này">Lưu</button></div>
+        <div class="row-actions"><button class="btn primary" type="button" id="settingsSave" title="Saved to this machine's workspace/settings.json">Save</button></div>
       </div>
       <div class="msg" id="settingsMsg"></div>
     </fieldset>
   </section>
 
   <section class="page" id="page-brand" hidden>
-    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Tổng quan</button><h2 id="brandTitle" style="margin:0;font-size:16px"></h2></div>
+    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Overview</button><h2 id="brandTitle" style="margin:0;font-size:16px"></h2></div>
     <div id="brandForm"></div>
-    <div class="row-actions"><button class="btn primary" type="button" id="brandSave">Lưu</button><span class="meta">Lưu xong tool chạy check-skill; file sai thì trả lại bản cũ.</span></div>
+    <div class="row-actions"><button class="btn primary" type="button" id="brandSave" title="After saving, the skill's check-skill runs; a broken file is put back">Save</button></div>
     <div class="msg" id="brandMsg"></div>
   </section>
 </main>
@@ -261,6 +275,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const arr = (x) => (Array.isArray(x) ? x : []);
   // Every request of the page goes through call(): GET without data, POST with it.
   // Every write carries the session token the server puts in this page (meta sa-token); without it the server refuses.
   const call = (url, data) => fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", headers: { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" }, body: JSON.stringify(data) }).then((r) => r.json());
@@ -268,8 +283,13 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const postJson = (url, data) => call(url, data);
   const img = (p) => `/file?path=${encodeURIComponent(p)}`;
   const store = { get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-  const offline = { error: "Mất kết nối với app." };
+  const offline = { error: "Lost connection to the app." };
+  const RESTART = "Restart the app to load the update (Reload, top right).";
+  // A short error in the page, the long one in its tooltip.
+  const errLine = (e) => { const t = String(e || ""); const first = t.split(/\r?\n/)[0].slice(0, 200); return `<span class="bad-text" title="${esc(t)}">${esc(first)}${first.length < t.length ? "…" : ""}</span>`; };
   addEventListener("error", (e) => postJson("/api/client-error", { message: e.message, stack: e.error?.stack || "" }).catch(() => {}));
+  // A page whose data does not have the expected shape (a server started before an update): a clear message, no crash.
+  const safely = (where, fn) => async (...a) => { try { return await fn(...a); } catch (e) { postJson("/api/client-error", { message: `${where}: ${e.message}`, stack: e.stack || "" }).catch(() => {}); const box = $(where); if (box) box.innerHTML = `<div class="bad-text" title="${esc(e.message)}">${RESTART}</div>`; } };
 
   // ----- tabs -----
   const pages = ["overview", "store", "posts", "prompt", "settings", "brand"];
@@ -281,30 +301,33 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, prompt: loadPrompts, settings: loadSettings })[page]?.();
   }
   for (const b of $$("#tabs button")) b.onclick = () => show(b.dataset.page);
+  // core/assets/hub.js opens Settings when the setup is incomplete (its banner's button too).
+  window.saOpenSettings = () => show("settings");
 
-  // ----- Tổng quan: per brand, from queue.mjs (store, last research, posts, Metricool) + the skill check -----
+  // ----- Overview: per brand, from queue.mjs (library, last research, posts, Metricool) + the skill check -----
   let brandData = { brands: [], metricool: { brands: [] } };
-  const MC_TEXT = { draft: "nháp Metricool", scheduled: "đã hẹn giờ", published: "đã đăng", error: "lỗi Metricool", not_sent: "chưa gửi" };
-  // Skill picker (Chọn skill / Đổi skill): a source folder (or a skill folder path pasted), Tìm, the skill folders found
-  // (one choice), then Nối: the Metricool brand points to that folder. Nothing is copied; the tool works in that folder.
+  const MC_TEXT = { draft: "waiting to send (old Metricool draft)", scheduled: "scheduled", published: "published", error: "Metricool error", not_sent: "not sent" };
+  // Skill picker (Choose skill / Change skill): a source folder (or a skill folder path pasted), Find, the skill folders
+  // found with their readiness (one choice), then Link: the Metricool brand points to that folder. Nothing is copied.
   let skillSource = "";
   async function skillPicker(panel, mcName) {
     if (!panel.hidden) { panel.hidden = true; return; }
     panel.hidden = false;
     if (!skillSource) { const r = await getJson("/api/skills").catch(() => ({})); skillSource = r.default_source || ""; }
-    panel.innerHTML = `<div class="find-row"><input data-from value="${esc(skillSource)}" title="Thư mục chứa các bộ skill, hoặc dán đường dẫn một bộ skill" aria-label="Thư mục skill"><button class="btn" type="button" data-find>Tìm</button></div>
-      <div class="found"></div><div class="row-actions" data-go-row hidden><button class="btn primary" type="button" data-link>Nối</button></div><div class="msg"></div>`;
+    panel.innerHTML = `<div class="find-row"><input data-from value="${esc(skillSource)}" title="A folder holding skill folders, or the path of one skill folder" aria-label="Skill folder"><button class="btn" type="button" data-find>Find</button></div>
+      <div class="found"></div><div class="row-actions" data-go-row hidden><button class="btn primary" type="button" data-link>Link</button></div><div class="msg"></div>`;
     const msg = panel.querySelector(".msg");
     panel.querySelector("[data-find]").onclick = async () => {
       skillSource = panel.querySelector("[data-from]").value.trim();
+      panel.querySelector(".found").innerHTML = `<div class="meta">Checking skills…</div>`;
       const r = await postJson("/api/skills/sources", { from: skillSource }).catch(() => offline);
       panel.querySelector("[data-go-row]").hidden = true;
-      if (r.error) { panel.querySelector(".found").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
-      const list = (r.sources || []).filter((x) => x.valid_id && (!x.linked_to || x.linked_to === mcName));
-      // Each folder with its readiness (the skill's own check): green dot Dùng được, red dot Còn thiếu N mục (list in tooltip).
-      const state = (x) => x.ready ? `<span class="dot dot-green"></span><span class="ok-text">Dùng được</span>` : `<span class="dot dot-red"></span><span class="bad-text" title="${esc((x.problems || []).join("\n"))}">Còn thiếu ${(x.problems || []).length || 1} mục</span>`;
-      panel.querySelector(".found").innerHTML = list.map((x, i) => `<label title="${esc(x.dir)}"><input type="radio" name="pick-${esc(mcName)}" value="${esc(x.dir)}"${i ? "" : " checked"}> ${esc(x.brand || x.id)} <span class="meta">${esc(x.id)}${x.linked_to ? " · đang nối" : ""}</span> ${state(x)}</label>`).join("")
-        || `<div class="meta">Không có bộ skill nào chưa nối ở đây.</div>`;
+      if (r.error) { panel.querySelector(".found").innerHTML = errLine(r.error); return; }
+      const list = arr(r.sources).filter((x) => x.valid_id && (!x.linked_to || x.linked_to === mcName));
+      // Each folder with its readiness (the skill's own check): green Usable, red Missing N (list in the tooltip).
+      const state = (x) => x.ready ? `<span class="dot dot-green"></span><span class="ok-text">Usable</span>` : `<span class="dot dot-red"></span><span class="bad-text" title="${esc(arr(x.problems).join("\n"))}">Missing ${arr(x.problems).length || 1}</span>`;
+      panel.querySelector(".found").innerHTML = list.map((x, i) => `<label title="${esc(x.dir)}"><input type="radio" name="pick-${esc(mcName)}" value="${esc(x.dir)}"${i ? "" : " checked"}> ${esc(x.brand || x.id)} <span class="meta">${esc(x.id)}${x.linked_to ? " · linked" : ""}</span> ${state(x)}</label>`).join("")
+        || `<div class="meta">No unlinked skill folders here.</div>`;
       panel.querySelector("[data-go-row]").hidden = !list.length;
     };
     panel.querySelector("[data-link]").onclick = async (e) => {
@@ -313,85 +336,87 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       e.target.disabled = true;
       const r = await postJson("/api/metricool-link", { name: mcName, skill_path: dir }).catch(() => offline);
       e.target.disabled = false;
-      if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; return; }
+      if (r.error) { msg.innerHTML = errLine(r.error); return; }
       panel.hidden = true;
-      ovMsg({}, `Đã nối ${mcName}.`);
+      ovMsg({}, `Linked ${mcName}.`);
     };
     panel.querySelector("[data-find]").click();
   }
-  const ovMsg = (r, ok) => { $("#ovMsg").innerHTML = r.error ? `<span class="bad-text">${esc(r.error)}</span>` : `<span class="ok-text">${esc(ok)}</span>`; if (!r.error) loadOverview(); };
-  async function loadOverview() {
+  const ovMsg = (r, ok) => { $("#ovMsg").innerHTML = r.error ? errLine(r.error) : `<span class="ok-text">${esc(ok)}</span>`; if (!r.error) loadOverview(); };
+  const loadOverview = safely("#ovList", async () => {
     const [q, b] = await Promise.all([getJson("/api/queue"), getJson("/api/brands")]).catch(() => [offline, {}]);
-    if (q.error) { $("#ovList").innerHTML = `<div class="bad-text">${esc(q.error)}</div>`; return; }
+    if (q.error) { $("#ovList").innerHTML = errLine(q.error); return; }
+    if (b.error) { $("#ovList").innerHTML = errLine(b.error); return; }
     if (b.brands) brandData = b;
     const num = (o, k) => o?.[k] || 0;
     const NET = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", linkedin: "LinkedIn", twitter: "X", threads: "Threads", pinterest: "Pinterest", gmb: "Google Business" };
     const net = (n) => NET[n] || n;
-    // Every brand in one list, all equal: each Metricool brand (with its skill or not), then each skill not linked to
-    // a Metricool brand. "Còn thiếu" = everything the brand still needs to run, in plain words; empty = Sẵn sàng.
-    const skills = Object.fromEntries((b.brands || []).map((s) => [s.id, s]));
-    const queue = Object.fromEntries((q.brands || []).map((x) => [x.brand, x]));
-    const rows = [...(b.metricool?.brands || []).map((m) => ({ m, id: m.skill_id || "" })),
-      ...(b.brands || []).filter((s) => !(b.metricool?.brands || []).some((m) => m.skill_id === s.id)).map((s) => ({ m: null, id: s.id }))];
+    const mcBrands = arr(b.metricool?.brands);
+    // Every brand in one list: each Metricool brand (with its skill or not), then each skill not linked to a Metricool
+    // brand. "Missing" = everything the brand still needs to run, in plain words; empty = ready.
+    const skills = Object.fromEntries(arr(b.brands).map((s) => [s.id, s]));
+    const queue = Object.fromEntries(arr(q.brands).map((x) => [x.brand, x]));
+    const rows = [...mcBrands.map((m) => ({ m, id: m.skill_id || "" })),
+      ...arr(b.brands).filter((s) => !mcBrands.some((m) => m.skill_id === s.id)).map((s) => ({ m: null, id: s.id }))];
     const missingOf = ({ m, id }) => {
       const s = skills[id], out = [];
-      if (!m) out.push("Chưa nối brand Metricool");
-      if (!s) out.push(m?.skill_id && m.skill_path_missing ? "Không tìm thấy thư mục skill (đã đổi tên hoặc di chuyển?)" : "Chưa có bộ skill");
+      if (!m) out.push("Not linked to a Metricool brand");
+      if (!s) out.push(m?.skill_id && m.skill_path_missing ? "Skill folder not found (renamed or moved?)" : "No skill");
       if (s) {
-        if (!s.enabled) out.push("Chưa bật (Sửa, Bật chạy tự động)");
-        if (!s.sources?.length) out.push("Chưa có nguồn tham khảo (Sửa, Nguồn tham khảo)");
-        if (m) for (const c of s.channels || []) if (!(m.networks || []).includes(c)) out.push(`Chưa nối ${net(c)} trong Metricool`);
-        if (m?.tz_conflict) out.push(`Múi giờ social.json (${s.metricool_timezone}) khác múi giờ brand trong Metricool (${m.timezone}) (Sửa, Nâng cao: metricool.timezone)`);
-        for (const p of s.problems || []) out.push(p);
+        if (!s.enabled) out.push("Not enabled (Edit, Run automatically)");
+        if (!arr(s.sources).length) out.push("No reference sources (Edit, Sources)");
+        if (m) for (const c of arr(s.channels)) if (!arr(m.networks).includes(c)) out.push(`${net(c)} not connected in Metricool`);
+        if (m?.tz_conflict) out.push(`social.json timezone (${s.metricool_timezone}) differs from the Metricool brand (${m.timezone}) (Edit, Advanced: metricool.timezone)`);
+        for (const p of arr(s.problems)) out.push(p);
       }
       return [...new Set(out)];
     };
-    // Card actions (top right): with a linked skill Sửa · Đổi skill · Ngắt kết nối; a Metricool brand without a skill
-    // Chọn skill; a skill without a Metricool brand Sửa · Kết nối. The skill folder itself is never moved or deleted.
-    const mcFree = (b.metricool?.brands || []).filter((m) => !m.skill_id || !skills[m.skill_id]);
+    // Card actions (top right): linked skill Edit · Change skill · Unlink; a Metricool brand without a skill Choose skill;
+    // a skill without a Metricool brand Edit · Link. The skill folder itself is never moved or deleted.
+    const mcFree = mcBrands.filter((m) => !m.skill_id || !skills[m.skill_id]);
     const actions = ({ m, id }) => {
       const s = skills[id], out = [];
       const btn = (attr, v, text, tip = "") => `<button class="btn" type="button" ${attr}="${esc(v)}"${tip ? ` title="${esc(tip)}"` : ""}>${text}</button>`;
-      if (s) out.push(btn("data-edit", s.id, "Sửa"));
-      if (m && !s && !m.skill_id) out.push(btn("data-pick", m.name, "Chọn skill", "Nối brand này với một thư mục skill"));
-      if (m && !s && m.skill_id) out.push(btn("data-pick", m.name, "Đổi skill", "Trỏ brand này tới thư mục skill mới"), btn("data-unlink", m.name, "Ngắt kết nối", "Bỏ liên kết tới thư mục skill"));
-      if (m && s) out.push(btn("data-pick", m.name, "Đổi skill", "Nối brand này với thư mục skill khác"), btn("data-unlink", m.name, "Ngắt kết nối", "Tool thôi làm và gửi bài cho brand này; thư mục skill và kho vẫn giữ"));
-      if (!m && s && mcFree.length) out.push(btn("data-connect", s.dir, "Kết nối", "Nối bộ skill này với một brand Metricool"));
+      if (s) out.push(btn("data-edit", s.id, "Edit"));
+      if (m && !s && !m.skill_id) out.push(btn("data-pick", m.name, "Choose skill", "Link this brand to a skill folder"));
+      if (m && !s && m.skill_id) out.push(btn("data-pick", m.name, "Change skill", "Point this brand to the skill folder's new place"), btn("data-unlink", m.name, "Unlink", "Remove the link to the skill folder"));
+      if (m && s) out.push(btn("data-pick", m.name, "Change skill", "Link this brand to another skill folder"), btn("data-unlink", m.name, "Unlink", "The tool stops making and sending posts for this brand; the skill folder and library stay"));
+      if (!m && s && mcFree.length) out.push(btn("data-connect", s.dir, "Link", "Link this skill to a Metricool brand"));
       return `<div class="acts">${out.join("")}</div>`;
     };
-    // Short card: only rows that say something. A counter shows only when > 0; empty rows are left out; the dot says
-    // ready (green) or something missing (red), and Còn thiếu lists it.
+    // Short card: only rows that say something; a counter shows only when > 0. The dot: ready (green) or missing (red).
     const card = (row) => {
       const { m, id } = row, s = skills[id], x = queue[id], miss = missingOf(row);
       const name = m?.name || s?.brand || id;
       const r = x?.research, st = x?.store, d = x?.drafts || {}, mc = x?.metricool || {};
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
       const parts = (list) => list.filter(Boolean).join(" · ");
-      const none = `<span class="muted">Chưa có bài</span>`;
-      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} bài</a>`, st.new && `${st.new} mới`, st.used && `${st.used} đã dùng`, st.rejected && `${st.rejected} đã bỏ`]) : none;
-      const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} bài mới`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} bài trùng bỏ qua`, r.pending.length && `chưa xong: ${esc(r.pending.join(", "))}`]) : "";
-      const blocked = r?.blocked?.length ? `<div class="bad-text">Bị chặn: ${esc(r.blocked.join("; "))}</div>` : "";
-      const posts = parts([x?.written.length && `<a href="#" data-go="posts" data-brand="${esc(id)}">${x.written.length} đã ghi vào thương hiệu</a>`, num(d, "ready") && `${num(d, "ready")} qua kiểm tra chưa ghi`, working && `${working} đang làm`, failed && `<span class="bad-text">${failed} lỗi</span>`]) || none;
+      const none = `<span class="muted">No posts yet</span>`;
+      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.new && `${st.new} new`, st.used && `${st.used} used`, st.rejected && `${st.rejected} dropped`]) : none;
+      const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} new`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} duplicates skipped`, arr(r.pending).length && `unfinished: ${esc(arr(r.pending).join(", "))}`]) : "";
+      const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
+      const written = arr(x?.written).length;
+      const posts = parts([written && `<a href="#" data-go="posts" data-brand="${esc(id)}">${written} written to the brand</a>`, num(d, "ready") && `<a href="#" data-go="posts" data-review="1" data-brand="${esc(id)}">${num(d, "ready")} need review</a>`, working && `${working} in progress`, failed && `<span class="bad-text">${failed} failed</span>`]) || none;
       const sent = Object.keys(MC_TEXT).filter((k) => mc[k]).map((k) => `<span class="${k === "error" ? "bad-text" : ""}">${mc[k]} ${MC_TEXT[k]}</span>`).join(" · ");
       return `<div class="card ${miss.length ? "todo" : "ok"}">
-        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Còn thiếu" : "Sẵn sàng"}" aria-label="${miss.length ? "Còn thiếu" : "Sẵn sàng"}"></span>${esc(name)}</h3>${actions(row)}</div>
+        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span>${esc(name)}</h3>${actions(row)}</div>
         <dl class="kv">
-          <dt>Metricool</dt><dd>${m ? `${esc(m.name)} · ${esc((m.networks || []).map(net).join(", ") || "chưa nối kênh nào")} · múi giờ ${esc(m.timezone || "-")}` : `<span class="muted">Chưa có brand Metricool</span>`}</dd>
-          ${s ? `<dt>Bộ skill</dt><dd>${esc(s.id)}</dd>` : ""}
-          ${x ? `<dt>Kho</dt><dd>${kho}</dd>
-          ${research || blocked ? `<dt>Nghiên cứu gần nhất</dt><dd>${research}${blocked}</dd>` : ""}
-          <dt>Bài đã tạo</dt><dd>${posts}</dd>
-          ${sent ? `<dt>Đã gửi</dt><dd>${sent}</dd>` : ""}` : ""}
-          ${miss.length ? `<dt>Còn thiếu</dt><dd><ul class="missing" style="margin:0">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
+          <dt>Metricool</dt><dd>${m ? `${esc(m.name)} · ${esc(arr(m.networks).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}` : `<span class="muted">No Metricool brand</span>`}</dd>
+          ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}
+          ${x ? `<dt>Library</dt><dd>${kho}</dd>
+          ${research || blocked ? `<dt>Last research</dt><dd>${research}${blocked}</dd>` : ""}
+          <dt>Posts</dt><dd>${posts}</dd>
+          ${sent ? `<dt>Sent</dt><dd>${sent}</dd>` : ""}` : ""}
+          ${miss.length ? `<dt>Missing</dt><dd><ul class="missing" style="margin:0">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
         </dl>
         <div class="picker" data-panel hidden></div>
       </div>`;
     };
-    $("#ovList").innerHTML = rows.map(card).join("") || `<div class="meta">Chưa có thương hiệu nào.</div>`;
+    $("#ovList").innerHTML = rows.map(card).join("") || `<div class="meta">No brands yet.</div>`;
     for (const btn of $$("#ovList [data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
     for (const btn of $$("#ovList [data-unlink]")) btn.onclick = async () => {
-      if (!confirm(`Ngắt kết nối "${btn.dataset.unlink}" khỏi Metricool? Tool sẽ không gửi bài của brand này lên Metricool nữa; bộ skill và kho vẫn giữ.`)) return;
-      ovMsg(await postJson("/api/metricool-link", { name: btn.dataset.unlink, skill_path: null }).catch(() => offline), "Đã ngắt kết nối.");
+      if (!confirm(`Unlink "${btn.dataset.unlink}"? The tool stops making and sending posts for this Metricool brand. The skill folder and the library stay.`)) return;
+      ovMsg(await postJson("/api/metricool-link", { name: btn.dataset.unlink, skill_path: null }).catch(() => offline), "Unlinked.");
     };
     const panelOf = (btn) => btn.closest(".card").querySelector("[data-panel]");
     for (const btn of $$("#ovList [data-pick]")) btn.onclick = () => skillPicker(panelOf(btn), btn.dataset.pick);
@@ -399,55 +424,55 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const panel = panelOf(btn);
       if (!panel.hidden) { panel.hidden = true; return; }
       panel.hidden = false;
-      panel.innerHTML = `<div class="find-row"><select aria-label="Brand Metricool">${mcFree.map((m) => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join("")}</select><button class="btn primary" type="button">Nối</button></div>`;
-      panel.querySelector("button").onclick = async () => ovMsg(await postJson("/api/metricool-link", { name: panel.querySelector("select").value, skill_path: btn.dataset.connect }).catch(() => offline), "Đã kết nối.");
+      panel.innerHTML = `<div class="find-row"><select aria-label="Metricool brand">${mcFree.map((m) => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join("")}</select><button class="btn primary" type="button">Link</button></div>`;
+      panel.querySelector("button").onclick = async () => ovMsg(await postJson("/api/metricool-link", { name: panel.querySelector("select").value, skill_path: btn.dataset.connect }).catch(() => offline), "Linked.");
     };
     for (const a of $$("#ovList [data-go]")) a.onclick = (e) => {
       e.preventDefault();
       if (a.dataset.go === "store") { $("#resBrand").innerHTML = `<option value="${esc(a.dataset.brand)}" selected></option>`; store.set("resBrand", a.dataset.brand); }
-      if (a.dataset.go === "posts") store.set("drBrand", a.dataset.brand);
+      if (a.dataset.go === "posts") { store.set("drBrand", a.dataset.brand); store.set("drStatus", a.dataset.review ? "review" : ""); $("#drStatus").value = a.dataset.review ? "review" : ""; }
       show(a.dataset.go);
     };
-  }
+  });
 
-  // ----- Sửa một thương hiệu: only what people change; the rest under Nâng cao (raw JSON) -----
+  // ----- Edit a brand: only what people change; the rest under Advanced (raw JSON) -----
   let editing = null, rawMode = false;
-  const DAYS = [["mon", "T2"], ["tue", "T3"], ["wed", "T4"], ["thu", "T5"], ["fri", "T6"], ["sat", "T7"], ["sun", "CN"]];
+  const DAYS = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"], ["sat", "Sat"], ["sun", "Sun"]];
   const slug = (u) => "src-" + u.replace(/^https?:\/\/(www\.)?/, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 40);
   async function openBrand(id) {
     $("#brandMsg").textContent = "";
     const r = await getJson(`/api/brand?id=${encodeURIComponent(id)}`).catch(() => offline);
-    if (r.error) { $("#brandForm").innerHTML = ""; $("#brandTitle").textContent = id; $("#brandMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; show("brand"); return; }
+    if (r.error || !r.social) { $("#brandForm").innerHTML = ""; $("#brandTitle").textContent = id; $("#brandMsg").innerHTML = errLine(r.error || RESTART); show("brand"); return; }
     editing = { id, social: r.social, file: r.file };
     rawMode = false;
     const s = r.social, pi = s.product_images || {}, rr = pi.reference_redraw || {};
-    const slots = s.cadence?.slots || [], sources = s.research?.sources || [];
+    const slots = arr(s.cadence?.slots), sources = arr(s.research?.sources);
     $("#brandTitle").textContent = s.brand || id;
     $("#brandForm").innerHTML = `<fieldset id="simple">
-      <div class="inline"><label><input type="checkbox" id="fEnabled"${s.enabled ? " checked" : ""}> Bật chạy tự động</label>
-        <label><input type="checkbox" id="fRedraw"${rr.enabled ? " checked" : ""}> Cho đổi cảnh ảnh shop (scene-swap)</label></div>
-      <div class="grid2"><div><label>Cho dựng cảnh bằng AI</label><select id="fAi"><option value="null"${pi.ai_scenes_allowed == null ? " selected" : ""}>chưa chốt</option><option value="true"${pi.ai_scenes_allowed === true ? " selected" : ""}>có</option><option value="false"${pi.ai_scenes_allowed === false ? " selected" : ""}>không</option></select></div></div>
-      <label>Giờ đăng (theo múi giờ ${esc(s.cadence?.timezone || "-")})</label><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div>
-      <button class="btn" type="button" id="addSlot">+ Giờ</button>
-      <label>Nguồn tham khảo</label><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="bật"><span class="src-url">${esc(x.name || x.id)} <span class="meta">${esc(x.url)}</span></span></div>`).join("") || `<div class="meta">Chưa có nguồn.</div>`}</div>
-      <div class="slot"><input type="text" id="fNewSrc" placeholder="Thêm nguồn: dán URL trang tham khảo"><button class="btn" type="button" id="addSrc">Thêm</button></div>
+      <div class="inline"><label><input type="checkbox" id="fEnabled"${s.enabled ? " checked" : ""}> Run automatically</label>
+        <label title="Redraw a library shop photo with a new scene (scene-swap)"><input type="checkbox" id="fRedraw"${rr.enabled ? " checked" : ""}> Allow scene-swap</label></div>
+      <div class="grid2"><div><label>AI scenes</label><select id="fAi"><option value="null"${pi.ai_scenes_allowed == null ? " selected" : ""}>not decided</option><option value="true"${pi.ai_scenes_allowed === true ? " selected" : ""}>yes</option><option value="false"${pi.ai_scenes_allowed === false ? " selected" : ""}>no</option></select></div></div>
+      <label>Posting times (${esc(s.cadence?.timezone || "-")})</label><div id="fSlots">${slots.map((x) => slotRow(x)).join("")}</div>
+      <button class="btn" type="button" id="addSlot">+ Time</button>
+      <label>Sources</label><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
+      <div class="slot"><input type="text" id="fNewSrc" placeholder="Add a source: paste the page URL"><button class="btn" type="button" id="addSrc">Add</button></div>
     </fieldset>
-    <details><summary>Nâng cao (kênh, ngôn ngữ, ảnh sản phẩm, watermark, metricool: sửa JSON thô)</summary>
+    <details><summary>Advanced (raw social.json)</summary>
       <textarea class="prompt" id="fRaw" spellcheck="false">${esc(JSON.stringify(s, null, 2))}</textarea>
-      <div class="meta" id="rawNote">Sửa ở đây thì các ô phía trên bị bỏ qua khi lưu.</div></details>`;
+      <div class="meta" id="rawNote">Editing here ignores the fields above when saving.</div></details>`;
     $("#addSlot").onclick = () => $("#fSlots").insertAdjacentHTML("beforeend", slotRow({ day: "mon", time: "10:00" }));
     $("#fSlots").onclick = (e) => { if (e.target.dataset.rm) e.target.closest(".slot").remove(); };
     $("#addSrc").onclick = () => {
       const u = $("#fNewSrc").value.trim();
-      if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">URL phải bắt đầu bằng http(s)://</span>`; return; }
+      if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">The URL must start with http(s)://</span>`; return; }
       editing.added = [...(editing.added || []), { id: slug(u), name: u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60), platform: /facebook\.com/.test(u) ? "facebook" : "", url: u, enabled: true, what_to_take: "", notes: "" }];
-      $("#fSources").insertAdjacentHTML("beforeend", `<div class="slot"><input type="checkbox" checked disabled><span class="src-url">${esc(u)} <span class="meta">(mới, bấm Lưu)</span></span></div>`);
+      $("#fSources").insertAdjacentHTML("beforeend", `<div class="slot"><input type="checkbox" checked disabled><span class="src-url">${esc(u)} <span class="meta">(new, Save to keep)</span></span></div>`);
       $("#fNewSrc").value = ""; $("#brandMsg").textContent = "";
     };
-    $("#fRaw").oninput = () => { rawMode = true; for (const el of $$("#simple input, #simple select, #simple button")) el.disabled = true; $("#rawNote").textContent = "Đang sửa JSON thô: các ô phía trên đã tắt."; };
+    $("#fRaw").oninput = () => { rawMode = true; for (const el of $$("#simple input, #simple select, #simple button")) el.disabled = true; $("#rawNote").textContent = "Editing raw JSON: the fields above are off."; };
     show("brand");
   }
-  const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" value="${esc(x.time || "")}" placeholder="10:00" style="max-width:80px;flex:0 0 80px"><button class="btn" type="button" data-rm="1">Xoá</button></div>`;
+  const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" value="${esc(x.time || "")}" placeholder="10:00" style="max-width:80px;flex:0 0 80px"><button class="btn" type="button" data-rm="1">Remove</button></div>`;
   $("#brandBack").onclick = () => show("overview");
   $("#brandSave").onclick = async () => {
     const msg = $("#brandMsg");
@@ -465,18 +490,18 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         $$("#fSources .slot[data-i]").forEach((row) => { src[Number(row.dataset.i)].enabled = $("input", row).checked; });
         for (const a of editing.added || []) if (!src.some((x) => x.id === a.id)) src.push(a);
       }
-    } catch (e) { msg.innerHTML = `<span class="bad-text">JSON không hợp lệ: ${esc(e.message)}</span>`; return; }
-    msg.textContent = "Đang lưu và chạy check-skill…";
+    } catch (e) { msg.innerHTML = `<span class="bad-text">Invalid JSON: ${esc(e.message)}</span>`; return; }
+    msg.textContent = "Saving and running check-skill…";
     const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { social }).catch(() => offline);
-    if (r.error) msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`;
-    else if (!r.saved) msg.innerHTML = `<span class="bad-text">Không lưu, đã trả lại bản cũ: ${esc((r.errors || []).join("; "))}</span>`;
-    else { msg.innerHTML = `<span class="ok-text">Đã lưu.${r.tool_ready ? " Sẵn sàng cho tool." : ` Còn thiếu ${(r.missing || []).length} mục.`}</span>`; editing.added = []; setTimeout(() => show("overview"), 900); }
+    if (r.error) msg.innerHTML = errLine(r.error);
+    else if (!r.saved) msg.innerHTML = `<span class="bad-text" title="${esc(arr(r.errors).join("\n"))}">Not saved; the previous file was kept (${arr(r.errors).length} problems).</span>`;
+    else { msg.innerHTML = `<span class="ok-text">Saved.${r.tool_ready ? " Ready for the tool." : ` Missing ${arr(r.missing).length} items.`}</span>`; editing.added = []; setTimeout(() => show("overview"), 900); }
   };
 
-  // ----- Nghiên cứu: the research store (kho) of each brand, kept apart per brand; "Bỏ" = never used for posts -----
-  const ITEM_TEXT = { new: "Mới", used: "Đã dùng", rejected: "Đã bỏ" };
+  // ----- Library: the research store of each brand, kept apart per brand; "Drop" = never used for posts -----
+  const ITEM_TEXT = { new: "New", used: "Used", rejected: "Dropped" };
   const ITEM_COLOR = { new: "c-green", used: "", rejected: "c-red" };
-  const STATE_TEXT = { end: "hết trang", known: "tới bài đã có", since: "tới mốc ngày", limit: "đủ số bài", blocked: "bị chặn", partial: "dừng giữa chừng" };
+  const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway" };
   let resShown = 60;
   // Cards that open in the overlay: a click anywhere except buttons, links, inputs and the Caption toggle; Enter too.
   function wireCards(cards, open) {
@@ -489,83 +514,82 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   // After the overlay closes: back to the card last shown (when it is still on the page).
   function focusCard(sel, id) { $$(sel).find((c) => c.dataset.id === id)?.focus(); }
-  // ‹ Trước / Sau › of the overlay header, the same for both lists.
-  const itemNav = (i, n) => `<span class="item-nav"><button class="btn" type="button" data-item="-1"${i ? "" : " disabled"}>‹ Trước</button><span class="meta">${i + 1}/${n}</span><button class="btn" type="button" data-item="1"${i < n - 1 ? "" : " disabled"}>Sau ›</button></span>`;
-  async function loadResearch() {
+  // ‹ Prev / Next › of the overlay header, the same for both lists.
+  const itemNav = (i, n) => `<span class="item-nav"><button class="btn" type="button" data-item="-1"${i ? "" : " disabled"}>‹ Prev</button><span class="meta">${i + 1}/${n}</span><button class="btn" type="button" data-item="1"${i < n - 1 ? "" : " disabled"}>Next ›</button></span>`;
+  const loadResearch = safely("#resBody", async () => {
     const brand = $("#resBrand").value || store.get("resBrand"), status = $("#resStatus").value, source = $("#resSource").value;
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
-    if (r.error) { $("#resBody").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
-    $("#resBrand").innerHTML = `<option value="">Chọn…</option>` + r.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)} (${b.counts.total} bài, ${b.counts.new} mới)</option>`).join("");
+    if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
+    $("#resBrand").innerHTML = `<option value="">Pick…</option>` + arr(r.brands).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)} (${b.counts?.total ?? 0} posts, ${b.counts?.new ?? 0} new)</option>`).join("");
     const c = r.current;
-    if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Chọn thương hiệu.</div>`; return; }
-    $("#resSource").innerHTML = `<option value="">Tất cả</option>` + c.sources.map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
-    const k = c.counts;
-    const prog = Object.entries(c.progress);
-    const progress = prog.length ? `<details><summary>Tiến độ crawl theo nguồn</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Nguồn</th><th>Lần cuối</th><th>Kết quả</th><th>Đã hết trang</th><th>Bài trong kho</th><th>Mới nhất</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} mới)</td><td>${p.reached_end ? "có" : "chưa"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
-    const list = c.items.slice(0, resShown);
-    $("#resBody").innerHTML = `<div class="meta">Kho ${esc(c.brand)}: ${k.total} bài · ${k.new} mới · ${k.used} đã dùng · ${k.rejected} đã bỏ. Đang hiện ${c.items.length} bài.</div>${progress}
+    if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
+    $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option${s === source ? " selected" : ""}>${esc(s)}</option>`).join("");
+    const k = c.counts || {};
+    const items = arr(c.items), ideas = arr(c.ideas);
+    const prog = Object.entries(c.progress || {});
+    const progress = prog.length ? `<details><summary>Crawl progress by source</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Source</th><th>Last run</th><th>Result</th><th>Reached end</th><th>In library</th><th>Newest</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} new)</td><td>${p.reached_end ? "yes" : "no"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
+    const list = items.slice(0, resShown);
+    $("#resBody").innerHTML = `<div class="meta">${k.total ?? 0} posts · ${k.new ?? 0} new · ${k.used ?? 0} used · ${k.rejected ?? 0} dropped. Showing ${items.length}.</div>${progress}
       <div class="refs" style="margin-top:8px">${list.map((it) => `<div class="card ref" data-id="${esc(it.id)}">
-        <button class="thumb" type="button" title="Xem lớn"><img loading="lazy" src="${img(it.image_paths[0])}" alt="">${it.image_paths.length > 1 ? `<span class="count">${it.image_paths.length} ảnh</span>` : ""}</button>
+        ${arr(it.image_paths).length ? `<button class="thumb" type="button" title="View"><img loading="lazy" src="${img(it.image_paths[0])}" alt="">${it.image_paths.length > 1 ? `<span class="count">${it.image_paths.length} images</span>` : ""}</button>` : `<div class="none">No image</div>`}
         <div class="head"><span>${esc(it.id)}</span><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>
-          <span class="acts">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Khôi phục</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Bỏ</button>` : ""}</span></div>
-        <div class="reject-box" hidden><input type="text" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-confirm>Bỏ</button></div>
-        <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · đăng ${esc(it.posted_date)}` : ""} · lấy ${esc(String(it.captured || "").slice(0, 10))}${it.post_url ? ` · <a href="${esc(it.post_url)}" target="_blank" rel="noopener">Bài gốc</a>` : ""}</div>
-        ${it.used_by?.length ? `<div class="meta">Dùng cho: ${esc(it.used_by.join(", "))}</div>` : ""}${it.note ? `<div class="meta">Lý do bỏ: ${esc(it.note)}</div>` : ""}
-        <details><summary>Caption</summary><pre>${esc(it.caption)}</pre></details></div>`).join("") || `<div class="meta">Không có bài nào ở bộ lọc này.</div>`}</div>
-      ${c.items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Xem thêm (${c.items.length - resShown})</button></div>` : ""}
-      <fieldset style="margin-top:12px"><legend>Ý tưởng từ kho</legend>${c.ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Bài kho</th><th>Trạng thái</th><th>Sản phẩm</th><th>Cảnh</th><th>Bản nháp</th></tr></thead><tbody>${c.ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc((i.drafts || []).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">Chưa có ý tưởng (chế độ "Làm bài & đưa lên").</div>`}</fieldset>`;
+          <span class="acts">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : ""}</span></div>
+        <div class="reject-box" hidden><input type="text" placeholder="Reason (optional)"><button class="btn" type="button" data-confirm>Drop</button></div>
+        <div class="meta">${esc(it.source_id)}${it.posted_date ? ` · posted ${esc(it.posted_date)}` : ""} · captured ${esc(String(it.captured || "").slice(0, 10))}${it.post_url ? ` · <a href="${esc(it.post_url)}" target="_blank" rel="noopener">Original</a>` : ""}</div>
+        ${arr(it.used_by).length ? `<div class="meta">Used for: ${esc(it.used_by.join(", "))}</div>` : ""}${it.note ? `<div class="meta">Drop reason: ${esc(it.note)}</div>` : ""}
+        <details><summary>Caption</summary><pre>${esc(it.caption)}</pre></details></div>`).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
+      ${items.length > resShown ? `<div class="row-actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}
+      <fieldset style="margin-top:12px"><legend>Ideas from the library</legend>${ideas.length ? `<div class="table-wrap"><table class="edit"><thead><tr><th>id</th><th>Library post</th><th>Status</th><th>Product</th><th>Scene</th><th>Drafts</th></tr></thead><tbody>${ideas.slice().reverse().map((i) => `<tr><td>${esc(i.id)}</td><td>${esc(i.item)}</td><td>${esc(i.status)}</td><td>${esc(i.product_type)}</td><td>${esc(i.scene)}</td><td>${esc(arr(i.drafts).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No ideas yet ("Create & publish" mode).</div>`}</fieldset>`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
     const cards = $$("#resBody .ref");
     wireCards(cards, (i) => openStoreItem(c.brand, list.slice(), i));
     for (const card of cards) {
-      const it = c.items.find((x) => x.id === card.dataset.id);
+      const it = items.find((x) => x.id === card.dataset.id);
       const setStatus = async (status, note = "") => {
         const res = await postJson("/api/store-item", { brand: c.brand, id: it.id, status, note }).catch(() => offline);
-        if (res.error) { card.insertAdjacentHTML("beforeend", `<div class="bad-text">${esc(res.error)}</div>`); return; }
+        if (res.error) { card.insertAdjacentHTML("beforeend", `<div>${errLine(res.error)}</div>`); return; }
         loadResearch();
       };
       if ($("[data-reject]", card)) $("[data-reject]", card).onclick = () => { const box = $(".reject-box", card); box.hidden = !box.hidden; if (!box.hidden) $("input", box).focus(); };
       if ($("[data-confirm]", card)) $("[data-confirm]", card).onclick = () => setStatus("rejected", $(".reject-box input", card).value);
       if ($("[data-restore]", card)) $("[data-restore]", card).onclick = () => setStatus("new");
     }
-  }
-  // One store item in the overlay: images (‹ ›, ←/→) left; facts, caption, duplicates, Bỏ/Khôi phục right;
-  // ‹ Trước / Sau › (↑/↓) walk the filtered list without closing. The panel keeps its own copy of the list, so an item
-  // that leaves the filter after Bỏ stays here until the panel closes; the list behind reloads.
+  });
+  // One library item in the overlay: images (‹ ›, ←/→) left; facts, caption, duplicates, Drop/Restore right;
+  // ‹ Prev / Next › (↑/↓) walk the filtered list without closing.
   function openStoreItem(brand, items, start) {
     let i = start, k = 0, msg = "";
     const go = (step) => { if (items[i + step]) { i += step; k = 0; msg = ""; draw(); } };
     const draw = () => {
-      const it = items[i], imgs = it.image_paths || [];
+      const it = items[i], imgs = arr(it.image_paths);
       k = Math.min(k, Math.max(0, imgs.length - 1));
       const nav = itemNav(i, items.length);
       const page = it.store || it.source_id || "?";
       const media = !imgs.length ? `<div class="video" style="aspect-ratio:1/1;background:#e4e6eb"></div>`
         : imgs.length === 1 ? `<div class="media n1"><img src="${img(imgs[0])}" alt="" data-big="0"></div>`
-        : `<div class="car"><img src="${img(imgs[k])}" alt="" data-big><button class="car-nav prev" type="button" data-img="-1" aria-label="Ảnh trước">‹</button><button class="car-nav next" type="button" data-img="1" aria-label="Ảnh sau">›</button><span class="car-count">${k + 1}/${imgs.length}</span></div>`;
-      const post = `<div class="pv fb"><div class="pv-tag">Bài của nguồn · ${esc(it.source_id)}</div>
-        <div class="pv-head"><div class="av">${esc(String(page).trim().charAt(0).toUpperCase())}</div><div class="who"><b>${esc(page)}</b><span>${esc(it.posted_date || `lấy ${String(it.captured || "").slice(0, 10)}`)} · Công khai</span></div></div>
-        <div class="txt">${it.caption ? postText(it.caption) : `<span class="muted">(không có caption)</span>`}</div>${media}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
+        : `<div class="car"><img src="${img(imgs[k])}" alt="" data-big><button class="car-nav prev" type="button" data-img="-1" aria-label="Previous image">‹</button><button class="car-nav next" type="button" data-img="1" aria-label="Next image">›</button><span class="car-count">${k + 1}/${imgs.length}</span></div>`;
+      const post = `<div class="pv fb"><div class="pv-tag">Source post · ${esc(it.source_id)}</div>
+        <div class="pv-head"><div class="av">${esc(String(page).trim().charAt(0).toUpperCase())}</div><div class="who"><b>${esc(page)}</b><span>${esc(it.posted_date || `captured ${String(it.captured || "").slice(0, 10)}`)} · Public</span></div></div>
+        <div class="txt">${it.caption ? postText(it.caption) : `<span class="muted">(no caption)</span>`}</div>${media}<div class="bar"><span>Like</span><span>Comment</span><span>Share</span></div></div>`;
       const stage = `<div class="pv-stage"><div class="pv-col">${post}</div></div>`;
-      const dups = it.duplicates || [];
-      const merged = (it.post_keys || []).length;
+      const dups = arr(it.duplicates);
+      const merged = arr(it.post_keys).length;
       const link = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>`;
       const side = `<dl class="kv">
-          <dt>Mã</dt><dd>${esc(it.id)}</dd>
-          <dt>Trạng thái</dt><dd><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.note ? ` <span class="meta">Lý do: ${esc(it.note)}</span>` : ""}</dd>
-          <dt>Nguồn</dt><dd>${it.source_url ? link(it.source_url, it.store || it.source_id) : esc(it.store || it.source_id)} <span class="meta">(${esc(it.source_id)})</span></dd>
-          <dt>Bài gốc</dt><dd>${it.post_url ? link(it.post_url, "Mở bài gốc ↗") : "-"}</dd>
-          <dt>Ngày đăng</dt><dd>${esc(it.posted_date || "-")}</dd>
-          <dt>Ngày lấy</dt><dd>${esc(String(it.captured || "-").slice(0, 16).replace("T", " "))}</dd>
-          <dt>Ảnh</dt><dd>${imgs.length}</dd>
-          ${it.main_product ? `<dt>Sản phẩm</dt><dd>${esc(it.main_product)}</dd>` : ""}${it.price_seen ? `<dt>Giá thấy</dt><dd>${esc(it.price_seen)}</dd>` : ""}
-          ${it.used_by?.length ? `<dt>Dùng cho</dt><dd>${esc(it.used_by.join(", "))}</dd>` : ""}
+          <dt>Status</dt><dd><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span>${it.note ? ` <span class="meta">Reason: ${esc(it.note)}</span>` : ""}</dd>
+          <dt>Source</dt><dd>${it.source_url ? link(it.source_url, it.store || it.source_id) : esc(it.store || it.source_id)}</dd>
+          <dt>Original</dt><dd>${it.post_url ? link(it.post_url, "Open original ↗") : "-"}</dd>
+          <dt>Posted</dt><dd>${esc(it.posted_date || "-")}</dd>
+          <dt>Captured</dt><dd>${esc(String(it.captured || "-").slice(0, 16).replace("T", " "))}</dd>
+          <dt>Images</dt><dd>${imgs.length}</dd>
+          ${it.main_product ? `<dt>Product</dt><dd>${esc(it.main_product)}</dd>` : ""}${it.price_seen ? `<dt>Price seen</dt><dd>${esc(it.price_seen)}</dd>` : ""}
+          ${arr(it.used_by).length ? `<dt>Used for</dt><dd>${esc(it.used_by.join(", "))}</dd>` : ""}
         </dl>
-        <div><div class="meta">Trùng lặp</div>${dups.length || merged > 1 ? `<ul class="sp-dups">${merged > 1 ? `<li>Một bài, ${merged} link (gộp khi lấy)</li>` : ""}${dups.map((x) => `<li>${esc(x.reason)}${x.detail ? ` (${esc(x.detail)})` : ""} · ${esc(x.source)} · ${esc(String(x.at).slice(0, 10))}${x.post_url ? ` · ${link(x.post_url, "bài trùng")}` : ""}</li>`).join("")}</ul>` : `<div class="meta">Không có bài trùng.</div>`}</div>
-        <div class="row-actions">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Khôi phục</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Bỏ</button>` : `<span class="meta">Đã dùng cho bài, không bỏ được.</span>`}</div>
-        <div class="reject-box" hidden><input type="text" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-confirm>Xác nhận bỏ</button></div>
+        <div><div class="meta">Duplicates</div>${dups.length || merged > 1 ? `<ul class="sp-dups">${merged > 1 ? `<li>One post, ${merged} links (merged when captured)</li>` : ""}${dups.map((x) => `<li>${esc(x.reason)}${x.detail ? ` (${esc(x.detail)})` : ""} · ${esc(x.source)} · ${esc(String(x.at).slice(0, 10))}${x.post_url ? ` · ${link(x.post_url, "duplicate")}` : ""}</li>`).join("")}</ul>` : `<div class="meta">No duplicates.</div>`}</div>
+        <div class="row-actions">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : `<span class="meta">Used for a post; cannot be dropped.</span>`}</div>
+        <div class="reject-box" hidden><input type="text" placeholder="Reason (optional)"><button class="btn" type="button" data-confirm>Confirm drop</button></div>
         <div class="msg">${msg}</div>`;
-      openOverlay(`Kho ${esc(brand)} · ${esc(it.id)}`, `<div class="pv-layout sp-layout">${stage}<div class="pv-side">${side}</div></div>`,
+      openOverlay(`Library ${esc(brand)} · ${esc(it.id)}`, `<div class="pv-layout sp-layout">${stage}<div class="pv-side">${side}</div></div>`,
         imgs.length > 1 ? (s) => { k = (k + s + imgs.length) % imgs.length; $(".car img", overlay).src = img(imgs[k]); $(".car-count", overlay).textContent = `${k + 1}/${imgs.length}`; } : null, nav, go);
       lbOnClose = () => focusCard("#resBody .ref", it.id);
       for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
@@ -576,9 +600,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const setStatus = async (status, note = "") => {
         for (const b of $$(".btn", box)) b.disabled = true;
         const res = await postJson("/api/store-item", { brand, id: it.id, status, note }).catch(() => offline);
-        if (res.error) { msg = `<span class="bad-text">${esc(res.error)}</span>`; draw(); return; }
+        if (res.error) { msg = errLine(res.error); draw(); return; }
         items[i] = { ...it, ...res.item, image_paths: it.image_paths, duplicates: it.duplicates };
-        msg = `<span class="ok-text">${status === "new" ? "Đã khôi phục." : "Đã bỏ."}</span>`;
+        msg = `<span class="ok-text">${status === "new" ? "Restored." : "Dropped."}</span>`;
         draw();
         loadResearch();
       };
@@ -594,155 +618,184 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#resStatus").onchange = () => { store.set("resStatus", $("#resStatus").value); resShown = 60; loadResearch(); };
   $("#resSource").onchange = () => { resShown = 60; loadResearch(); };
 
-  // ----- Prompt: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent), brand filled in -----
+  // ----- Prompt: the short prompts of docs/scheduled-prompt.md (mode x agent); brand and this run's options filled in.
+  // The prompt is read-only until Edit; Reset rebuilds it from the template and the options. -----
   let promptData = { prompts: [], brands: [] };
-  const fillPrompt = (text, brand) => text.replace(/\{\{BRAND\}\}/g, brand || promptData.all_brands || "tất cả");
+  let prMode = "", prKey = "", prBase = "";
+  const isResearch = (m) => /research/i.test(m);
   function drawPrompt() {
-    const modes = [...new Set(promptData.prompts.map((p) => p.mode))];
-    const mode = modes.includes($("#prMode").value) ? $("#prMode").value : modes.includes(store.get("prMode")) ? store.get("prMode") : modes[0];
-    $("#prMode").innerHTML = modes.map((m) => `<option${m === mode ? " selected" : ""}>${esc(m)}</option>`).join("");
-    const agents = promptData.prompts.filter((p) => p.mode === mode).map((p) => p.agent);
+    const prompts = arr(promptData.prompts), brands = arr(promptData.brands);
+    const modes = [...new Set(prompts.map((p) => p.mode))];
+    prMode = modes.includes(prMode) ? prMode : modes.includes(store.get("prMode")) ? store.get("prMode") : modes[0] || "";
+    $("#prMode").innerHTML = modes.map((m) => `<button class="btn" type="button" data-mode="${esc(m)}" aria-pressed="${m === prMode}">${esc(m)}</button>`).join("");
+    for (const b of $$("#prMode button")) b.onclick = () => { prMode = b.dataset.mode; store.set("prMode", prMode); drawPrompt(); };
+    const agents = prompts.filter((p) => p.mode === prMode).map((p) => p.agent);
     const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
     const brand = $("#prBrand").value || "";
-    $("#prBrand").innerHTML = `<option value="">Tất cả</option>` + promptData.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (đang tắt)"}</option>`).join("");
-    const research = /nghiên cứu/i.test(mode), make = /làm bài/i.test(mode);
-    $("#prResearch").hidden = !research;
-    $("#prMake").hidden = !make;
-    // Nguồn: the brand's enabled research sources (social.json); none ticked = all of them.
-    const b = promptData.brands.find((x) => x.id === brand);
+    $("#prBrand").innerHTML = `<option value="">All</option>` + brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
+    const research = isResearch(prMode);
+    $("#prResearch").hidden = !research; $("#prResearch").style.display = research ? "contents" : "none";
+    $("#prMake").hidden = research; $("#prMake").style.display = research ? "none" : "contents";
+    // Sources: the brand's enabled research sources (social.json); none ticked = all of them.
+    const b = brands.find((x) => x.id === brand);
     const ticked = new Set($$("#prSrc input:checked").map((x) => x.value));
-    $("#prSrc").innerHTML = b ? (b.sources.map((s) => `<label><input type="checkbox" value="${esc(s)}"${ticked.has(s) ? " checked" : ""}>${esc(s)}</label>`).join("") || `<div class="meta" style="padding:4px 10px">Chưa có nguồn nào bật.</div>`)
-      : `<div class="meta" style="padding:4px 10px">Chọn một thương hiệu để chọn nguồn.</div>`;
+    $("#prSrc").innerHTML = b ? (arr(b.sources).map((s) => `<label><input type="checkbox" value="${esc(s)}"${ticked.has(s) ? " checked" : ""}>${esc(s)}</label>`).join("") || `<div class="meta" style="padding:4px 10px">No enabled sources.</div>`)
+      : `<div class="meta" style="padding:4px 10px">Pick a brand to choose sources.</div>`;
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
     srcLabel();
-    $("#prSend").options[0].textContent = `Theo cài đặt (${promptData.metricool_default === "schedule" ? "Hẹn giờ" : "Nháp"})`;
-    prKey = `prEdit:${mode}|${agent}`;
-    const p = promptData.prompts.find((x) => x.mode === mode && x.agent === agent);
-    prBase = p ? fillPrompt(p.text, brand) : "";
+    // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
+    $("#prCount").placeholder = b?.posts_per_week ? String(b.posts_per_week) : "cadence";
+    $("#prCount").title = b?.posts_per_week ? `Brand cadence: ${b.posts_per_week} per week` : "Empty = each brand's cadence";
+    prKey = `prEdit2:${prMode}|${agent}`;
+    const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
+    prBase = p ? p.text : "";
     const saved = store.get(prKey);
     $("#prText").value = saved || buildPrompt();
+    setEditing(false);
+    fitPrompt();
   }
-  let prKey = "", prBase = "";
   function srcLabel() {
     const on = $$("#prSrc input:checked").map((x) => x.value);
-    $("#prSrcSum").textContent = on.length ? on.join(", ") : "Tất cả";
+    $("#prSrcSum").textContent = on.length ? on.join(", ") : "All";
   }
-  // The template + this run's options (only those set), as an instruction block the agent follows over the defaults.
-  function buildPrompt() {
-    if (!prBase) return "Không có prompt trong docs/scheduled-prompt.md.";
+  // This run's options as short lines (only those set); the steps themselves are in RUNBOOK.md.
+  function options() {
     const lines = [], brand = $("#prBrand").value;
-    if (!$("#prResearch").hidden) {
+    if (isResearch(prMode)) {
       const src = $$("#prSrc input:checked").map((x) => x.value), since = $("#prSince").value, max = parseInt($("#prMax").value, 10), kind = $("#prKind").value;
-      const flags = [src.length ? `--source ${src.join(",")}` : "", since ? `--since ${since}` : "", max > 0 ? `--max-posts ${max}` : "", kind !== "new" ? `--${kind}` : ""].filter(Boolean);
-      if (src.length) lines.push(`Chỉ crawl các nguồn: ${src.join(", ")}.`);
-      if (since) lines.push(`Chỉ lấy bài đăng từ ngày ${since} trở về sau.`);
-      if (max > 0) lines.push(`Tối đa ${max} bài mỗi nguồn.`);
-      if (kind === "backfill") lines.push("Kiểu: lấy bài CŨ chưa crawl (--backfill): lướt nhanh qua bài đã có, lấy bài cũ hơn bài cũ nhất trong kho.");
-      if (kind === "full") lines.push("Kiểu: quét lại toàn bộ trang (--full).");
-      if (flags.length) lines.push(`Lệnh bắt đầu: node scripts/research.mjs start --brand ${brand || "<id>"} ${flags.join(" ")}`);
+      if (src.length) lines.push(`sources ${src.join(", ")} (--source ${src.join(",")})`);
+      if (since) lines.push(`posts since ${since} (--since ${since})`);
+      if (max > 0) lines.push(`at most ${max} posts per source (--max-posts ${max})`);
+      if (kind === "backfill") lines.push("backfill older posts (--backfill)");
+      if (kind === "full") lines.push("full rescan (--full)");
+    } else {
+      const count = parseInt($("#prCount").value, 10);
+      const def = arr(promptData.brands).find((x) => x.id === brand)?.posts_per_week;
+      if (count > 0 && count !== def) lines.push(`${count} posts (ideas.mjs init --count ${count})`);
     }
-    if (!$("#prMake").hidden) {
-      const count = parseInt($("#prCount").value, 10), send = $("#prSend").value;
-      if (count > 0) lines.push(`Làm ${count} bài (node scripts/ideas.mjs init --brand ${brand || "<id>"} --count ${count}).`);
-      if (send === "draft") lines.push("Gửi Metricool dạng NHÁP cho lượt này (không dùng --schedule), bất kể settings.metricool.default_mode.");
-      if (send === "schedule") lines.push("Lượt này HẸN GIỜ THẬT trên Metricool (dùng --schedule khi tạo payload), bất kể settings.metricool.default_mode.");
-    }
-    return lines.length ? `${prBase}\n\nTùy chọn của lượt này (ưu tiên hơn mặc định ở trên):\n${lines.map((l) => `- ${l}`).join("\n")}` : prBase;
+    return lines.length ? lines.join("; ") : "defaults";
+  }
+  function buildPrompt() {
+    if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
+    return prBase.replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
+  }
+  // The box is as tall as the window allows (flex) and never shorter than its text when there is room.
+  function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
+  function setEditing(on) {
+    $("#prText").readOnly = !on;
+    $("#prEdit").textContent = on ? "Done" : "Edit";
+    $("#prEdit").setAttribute("aria-pressed", String(on));
+    if (on) $("#prText").focus();
   }
   // An option changed: the prompt is rebuilt (an earlier hand edit of this mode x agent is dropped).
-  function regenerate() { store.set(prKey, ""); $("#prText").value = buildPrompt(); }
-  async function loadPrompts() {
+  function regenerate() { store.set(prKey, ""); $("#prText").value = buildPrompt(); setEditing(false); }
+  const loadPrompts = safely("#prMsg", async () => {
     const r = await getJson("/api/prompts").catch(() => offline);
     if (r.error) { $("#prText").value = r.error; return; }
+    if (!Array.isArray(r.prompts)) throw new Error("prompts missing");
     promptData = r;
     drawPrompt();
-  }
-  $("#prMode").onchange = () => { store.set("prMode", $("#prMode").value); drawPrompt(); };
+  });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
-  for (const id of ["#prSince", "#prMax", "#prKind", "#prCount", "#prSend"]) $(id).onchange = regenerate;
+  for (const id of ["#prSince", "#prMax", "#prKind", "#prCount"]) $(id).onchange = regenerate;
   $("#prText").oninput = () => store.set(prKey, $("#prText").value);
+  $("#prEdit").onclick = () => setEditing($("#prText").readOnly);
   document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
-  $("#prReset").onclick = () => {
-    regenerate();
-    $("#prMsg").textContent = "Đã tạo lại.";
-    setTimeout(() => { $("#prMsg").textContent = ""; }, 2000);
-  };
+  const hint = $("#prMsg").textContent;
+  const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
+  $("#prReset").onclick = () => { regenerate(); flash("Reset."); };
   $("#prCopy").onclick = async () => {
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
-    $("#prMsg").textContent = "Đã chép.";
-    setTimeout(() => { $("#prMsg").textContent = ""; }, 2000);
+    flash("Copied.");
   };
 
-  // ----- Bài đã tạo: image(s), status of the automatic checks, hosted image, Metricool; optional "Bỏ" before written -----
-  const STATUS_TEXT = { ready: "Qua kiểm tra", approved: "Đã ghi vào thương hiệu", check_failed: "Lỗi kiểm tra", rejected: "Đã bỏ", needs_prompt: "Chờ prompt", needs_caption: "Chờ caption", generating: "Đang tạo ảnh", image_failed: "Lỗi ảnh", preparing: "Đang chuẩn bị", awaiting_approval: "Bản cũ (trước khi bỏ bước duyệt)" };
-  const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "c-red", image_failed: "c-red", check_failed: "c-red" };
-  const SENT = (d, st) => d.brand_post?.metricool === st;
+  // ----- Posts: image(s), automatic checks, hosted image, Metricool; optional "Drop" before written -----
+  const STATUS_TEXT = { ready: "Needs review", approved: "Approved", check_failed: "Failed checks", rejected: "Dropped", needs_prompt: "Making", needs_caption: "Making", generating: "Making", image_failed: "Image failed", preparing: "Making" };
+  const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "", image_failed: "c-red", check_failed: "c-red" };
+  const MC = (d) => d.brand_post?.metricool;
   const GROUP = {
-    working: (d) => ["needs_prompt", "generating", "needs_caption", "preparing", "awaiting_approval"].includes(d.status),
-    ready: (d) => ["ready", "approved"].includes(d.status) && !["draft", "scheduled", "published", "error"].includes(d.brand_post?.metricool),
-    failed: (d) => ["check_failed", "image_failed"].includes(d.status),
-    mc_draft: (d) => SENT(d, "draft"), scheduled: (d) => SENT(d, "scheduled"), published: (d) => SENT(d, "published"), mc_error: (d) => SENT(d, "error"),
+    review: (d) => d.status === "ready" && !d.brand_post,
+    working: (d) => ["needs_prompt", "generating", "needs_caption", "preparing"].includes(d.status),
+    approved: (d) => !!d.brand_post && !["scheduled", "published", "error"].includes(MC(d)),
+    scheduled: (d) => MC(d) === "scheduled", published: (d) => MC(d) === "published",
+    failed: (d) => ["check_failed", "image_failed"].includes(d.status) || MC(d) === "error",
     rejected: (d) => d.status === "rejected",
   };
   const MC_COLOR = { draft: "c-amber", scheduled: "c-green", published: "c-green", error: "c-red" };
-  async function loadDrafts() {
+  const loadDrafts = safely("#draftList", async () => {
     const brand = store.get("drBrand"), group = $("#drStatus").value;
     const r = await getJson(`/api/drafts?brand=${encodeURIComponent(brand || "")}`).catch(() => offline);
-    if (r.error) { $("#draftList").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
-    if (!brandData.brands.length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
-    $("#drBrand").innerHTML = `<option value="">Tất cả</option>` + brandData.brands.map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
-    const list = r.drafts.filter((d) => !group || GROUP[group]?.(d));
+    if (r.error) { $("#draftList").innerHTML = errLine(r.error); return; }
+    if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
+    $("#drBrand").innerHTML = `<option value="">All</option>` + arr(brandData.brands).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.brand || b.id)}</option>`).join("");
+    const drafts = arr(r.drafts);
+    const list = drafts.filter((d) => !group || GROUP[group]?.(d));
     drList = list;
-    const n = (g) => r.drafts.filter(GROUP[g]).length;
-    const counts = `<div class="meta">${r.drafts.length} bài · ${n("working")} đang làm · ${n("ready")} sẵn sàng · ${n("failed")} lỗi kiểm tra · ${n("mc_draft")} đã gửi nháp · ${n("scheduled")} đã hẹn giờ · ${n("published")} đã đăng · ${n("mc_error")} lỗi Metricool · ${n("rejected")} đã bỏ. Đang hiện ${list.length} bài.</div>`;
+    const n = (g) => drafts.filter(GROUP[g]).length;
+    const counts = `<div class="meta">${[`${drafts.length} posts`, ...[["review", "need review"], ["working", "making"], ["approved", "approved, waiting to send"], ["scheduled", "scheduled"], ["published", "published"], ["failed", "failed"], ["rejected", "dropped"]].filter(([g]) => n(g)).map(([g, t]) => `${n(g)} ${t}`)].join(" · ")}. Showing ${list.length}.</div>`;
     $("#draftList").innerHTML = counts + (list.length ? `<div class="refs" style="margin-top:8px">${list.map((d) => {
-      const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", thumb = draftThumb(d), nMedia = (d.preview?.media || []).length;
+      const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", thumb = draftThumb(d), nMedia = arr(d.preview?.media).length;
       return `<div class="card ref draft" data-id="${esc(d.id)}">
-        ${thumb ? `<button class="thumb" type="button" title="Xem trước"><img loading="lazy" src="${img(thumb)}" alt="">${nMedia > 1 ? `<span class="count">${nMedia} ảnh</span>` : ""}</button>` : `<div class="none">Chưa có ảnh</div>`}
-        <div class="head"><span title="${esc(d.id)}">${esc(bp?.post || d.id)}</span>${draftTags(d)}
-          <span class="acts"><button class="btn" type="button" data-act="preview">Xem trước</button>${canCancel ? `<button class="btn" type="button" data-act="cancel">Bỏ</button>` : ""}</span></div>
-        ${canCancel ? `<div class="reject-box" hidden><input class="note" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-act="cancel-go">Bỏ</button></div>` : ""}
-        <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)}${plannedOf(d) !== "-" ? ` · đăng ${esc(plannedOf(d))}` : ""} · ${esc(d.idea)}</div>
+        ${thumb ? `<button class="thumb" type="button" title="Preview"><img loading="lazy" src="${img(thumb)}" alt="">${nMedia > 1 ? `<span class="count">${nMedia} images</span>` : ""}</button>` : `<div class="none">No image yet</div>`}
+        <div class="head"><span>${esc(bp?.post || d.idea || d.brand)}</span>${stepTag(d)}
+          <span class="acts"><button class="btn" type="button" data-act="preview">Preview</button>${canCancel ? `<button class="btn" type="button" data-act="cancel">Drop</button>` : ""}</span></div>
+        ${canCancel ? `<div class="reject-box" hidden><input class="note" placeholder="Reason (optional)"><button class="btn" type="button" data-act="cancel-go">Drop</button></div>` : ""}
+        <div class="meta line" title="${esc(d.idea)}">${esc(d.brand)}${plannedOf(d) !== "-" ? ` · ${esc(plannedOf(d))}` : ""}</div>
         <div class="msg"></div>
       </div>`;
-    }).join("")}</div>` : `<div class="meta">Không có bài nào ở bộ lọc này.</div>`);
+    }).join("")}</div>` : `<div class="meta">Nothing matches this filter.</div>`);
     const cards = $$("#draftList .draft");
     wireCards(cards, (i) => openPreview(list[i], { list, i }));
     cards.forEach((card, i) => {
       for (const btn of $$("[data-act]", card)) btn.onclick = () => (btn.dataset.act === "preview" ? openPreview(list[i], { list, i }) : cancelDraft(card, list[i], btn.dataset.act, null));
     });
-  }
+  });
   let drList = [];
-  const draftThumb = (d) => (d.image_exists ? d.image : (d.preview?.media || []).find((m) => m.type !== "video")?.path || "");
-  // Status column: checks (status), hosted image and Metricool once the post is written into the brand.
+  const draftThumb = (d) => (d.image_exists ? d.image : arr(d.preview?.media).find((m) => m.type !== "video")?.path || "");
+  // The card's ONE label: the latest step reached (Making → Needs review → Approved · waiting to send → Scheduled →
+  // Published), Dropped, or Failed in red. A post recorded earlier as a Metricool draft (old) counts as approved and
+  // waiting: the next Create & publish run sends it as a scheduled post.
+  function stepOf(d) {
+    const bp = d.brand_post, mc = bp?.metricool;
+    if (d.status === "rejected") return ["Dropped", ""];
+    if (["check_failed", "image_failed"].includes(d.status)) return ["Failed", "c-red"];
+    if (mc === "error") return ["Failed (Metricool)", "c-red"];
+    if (mc === "published") return ["Published", "c-green"];
+    if (mc === "scheduled") return ["Scheduled", "c-green"];
+    if (bp) return ["Approved · waiting to send", "c-amber"];
+    if (d.status === "ready") return ["Needs review", "c-amber"];
+    return ["Making", ""];
+  }
+  const stepTag = (d) => { const [t, c] = stepOf(d); return `<span class="status-tag ${c}">${esc(t)}</span>`; };
+  // All steps (preview panel): checks, hosted image and Metricool once the post is written into the brand.
   function draftTags(d) {
     const bp = d.brand_post, tag = (t, c = "") => `<span class="status-tag ${c}">${esc(t)}</span>`;
-    return tag(STATUS_TEXT[d.status] || d.status, STATUS_COLOR[d.status]) + (d.problems?.length ? tag(`${d.problems.length} lỗi kiểm tra`, "c-red") : "")
-      + (bp ? tag(bp.media_url ? "Ảnh đã host" : "Chưa host ảnh", bp.media_url ? "c-green" : "c-amber") + tag(MC_TEXT[bp.metricool] || bp.metricool || "-", MC_COLOR[bp.metricool]) : "")
+    return tag(STATUS_TEXT[d.status] || d.status, STATUS_COLOR[d.status]) + (arr(d.problems).length ? tag(`${d.problems.length} check problems`, "c-red") : "")
+      + (bp ? tag(bp.media_url ? "Image hosted" : "Image not hosted", bp.media_url ? "c-green" : "c-amber") + tag(MC_TEXT[bp.metricool] || bp.metricool || "-", MC_COLOR[bp.metricool]) : "")
       + (d.image_mode === "scene-swap" ? tag("scene-swap") : "");
   }
   // Planned time: what Metricool was given (metricool_sent publication), else nothing yet.
-  const plannedOf = (d) => { const m = (d.brand_post?.metricool_sent || []).find((x) => x.publication); return m ? `${String(m.publication).slice(0, 16).replace("T", " ")}${m.draft ? " (nháp)" : ""}` : "-"; };
-  // The draft's media for the lightbox: the post's own images/videos ("Ảnh mới"), then the shop's original (scene-swap).
+  const plannedOf = (d) => { const m = arr(d.brand_post?.metricool_sent).find((x) => x.publication); return m ? `${String(m.publication).slice(0, 16).replace("T", " ")}${m.draft ? " (old draft)" : ""}` : "-"; };
+  // The post's media for the lightbox: its own images/videos, then the shop's original (scene-swap).
   function mediaOf(d) {
-    const own = (d.preview?.media?.length ? d.preview.media : d.image_exists ? [{ type: "image", path: d.image }] : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? `Ảnh mới ${i + 1}/${all.length}` : "Ảnh mới" }));
-    return d.image_mode === "scene-swap" && d.reference_image ? [...own, { type: "image", path: d.reference_image, label: "Ảnh gốc của shop" }] : own;
+    const own = (arr(d.preview?.media).length ? d.preview.media : d.image_exists ? [{ type: "image", path: d.image }] : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? `New image ${i + 1}/${all.length}` : "New image" }));
+    return d.image_mode === "scene-swap" && d.reference_image ? [...own, { type: "image", path: d.reference_image, label: "Shop's original" }] : own;
   }
 
-  // ----- Overlay: a near-fullscreen window (lightbox or Xem trước), always inside the app window, never a new window -----
+  // ----- Overlay: a near-fullscreen window (lightbox or Preview), always inside the app window -----
   const overlay = document.createElement("div");
   overlay.className = "lb";
   overlay.hidden = true;
-  overlay.innerHTML = `<div class="lb-win" role="dialog" aria-modal="true"><div class="lb-head"><div class="lb-title"></div><span class="lb-extra"></span><button class="btn lb-close" type="button">✕ Đóng</button></div><div class="lb-body"></div></div>`;
+  overlay.innerHTML = `<div class="lb-win" role="dialog" aria-modal="true"><div class="lb-head"><div class="lb-title"></div><span class="lb-extra"></span><button class="btn lb-close" type="button">✕ Close</button></div><div class="lb-body"></div></div>`;
   document.body.append(overlay);
   let lbKeys = null, lbItemKeys = null, lbOnClose = null;
   function closeOverlay() {
     overlay.hidden = true; for (const c of [".lb-title", ".lb-extra", ".lb-body"]) $(c, overlay).innerHTML = ""; lbKeys = lbItemKeys = null; document.body.style.overflow = "";
     const f = lbOnClose; lbOnClose = null; f?.();
   }
-  // title: the header text; extra: header controls left of ✕ Đóng (channel tabs, ‹ Trước / Sau ›); body: the window's
+  // title: the header text; extra: header controls left of ✕ Close (channel tabs, ‹ Prev / Next ›); body: the window's
   // content; keys: ←/→ (images, channels); itemKeys: ↑/↓ (previous/next item of the list).
   function openOverlay(title, body, keys, extra = "", itemKeys = null) {
     $(".lb-title", overlay).innerHTML = title;
@@ -772,19 +825,17 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const m = items[i];
       const media = m.type === "video" ? `<video src="${img(m.path)}" controls autoplay></video>` : `<img src="${img(m.path)}" alt="${esc(m.label)}">`;
       openOverlay(`${esc(m.label)}${items.length > 1 ? ` · ${i + 1}/${items.length}` : ""}`,
-        `<div class="lb-stage">${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="-1" aria-label="Ảnh trước">‹</button>` : ""}${media}${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="1" aria-label="Ảnh sau">›</button>` : ""}</div>`,
+        `<div class="lb-stage">${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="-1" aria-label="Previous">‹</button>` : ""}${media}${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="1" aria-label="Next">›</button>` : ""}</div>`,
         (step) => { i = (i + step + items.length) % items.length; draw(); });
       for (const b of $$(".lb-nav", overlay)) b.onclick = (e) => { e.stopPropagation(); lbKeys(Number(b.dataset.step)); };
     };
     draw();
   }
 
-  // Xem trước: how the post would look on each enabled channel (Facebook feed card, Instagram post), from the server's
-  // preview data (page name, posted text per language_policy, reviewer-only texts, media), in the overlay panel.
-  // ONE language at a time: the posted language first (EN by default), the reviewer-only reading (VN) on the switch.
-  // A static mock; nothing loads from outside.
+  // Preview: how the post would look on each enabled channel (Facebook feed card, Instagram post), from the server's
+  // preview data. ONE language at a time: the posted language first (EN), the reviewer-only reading (VN) on the switch.
   const LANG_NAME = (l) => String(l || "").split("+").map((x) => x.toUpperCase()).join(" + ");
-  // Facebook-like "… Xem thêm": past 5 lines or ~250 characters the text is cut; the rest opens in place.
+  // Facebook-like "… See more": past 5 lines or ~250 characters the text is cut; the rest opens in place.
   const linkify = (t) => esc(t).replace(/(https?:\/\/[^\s<]+)|(^|\s)(#[\p{L}\p{N}_]+)/gu, (m, url, sp, tag) => (url ? `<a href="${url}" target="_blank" rel="noopener">${url}</a>` : `${sp}<span class="tag">${tag}</span>`));
   function postText(text) {
     const t = String(text || "");
@@ -792,32 +843,31 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const nl = t.split("\n").slice(0, 5).join("\n").length;
     if (nl < t.length && (cut < 0 || nl < cut)) cut = nl;
     if (cut <= 0 || cut >= t.length) return linkify(t);
-    return `<span class="rest">${linkify(t)} <button class="more" type="button" data-fold="1">Thu gọn</button></span><span class="cut" hidden>${linkify(t.slice(0, cut).trimEnd())}… <button class="more" type="button" data-fold="0">Xem thêm</button></span>`;
+    return `<span class="rest">${linkify(t)} <button class="more" type="button" data-fold="1">See less</button></span><span class="cut" hidden>${linkify(t.slice(0, cut).trimEnd())}… <button class="more" type="button" data-fold="0">See more</button></span>`;
   }
-  // "Thu gọn" / "Xem thêm" of any post mock in the overlay.
   overlay.addEventListener("click", (e) => {
     const b = e.target.closest(".pv .more");
     if (!b) return;
     const t = b.closest(".txt"), fold = b.dataset.fold === "1";
     $(".rest", t).hidden = fold; $(".cut", t).hidden = !fold;
   });
-  // nav: { list, i } when opened from the list: ‹ Trước / Sau › (↑/↓) walk it without closing.
+  // nav: { list, i } when opened from the list: ‹ Prev / Next › (↑/↓) walk it without closing.
   function openPreview(d, nav = null) {
     const go = nav ? (step) => { const j = nav.i + step; if (nav.list[j]) openPreview(nav.list[j], { list: nav.list, i: j }); } : null;
     const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", swap = d.image_mode === "scene-swap";
     const p = d.preview || { posts: [], media: [] };
     const initial = esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
     const media = () => {
-      const m = (p.media || []).slice(0, 4);
+      const m = arr(p.media).slice(0, 4);
       if (!m.length) return `<div class="video" style="aspect-ratio:1/1;background:#e4e6eb"></div>`;
       return `<div class="media n${m.length}">${m.map((x, i) => (x.type === "video" ? `<div class="video" data-pv="${i}"></div>` : `<img src="${img(x.path)}" alt="" data-pv="${i}">`)).join("")}</div>`;
     };
     const NET = { facebook: "Facebook", instagram: "Instagram" };
-    const tag = (post, o) => `<div class="pv-tag">${esc(NET[post.network] || post.network)}${o.lang ? ` · ${esc(LANG_NAME(o.lang))}` : ""}${o.review ? ` · <span class="pv-ro">Chỉ để đọc, không đăng</span>` : ""}</div>`;
-    const empty = "(chưa có caption)";
+    const tag = (post, o) => `<div class="pv-tag">${esc(NET[post.network] || post.network)}${o.lang ? ` · ${esc(LANG_NAME(o.lang))}` : ""}${o.review ? ` · <span class="pv-ro">Review only, not posted</span>` : ""}</div>`;
+    const empty = "(no caption yet)";
     const fb = (post, o) => `<div class="pv fb${o.review ? " review" : ""}">${tag(post, o)}
-      <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(p.page_name)}</b><span>Vừa xong · Công khai</span></div></div>
-      <div class="txt">${postText(o.text || empty)}</div>${media()}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
+      <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(p.page_name)}</b><span>Just now · Public</span></div></div>
+      <div class="txt">${postText(o.text || empty)}</div>${media()}<div class="bar"><span>Like</span><span>Comment</span><span>Share</span></div></div>`;
     const ig = (post, o) => `<div class="pv ig${o.review ? " review" : ""}">${tag(post, o)}
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(post.account || p.page_name)}</b></div></div>
       ${media()}<div class="txt"><b>${esc(post.account || p.page_name)}</b> ${postText(o.text || empty)}</div></div>`;
@@ -827,32 +877,27 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const rv = p.review_texts;
     const review = (Array.isArray(rv) ? rv : rv && typeof rv === "object" ? Object.entries(rv).map(([lang, text]) => ({ lang, text })) : rv ? [{ lang: "", text: rv }] : [])
       .map((x) => (typeof x === "string" ? { lang: "", text: x } : x)).filter((x) => x && x.text).map((x) => ({ ...x, review: true }));
-    const posts = p.posts || [];
-    // A channel's language options: its posted texts (EN first), then the reviewer-only readings.
-    const optionsOf = (post) => [...[...(post?.texts || [])].sort((a, b) => (b.lang === "en") - (a.lang === "en")), ...review];
-    const mediaUrl = d.brand_post?.media_url;
+    const posts = arr(p.posts);
+    const optionsOf = (post) => [...[...arr(post?.texts)].sort((a, b) => (b.lang === "en") - (a.lang === "en")), ...review];
     const side = (post, o) => `<dl class="kv">
-        <dt>Bản nháp</dt><dd>${esc(d.id)}</dd>
-        <dt>Thương hiệu</dt><dd>${esc(p.page_name || d.brand)}${p.page_name && p.page_name !== d.brand ? ` <span class="meta">(${esc(d.brand)})</span>` : ""}</dd>
-        <dt>Kênh</dt><dd>${posts.map((x) => `${esc(NET[x.network] || x.network)}${x.account ? ` <span class="meta">${esc(x.account)}</span>` : ""}`).join("<br>") || "-"}</dd>
-        <dt>Ngôn ngữ đăng</dt><dd>${esc(LANG_NAME((post?.langs || post?.texts?.map((t) => t.lang) || d.languages || []).join("+")) || "-")}${post?.mode || p.mode ? ` <span class="meta">(${esc(post?.mode || p.mode)})</span>` : ""}</dd>
-        ${review.length ? `<dt>Chỉ để đọc</dt><dd>${esc(review.map((x) => LANG_NAME(x.lang)).join(", "))} <span class="meta">(không đăng)</span></dd>` : ""}
-        <dt>Đang xem</dt><dd>${o ? `${esc(LANG_NAME(o.lang) || "-")} · ${o.review ? `<span class="warn-text">Chỉ để đọc, không đăng</span>` : `<span class="ok-text">Đăng</span>`}` : "-"}</dd>
-        <dt>Trạng thái</dt><dd>${draftTags(d)}</dd>
-        <dt>Giờ đăng</dt><dd>${esc(plannedOf(d))}</dd>
-        <dt>Link ảnh</dt><dd>${mediaUrl ? `<a href="${esc(mediaUrl)}" target="_blank" rel="noopener">${esc(mediaUrl)}</a>` : `<span class="muted">Chưa có</span>`}</dd>
+        <dt>Brand</dt><dd>${esc(p.page_name || d.brand)}</dd>
+        <dt>Channels</dt><dd>${posts.map((x) => `${esc(NET[x.network] || x.network)}${x.account ? ` <span class="meta">${esc(x.account)}</span>` : ""}`).join("<br>") || "-"}</dd>
+        <dt>Posted language</dt><dd>${esc(LANG_NAME((post?.langs || arr(post?.texts).map((t) => t.lang) || arr(d.languages)).join("+")) || "-")}</dd>
+        ${review.length ? `<dt>Review only</dt><dd>${esc(review.map((x) => LANG_NAME(x.lang)).join(", "))} <span class="meta">(not posted)</span></dd>` : ""}
+        <dt>Viewing</dt><dd>${o ? `${esc(LANG_NAME(o.lang) || "-")} · ${o.review ? `<span class="warn-text">Review only, not posted</span>` : `<span class="ok-text">Posted</span>`}` : "-"}</dd>
+        <dt>Status</dt><dd>${draftTags(d)}</dd>
+        <dt>Time</dt><dd>${esc(plannedOf(d))}</dd>
       </dl>
       ${bp ? hostBlock(d) + mcBlock(bp) : ""}
-      ${d.problems?.length ? `<ul class="missing">${d.problems.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-      ${d.error ? `<div class="bad-text">${esc(d.error)}</div>` : ""}
-      ${d.status === "rejected" ? `<div class="bad-text">Đã bỏ${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
-      <div class="meta">${esc(d.languages?.join(", ") || "")} (${esc(d.language_mode || "-")})${d.inspiration_url ? ` · <a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">bài tham khảo</a>` : ""} · ${d.metadata_clean ? `metadata đã bỏ, điểm ảnh giữ nguyên: ${d.metadata_clean.pixels_identical ? "có" : "KHÔNG"}` : "chưa làm sạch metadata"}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}${swap ? ` · ${d.logo_check ? `đã xác nhận sạch logo (${esc(d.logo_check.by)})` : "chưa xác nhận sạch logo"}` : ""}</div>
-      ${swap && d.reference_image ? `<div class="row-actions"><button class="btn" type="button" data-orig>Xem ảnh gốc của shop</button></div>` : ""}
-      ${canCancel ? `<div class="row-actions"><button class="btn" type="button" data-act="cancel">Bỏ</button><span class="meta">Chỉ bỏ được khi chưa ghi vào thương hiệu.</span></div>
-        <div class="reject-box" hidden><input class="note" placeholder="Lý do (không bắt buộc)"><button class="btn" type="button" data-act="cancel-go">Xác nhận bỏ</button></div>` : ""}
-      <div class="msg"></div>
-      <div class="meta">${esc(d.dir)}${bp?.folder ? `<br>${esc(bp.folder)}` : ""}</div>`;
-    const title = `Xem trước ${esc(bp?.post ? `${bp.post} · ` : "")}${esc(d.id)} <span class="meta">(mô phỏng${bp?.metricool === "published" ? "" : ", chưa đăng"})</span>`;
+      ${arr(d.problems).length ? `<ul class="missing">${d.problems.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${d.error ? `<div>${errLine(d.error)}</div>` : ""}
+      ${d.status === "rejected" ? `<div class="bad-text">Dropped${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
+      <div class="meta">${d.inspiration_url ? `<a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">Reference post</a> · ` : ""}${d.metadata_clean ? `metadata removed${d.metadata_clean.pixels_identical ? "" : " (pixels CHANGED)"}` : "metadata not cleaned"}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}${swap ? ` · ${d.logo_check ? "logo-free confirmed" : "logo-free not confirmed"}` : ""}</div>
+      ${swap && d.reference_image ? `<div class="row-actions"><button class="btn" type="button" data-orig>Shop's original</button></div>` : ""}
+      ${canCancel ? `<div class="row-actions">${d.status === "ready" ? `<button class="btn primary" type="button" data-act="approve" title="Save to the brand and host the image; the next Create &amp; publish run schedules it in Metricool">Approve</button>` : ""}<button class="btn" type="button" data-act="cancel" title="Only before the post is approved">Drop</button></div>
+        <div class="reject-box" hidden><input class="note" placeholder="Reason (optional)"><button class="btn" type="button" data-act="cancel-go">Confirm drop</button></div>` : ""}
+      <div class="msg"></div>`;
+    const title = `Preview ${esc(bp?.post || "")} <span class="meta">(mock${bp?.metricool === "published" ? "" : ", not posted"})</span>`;
     let lang = null; // the chosen language, kept when switching channel
     const keyOf = (o) => `${o.review ? "r" : "p"}:${o.lang}`;
     const draw = (k) => {
@@ -861,8 +906,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const o = opts.find((x) => keyOf(x) === lang) || opts[0] || null;
       if (o) lang = keyOf(o);
       const chan = posts.length > 1 ? `<nav class="tabs">${posts.map((x, j) => `<button type="button" data-tab="${j}" aria-pressed="${j === k}">${esc(NET[x.network] || x.network)}</button>`).join("")}</nav>` : "";
-      const langBar = opts.length > 1 ? `<nav class="tabs pv-langs" aria-label="Ngôn ngữ">${opts.map((x, j) => `<button type="button" data-lang="${j}" aria-pressed="${x === o}">${esc(LANG_NAME(x.lang) || "?")} <span class="meta">${x.review ? "Chỉ để đọc, không đăng" : "Đăng"}</span></button>`).join("")}</nav>` : "";
-      openOverlay(title, `<div class="pv-layout"><div class="pv-stage"><div class="pv-col">${langBar}${post && o ? card(post, o) : `<div class="meta">Chưa bật kênh nào.</div>`}</div></div><div class="pv-side">${side(post, o)}</div></div>`,
+      const langBar = opts.length > 1 ? `<nav class="tabs pv-langs" aria-label="Language">${opts.map((x, j) => `<button type="button" data-lang="${j}" aria-pressed="${x === o}">${esc(LANG_NAME(x.lang) || "?")} <span class="meta">${x.review ? "Review only" : "Posted"}</span></button>`).join("")}</nav>` : "";
+      openOverlay(title, `<div class="pv-layout"><div class="pv-stage"><div class="pv-col">${langBar}${post && o ? card(post, o) : `<div class="meta">No channel enabled.</div>`}</div></div><div class="pv-side">${side(post, o)}</div></div>`,
         posts.length > 1 ? (step) => draw((k + step + posts.length) % posts.length) : null, chan + (nav ? itemNav(nav.i, nav.list.length) : ""), go);
       if (nav) lbOnClose = () => focusCard("#draftList .draft", d.id);
       for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
@@ -874,36 +919,39 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const box = $(".pv-stage", overlay);
       for (const m of $$("[data-pv]", box)) m.onclick = () => big(Number(m.dataset.pv));
     };
-    // The large image: the lightbox in the same overlay; closing it comes back to this preview.
     const big = (start) => { openLightbox(mediaOf(d), start); lbOnClose = () => openPreview(d, nav); };
     draw(0);
   }
-  // Hosted image link (hosting runs automatically after the post is written into the brand; no button here).
+  // Hosted image (hosting runs automatically after the post is written into the brand): Copy image link, no raw URL.
   function hostBlock(d) {
     const bp = d.brand_post, u = [].concat(bp?.media_url || [])[0];
-    if (u) return `<div class="host"><span class="muted">Link ảnh:</span><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a><button class="btn copy-link" type="button" data-copy="${esc(u)}">Chép</button></div>`;
-    return `<div class="host"><span class="muted">${esc(bp?.image_link || "Chưa có link ảnh")}</span>${bp?.host_error ? `<span class="warn-text">${esc(bp.host_error)}</span>` : ""}</div>`;
+    if (u) return `<div class="host"><span class="ok-text">Image hosted</span><button class="btn copy-link" type="button" data-copy="${esc(u)}" title="${esc(u)}">Copy image link</button></div>`;
+    return `<div class="host"><span class="muted">No image link yet</span>${bp?.host_error ? errLine(bp.host_error) : ""}</div>`;
   }
   // Metricool: what metricool-mcp.mjs record wrote (draft or scheduled, time, planner link).
   function mcBlock(bp) {
-    if (!bp.metricool_sent?.length) return "";
-    return `<div class="host">${bp.metricool_sent.map((m) => `<span class="muted">${esc(m.network)}:</span> ${m.draft ? "nháp" : "hẹn giờ"} ${esc(m.publication || "")} ${esc(m.timezone || "")}${m.planner_url ? ` <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">mở trong Metricool</a>` : ""}`).join(" · ")}</div>`;
+    if (!arr(bp.metricool_sent).length) return "";
+    const old = arr(bp.metricool_sent).filter((m) => m.draft);
+    if (old.length && old.length === bp.metricool_sent.length) return `<div class="host meta">Old Metricool draft ${old.map((m) => esc(m.id || "")).join(", ")} (delete it in Metricool); the next run sends this post as a scheduled post.</div>`;
+    return `<div class="host">${bp.metricool_sent.map((m) => `<span class="muted">${esc(m.network)}:</span> ${m.draft ? "old draft" : "scheduled"} ${esc(String(m.publication || "").slice(0, 16).replace("T", " "))}${m.planner_url ? ` <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}`).join(" · ")}</div>`;
   }
   document.addEventListener("click", async (e) => {
     const b = e.target.closest(".copy-link");
     if (!b) return;
-    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Đã chép"; setTimeout(() => { b.textContent = "Chép"; }, 1500); } catch {}
+    const t = b.textContent;
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => { b.textContent = t; }, 1500); } catch {}
   });
-  // Optional "Bỏ" of a post before it is written into the brand (finalize.mjs cancel); nothing waits for it.
-  // In the preview's side panel; afterwards the list reloads and the preview shows the post again (when still listed).
+  // Optional "Drop" of a post before it is written into the brand (finalize.mjs cancel); nothing waits for it.
   async function cancelDraft(panel, d, act, nav) {
     const msg = $(".msg", panel), box = $(".reject-box", panel);
     if (act === "cancel") { box.hidden = !box.hidden; if (!box.hidden) $(".note", panel).focus(); return; }
     for (const b of $$("[data-act]", panel)) b.disabled = true;
-    const r = await postJson("/api/cancel", { id: d.id, note: $(".note", panel)?.value.trim() || "" }).catch(() => offline);
-    if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; for (const b of $$("[data-act]", panel)) b.disabled = false; return; }
+    if (act === "approve") msg.innerHTML = `<span class="meta">Saving to the brand and hosting the image…</span>`;
+    const r = act === "approve" ? await postJson("/api/approve", { id: d.id }).catch(() => offline)
+      : await postJson("/api/cancel", { id: d.id, note: $(".note", panel)?.value.trim() || "" }).catch(() => offline);
+    if (r.error) { msg.innerHTML = errLine(r.error); for (const b of $$("[data-act]", panel)) b.disabled = false; return; }
     await loadDrafts();
-    if (!nav) return; // from a card: the list reloaded is enough
+    if (!nav) return;
     const j = drList.findIndex((x) => x.id === d.id), at = j >= 0 ? j : Math.min(nav?.i || 0, drList.length - 1);
     if (at >= 0) openPreview(drList[at], { list: drList, i: at }); else closeOverlay();
   }
@@ -911,41 +959,78 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
   $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
 
-  // ----- Cài đặt tool: short summary (one line each); "Sửa" opens the 2-column form, paths and commands under Nâng cao -----
+  // ----- Settings: Accounts (who is signed in: names only), Requirements (installed tools), then tool settings -----
+  const dotRow = (ok, label, value, action = "") => `<dt>${esc(label)}</dt><dd><span class="dot ${ok === null ? "dot-grey" : ok ? "dot-green" : "dot-red"}"></span>${value}${action}</dd>`;
+  const loadAccounts = safely("#setAccounts", async () => {
+    $("#setAccounts").innerHTML = `<dt>Codex (ChatGPT)</dt><dd class="meta">Checking…</dd>`;
+    const a = await getJson("/api/accounts").catch(() => offline);
+    if (a.error) { $("#setAccounts").innerHTML = `<dt>Accounts</dt><dd>${errLine(a.error)}</dd>`; return; }
+    if (!a.codex || !Array.isArray(a.requirements)) throw new Error("accounts missing");
+    const c = a.codex, g = a.github || {}, m = a.metricool || {};
+    const who = [c.email, c.name && c.name.trim() !== c.email ? c.name.trim() : "", c.plan ? `plan ${c.plan}` : ""].filter(Boolean).map(esc).join(" · ");
+    $("#setAccounts").innerHTML =
+      dotRow(c.signed_in, "Codex (ChatGPT)", c.signed_in ? who || "Signed in" : c.installed ? "Not signed in" : "Install Codex CLI first",
+        c.installed ? `<button class="btn${c.signed_in ? "" : " primary"}" type="button" id="setLogin">${c.signed_in ? "Switch account" : "Sign in"}</button>` : "")
+      + dotRow(g.signed_in, "GitHub (image host)", g.signed_in ? esc(g.login) : g.installed ? "Not signed in (gh auth login)" : "gh CLI not installed")
+      + dotRow(m.user_id ? true : null, "Metricool", `${m.user_id ? `account ${esc(m.user_id)} · ` : ""}${arr(m.brands).length} brands <span class="meta">via the Claude/ChatGPT connector</span>`);
+    $("#setReqs").innerHTML = a.requirements.map((r) => dotRow(r.ok, r.name, r.ok ? `v${esc(r.version || "?")}` : "Not installed",
+      r.action === "install" ? `<button class="btn primary" type="button" data-install>Install</button>` : "")).join("");
+    if ($("#setLogin")) $("#setLogin").onclick = () => setupStep("login");
+    for (const b of $$("#setReqs [data-install]")) b.onclick = () => setupStep("install");
+  });
+  // Codex sign-in or install, through core/setup/config-api.mjs. Sign-in opens ChatGPT's page in Chrome and shows the
+  // one-time code to type there.
+  let loginTimer = 0;
+  async function setupStep(step) {
+    const msg = $("#setLoginMsg");
+    for (const b of $$("#page-settings fieldset .btn")) b.disabled = true;
+    msg.innerHTML = `<span class="meta">${step === "login" ? "Opening the ChatGPT sign-in page in Chrome…" : "Installing Codex CLI…"}</span>`;
+    if (step === "login") loginTimer = setInterval(async () => {
+      const { code } = await getJson("/api/setup-login").catch(() => ({}));
+      if (!code || msg.dataset.code === code) return;
+      msg.dataset.code = code;
+      msg.innerHTML = `Sign-in code: <b>${esc(code)}</b> <button class="btn copy-link" type="button" data-copy="${esc(code)}">Copy code</button> <span class="meta">Type it on the page opened in Chrome (sign in with the ChatGPT account to use).</span>`;
+    }, 1000);
+    const r = await postJson("/api/setup-step", { step }).catch(() => offline);
+    clearInterval(loginTimer); delete msg.dataset.code;
+    for (const b of $$("#page-settings fieldset .btn")) b.disabled = false;
+    if (r.superseded) return;
+    msg.innerHTML = r.error ? errLine(r.error) : `<span class="ok-text">${step === "login" ? "Signed in." : "Installed."}</span>`;
+    loadAccounts();
+  }
+  $("#setRecheck").onclick = () => loadAccounts();
   let mbText = "";
-  async function loadSettings() {
+  const loadSettings = safely("#settingsView", async () => {
+    loadAccounts();
     const [r, mb] = await Promise.all([getJson("/api/settings"), getJson("/api/metricool-brands")]).catch(() => [offline, {}]);
-    if (r.error) { $("#settingsMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; return; }
-    const s = r.settings, dd = s.research.dedupe || {};
-    const yes = (v) => (v ? "Có" : "Không");
-    const sched = s.metricool?.default_mode === "schedule";
+    if (r.error) { $("#settingsMsg").innerHTML = errLine(r.error); return; }
+    const s = r.settings || {}, rs = s.research || {}, dd = rs.dedupe || {}, delay = arr(rs.delay_seconds), cx = s.codex || {};
     const row = (k, v, tip = "") => `<dt title="${esc(tip || k)}">${esc(k)}</dt><dd>${v}</dd>`;
     $("#settingsView").innerHTML = `<dl class="kv">
-      ${row("Gửi Metricool", sched ? "Hẹn giờ" : "Nháp", sched ? "Hẹn giờ thật" : "Nháp, không tự đăng")}
-      ${s.imageHost ? row("Tự đưa ảnh lên", yes(s.imageHost.auto_after_writeback !== false), "Đưa ảnh lên repo ảnh ngay sau khi ghi vào thương hiệu") : ""}
-      ${row("Metricool", `${(mb.brands || []).length} brand${(mb.brands || []).length ? `: ${esc((mb.brands || []).map((b) => b.name).join(", "))}` : ""}`)}</dl>`;
+      ${row("Metricool", "Scheduled at each brand's slot time", "The tool always schedules real posts (no drafts)")}
+      ${s.imageHost ? row("Auto-host images", s.imageHost.auto_after_writeback !== false ? "Yes" : "No", "Push the image to the image repo right after the post is written into the brand") : ""}
+      ${row("Metricool brands", `${arr(mb.brands).length}${arr(mb.brands).length ? `: ${esc(arr(mb.brands).map((b) => b.name).join(", "))}` : ""}`)}</dl>`;
     const num = (k, v, label, tip = "") => `<div><label title="${esc(tip || label)}">${esc(label)}</label><input type="number" min="0" step="1" data-s="${k}" value="${esc(v)}"></div>`;
     const text = (k, v, label, tip) => `<div class="wide"><label title="${esc(tip)}">${esc(label)}</label><input data-s="${k}" value="${esc(v)}" title="${esc(tip)}"></div>`;
     mbText = JSON.stringify(mb, null, 2);
     $("#settingsForm").innerHTML = `<div class="set-grid">
-      <div><label title="Nháp: không tự đăng. Hẹn giờ: lên lịch thật.">Gửi Metricool</label><select data-s="metricool.default_mode"><option value="draft"${!sched ? " selected" : ""}>Nháp</option><option value="schedule"${sched ? " selected" : ""}>Hẹn giờ</option></select></div>
-      ${s.imageHost ? `<div><label class="check" title="Đưa ảnh lên repo ảnh ngay sau khi ghi vào thương hiệu"><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> Tự đưa ảnh lên</label></div>` : ""}
+      ${s.imageHost ? `<div><label class="check" title="Push the image right after the post is written into the brand"><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> Auto-host images</label></div>` : ""}
       </div>
-      <details><summary>Nâng cao</summary>
+      <details><summary>Advanced</summary>
         <div class="set-grid">
-        ${num("research.delay_seconds.0", s.research.delay_seconds[0], "Nghỉ tối thiểu (giây)", "Nghỉ ngẫu nhiên giữa các thao tác khi nghiên cứu")}
-        ${num("research.delay_seconds.1", s.research.delay_seconds[1], "Nghỉ tối đa (giây)")}
-        ${num("codex.timeout_minutes", s.codex.timeout_minutes, "Codex chờ (phút)")}
-        <div><label title="Bài trùng không vào kho (chỉ xem; sửa trong workspace/settings.json)">Bỏ trùng</label><input disabled value="ảnh ≤${esc(dd.image_distance ?? 20)}/256 · caption ≥${Math.round((dd.caption_similarity ?? 0.9) * 100)}%"></div>
-        ${text("skillsRoot", s.skillsRoot, "Thư mục skill", `Thư mục chứa các bộ skill thương hiệu (brand nối bằng đường dẫn riêng ở Tổng quan vẫn dùng được). Hiện: ${r.skillsRootResolved}`)}
-        <div><label title="Lệnh chạy Codex">Lệnh Codex</label><input data-s="codex.command" value="${esc(s.codex.command)}"></div>
-        <div><label title="Dùng cho watermark và đọc ảnh WebP khi bỏ trùng">Lệnh ffmpeg</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
-        ${text("remove_watermark.script", s.remove_watermark?.script || "", "Script xoá metadata", "Script làm sạch metadata ảnh (remove-watermark-skill)")}
-        ${s.imageHost ? text("imageHost.path", s.imageHost.path || "", "Repo ảnh", "Thư mục repo ảnh (imageHost.path)") + text("imageHost.rawBase", s.imageHost.rawBase || "", "Link công khai", "Gốc link công khai của ảnh (imageHost.rawBase, https)") : ""}
-        <div class="wide"><label title="Danh sách brand Metricool: name, blog_id, timezone, networks, skill_id hoặc null">Brand Metricool (JSON)</label><textarea class="prompt" id="mbJson" spellcheck="false">${esc(mbText)}</textarea></div>
+        ${num("research.delay_seconds.0", delay[0] ?? 5, "Min pause (s)", "Random pause between page actions while researching")}
+        ${num("research.delay_seconds.1", delay[1] ?? 15, "Max pause (s)")}
+        ${num("codex.timeout_minutes", cx.timeout_minutes ?? 15, "Codex wait (min)")}
+        <div><label title="Duplicates never enter the library (view only; edit in workspace/settings.json)">Dedupe</label><input disabled value="image ≤${esc(dd.image_distance ?? 20)}/256 · caption ≥${Math.round((dd.caption_similarity ?? 0.9) * 100)}%"></div>
+        ${text("skillsRoot", s.skillsRoot || "", "Skills folder", `Folder of brand skill folders (brands linked by path on Overview work too). Now: ${r.skillsRootResolved || ""}`)}
+        <div><label title="Command that runs Codex">Codex command</label><input data-s="codex.command" value="${esc(cx.command || "codex")}"></div>
+        <div><label title="Used for watermarks and reading WebP when deduping">ffmpeg command</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
+        ${text("remove_watermark.script", s.remove_watermark?.script || "", "Metadata script", "Image metadata cleaner (remove-watermark-skill)")}
+        ${s.imageHost ? text("imageHost.path", s.imageHost.path || "", "Image repo", "Image repo folder (imageHost.path)") + text("imageHost.rawBase", s.imageHost.rawBase || "", "Public link base", "Public link base of the images (imageHost.rawBase, https)") : ""}
+        <div class="wide"><label title="Metricool brands: name, blog_id, timezone, networks, skill_id or null, skill_path">Metricool brands (JSON)</label><textarea class="prompt" id="mbJson" spellcheck="false">${esc(mbText)}</textarea></div>
         </div></details>`;
-  }
-  $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Sửa" : "Đóng"; };
+  });
+  $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Edit" : "Close"; };
   $("#settingsSave").onclick = async () => {
     const out = { research: { delay_seconds: [] }, metricool: {}, codex: {}, ffmpeg: {}, remove_watermark: {}, imageHost: {} };
     for (const el of $$("#settingsForm [data-s]")) {
@@ -956,20 +1041,21 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     }
     let mb = null;
     const mbRaw = $("#mbJson").value;
-    if (mbRaw !== mbText) { try { mb = JSON.parse(mbRaw); } catch (e) { $("#settingsMsg").innerHTML = `<span class="bad-text">JSON brand Metricool không hợp lệ: ${esc(e.message)}</span>`; return; } }
+    if (mbRaw !== mbText) { try { mb = JSON.parse(mbRaw); } catch (e) { $("#settingsMsg").innerHTML = `<span class="bad-text">Invalid Metricool brands JSON: ${esc(e.message)}</span>`; return; } }
     const r = await postJson("/api/settings", { settings: out }).catch(() => offline);
     const m = !r.error && mb ? await postJson("/api/metricool-brands", mb).catch(() => offline) : {};
     const err = r.error || m.error;
-    $("#settingsMsg").innerHTML = err ? `<span class="bad-text">${esc(err)}</span>` : `<span class="ok-text">Đã lưu.</span>`;
-    if (!err) { $("#settingsEditor").hidden = true; $("#settingsEdit").textContent = "Sửa"; loadSettings(); }
+    $("#settingsMsg").innerHTML = err ? errLine(err) : `<span class="ok-text">Saved.</span>`;
+    if (!err) { $("#settingsEditor").hidden = true; $("#settingsEdit").textContent = "Edit"; loadSettings(); }
   };
 
   show(store.get("page") || "overview");
-  // No "Tải lại" per tab: a tab reloads when opened and when a filter changes, and every 45 s while it is visible,
-  // except while the preview is open, the window is hidden or something is being typed (a Bỏ reason).
+  // No reload button per tab: a tab reloads when opened and when a filter changes, and every 45 s while it is visible,
+  // except while the preview is open, the window is hidden or something is being typed.
   setInterval(() => {
     if (document.hidden || !overlay.hidden || document.activeElement?.matches?.("input, textarea, select")) return;
     if ($$("#resBody .reject-box, #draftList .reject-box").some((b) => !b.hidden)) return;
+    if ($$("#ovList [data-panel]").some((p) => !p.hidden)) return;
     if (!$("#page-overview").hidden) loadOverview();
     else if (!$("#page-store").hidden) loadResearch();
     else if (!$("#page-posts").hidden) loadDrafts();

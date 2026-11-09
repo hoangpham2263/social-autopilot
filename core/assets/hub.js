@@ -1,5 +1,6 @@
-// Cấu hình, Cập nhật and Tải lại at the top right of the page, on macOS and Windows; Cập nhật turns green with the
-// version once a newer one is out. Both work through the app's server (src/server.mjs, core/setup/config-api.mjs).
+// Reload and Update at the top right of the page, on macOS and Windows; Update turns green with the version once a
+// newer one is out. Both work through the app's server (src/server.mjs). The setup (Codex sign-in, Node.js, Codex CLI)
+// lives in the Settings tab: when something is missing a banner says so and Settings opens by itself.
 // Writes carry the session token the server puts in the page (meta sa-token); without it the server refuses.
 const saPost = () => ({ method: "POST", headers: { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" } });
 (() => {
@@ -22,15 +23,14 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
   if (!location.protocol.startsWith("http")) return;
   const header = document.querySelector("header");
   if (!header) return;
-  const btn = Object.assign(document.createElement("button"), { type: "button", className: "btn update", textContent: "Cập nhật" });
-  const config = Object.assign(document.createElement("button"), { type: "button", className: "btn config", textContent: "Cấu hình" });
-  // Tải lại: the server starts again on the files as they are now and the page loads afresh (after an update, or when
+  const btn = Object.assign(document.createElement("button"), { type: "button", className: "btn update", textContent: "Update" });
+  // Reload: the server starts again on the files as they are now and the page loads afresh (after an update, or when
   // the page looks out of date).
-  const reload = Object.assign(document.createElement("button"), { type: "button", className: "btn reload", textContent: "Tải lại" });
-  header.append(reload, config, btn);
+  const reload = Object.assign(document.createElement("button"), { type: "button", className: "btn reload", textContent: "Reload" });
+  header.append(reload, btn);
   reload.onclick = async () => {
     reload.disabled = true;
-    reload.textContent = "Đang tải lại…";
+    reload.textContent = "Reloading…";
     const r = await fetch("/api/reload", saPost()).catch(() => null);
     if (!r || !r.ok) return location.reload();
     const wait = () => fetch("/api/root").then((x) => (x.ok ? location.reload() : setTimeout(wait, 400))).catch(() => setTimeout(wait, 400));
@@ -38,11 +38,10 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
   };
   // The window title carries the installed version: "Social Autopilot v1.0.0".
   fetch("/api/root").then((r) => r.json()).then((r) => { if (r.version && !document.title.endsWith(r.version)) document.title = `${document.title} ${r.version}`; }).catch(() => {});
-  config.onclick = showSetup;
-  // The menu says whether Cấu hình is done: every step but the quota (which only reads what is left) must be OK.
-  // Cấu hình turns green while something is missing; coming back from it checks again.
+  // Setup check (Codex sign-in, Node.js, Codex CLI): a banner only when something is missing, and Settings opens.
   const status = document.getElementById("setupStatus");
-  const STEP_NAMES = { node: "Node.js", codex: "Codex CLI", login: "đăng nhập Codex" };
+  const STEP_NAMES = { node: "Node.js", codex: "Codex CLI", login: "Codex sign-in" };
+  const openSettings = () => (window.saOpenSettings ? window.saOpenSettings() : (location.href = "/"));
   let setupRequest;
   function requestSetup() {
     if (setupRequest) return setupRequest;
@@ -51,11 +50,11 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
     setupRequest = fetch('/api/setup', { ...saPost(), signal: abort.signal, cache: 'no-store' })
       .then(async response => {
         const report = await response.json();
-        if (!response.ok) return { error: report.error || 'Không kiểm tra được cấu hình. Bấm Kiểm tra lại.' };
-        if (!Array.isArray(report.Steps) || Object.keys(STEP_NAMES).some(id => !report.Steps.some(step => step.Id === id))) return { error: 'Kết quả cấu hình chưa đầy đủ. Bấm Kiểm tra lại.' };
+        if (!response.ok) return { error: report.error || 'Setup could not be checked. Use Re-check in Settings.' };
+        if (!Array.isArray(report.Steps) || Object.keys(STEP_NAMES).some(id => !report.Steps.some(step => step.Id === id))) return { error: 'Incomplete setup result. Use Re-check in Settings.' };
         return report;
       })
-      .catch(error => ({ error: error.name === 'AbortError' ? 'Kiểm tra cấu hình quá thời gian. Bấm Kiểm tra lại.' : 'Mất kết nối với app. Đóng và mở lại Social Autopilot rồi kiểm tra lại.' }))
+      .catch(error => ({ error: error.name === 'AbortError' ? 'Setup check timed out. Use Re-check in Settings.' : 'Lost connection to the app. Restart Social Autopilot.' }))
       .finally(() => { clearTimeout(timer); setupRequest = null; });
     return setupRequest;
   }
@@ -63,24 +62,20 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
     if (!status) return;
     status.className = "setup-status";
     status.hidden = true; // shown only when something is wrong
-    status.innerHTML = `<span class="mark">○</span><span class="text muted">Đang kiểm tra cấu hình…</span>`;
     const report = await requestSetup();
     const steps = [].concat(report?.Steps || []);
-    if (!steps.length) { status.hidden = false; status.innerHTML = `<span class="mark">!</span><span class="text">Chưa kiểm tra được cấu hình. Bấm Cấu hình để xem.</span>`; return; }
+    if (!steps.length) { status.hidden = false; status.innerHTML = `<span class="mark">!</span><span class="text">${report?.error || "Setup could not be checked."}</span><button class="btn" type="button">Open Settings</button>`; status.querySelector("button").onclick = openSettings; return; }
     const missing = steps.filter((s) => s.Id in STEP_NAMES && s.State !== "ok" && s.State !== "warn").map((s) => STEP_NAMES[s.Id]);
-    const done = !missing.length;
-    // All set: no banner (only shown when something is missing).
-    status.hidden = done;
-    status.className = `setup-status ${done ? "ok" : "todo"}`;
-    status.innerHTML = done
-      ? `<span class="mark">✔</span><span class="text">Đã cấu hình đủ. Các công cụ sẵn sàng dùng.</span>`
-      : `<span class="mark">✖</span><span class="text">Chưa cấu hình xong: còn thiếu ${missing.join(", ")}. Cấu hình đủ rồi mới dùng được các công cụ.</span><button class="btn primary" type="button">Cấu hình ngay</button>`;
-    status.querySelector("button")?.addEventListener("click", showSetup);
-    config.classList.toggle("primary", !done);
+    if (!missing.length) return;
+    status.hidden = false;
+    status.className = "setup-status todo";
+    status.innerHTML = `<span class="mark">✖</span><span class="text">Setup incomplete: ${missing.join(", ")}.</span><button class="btn primary" type="button">Open Settings</button>`;
+    status.querySelector("button").onclick = openSettings;
+    openSettings();
   }
   refreshStatus();
   let next = "", current = "";
-  const show = () => { btn.textContent = next ? `Cập nhật ${next}` : "Cập nhật"; btn.classList.toggle("primary", !!next); };
+  const show = () => { btn.textContent = next ? `Update ${next}` : "Update"; btn.classList.toggle("primary", !!next); };
   const check = () => fetch("/api/update-check").then((r) => (r.ok ? r.json() : Promise.reject())).then((r) => { next = r.next || ""; current = r.current || ""; show(); return true; }).catch(() => false);
   setTimeout(check, 3000);
   setInterval(check, 6 * 3600 * 1000);
@@ -88,32 +83,29 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
   // Check, then download and install with a running bar.
   btn.onclick = async () => {
     const shade = Object.assign(document.createElement("div"), { className: "shade" });
-    shade.innerHTML = `<div class="dialog" role="dialog" aria-label="Cập nhật"><div class="status"></div><div class="bar"><span></span></div><div class="actions"><button class="btn primary" type="button" hidden>Cập nhật</button><button class="btn" type="button">Đóng</button></div></div>`;
+    shade.innerHTML = `<div class="dialog" role="dialog" aria-label="Update"><div class="status"></div><div class="bar"><span></span></div><div class="actions"><button class="btn primary" type="button" hidden>Update</button><button class="btn" type="button">Close</button></div></div>`;
     document.body.append(shade);
     const [status, bar, go, close] = [".status", ".bar", ".btn.primary", ".btn:not(.primary)"].map((s) => shade.querySelector(s));
     close.onclick = () => { if (!close.disabled) shade.remove(); };
-    status.textContent = "Đang kiểm tra bản mới…";
-    if (!(await check())) { bar.hidden = true; status.textContent = "Không kiểm tra được bản mới. Kiểm tra mạng rồi thử lại."; return; }
+    status.textContent = "Checking for a new version…";
+    if (!(await check())) { bar.hidden = true; status.textContent = "Could not check for a new version. Check the network and try again."; return; }
     bar.hidden = true;
-    if (!next) { status.textContent = `Đang dùng bản mới nhất (${current || "bản hiện tại"}).`; return; }
-    status.textContent = `Có phiên bản mới ${next} (đang dùng ${current || "bản hiện tại"}).`;
+    if (!next) { status.textContent = `You have the latest version (${current || "current"}).`; return; }
+    status.textContent = `Version ${next} is available (you have ${current || "the current one"}).`;
     go.hidden = false; go.focus();
     go.onclick = async () => {
-      status.textContent = `Đang tải và cài phiên bản ${next}…`;
+      status.textContent = `Downloading and installing ${next}…`;
       bar.hidden = false; go.hidden = true; close.disabled = true;
       const r = await fetch("/api/update", saPost()).catch(() => null);
       if (!r || !r.ok) {
-        bar.hidden = true; close.disabled = false; go.textContent = "Thử lại"; go.hidden = false;
-        status.textContent = "Chưa cập nhật được. Kiểm tra mạng rồi thử lại.";
+        bar.hidden = true; close.disabled = false; go.textContent = "Try again"; go.hidden = false;
+        status.textContent = "Not updated. Check the network and try again.";
         return;
       }
       // The server restarts on the new files; the page reloads once it answers again.
-      status.textContent = "Đã cập nhật. Đang mở lại…";
+      status.textContent = "Updated. Reopening…";
       const wait = () => fetch("/api/root").then((x) => (x.ok ? location.reload() : setTimeout(wait, 500))).catch(() => setTimeout(wait, 500));
       setTimeout(wait, 1200);
     };
   };
-
-  // Cấu hình is a page of its own (core/setup/page.html); it comes back here.
-  function showSetup() { location.href = `/setup?back=${encodeURIComponent(location.pathname + location.search)}`; }
 })();

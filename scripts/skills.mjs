@@ -29,8 +29,8 @@ function readiness(dir) {
     c.stdout.on('data', (d) => { text += d; });
     c.on('error', (e) => done({ ready: false, enabled, problems: [e.message] }));
     c.on('close', (code) => {
-      const problems = String(text).split(/\r?\n/).filter((l) => /^\s+- |^LỖI /.test(l)).map((l) => l.replace(/^\s+- /, 'thiếu ').trim());
-      if (!enabled) problems.unshift('Chưa bật (social.json: enabled)');
+      const problems = String(text).split(/\r?\n/).filter((l) => /^\s+- |^LỖI /.test(l)).map((l) => l.replace(/^\s+- /, 'missing: ').trim());
+      if (!enabled) problems.unshift('Not enabled (social.json: enabled)');
       done({ ready: code === 0 && enabled, enabled, problems });
     });
   });
@@ -40,7 +40,7 @@ function readiness(dir) {
 // C:\hoangpq\vaniecom-workspace finds skills\*), each with its readiness and the Metricool brand linked to that folder.
 export async function listSources(from = DEFAULT_SOURCE) {
   const dir = path.resolve(String(from || DEFAULT_SOURCE));
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`Không có thư mục ${dir}.`);
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`Folder not found: ${dir}`);
   let links = [];
   try { links = metricoolBrands().brands || []; } catch {}
   const found = [], skipped = [];
@@ -60,7 +60,7 @@ export async function listSources(from = DEFAULT_SOURCE) {
 
 export function validate(dir) {
   const full = path.resolve(String(dir || ''));
-  if (!isSkillDir(full)) throw new Error(`${full} không phải bộ skill (cần ${SKILL_FILES.join(', ')}).`);
+  if (!isSkillDir(full)) throw new Error(`${full} is not a skill folder (needs ${SKILL_FILES.join(', ')}).`);
   const b = inspectBrand(full);
   return { id: b.id, dir: full, brand: b.brand || '', enabled: b.enabled, tool_ready: b.ready, problems: b.problems };
 }

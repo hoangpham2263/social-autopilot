@@ -12,6 +12,23 @@ Quy tắc cứng (cả hai chế độ):
 - Không bao giờ gắn nhãn AI lên bài; không đăng thẳng lên mạng xã hội; Metricool mặc định **nháp** (`settings.metricool.default_mode`).
 - Gặp `ok: false`: ghi lại, chuyển sang bài/thương hiệu tiếp, không lách luật.
 
+## Rules for every run (prompt ngắn ở tab Prompt trỏ về đây)
+
+Prompt ở tab Prompt chỉ ghi chế độ, thương hiệu, tuỳ chọn (`Options:`) và agent; mọi bước nằm ở RUNBOOK này. Luật chung:
+- Chỉ thương hiệu usable (`brands.mjs`), **lần lượt từng thương hiệu**, không song song. "all usable brands" = mọi thương hiệu usable.
+- Tuỳ chọn của lượt (dòng `Options:`) ưu tiên hơn mặc định: Research → `--source a,b`, `--since YYYY-MM-DD`, `--max-posts N`, `--backfill` hoặc `--full` cho `research.mjs start`; Create → `--count N` cho `ideas.mjs init` (để trống = `cadence.posts_per_week`), `--draft`/`--schedule` cho `metricool-mcp.mjs payload` (để trống = `settings.metricool.default_mode`).
+- Mỗi thương hiệu, trước khi làm bài: đọc `SKILL.md` và `project/project.md` của skill.
+- Không đăng thẳng lên mạng xã hội; không nhãn AI; không tên shop nguồn; không đăng nhập hộ, không lưu cookie.
+- Không bao giờ tạo/sửa bài cho Fortera Apparel (blogId `<blog_id_1>`) hay dùng blogId khác `args.blogId`; không `createScheduledPostForReview`.
+- Lệnh trả `ok:false`: ghi lý do vào báo cáo, đi tiếp; không lách luật. Hết lượt Codex (tạo ảnh) thì dừng tạo ảnh và báo.
+- Codex tạo ảnh bằng `codex exec` lồng nhau: sandbox chặn thì báo người dùng.
+- Báo cáo bằng tiếng Việt (mục 1.5 / 2.7), nhắc người dùng xem tab Library / Posts của app.
+- Codex không có MCP trình duyệt (Mode 1): dừng ngay, báo "thêm `[mcp_servers.playwright]` (`npx -y @playwright/mcp@latest --extension`) vào `~/.codex/config.toml`, hoặc chạy bằng Claude Code". Không có MCP Metricool (Mode 2): làm bài tới 2.5, ghi trong báo cáo "chưa gửi Metricool: Codex chưa có MCP Metricool (`codex mcp add metricool --url https://ai.metricool.com/mcp`; `codex mcp login metricool`)", bài gửi ở lượt sau.
+
+### ChatGPT (web/desktop, không chạy được lệnh trên máy)
+
+Không làm được Mode 1 và phần làm bài của Mode 2. Chỉ gửi nốt bài đã xong khi người dùng dán JSON của `node scripts/metricool-mcp.mjs payload --brand <id>` dưới prompt. Với từng phần tử `items`: gọi `createScheduledPost` với ĐÚNG `args.blogId`, `args.date`, `args.info` (chuỗi JSON giữ nguyên, không thêm hashtag/nhãn AI, không đổi draft; ảnh đã ở `info.media`, chỉ dùng `mediaFiles` khi người dùng tự đính kèm và bảo dùng), ghi `id`, `uuid`, `plannerUrl`, `publicationDate.dateTime`, `publicationDate.timezone`. Bỏ qua `blocked`, `skipped`. Trả lời tiếng Việt: bài đã gửi (POST-xx, nháp/hẹn giờ, giờ, plannerUrl) và lệnh `item.record` đã điền giá trị thật cho từng bài; bài lỗi ghi lý do.
+
 ## Bước chung. Thương hiệu và nguồn
 
 ```

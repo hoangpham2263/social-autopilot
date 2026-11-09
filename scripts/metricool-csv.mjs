@@ -1,7 +1,7 @@
 // Metricool CSV: export approved posts of a brand into Metricool's bulk-import CSV (the real 99-column template in
 // docs/metricool-csv-template.csv), and validate such a file before a person imports it. Nothing is sent anywhere:
 // this only reads the brand folder and writes the --out file (never inside the skills folders).
-//   node scripts/metricool-csv.mjs export --brand <id> [--posts POST-01,POST-02] [--draft] [--lang en]
+//   node scripts/metricool-csv.mjs export --brand <id> [--posts POST-01,POST-02] [--lang en]
 //          [--date YYYY-MM-DD --time HH:MM] [--allow-today] [--check-urls] --out <file.csv>
 //   node scripts/metricool-csv.mjs validate <file.csv> [--brand <id>] [--allow-today] [--check-urls]
 // Why validate is strict (docs/metricool.md sections 5, 6): when ANY row has an error, Metricool imports ALL rows as
@@ -375,11 +375,12 @@ function captionText(brand, post, langs, mode, separator) {
   return mode === 'one-post-bilingual' ? texts.join(separator) : texts[0];
 }
 
-// Networks of a post already sent to Metricool through MCP (catalog metricool.<network>.id, written by metricool-mcp.mjs record).
+// Networks of a post already scheduled on Metricool through MCP (catalog metricool.<network>.id, written by
+// metricool-mcp.mjs record). A legacy Metricool draft (draft: true) does not count: it is sent again as a scheduled post.
 export function sentNetworks(post) {
   const mc = post?.metricool;
   if (!mc || typeof mc !== 'object' || Array.isArray(mc)) return [];
-  return Object.entries(mc).filter(([, r]) => r && typeof r === 'object' && r.id !== undefined && r.id !== null && String(r.id) !== '').map(([n]) => n);
+  return Object.entries(mc).filter(([, r]) => r && typeof r === 'object' && r.id !== undefined && r.id !== null && String(r.id) !== '' && r.draft !== true).map(([n]) => n);
 }
 
 // Wall-clock date_time ("YYYY-MM-DDTHH:MM[:SS]", optional Z/offset) read in tz -> { date, time } in toTz.
@@ -514,6 +515,7 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
 }
 
 export function buildExport(args, { now = new Date(), root = settings().skillsRoot } = {}) {
+  if (args.draft) throw new Error('--draft was removed: the tool always schedules real posts.');
   const brand = findBrand(need(args, 'brand'), root);
   assertLinked(brand);
   const header = templateHeader();
@@ -539,7 +541,7 @@ export function buildExport(args, { now = new Date(), root = settings().skillsRo
     const mcWhen = { ...(validDate(when.date) && validTime(when.time) ? convertZoned(when.date, when.time, brand.audience_timezone, brand.timezone) : { date: when.date, time: when.time }), timezone: brand.timezone };
     for (const t of it.texts) {
       const r = Object.fromEntries(header.map((h) => [h, '']));
-      r.Text = t.text; r.Date = mcWhen.date; r.Time = mcWhen.time; r.Draft = args.draft ? 'true' : 'false';
+      r.Text = t.text; r.Date = mcWhen.date; r.Time = mcWhen.time; r.Draft = 'false';
       for (const col of networks) r[col] = 'true';
       for (const col of AI_LABEL_COLUMNS) r[col] = 'false';
       media.forEach((m, k) => { r[pics(k + 1)] = m; if (alt[k]) r[alts(k + 1)] = alt[k]; });
@@ -570,7 +572,7 @@ async function runExport(args) {
   fs.writeFileSync(outFile, toMetricoolCsv(x.header, x.rows), 'utf8');
   out({
     file: outFile, brand: x.brand.id, brand_name: x.brand.brand_name, brand_name_source: x.brand.brand_name_source,
-    timezone: x.brand.timezone, timezone_source: x.brand.timezone_source, audience_timezone: x.brand.audience_timezone, notes: x.notes, draft: !!args.draft, networks: x.networks,
+    timezone: x.brand.timezone, timezone_source: x.brand.timezone_source, audience_timezone: x.brand.audience_timezone, notes: x.notes, draft: false, networks: x.networks,
     languages: x.langs, language_mode: x.mode, rows: x.rows.length, posts: x.map, columns: x.header.length,
     url_checks: checks, warnings,
     next: 'Kiểm tra bằng: node scripts/metricool-csv.mjs validate <file> --check-urls. Tool không import; người dùng tự import trong Metricool (Calendar > ⋮ > Import CSV) và KHÔNG bấm Import nếu preview còn dòng lỗi.',
@@ -620,5 +622,5 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'export') {
     try { await runExport(args); } catch (e) { fail(e.message, e.problems ? { problems: e.problems } : {}); }
   } else if (cmd === 'validate') await runValidate(args);
-  else fail('Lệnh: export --brand <id> [--posts POST-01,POST-02] [--draft] [--lang en] [--date YYYY-MM-DD --time HH:MM] --out <file> | validate <file> [--brand <id>] [--allow-today] [--check-urls]');
+  else fail('Lệnh: export --brand <id> [--posts POST-01,POST-02] [--lang en] [--date YYYY-MM-DD --time HH:MM] --out <file> | validate <file> [--brand <id>] [--allow-today] [--check-urls]');
 });

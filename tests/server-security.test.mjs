@@ -96,23 +96,23 @@ test('/api/store: brand must be a discovered brand, source an id; store-item onl
   fs.mkdirSync(path.join(tmp, 'workspace', 'store', 'x'), { recursive: true });
   for (const q of ['brand=..%2F..%2Fx', 'brand=../../x', 'brand=nope', 'source=..%2Fx'])
     assert.equal((await fetch(`${base}/api/store?${q}`)).status, 400, q);
-  assert.match((await (await fetch(`${base}/api/store?brand=..%2F..%2Fx`)).json()).error, /Không có thương hiệu/);
+  assert.match((await (await fetch(`${base}/api/store?brand=..%2F..%2Fx`)).json()).error, /Unknown brand/);
   assert.equal((await fetch(`${base}/api/store`)).status, 200);
-  assert.match((await (await post('/api/store-item', { brand: '../x', id: 'S0001' })).json()).error, /Không có thương hiệu/);
+  assert.match((await (await post('/api/store-item', { brand: '../x', id: 'S0001' })).json()).error, /Unknown brand/);
 });
 
-test('bad bodies get clear Vietnamese errors (400)', async () => {
+test('bad bodies get clear errors (400)', async () => {
   const check = async (p, data, re) => { const r = await post(p, data); assert.equal(r.status, 400, p); assert.match((await r.json()).error, re, p); };
-  await check('/api/cancel', 'null', /object JSON/);
-  await check('/api/cancel', '[1]', /object JSON/);
-  await check('/api/cancel', '{bad', /không phải JSON hợp lệ/);
-  await check('/api/cancel', {}, /Thiếu mã bản nháp/);
-  await check('/api/cancel', { id: 42 }, /Thiếu mã bản nháp/);
+  await check('/api/cancel', 'null', /JSON object/);
+  await check('/api/cancel', '[1]', /JSON object/);
+  await check('/api/cancel', '{bad', /not valid JSON/);
+  await check('/api/cancel', {}, /Missing draft id/);
+  await check('/api/cancel', { id: 42 }, /Missing draft id/);
   await check('/api/cancel', { id: 'no-such-draft' }, /no-such-draft/);
-  await check('/api/store-item', null, /object JSON/);
-  await check('/api/settings', {}, /Thiếu cài đặt/);
+  await check('/api/store-item', null, /JSON object/);
+  await check('/api/settings', {}, /Missing settings/);
   await check('/api/brand?id=x', {}, /social/);
-  await check('/api/brand', { social: {} }, /Thiếu mã thương hiệu/);
+  await check('/api/brand', { social: {} }, /Missing brand id/);
   for (const r of [await post('/api/cancel', 'null'), await post('/api/store-item', {})]) assert.doesNotMatch((await r.json()).error, /Cannot read|undefined/);
 });
 

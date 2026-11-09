@@ -19,6 +19,7 @@ import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile } from "../scripts/store.mjs";
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, DEFAULT_SOURCE } from "../scripts/skills.mjs";
+import { accounts } from "../core/setup/accounts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -72,17 +73,17 @@ const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 // A request body: always a JSON object ({} when empty), else a clear message instead of a JavaScript error.
 const body = async (req, limit = 2 * 1024 * 1024) => {
   const chunks = []; let size = 0;
-  for await (const c of req) { size += c.length; if (size > limit) throw new Error("Dữ liệu quá lớn."); chunks.push(c); }
+  for await (const c of req) { size += c.length; if (size > limit) throw new Error("Request too large."); chunks.push(c); }
   const text = Buffer.concat(chunks).toString("utf8").trim();
   if (!text) return {};
   let data;
-  try { data = JSON.parse(text); } catch { throw new Error("Dữ liệu gửi lên không phải JSON hợp lệ."); }
-  if (!isObject(data)) throw new Error("Dữ liệu gửi lên phải là một object JSON, ví dụ {\"id\": \"...\"}.");
+  try { data = JSON.parse(text); } catch { throw new Error("The request is not valid JSON."); }
+  if (!isObject(data)) throw new Error("The request must be a JSON object, e.g. {\"id\": \"...\"}.");
   return data;
 };
 const draftId = (b) => {
   const id = typeof b.id === "string" ? b.id.trim() : "";
-  if (!id) throw new Error("Thiếu mã bản nháp (id).");
+  if (!id) throw new Error("Missing draft id (id).");
   return id;
 };
 
@@ -97,15 +98,15 @@ const BOOT = `<meta name="sa-token" content="${TOKEN}">`;
 const withBoot = (html) => (/<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + BOOT) : BOOT + html);
 const sameToken = (v) => { const a = Buffer.from(String(v || "")), b = Buffer.from(TOKEN); return a.length === b.length && timingSafeEqual(a, b); };
 function refuse(req, path) {
-  if (!hosts().includes(String(req.headers.host || "").toLowerCase())) return "Máy chủ chỉ nhận yêu cầu gửi tới 127.0.0.1 hoặc localhost của app này.";
+  if (!hosts().includes(String(req.headers.host || "").toLowerCase())) return "This server only accepts requests to its own 127.0.0.1 or localhost address.";
   if (req.method === "GET" || req.method === "HEAD") return "";
   const origin = req.headers.origin;
-  if (origin !== undefined && !hosts().map((h) => `http://${h}`).includes(origin)) return "Yêu cầu từ trang khác bị chặn.";
+  if (origin !== undefined && !hosts().map((h) => `http://${h}`).includes(origin)) return "Requests from other pages are blocked.";
   // core/launch.ps1 closes the server with a bare POST /api/quit when the window closes: allowed only from a non-browser
   // client (browsers always send Origin and Sec-Fetch-Site on a POST).
   if (path === "/api/quit" && origin === undefined && !req.headers["sec-fetch-site"]) return "";
-  if (!/^application\/json\b/i.test(String(req.headers["content-type"] || ""))) return "Yêu cầu phải gửi Content-Type: application/json.";
-  if (!sameToken(req.headers["x-sa-token"])) return "Thiếu hoặc sai mã phiên (X-SA-Token). Mở lại app rồi thử lại.";
+  if (!/^application\/json\b/i.test(String(req.headers["content-type"] || ""))) return "Requests must send Content-Type: application/json.";
+  if (!sameToken(req.headers["x-sa-token"])) return "Missing or wrong session token (X-SA-Token). Restart the app and try again.";
   return "";
 }
 
@@ -134,6 +135,14 @@ function restart() {
   setTimeout(() => process.exit(0), 300);
 }
 
+
+// A script of scripts/ in a hidden child process; its one JSON object (or { ok:false, error }).
+const runScript = (script, args, timeout) => new Promise((done) => {
+  execFile(process.execPath, [join(root, "scripts", script), ...args], { cwd: root, env: process.env, timeout, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+    try { done(JSON.parse(String(stdout))); } catch { done({ ok: false, error: err?.killed ? "Timed out." : String(stdout || err?.message || "Failed.").trim().slice(0, 500) }); }
+  });
+});
+const findDraftOrThrow = (id) => { if (!listDrafts().some((d) => d.id === id)) throw new Error(`Unknown post ${id}.`); };
 
 // A page's request: a function from scripts/ that may throw; its message goes back as { error }.
 const api = async (res, fn) => { try { send(res, 200, await fn()); } catch (e) { send(res, 400, { error: e.message }); } };
@@ -168,32 +177,32 @@ async function handle(req, res) {
     return linkMetricool(String(b.name ?? ""), b.skill_path ? String(b.skill_path) : null);
   });
   if (path === "/api/brand" && req.method === "GET") return api(res, () => {
-    if (!get("id")) throw new Error("Thiếu mã thương hiệu (id).");
+    if (!get("id")) throw new Error("Missing brand id (id).");
     return cached(`brand:${get("id")}`, () => readSocial(get("id")));
   });
   if (path === "/api/brand" && req.method === "POST") return api(res, async () => {
-    if (!get("id")) throw new Error("Thiếu mã thương hiệu (id).");
+    if (!get("id")) throw new Error("Missing brand id (id).");
     const b = await body(req);
-    if (!isObject(b.social)) throw new Error("Thiếu nội dung social.json (social phải là một object JSON).");
+    if (!isObject(b.social)) throw new Error("Missing social.json content (social must be a JSON object).");
     return saveSocial(get("id"), b.social);
   });
   if (path === "/api/store" && req.method === "GET") return api(res, () => {
     const brands = discovered().brands;
     const brand = get("brand"), status = get("status"), source = get("source");
-    if (brand && !brands.some((b) => b.id === brand)) throw new Error(`Không có thương hiệu "${brand}".`);
-    if (source && !/^[a-z0-9][a-z0-9-]*$/.test(source)) throw new Error("Nguồn không hợp lệ.");
+    if (brand && !brands.some((b) => b.id === brand)) throw new Error(`Unknown brand "${brand}".`);
+    if (source && !/^[a-z0-9][a-z0-9-]*$/.test(source)) throw new Error("Invalid source.");
     return { brands: brands.map((b) => ({ id: b.id, name: b.brand, counts: listItems(b.id).counts })), current: brand ? storeData(brand, status, source) : null };
   });
   // "Bỏ" a store item (rejected: never picked for ideas) or "Khôi phục" (back to new): same as store.mjs reject/restore.
   if (path === "/api/store-item" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
     const brand = String(b.brand ?? ""), id = String(b.id ?? "");
-    if (!discovered().brands.some((x) => x.id === brand)) throw new Error(`Không có thương hiệu "${brand}".`);
-    if (!/^S\d{4,}$/.test(id)) throw new Error("Mã bài trong kho không hợp lệ (dạng S0001).");
+    if (!discovered().brands.some((x) => x.id === brand)) throw new Error(`Unknown brand "${brand}".`);
+    if (!/^S\d{4,}$/.test(id)) throw new Error("Invalid library item id (like S0001).");
     return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, sources: b.sources || [] })), metricool_default: settings().metricool?.default_mode || "draft" }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, sources: b.sources || [], posts_per_week: b.posts_per_week ?? null })) }));
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
   // Optional "Bỏ" of a generated post before it is written into the brand (finalize.mjs cancel). Nothing waits for it.
@@ -201,14 +210,27 @@ async function handle(req, res) {
     const b = await body(req);
     return cancel({ id: draftId(b), note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" });
   });
+  // Posts -> Preview -> Approve: the post a person approved is saved to the brand and its image hosted (finalize.mjs
+  // approve, in a hidden child process); the next Create & publish run schedules it in Metricool.
+  if (path === "/api/approve" && req.method === "POST") return api(res, async () => {
+    const id = draftId(await body(req));
+    findDraftOrThrow(id);
+    const r = await runScript("finalize.mjs", ["approve", "--id", id], 15 * 60000);
+    const x = r.results?.[0];
+    if (!r.ok) throw new Error(r.error || "Not approved.");
+    if (x && !x.ok) throw new Error(x.error || "Not approved.");
+    return { id, brand_post: x?.brand_post || null, image_host: x?.image_host || null };
+  });
   if (path === "/api/settings" && req.method === "GET") return api(res, () => ({ settings: rawSettings(), skillsRootResolved: settings().skillsRoot }));
   if (path === "/api/settings" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
-    if (!isObject(b.settings)) throw new Error("Thiếu cài đặt (settings phải là một object JSON).");
+    if (!isObject(b.settings)) throw new Error("Missing settings (settings must be a JSON object).");
     return { settings: saveSettings(b.settings) };
   });
   // Tổng quan, Chọn skill / Đổi skill: the skill folders found in a source folder (default the vaniecom-workspace skills).
   // POST (session token), so no other page can list folders on this machine.
+  // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
+  if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
   if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: DEFAULT_SOURCE }));
   if (path === "/api/skills/sources" && req.method === "POST") return api(res, async () => listSources(String((await body(req)).from || "").trim() || DEFAULT_SOURCE));
   if (path === "/file") return allowedFile(get("path")) ? sendFile(res, resolve(get("path"))) : (res.writeHead(404), res.end());
