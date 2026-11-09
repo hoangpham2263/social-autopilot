@@ -155,3 +155,39 @@ Xoá: mở calendar brand → bấm thẻ bài ngày 13/11 → nút thùng rác 
   - `Brand name` khớp đúng nhãn brand (`Grenheim`, `Dreamy Vows`).
 - Bản đầu có dòng Fortera + ảnh Shopify .webp: dừng ở preview, đóng dialog, **không import**.
 - Playwright: tab chạy ở trạng thái `visibilityState: hidden` nên animation menu Vuetify đứng (`pointer-events:none`), click thường không ăn và click force xuyên xuống ô lịch (mở "Create new post", đã Cancel, không lưu). Cách làm: thay `requestAnimationFrame` bằng `setTimeout`, set `pointer-events:auto` cho `.v-overlay__content`, rồi `page.mouse.click` theo toạ độ. Trang calendar đôi khi kẹt "Loading, please wait..." → `bringToFront()` + reload.
+
+## 7. Media test (carousel, video) 2026-11-09
+
+Brand Grenheim (blogId <blog_id_3>), chỉ Facebook, mọi dòng `Draft true`, ngày 2026-11-20 10:00:00. File: `docs/examples/metricool-media-test.csv` (99 cột template). Ảnh chụp: `docs/examples/metricool-media-test/`.
+
+**Trạng thái: dừng ở Preview, CHƯA import.** Bước bấm "Import 4 posts" bị hệ thống quyền của Claude Code chặn (auto mode coi là ghi vào app bên ngoài khi chưa được người dùng duyệt). Đã đóng dialog, không tạo bài nào. Muốn đi tiếp: người dùng tự import file này, hoặc cho phép bước Import cho agent. Phần "cách hiện trong lịch / Edit post / body request" vì vậy chưa có.
+
+### Media đã host (raw.githubusercontent.com/hoangpham2263/social-autopilot-sources/main/grenheim/2026/11/)
+| File | Nguồn | Size | Content-Type GitHub trả |
+|---|---|---|---|
+| test-carousel-1..3.png | published POST-dining-table-vases image-01..03 | 2.6 / 2.7 / 3.0 MB | image/png |
+| test-carousel-4..7.png | published POST-corner-bathroom-shelf image-01..04 | 2.1–2.7 MB | image/png |
+| test-carousel-8..10.png | published POST-mushroom-table-cozy-corner image-01..03 | 2.1–2.5 MB | image/png |
+| test-video-1.mp4 | published VID-round-dining-table/video.mp4 (remux, xoá metadata, faststart) | 22.4 MB, 34.5 s, 768x1168, H.264 High + AAC 44.1k | **application/octet-stream** |
+| test-video-1-reel.mp4 | bản 9:16 720x1280 (nền blur, re-encode CRF 20) | 14.3 MB, 34.5 s | **application/octet-stream** |
+| test-video-1-thumb.png | published VID-round-dining-table/cover.png | 2.4 MB | image/png |
+
+PNG đã chạy strip-png-metadata: không có chunk metadata nào (sạch sẵn). jsDelivr (`cdn.jsdelivr.net/gh/...`) trả 403 cho mp4 22 MB (giới hạn kích thước file) → không dùng được làm host video lớn.
+
+### Kết quả Preview
+| Dòng | Nội dung | Facebook Post Type | Preview |
+|---|---|---|---|
+| A | Carousel 3 ảnh + alt | POST | OK, 3 thumbnail, preview FB dạng lưới ảnh |
+| B | Carousel 10 ảnh (tối đa của template) + alt | POST | OK, 10 thumbnail, preview FB dạng lưới |
+| C | Video mp4 768x1168 ở `Picture Url 1` + `Video Thumbnail Url` | POST | OK, thumbnail có nút play, preview FB hiện video |
+| D (lần 1) | Cùng video 768x1168 | REEL | **Lỗi**: "Reel → Invalid aspect ratio for video, ratio must be between 9:16 and 9:16. These videos don't meet this requirement: #1 (0.657)." |
+| D (lần 2) | Video 9:16 720x1280 (`test-video-1-reel.mp4`) | REEL | OK, preview dạng Reel (player dọc) |
+
+Lần 2: không có banner lỗi, nút "Import 4 posts".
+
+### Luật học được
+- **Video đặt ở `Picture Url 1`** (template không có cột Video Url): Metricool nhận diện là video theo đuôi `.mp4`, đọc được file (đo được tỉ lệ 0.657) dù GitHub raw trả `application/octet-stream` → content-type **không** chặn ở preview. Chưa biết lúc đăng thật Facebook có chấp nhận không (cần import + đăng thử mới biết).
+- **Facebook REEL bắt buộc đúng 9:16** (kiểm tra ở preview). Video không đúng 9:16 → dùng `Facebook Post Type` = POST (video thường) hoặc làm bản 9:16.
+- **Carousel tối đa 10 ảnh** = 10 cột Picture Url; 10 ảnh PNG ~2.5 MB mỗi ảnh không bị cảnh báo.
+- Instagram/TikTok/YouTube để false vì Grenheim chỉ kết nối Facebook.
+- Playwright: lần này tab ở trạng thái `visible` sau `bringToFront()`, menu ⋮ (toạ độ ~1313,197) click thường được, không cần hack animation. Ảnh chụp màn hình chỉ lưu được dưới `C:\Users\Admin` (rồi copy sang docs).
