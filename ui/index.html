@@ -61,14 +61,14 @@ details[open] > summary { margin-bottom: 6px; }
 .slot select, .slot input { width: auto; }
 .slot input[type=text], .src-url { flex: 1 1 auto; min-width: 0; }
 /* Nghiên cứu */
-.refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .ref img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--control); display: block; border: 1px solid var(--line); }
 pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
 /* Bản nháp: a compact card, thumbnails on the left, the header row carries the actions. */
-.draft { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px; }
+.draft { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; }
 .thumbs { position: relative; align-self: start; }
-.thumbs img { width: 200px; height: 200px; object-fit: cover; display: block; border: 1px solid var(--line); background: var(--control); }
-.thumbs .none { width: 200px; height: 120px; display: grid; place-items: center; border: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
+.thumbs img { width: 300px; height: 300px; object-fit: cover; display: block; border: 1px solid var(--line); background: var(--control); }
+.thumbs .none { width: 300px; height: 160px; display: grid; place-items: center; border: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
 .draft .body { display: grid; gap: 4px; align-content: start; min-width: 0; }
 .draft .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .draft .head h3 { margin: 0; font-size: 14px; flex: 1 1 auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -81,17 +81,18 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .captions .cap { border: 1px solid var(--line); padding: 6px 8px; }
 .host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; }
 .host a { overflow-wrap: anywhere; }
-@media (max-width: 640px) { .draft { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .draft { grid-template-columns: 1fr; } .thumbs img { width: 100%; max-width: 300px; height: auto; aspect-ratio: 1 / 1; } }
 /* Xem trước: static mocks of a Facebook feed post and an Instagram post (no external calls). */
-.previews { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; padding: 10px; background: #f0f2f5; border: 1px solid var(--line); }
 .pv { width: 360px; max-width: 100%; background: #fff; border: 1px solid #dadde1; border-radius: 8px; font: 14px/1.34 "Segoe UI", Helvetica, Arial, sans-serif; color: #050505; overflow: hidden; }
 .pv .pv-tag { font-size: 11px; color: #65676b; padding: 6px 12px 0; }
 .pv .pv-head { display: flex; gap: 8px; align-items: center; padding: 8px 12px; }
 .pv .av { width: 36px; height: 36px; border-radius: 50%; background: #1b74e4; color: #fff; display: grid; place-items: center; font-size: 15px; flex: 0 0 auto; }
 .pv .who { display: grid; } .pv .who b { font-size: 14px; } .pv .who span { font-size: 12px; color: #65676b; }
 .pv .txt { padding: 0 12px 10px; white-space: pre-wrap; word-break: break-word; }
-.pv .txt.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; padding-bottom: 0; }
-.pv .more { display: block; padding: 0 12px 10px; color: #65676b; background: none; border: 0; font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
+.pv .more { display: inline; padding: 0; color: #65676b; background: none; border: 0; font: inherit; cursor: pointer; }
+.pv .more:hover { text-decoration: underline; }
+.pv .pv-ro { color: #b06000; }
+.pv.review { border-color: #b06000; }
 .pv .media { display: grid; gap: 2px; background: #fff; }
 .pv .media.n2 { grid-template-columns: 1fr 1fr; } .pv .media.n3, .pv .media.n4 { grid-template-columns: 1fr 1fr; }
 .pv .media img { width: 100%; display: block; object-fit: cover; }
@@ -105,19 +106,38 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .pv.ig .txt { padding: 8px 12px 10px; }
 /* Thumbnails are buttons that open the in-page lightbox (never a new window). */
 .thumb { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; }
-.thumbs .orig { position: absolute; right: 4px; bottom: 4px; width: 72px; height: 72px; border: 2px solid #fff; outline: 1px solid var(--line); }
+.thumbs .orig { position: absolute; right: 4px; bottom: 4px; width: 110px; height: 110px; border: 2px solid #fff; outline: 1px solid var(--line); }
 .thumbs .orig img { width: 100%; height: 100%; border: 0; }
-/* Overlay: lightbox (image/video, prev/next) or panel (Xem trước); closes with ✕ Đóng, Esc or a click on the backdrop. */
-.lb { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, .85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 56px 16px 16px; }
+/* Overlay: a near-fullscreen window (95vw x 92vh) holding the lightbox (image/video, prev/next) or the Xem trước panel.
+   Its header carries the title, channel tabs and ✕ Đóng; Esc or a click on the backdrop also closes. */
+.lb { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, .75); display: grid; place-items: center; }
 .lb[hidden] { display: none; }
-.lb .lb-close { position: absolute; top: 12px; right: 16px; }
-.lb .lb-body { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 0; }
-.lb .lb-stage { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 0; flex: 1 1 auto; }
-.lb .lb-stage img, .lb .lb-stage video { max-width: calc(100vw - 140px); max-height: calc(100vh - 120px); object-fit: contain; background: #111; }
+.lb .lb-win { width: 95vw; height: 92vh; background: var(--control); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.lb .lb-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); background: #fff; }
+.lb .lb-title { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb .lb-extra:empty { display: none; }
+.lb .lb-head nav.tabs { margin: 0; flex-wrap: wrap; }
+.lb .lb-close { margin-left: auto; }
+.lb .lb-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.lb .lb-stage { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 0; padding: 12px; background: #111; }
+.lb .lb-stage img, .lb .lb-stage video { max-width: calc(95vw - 140px); max-height: calc(92vh - 90px); object-fit: contain; min-width: 0; }
 .lb .lb-nav { font-size: 20px; }
-.lb .lb-cap { color: #fff; font-size: 13px; }
-.lb .lb-panel { background: var(--control); border: 1px solid var(--line); max-width: min(1100px, 100%); max-height: 100%; overflow: auto; padding: 12px; }
-.lb .lb-title { margin-bottom: 8px; }
+/* Xem trước: the post at Facebook's feed width (500px) on the left, the draft's facts on the right (below when narrow). */
+.lb .pv-layout { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.lb .pv-stage { overflow: auto; background: #f0f2f5; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
+.lb .pv-col { width: 500px; max-width: 100%; flex: 0 0 auto; display: grid; gap: 10px; align-content: start; }
+.lb .pv-langs { margin: 0; }
+.lb .pv-langs .meta { margin-left: 4px; }
+.lb .pv-stage .pv { width: 100%; font-size: 15px; }
+.lb .pv-stage .pv .media.n1 img { max-height: calc(92vh - 250px); object-fit: contain; background: #f0f2f5; }
+.lb .pv-side { overflow: auto; padding: 12px; border-left: 1px solid var(--line); background: #fff; display: grid; gap: 10px; align-content: start; }
+.lb .pv-side .kv dd { overflow-wrap: anywhere; }
+.lb .pv-side pre { max-height: none; }
+@media (max-width: 900px) {
+  .lb .pv-layout { grid-template-columns: 1fr; overflow: auto; }
+  .lb .pv-stage { overflow: visible; }
+  .lb .pv-side { border-left: 0; border-top: 1px solid var(--line); }
+}
 .pv [data-pv] { cursor: zoom-in; }
 </style>
 </head>
@@ -377,23 +397,27 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     return d.image_mode === "scene-swap" && d.reference_image ? [...own, { type: "image", path: d.reference_image, label: "Ảnh gốc của shop" }] : own;
   }
 
-  // ----- Overlay: an image/video lightbox or a panel (Xem trước), always inside the app window, never a new window -----
+  // ----- Overlay: a near-fullscreen window (lightbox or Xem trước), always inside the app window, never a new window -----
   const overlay = document.createElement("div");
   overlay.className = "lb";
   overlay.hidden = true;
-  overlay.innerHTML = `<button class="btn lb-close" type="button">✕ Đóng</button><div class="lb-body"></div>`;
+  overlay.innerHTML = `<div class="lb-win" role="dialog" aria-modal="true"><div class="lb-head"><div class="lb-title"></div><span class="lb-extra"></span><button class="btn lb-close" type="button">✕ Đóng</button></div><div class="lb-body"></div></div>`;
   document.body.append(overlay);
   let lbKeys = null;
-  function closeOverlay() { overlay.hidden = true; $(".lb-body", overlay).innerHTML = ""; lbKeys = null; document.body.style.overflow = ""; }
-  function openOverlay(html, keys) {
-    $(".lb-body", overlay).innerHTML = html;
+  function closeOverlay() { overlay.hidden = true; for (const c of [".lb-title", ".lb-extra", ".lb-body"]) $(c, overlay).innerHTML = ""; lbKeys = null; document.body.style.overflow = ""; }
+  // title: the header text; extra: header controls left of ✕ Đóng (channel tabs); body: the window's content.
+  function openOverlay(title, body, keys, extra = "") {
+    $(".lb-title", overlay).innerHTML = title;
+    $(".lb-extra", overlay).innerHTML = extra;
+    $(".lb-body", overlay).innerHTML = body;
     lbKeys = keys || null;
+    const wasHidden = overlay.hidden;
     overlay.hidden = false;
     document.body.style.overflow = "hidden";
-    $(".lb-close", overlay).focus();
+    if (wasHidden) $(".lb-close", overlay).focus();
   }
   $(".lb-close", overlay).onclick = closeOverlay;
-  overlay.addEventListener("click", (e) => { if (e.target === overlay || e.target.classList.contains("lb-body") || e.target.classList.contains("lb-stage")) closeOverlay(); });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay || e.target.classList.contains("lb-stage")) closeOverlay(); });
   document.addEventListener("keydown", (e) => {
     if (overlay.hidden) return;
     if (e.key === "Escape") closeOverlay();
@@ -406,15 +430,28 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const draw = () => {
       const m = items[i];
       const media = m.type === "video" ? `<video src="${img(m.path)}" controls autoplay></video>` : `<img src="${img(m.path)}" alt="${esc(m.label)}">`;
-      openOverlay(`<div class="lb-stage">${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="-1" aria-label="Ảnh trước">‹</button>` : ""}${media}${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="1" aria-label="Ảnh sau">›</button>` : ""}</div>
-        <div class="lb-cap">${esc(m.label)}${items.length > 1 ? ` · ${i + 1}/${items.length}` : ""}</div>`, (step) => { i = (i + step + items.length) % items.length; draw(); });
+      openOverlay(`${esc(m.label)}${items.length > 1 ? ` · ${i + 1}/${items.length}` : ""}`,
+        `<div class="lb-stage">${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="-1" aria-label="Ảnh trước">‹</button>` : ""}${media}${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="1" aria-label="Ảnh sau">›</button>` : ""}</div>`,
+        (step) => { i = (i + step + items.length) % items.length; draw(); });
       for (const b of $$(".lb-nav", overlay)) b.onclick = (e) => { e.stopPropagation(); lbKeys(Number(b.dataset.step)); };
     };
     draw();
   }
 
   // Xem trước: how the post would look on each enabled channel (Facebook feed card, Instagram post), from the server's
-  // preview data (page name, text per language_policy, media), in the overlay panel. A static mock; nothing loads from outside.
+  // preview data (page name, posted text per language_policy, reviewer-only texts, media), in the overlay panel.
+  // ONE language at a time: the posted language first (EN by default), the reviewer-only reading (VN) on the switch.
+  // A static mock; nothing loads from outside.
+  const LANG_NAME = (l) => String(l || "").split("+").map((x) => x.toUpperCase()).join(" + ");
+  // Facebook-like "… Xem thêm": past 5 lines or ~250 characters the text is cut; the rest opens in place.
+  function clampText(text) {
+    const t = String(text || "");
+    let cut = t.length > 250 ? t.lastIndexOf(" ", 250) : -1;
+    const nl = t.split("\n").slice(0, 5).join("\n").length;
+    if (nl < t.length && (cut < 0 || nl < cut)) cut = nl;
+    if (cut <= 0 || cut >= t.length) return esc(t);
+    return `<span class="cut">${esc(t.slice(0, cut).trimEnd())}… <button class="more" type="button">Xem thêm</button></span><span class="rest" hidden>${esc(t)}</span>`;
+  }
   function openPreview(d) {
     const p = d.preview || { posts: [], media: [] };
     const initial = esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
@@ -423,24 +460,53 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       if (!m.length) return `<div class="video" style="aspect-ratio:1/1;background:#e4e6eb"></div>`;
       return `<div class="media n${m.length}">${m.map((x, i) => (x.type === "video" ? `<div class="video" data-pv="${i}"></div>` : `<img src="${img(x.path)}" alt="" data-pv="${i}">`)).join("")}</div>`;
     };
-    const fb = (post, t) => `<div class="pv fb"><div class="pv-tag">Facebook${t.lang ? ` · ${esc(t.lang)}` : ""}</div>
+    const NET = { facebook: "Facebook", instagram: "Instagram" };
+    const tag = (post, o) => `<div class="pv-tag">${esc(NET[post.network] || post.network)}${o.lang ? ` · ${esc(LANG_NAME(o.lang))}` : ""}${o.review ? ` · <span class="pv-ro">Chỉ để đọc, không đăng</span>` : ""}</div>`;
+    const empty = "(chưa có caption)";
+    const fb = (post, o) => `<div class="pv fb${o.review ? " review" : ""}">${tag(post, o)}
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(p.page_name)}</b><span>Vừa xong · Công khai</span></div></div>
-      <div class="txt clamp">${esc(t.text || "(chưa có caption)")}</div><button class="more" type="button">Xem thêm</button>${media()}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
-    const ig = (post, t) => `<div class="pv ig"><div class="pv-tag">Instagram${t.lang ? ` · ${esc(t.lang)}` : ""}</div>
+      <div class="txt">${clampText(o.text || empty)}</div>${media()}<div class="bar"><span>Thích</span><span>Bình luận</span><span>Chia sẻ</span></div></div>`;
+    const ig = (post, o) => `<div class="pv ig${o.review ? " review" : ""}">${tag(post, o)}
       <div class="pv-head"><div class="av">${initial}</div><div class="who"><b>${esc(post.account || p.page_name)}</b></div></div>
-      ${media()}<div class="txt clamp"><b>${esc(post.account || p.page_name)}</b> ${esc(t.text || "(chưa có caption)")}</div><button class="more" type="button">Xem thêm</button></div>`;
-    const cards = (p.posts || []).flatMap((post) => post.texts.map((t) => (post.network === "instagram" ? ig(post, t) : post.network === "facebook" ? fb(post, t)
-      : `<div class="pv"><div class="pv-tag">${esc(post.network)} (chưa có bản xem trước)</div><div class="txt">${esc(t.text)}</div></div>`)));
-    openOverlay(`<div class="lb-panel"><div class="lb-title">Xem trước ${esc(d.id)} <span class="meta">(mô phỏng, chưa đăng)</span></div>
-      <div class="previews">${cards.join("") || `<div class="meta">Chưa bật kênh nào.</div>`}</div></div>`);
-    const box = $(".previews", overlay);
-    for (const more of $$(".more", box)) {
-      const txt = more.previousElementSibling;
-      // Only when the text is longer than three lines, as Facebook does.
-      requestAnimationFrame(() => { if (txt.scrollHeight <= txt.clientHeight + 1) more.remove(); });
-      more.onclick = () => { txt.classList.remove("clamp"); more.remove(); };
-    }
-    for (const m of $$("[data-pv]", box)) m.onclick = () => openLightbox(mediaOf(d), Number(m.dataset.pv));
+      ${media()}<div class="txt"><b>${esc(post.account || p.page_name)}</b> ${clampText(o.text || empty)}</div></div>`;
+    const card = (post, o) => (post.network === "instagram" ? ig(post, o) : post.network === "facebook" ? fb(post, o)
+      : `<div class="pv">${tag(post, o)}<div class="txt">${esc(o.text)}</div></div>`);
+    // Reviewer-only texts (never posted). Accepts [{lang,text}], {lang:text} or a plain string.
+    const rv = p.review_texts;
+    const review = (Array.isArray(rv) ? rv : rv && typeof rv === "object" ? Object.entries(rv).map(([lang, text]) => ({ lang, text })) : rv ? [{ lang: "", text: rv }] : [])
+      .map((x) => (typeof x === "string" ? { lang: "", text: x } : x)).filter((x) => x && x.text).map((x) => ({ ...x, review: true }));
+    const posts = p.posts || [];
+    // A channel's language options: its posted texts (EN first), then the reviewer-only readings.
+    const optionsOf = (post) => [...[...(post?.texts || [])].sort((a, b) => (b.lang === "en") - (a.lang === "en")), ...review];
+    const mediaUrl = d.brand_post?.media_url;
+    const side = (post, o) => `<dl class="kv">
+        <dt>Bản nháp</dt><dd>${esc(d.id)}</dd>
+        <dt>Thương hiệu</dt><dd>${esc(p.page_name || d.brand)}${p.page_name && p.page_name !== d.brand ? ` <span class="meta">(${esc(d.brand)})</span>` : ""}</dd>
+        <dt>Kênh</dt><dd>${posts.map((x) => `${esc(NET[x.network] || x.network)}${x.account ? ` <span class="meta">${esc(x.account)}</span>` : ""}`).join("<br>") || "-"}</dd>
+        <dt>Ngôn ngữ đăng</dt><dd>${esc(LANG_NAME((post?.langs || post?.texts?.map((t) => t.lang) || d.languages || []).join("+")) || "-")}${post?.mode || p.mode ? ` <span class="meta">(${esc(post?.mode || p.mode)})</span>` : ""}</dd>
+        ${review.length ? `<dt>Chỉ để đọc</dt><dd>${esc(review.map((x) => LANG_NAME(x.lang)).join(", "))} <span class="meta">(không đăng)</span></dd>` : ""}
+        <dt>Đang xem</dt><dd>${o ? `${esc(LANG_NAME(o.lang) || "-")} · ${o.review ? `<span class="warn-text">Chỉ để đọc, không đăng</span>` : `<span class="ok-text">Đăng</span>`}` : "-"}</dd>
+        <dt>Link ảnh</dt><dd>${mediaUrl ? `<a href="${esc(mediaUrl)}" target="_blank" rel="noopener">${esc(mediaUrl)}</a>` : `<span class="muted">Chưa có</span>`}</dd>
+      </dl>`;
+    const title = `Xem trước ${esc(d.id)} <span class="meta">(mô phỏng, chưa đăng)</span>`;
+    let lang = null; // the chosen language, kept when switching channel
+    const keyOf = (o) => `${o.review ? "r" : "p"}:${o.lang}`;
+    const draw = (k) => {
+      const post = posts[k];
+      const opts = optionsOf(post);
+      const o = opts.find((x) => keyOf(x) === lang) || opts[0] || null;
+      if (o) lang = keyOf(o);
+      const chan = posts.length > 1 ? `<nav class="tabs">${posts.map((x, j) => `<button type="button" data-tab="${j}" aria-pressed="${j === k}">${esc(NET[x.network] || x.network)}</button>`).join("")}</nav>` : "";
+      const langBar = opts.length > 1 ? `<nav class="tabs pv-langs" aria-label="Ngôn ngữ">${opts.map((x, j) => `<button type="button" data-lang="${j}" aria-pressed="${x === o}">${esc(LANG_NAME(x.lang) || "?")} <span class="meta">${x.review ? "Chỉ để đọc, không đăng" : "Đăng"}</span></button>`).join("")}</nav>` : "";
+      openOverlay(title, `<div class="pv-layout"><div class="pv-stage"><div class="pv-col">${langBar}${post && o ? card(post, o) : `<div class="meta">Chưa bật kênh nào.</div>`}</div></div><div class="pv-side">${side(post, o)}</div></div>`,
+        posts.length > 1 ? (step) => draw((k + step + posts.length) % posts.length) : null, chan);
+      for (const b of $$("[data-tab]", overlay)) b.onclick = () => draw(Number(b.dataset.tab));
+      for (const b of $$("[data-lang]", overlay)) b.onclick = () => { lang = keyOf(opts[Number(b.dataset.lang)]); draw(k); };
+      const box = $(".pv-stage", overlay);
+      for (const more of $$(".more", box)) more.onclick = () => { const t = more.closest(".txt"); $(".cut", t).hidden = true; $(".rest", t).hidden = false; };
+      for (const m of $$("[data-pv]", box)) m.onclick = () => openLightbox(mediaOf(d), Number(m.dataset.pv));
+    };
+    draw(0);
   }
   function hostBlock(d) {
     const u = d.brand_post?.media_url;
