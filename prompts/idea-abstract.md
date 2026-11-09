@@ -1,6 +1,6 @@
 # Biến bài tham khảo thành ý trừu tượng
 
-Dùng cho từng ý trong `workspace/store/<brand>/ideas.json` (chế độ "Làm bài & đưa lên", bước 2.1). Nhìn ảnh `ref_image` và caption của bài kho (`item`; `node scripts/store.mjs show --brand <id> --id S0001`), rồi đọc `project/project.md` của thương hiệu (mục 4 khách, 5 sản phẩm, 10 quy tắc riêng).
+Dùng cho từng ý trong `workspace/store/<brand>/ideas.json` (Mode 2 "Create & publish", RUNBOOK bước 2.3). Nhìn ảnh `ref_image` và caption của bài kho (`item`; `node scripts/store.mjs show --brand <id> --id S0001`), rồi đọc `project/project.md` của thương hiệu (mục 4 khách, 5 sản phẩm, 10 quy tắc riêng).
 
 Điền các trường bằng lời của mình, ngắn, ở dạng thương hiệu **có thể tự làm với sản phẩm của chính mình**:
 

@@ -1,6 +1,6 @@
-# Chế độ "Chỉ nghiên cứu": crawl hết bài của nguồn vào kho
+# Mode 1 "Research only": crawl bài của nguồn vào kho
 
-Agent làm phần duyệt trang (Playwright MCP trên Chrome đã đăng nhập); tool không có scraper. Lệnh và thứ tự: `RUNBOOK.md`, Chế độ 1. Kho của mỗi thương hiệu: `workspace/store/<brand>/` (`items.json`, `images/`, `progress.json`, `duplicates.json`); DreamyVows và GRENHEIM không bao giờ trộn.
+Agent làm phần duyệt trang (Playwright MCP trên Chrome đã đăng nhập); tool không có scraper. Lệnh và thứ tự: `RUNBOOK.md`, Mode 1. Kho của mỗi thương hiệu: `workspace/store/<brand>/` (`items.json`, `images/`, `progress.json`, `duplicates.json`); kho của các thương hiệu không bao giờ trộn.
 
 ## Trước khi bắt đầu
 - Công cụ: Claude Code hoặc Codex có Playwright MCP (`npx -y @playwright/mcp@latest --extension`) gắn vào Chrome đã đăng nhập Facebook bằng tài khoản phụ (`research.fb_account` trong social.json). Không tự đăng nhập, không nhập mật khẩu, không lưu cookie.
@@ -69,5 +69,5 @@ Bài trùng ghi vào `duplicates.json` (khớp bài nào, luật nào); báo cá
 
 ## Bài học
 - Facebook chèn U+034F và ký tự zero-width vào caption: luôn qua `ingest`, không dùng caption thô.
-- Facebook hiện cùng một bài dưới nhiều mã (bài và từng ảnh; đã gặp với Duo Decor): ghi `alt_urls`; `ingest` còn so ảnh và caption.
+- Facebook hiện cùng một bài dưới nhiều mã (bài và từng ảnh): ghi `alt_urls`; `ingest` còn so ảnh và caption.
 - Dựng lại cảnh từ ảnh đối thủ vẫn là sản phẩm của họ: bài thật dùng ảnh sản phẩm của thương hiệu.
