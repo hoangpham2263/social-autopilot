@@ -149,7 +149,10 @@ export function image(args, s = settings()) {
   const q = (a) => (c.shell ? `"${a}"` : a);
   const before = new Set(fs.readdirSync(dir));
   setStatus(dir, 'generating');
-  const r = spawnSync(c.shell ? `"${c.file}"` : c.file, [...c.pre, ...codexArgs].map(q), { cwd: dir, input: prompt, encoding: 'utf8', shell: c.shell, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  // A .cmd shim needs the shell; it gets one command string (no args array with shell: true, Node DEP0190).
+  const r = c.shell
+    ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+    : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
   fs.writeFileSync(path.join(dir, 'codex.log'), `$ codex ${codexArgs.join(' ')} < prompt.txt\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}`, 'utf8');
   if (!fs.existsSync(target)) {
     // Codex sometimes names the file differently: take the one new PNG it saved.
