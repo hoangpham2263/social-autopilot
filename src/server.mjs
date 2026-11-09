@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
-import { workspace, discoverBrands, listDrafts, readJson, rawSettings, saveSettings, settings, brandOverview, metricoolBrands, saveMetricoolBrands } from "../scripts/lib.mjs";
+import { workspace, discoverBrands, listDrafts, readJson, rawSettings, saveSettings, settings, brandOverview, metricoolBrands, saveMetricoolBrands, linkMetricool } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
@@ -18,6 +18,7 @@ import { readSocial, saveSocial } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile } from "../scripts/store.mjs";
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
+import { listSources, DEFAULT_SOURCE } from "../scripts/skills.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -160,6 +161,12 @@ async function handle(req, res) {
   if (path === "/api/brands") return api(res, () => cached("brands", () => { const found = discovered(); return { ...found, metricool: brandOverview(found) }; }));
   if (path === "/api/metricool-brands" && req.method === "GET") return api(res, () => metricoolBrands());
   if (path === "/api/metricool-brands" && req.method === "POST") return api(res, async () => saveMetricoolBrands(await body(req)));
+  // Tổng quan, Chọn skill / Đổi skill / Kết nối / Ngắt kết nối: { name, skill_path } links a Metricool brand to a skill
+  // folder in place (nothing copied); skill_path null = unlink (the folder and the store stay).
+  if (path === "/api/metricool-link" && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    return linkMetricool(String(b.name ?? ""), b.skill_path ? String(b.skill_path) : null);
+  });
   if (path === "/api/brand" && req.method === "GET") return api(res, () => {
     if (!get("id")) throw new Error("Thiếu mã thương hiệu (id).");
     return cached(`brand:${get("id")}`, () => readSocial(get("id")));
@@ -200,6 +207,10 @@ async function handle(req, res) {
     if (!isObject(b.settings)) throw new Error("Thiếu cài đặt (settings phải là một object JSON).");
     return { settings: saveSettings(b.settings) };
   });
+  // Tổng quan, Chọn skill / Đổi skill: the skill folders found in a source folder (default the vaniecom-workspace skills).
+  // POST (session token), so no other page can list folders on this machine.
+  if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: DEFAULT_SOURCE }));
+  if (path === "/api/skills/sources" && req.method === "POST") return api(res, async () => listSources(String((await body(req)).from || "").trim() || DEFAULT_SOURCE));
   if (path === "/file") return allowedFile(get("path")) ? sendFile(res, resolve(get("path"))) : (res.writeHead(404), res.end());
   // Cấu hình, Cập nhật, Tải lại (core/assets/hub.js). The Cấu hình page gets the session token like the main page.
   if (path === "/setup" && req.method === "GET") return sendHtml(res, join(root, "core", "setup", "page.html"));

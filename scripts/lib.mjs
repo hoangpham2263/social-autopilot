@@ -199,27 +199,75 @@ export function saveMetricoolBrands(input) {
     if (!validTimeZone(timezone)) throw new Error(`Brand "${name}": timezone "${timezone}" không phải múi giờ IANA hợp lệ (vd. Asia/Ho_Chi_Minh).`);
     const skill_id = b.skill_id ? String(b.skill_id).trim() : null;
     if (skill_id) { if (skills.has(skill_id)) throw new Error(`skill_id "${skill_id}" gắn cho hơn một brand.`); skills.add(skill_id); }
-    return { name, blog_id: String(b.blog_id || '').trim(), timezone, networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id, last_checked: String(b.last_checked || '').trim() };
+    // skill_path (optional): the linked skill folder when it is not a sub-folder of skillsRoot (Tổng quan, Chọn skill).
+    const skill_path = skill_id && typeof b.skill_path === 'string' && b.skill_path.trim() ? b.skill_path.trim() : undefined;
+    return { name, blog_id: String(b.blog_id || '').trim(), timezone, networks: [].concat(b.networks || []).map(String).filter(Boolean), skill_id, ...(skill_path ? { skill_path } : {}), last_checked: String(b.last_checked || '').trim() };
   });
   const next = { version: 1, account, brands };
   const file = path.join(workspace, 'metricool-brands.json');
   withLock(file, () => writeJson(file, next));
   return next;
 }
+// A brand skill folder: SKILL.md, project/project.md and project/social.json. Its id is the folder name without -skills.
+export const SKILL_FILES = ['SKILL.md', 'project/project.md', 'project/social.json'];
+export const isSkillDir = (dir) => SKILL_FILES.every((f) => fs.existsSync(path.join(dir, f)));
+export const skillIdOf = (dir) => path.basename(path.resolve(dir)).replace(/-skills$/, '');
+
+const samePath = (x, y) => path.resolve(x).toLowerCase() === path.resolve(y).toLowerCase();
+// Chọn skill / Đổi skill / Ngắt kết nối (Tổng quan): links one Metricool brand to a skill folder BY PATH, in place
+// (nothing is copied: the tool reads and writes that folder). skill_path is the source of truth; skill_id (the folder
+// name without -skills) is kept as the brand's id for scripts and stores. skillDir null = unlink (the folder is never
+// touched; the tool stops making and sending posts for that Metricool brand).
+export function linkMetricool(name, skillDir) {
+  const cfg = metricoolBrands();
+  const b = (cfg.brands || []).find((x) => x.name === name);
+  if (!b) throw new Error(`Không có brand Metricool "${name}".`);
+  let skill_id = null, skill_path;
+  if (skillDir) {
+    const dir = path.resolve(String(skillDir).trim());
+    if (!isSkillDir(dir)) throw new Error(`${dir} không phải bộ skill (cần ${SKILL_FILES.join(', ')}).`);
+    skill_id = skillIdOf(dir);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(skill_id)) throw new Error(`Tên thư mục skill "${path.basename(dir)}" không hợp lệ (chữ thường, số, gạch nối).`);
+    const other = cfg.brands.find((x) => x !== b && (x.skill_id === skill_id || (x.skill_path && samePath(x.skill_path, dir))));
+    if (other) throw new Error(`Bộ skill "${skill_id}" đang nối với brand "${other.name}".`);
+    skill_path = dir.split(path.sep).join('/');
+  }
+  return saveMetricoolBrands({ ...cfg, brands: cfg.brands.map((x) => { if (x !== b) return x; const { skill_path: _, ...rest } = x; return { ...rest, skill_id, ...(skill_path ? { skill_path } : {}) }; }) });
+}
+
+// The folder a Metricool brand points to: its skill_path; an older entry with only skill_id means skillsRoot/<id>-skills.
+export const linkedDir = (m, s = settings()) => (m?.skill_path ? path.resolve(m.skill_path) : m?.skill_id ? path.join(s.skillsRoot, `${m.skill_id}-skills`) : '');
+
+// Every skill folder the tool works with: the sub-folders of skillsRoot, plus the folders linked by path. A linked
+// path owns its id: a skillsRoot folder of the same id is not used for it, also when the linked folder is missing
+// (renamed or moved), so a brand never silently falls back to another folder.
+export function skillDirs(s = settings()) {
+  const root = s.skillsRoot, byId = new Map();
+  if (fs.existsSync(root)) for (const e of fs.readdirSync(root, { withFileTypes: true })) if (e.isDirectory() && !e.name.startsWith('.')) byId.set(skillIdOf(e.name), path.join(root, e.name));
+  let linked = [];
+  try { linked = metricoolBrands().brands || []; } catch {}
+  for (const m of linked) if (m.skill_id && m.skill_path) {
+    const dir = path.resolve(m.skill_path);
+    if (isSkillDir(dir)) byId.set(m.skill_id, dir); else if (byId.has(m.skill_id) && !samePath(byId.get(m.skill_id), dir)) byId.delete(m.skill_id);
+  }
+  return [...byId.values()];
+}
 // Every brand of the Metricool account with its skill (status, missing items, timezone check), plus the skills that have no
-// Metricool brand yet.
+// Metricool brand yet. The skill is found by the linked folder (skill_path); skill_path_missing = that folder is gone.
 export function brandOverview(found = discoverBrands()) {
   const cfg = metricoolBrands();
   const used = new Set();
   const brands = (cfg.brands || []).map((m) => {
-    const skill = m.skill_id ? found.brands.find((b) => b.id === m.skill_id) : null;
+    const dir = m.skill_id ? linkedDir(m) : '';
+    const skill = dir ? found.brands.find((b) => samePath(b.dir, dir)) : null;
     if (skill) used.add(skill.id);
     // tz_mismatch (informational): cadence.timezone (audience, where times are planned) differs from the Metricool brand;
     // metricool-csv.mjs converts every posting time, so it is not an error. tz_conflict: the skill's metricool.timezone
     // disagrees with the Metricool brand's timezone (a wrong setting: times would be converted to the wrong zone).
     const tz_mismatch = !!(skill && m.timezone && skill.timezone && skill.timezone !== m.timezone);
     const tz_conflict = !!(skill && m.timezone && skill.metricool_timezone && skill.metricool_timezone !== m.timezone);
-    return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone, metricool_timezone: skill.metricool_timezone || '' } : null, skill_missing: !!(m.skill_id && !skill), tz_mismatch, tz_conflict };
+    const skill_path_missing = !!(m.skill_id && !isSkillDir(dir));
+    return { ...m, skill: skill ? { id: skill.id, brand: skill.brand, enabled: skill.enabled, ready: skill.ready, usable: skill.usable, problems: skill.problems, timezone: skill.timezone, metricool_timezone: skill.metricool_timezone || '' } : null, skill_missing: !!(m.skill_id && !skill), skill_path_missing, tz_mismatch, tz_conflict };
   });
   return { account: cfg.account || {}, brands, skills_without_metricool: found.brands.filter((b) => !used.has(b.id)).map((b) => ({ id: b.id, brand: b.brand })) };
 }
@@ -332,7 +380,7 @@ export function secretProblems(value, at = '') {
   return found;
 }
 
-// One brand = one skill folder under skillsRoot with SKILL.md, project/project.md and project/social.json.
+// One brand = one skill folder (under skillsRoot, or linked by path from Tổng quan) with SKILL.md, project/project.md and project/social.json.
 // Readiness is the skill's own check (scripts/check-skill.mjs --tool-ready, exit 0 = ready); the tool does not
 // re-implement it. Usable (in the run) = enabled: true and ready.
 export function inspectBrand(dir) {
@@ -365,11 +413,11 @@ export function inspectBrand(dir) {
 
 export function discoverBrands(s = settings()) {
   const root = s.skillsRoot;
-  if (!fs.existsSync(root)) return { root, brands: [], skipped: [{ dir: root, reason: 'skillsRoot không tồn tại' }] };
+  const dirs = skillDirs(s);
+  if (!fs.existsSync(root) && !dirs.length) return { root, brands: [], skipped: [{ dir: root, reason: 'skillsRoot không tồn tại' }] };
   const brands = [], skipped = [];
-  for (const e of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!e.isDirectory() || e.name.startsWith('.')) continue;
-    const b = inspectBrand(path.join(root, e.name));
+  for (const dir of dirs) {
+    const b = inspectBrand(dir);
     if (b.skip) skipped.push({ dir: b.dir, reason: b.skip }); else brands.push(b);
   }
   return { root, brands, skipped };

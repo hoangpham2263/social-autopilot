@@ -52,6 +52,7 @@ header .update { margin-left: auto; }
 header .config + .update { margin-left: 0; }
 /* Menu: whether Cấu hình is done (hub.js), above the tools; the tools need every step done. */
 .setup-status { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 8px 14px; margin-bottom: 12px; background: var(--surface); border: 1px solid var(--line); }
+.setup-status[hidden] { display: none; }
 .setup-status .mark { font-size: 15px; width: 18px; text-align: center; }
 .setup-status .text { flex: 1; min-width: 0; }
 .setup-status.ok { border-color: var(--accent); }

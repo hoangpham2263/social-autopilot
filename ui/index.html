@@ -30,6 +30,11 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .ok-text { color: #006400; } .bad-text { color: rgb(176, 0, 0); } .warn-text { color: #b06000; }
 .status-tag { display: inline-block; padding: 1px 8px; border: 1px solid var(--line); font-size: 12px; }
 .status-tag.c-green { border-color: var(--accent); } .status-tag.c-amber { border-color: #b06000; } .status-tag.c-red { border-color: rgb(176, 0, 0); }
+.card .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.picker { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.picker .find-row { display: flex; gap: 8px; margin: 0 0 6px; } .picker .find-row input { flex: 1 1 auto; min-width: 0; }
+.picker .found label { display: flex; gap: 6px; align-items: center; margin: 0; padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; } .dot-green { background: #1f8f3a; } .dot-red { background: rgb(176, 0, 0); }
 .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 /* Toolbar: label and control on one line. */
 .toolbar { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
@@ -155,6 +160,23 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   .lb .pv-side { border-left: 0; border-top: 1px solid var(--line); }
 }
 .pv [data-pv] { cursor: zoom-in; }
+/* Cài đặt: short labels in a fixed column, a 2-column form, one compact row per skill. */
+#page-settings .kv { grid-template-columns: 160px minmax(0, 1fr); }
+#page-settings .kv dt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#page-settings .set-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-items: end; }
+#page-settings .set-grid > div { min-width: 0; }
+#page-settings .set-grid .wide { grid-column: 1 / -1; }
+#page-settings .set-grid label { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 0 4px; }
+#page-settings .set-grid label.check { display: flex; gap: 6px; align-items: center; height: var(--ctl-h); margin: 0; }
+#page-settings details > summary { margin: 10px 0 6px; }
+#page-settings .skill-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+#page-settings .skill-row .id { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#page-settings .skill-pick label { display: flex; gap: 6px; align-items: center; margin: 0; padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#page-settings .find-row { display: flex; gap: 8px; margin: 6px 0; } #page-settings .find-row input { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 600px) {
+  #page-settings .kv, #page-settings .set-grid { grid-template-columns: 1fr; }
+  #page-settings .kv dd { margin-bottom: 6px; }
+}
 </style>
 </head>
 <body>
@@ -170,6 +192,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   </nav>
 
   <section class="page" id="page-overview" hidden>
+    <div class="msg" id="ovMsg"></div>
     <div class="cards" id="ovList"><div class="meta">Đang đọc…</div></div>
   </section>
 
@@ -211,27 +234,23 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div><label for="prSend">Gửi Metricool</label><select id="prSend"><option value="">Theo cài đặt</option><option value="draft">Nháp</option><option value="schedule">Hẹn giờ</option></select></div>
     </div>
     <textarea class="prompt" id="prText" spellcheck="false"></textarea>
-    <div class="meta">Sửa được trực tiếp trong ô trên; "Chép prompt" chép đúng nội dung đang có. "Khôi phục mặc định" tạo lại từ docs/scheduled-prompt.md và các ô chọn. Mở thư mục C:\hoangpq\social-autopilot trong agent đã chọn rồi dán.</div>
+    <div class="meta">Dán vào Claude Code/Codex.</div>
   </section>
 
   <section class="page" id="page-settings" hidden>
-    <fieldset><legend>Thương hiệu</legend>
-      <div class="toolbar"><div class="meta" id="brandsRoot"></div><button class="btn" type="button" id="brandsReload">Kiểm tra lại</button></div>
-      <div class="cards" id="brandList"><div class="meta">Đang đọc…</div></div>
-    </fieldset>
     <fieldset><legend>Cài đặt tool</legend>
       <div id="settingsView"></div>
       <div class="row-actions"><button class="btn" type="button" id="settingsEdit">Sửa</button></div>
       <div id="settingsEditor" hidden>
-        <form id="settingsForm" class="grid2"></form>
-        <div class="row-actions"><button class="btn primary" type="button" id="settingsSave">Lưu cài đặt</button><span class="meta">Ghi vào workspace/settings.json của máy này.</span></div>
+        <form id="settingsForm"></form>
+        <div class="row-actions"><button class="btn primary" type="button" id="settingsSave" title="Ghi vào workspace/settings.json của máy này">Lưu</button></div>
       </div>
       <div class="msg" id="settingsMsg"></div>
     </fieldset>
   </section>
 
   <section class="page" id="page-brand" hidden>
-    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Cài đặt</button><h2 id="brandTitle" style="margin:0;font-size:16px"></h2></div>
+    <div class="toolbar"><button class="btn" type="button" id="brandBack">← Tổng quan</button><h2 id="brandTitle" style="margin:0;font-size:16px"></h2></div>
     <div id="brandForm"></div>
     <div class="row-actions"><button class="btn primary" type="button" id="brandSave">Lưu</button><span class="meta">Lưu xong tool chạy check-skill; file sai thì trả lại bản cũ.</span></div>
     <div class="msg" id="brandMsg"></div>
@@ -257,15 +276,50 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   function show(page) {
     if (!pages.includes(page)) page = "overview";
     for (const p of pages) $(`#page-${p}`).hidden = p !== page;
-    for (const b of $$("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "settings" : page)));
-    store.set("page", page === "brand" ? "settings" : page);
-    ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, prompt: loadPrompts, settings: () => { loadBrands(); loadSettings(); } })[page]?.();
+    for (const b of $$("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "overview" : page)));
+    store.set("page", page === "brand" ? "overview" : page);
+    ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, prompt: loadPrompts, settings: loadSettings })[page]?.();
   }
   for (const b of $$("#tabs button")) b.onclick = () => show(b.dataset.page);
 
   // ----- Tổng quan: per brand, from queue.mjs (store, last research, posts, Metricool) + the skill check -----
   let brandData = { brands: [], metricool: { brands: [] } };
   const MC_TEXT = { draft: "nháp Metricool", scheduled: "đã hẹn giờ", published: "đã đăng", error: "lỗi Metricool", not_sent: "chưa gửi" };
+  // Skill picker (Chọn skill / Đổi skill): a source folder (or a skill folder path pasted), Tìm, the skill folders found
+  // (one choice), then Nối: the Metricool brand points to that folder. Nothing is copied; the tool works in that folder.
+  let skillSource = "";
+  async function skillPicker(panel, mcName) {
+    if (!panel.hidden) { panel.hidden = true; return; }
+    panel.hidden = false;
+    if (!skillSource) { const r = await getJson("/api/skills").catch(() => ({})); skillSource = r.default_source || ""; }
+    panel.innerHTML = `<div class="find-row"><input data-from value="${esc(skillSource)}" title="Thư mục chứa các bộ skill, hoặc dán đường dẫn một bộ skill" aria-label="Thư mục skill"><button class="btn" type="button" data-find>Tìm</button></div>
+      <div class="found"></div><div class="row-actions" data-go-row hidden><button class="btn primary" type="button" data-link>Nối</button></div><div class="msg"></div>`;
+    const msg = panel.querySelector(".msg");
+    panel.querySelector("[data-find]").onclick = async () => {
+      skillSource = panel.querySelector("[data-from]").value.trim();
+      const r = await postJson("/api/skills/sources", { from: skillSource }).catch(() => offline);
+      panel.querySelector("[data-go-row]").hidden = true;
+      if (r.error) { panel.querySelector(".found").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
+      const list = (r.sources || []).filter((x) => x.valid_id && (!x.linked_to || x.linked_to === mcName));
+      // Each folder with its readiness (the skill's own check): green dot Dùng được, red dot Còn thiếu N mục (list in tooltip).
+      const state = (x) => x.ready ? `<span class="dot dot-green"></span><span class="ok-text">Dùng được</span>` : `<span class="dot dot-red"></span><span class="bad-text" title="${esc((x.problems || []).join("\n"))}">Còn thiếu ${(x.problems || []).length || 1} mục</span>`;
+      panel.querySelector(".found").innerHTML = list.map((x, i) => `<label title="${esc(x.dir)}"><input type="radio" name="pick-${esc(mcName)}" value="${esc(x.dir)}"${i ? "" : " checked"}> ${esc(x.brand || x.id)} <span class="meta">${esc(x.id)}${x.linked_to ? " · đang nối" : ""}</span> ${state(x)}</label>`).join("")
+        || `<div class="meta">Không có bộ skill nào chưa nối ở đây.</div>`;
+      panel.querySelector("[data-go-row]").hidden = !list.length;
+    };
+    panel.querySelector("[data-link]").onclick = async (e) => {
+      const dir = panel.querySelector(".found input:checked")?.value;
+      if (!dir) return;
+      e.target.disabled = true;
+      const r = await postJson("/api/metricool-link", { name: mcName, skill_path: dir }).catch(() => offline);
+      e.target.disabled = false;
+      if (r.error) { msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; return; }
+      panel.hidden = true;
+      ovMsg({}, `Đã nối ${mcName}.`);
+    };
+    panel.querySelector("[data-find]").click();
+  }
+  const ovMsg = (r, ok) => { $("#ovMsg").innerHTML = r.error ? `<span class="bad-text">${esc(r.error)}</span>` : `<span class="ok-text">${esc(ok)}</span>`; if (!r.error) loadOverview(); };
   async function loadOverview() {
     const [q, b] = await Promise.all([getJson("/api/queue"), getJson("/api/brands")]).catch(() => [offline, {}]);
     if (q.error) { $("#ovList").innerHTML = `<div class="bad-text">${esc(q.error)}</div>`; return; }
@@ -281,39 +335,73 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       ...(b.brands || []).filter((s) => !(b.metricool?.brands || []).some((m) => m.skill_id === s.id)).map((s) => ({ m: null, id: s.id }))];
     const missingOf = ({ m, id }) => {
       const s = skills[id], out = [];
-      if (!m) out.push("Chưa nối với brand Metricool nào (Cài đặt tool, Nâng cao)");
-      if (!id) out.push("Chưa có bộ skill (tạo bằng new-skill)");
-      else if (!s) out.push(`Không thấy bộ skill "${id}" trong thư mục thương hiệu`);
+      if (!m) out.push("Chưa nối brand Metricool");
+      if (!s) out.push(m?.skill_id && m.skill_path_missing ? "Không tìm thấy thư mục skill (đã đổi tên hoặc di chuyển?)" : "Chưa có bộ skill");
       if (s) {
-        if (!s.enabled) out.push("Chưa bật (social.json: enabled)");
-        if (!s.sources?.length) out.push("Chưa có nguồn tham khảo (social.json: research.sources)");
+        if (!s.enabled) out.push("Chưa bật (Sửa, Bật chạy tự động)");
+        if (!s.sources?.length) out.push("Chưa có nguồn tham khảo (Sửa, Nguồn tham khảo)");
         if (m) for (const c of s.channels || []) if (!(m.networks || []).includes(c)) out.push(`Chưa nối ${net(c)} trong Metricool`);
-        if (m?.tz_conflict) out.push(`Múi giờ social.json (${s.metricool_timezone}) khác múi giờ brand trong Metricool (${m.timezone})`);
+        if (m?.tz_conflict) out.push(`Múi giờ social.json (${s.metricool_timezone}) khác múi giờ brand trong Metricool (${m.timezone}) (Sửa, Nâng cao: metricool.timezone)`);
         for (const p of s.problems || []) out.push(p);
       }
       return [...new Set(out)];
     };
+    // Card actions (top right): with a linked skill Sửa · Đổi skill · Ngắt kết nối; a Metricool brand without a skill
+    // Chọn skill; a skill without a Metricool brand Sửa · Kết nối. The skill folder itself is never moved or deleted.
+    const mcFree = (b.metricool?.brands || []).filter((m) => !m.skill_id || !skills[m.skill_id]);
+    const actions = ({ m, id }) => {
+      const s = skills[id], out = [];
+      const btn = (attr, v, text, tip = "") => `<button class="btn" type="button" ${attr}="${esc(v)}"${tip ? ` title="${esc(tip)}"` : ""}>${text}</button>`;
+      if (s) out.push(btn("data-edit", s.id, "Sửa"));
+      if (m && !s && !m.skill_id) out.push(btn("data-pick", m.name, "Chọn skill", "Nối brand này với một thư mục skill"));
+      if (m && !s && m.skill_id) out.push(btn("data-pick", m.name, "Đổi skill", "Trỏ brand này tới thư mục skill mới"), btn("data-unlink", m.name, "Ngắt kết nối", "Bỏ liên kết tới thư mục skill"));
+      if (m && s) out.push(btn("data-pick", m.name, "Đổi skill", "Nối brand này với thư mục skill khác"), btn("data-unlink", m.name, "Ngắt kết nối", "Tool thôi làm và gửi bài cho brand này; thư mục skill và kho vẫn giữ"));
+      if (!m && s && mcFree.length) out.push(btn("data-connect", s.dir, "Kết nối", "Nối bộ skill này với một brand Metricool"));
+      return `<div class="acts">${out.join("")}</div>`;
+    };
+    // Short card: only rows that say something. A counter shows only when > 0; empty rows are left out; the dot says
+    // ready (green) or something missing (red), and Còn thiếu lists it.
     const card = (row) => {
       const { m, id } = row, s = skills[id], x = queue[id], miss = missingOf(row);
       const name = m?.name || s?.brand || id;
-      const tag = miss.length ? ["Còn thiếu", "c-red"] : ["Sẵn sàng", "c-green"];
       const r = x?.research, st = x?.store, d = x?.drafts || {}, mc = x?.metricool || {};
-      const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption");
+      const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
+      const parts = (list) => list.filter(Boolean).join(" · ");
+      const none = `<span class="muted">Chưa có bài</span>`;
+      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} bài</a>`, st.new && `${st.new} mới`, st.used && `${st.used} đã dùng`, st.rejected && `${st.rejected} đã bỏ`]) : none;
+      const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} bài mới`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} bài trùng bỏ qua`, r.pending.length && `chưa xong: ${esc(r.pending.join(", "))}`]) : "";
+      const blocked = r?.blocked?.length ? `<div class="bad-text">Bị chặn: ${esc(r.blocked.join("; "))}</div>` : "";
+      const posts = parts([x?.written.length && `<a href="#" data-go="posts" data-brand="${esc(id)}">${x.written.length} đã ghi vào thương hiệu</a>`, num(d, "ready") && `${num(d, "ready")} qua kiểm tra chưa ghi`, working && `${working} đang làm`, failed && `<span class="bad-text">${failed} lỗi</span>`]) || none;
+      const sent = Object.keys(MC_TEXT).filter((k) => mc[k]).map((k) => `<span class="${k === "error" ? "bad-text" : ""}">${mc[k]} ${MC_TEXT[k]}</span>`).join(" · ");
       return `<div class="card ${miss.length ? "todo" : "ok"}">
-        <h3>${esc(name)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>
+        <div class="head-row"><h3><span class="dot ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Còn thiếu" : "Sẵn sàng"}" aria-label="${miss.length ? "Còn thiếu" : "Sẵn sàng"}"></span>${esc(name)}</h3>${actions(row)}</div>
         <dl class="kv">
           <dt>Metricool</dt><dd>${m ? `${esc(m.name)} · ${esc((m.networks || []).map(net).join(", ") || "chưa nối kênh nào")} · múi giờ ${esc(m.timezone || "-")}` : `<span class="muted">Chưa có brand Metricool</span>`}</dd>
-          <dt>Bộ skill</dt><dd>${s ? `${esc(s.id)}${s.channels?.length ? ` · kênh ${esc(s.channels.map(net).join(", "))}` : ""}` : `<span class="muted">Chưa có bộ skill</span>`}</dd>
-          <dt>Bật</dt><dd>${s ? (s.enabled ? "có" : "không") : "-"}</dd>
-          ${x ? `<dt>Kho</dt><dd><a href="#" data-go="store" data-brand="${esc(id)}">${st.total} bài</a> · ${st.new} mới · ${st.used} đã dùng · ${st.rejected} đã bỏ</dd>
-          <dt>Nghiên cứu gần nhất</dt><dd>${r.latest ? `${esc(r.latest)} · ${r.new_last_crawl} bài mới · ${r.duplicates_last_crawl} bài trùng bỏ qua${r.pending.length ? ` · chưa xong: ${esc(r.pending.join(", "))}` : ""}` : "chưa có"}${r.blocked.length ? `<div class="bad-text">Bị chặn: ${esc(r.blocked.join("; "))}</div>` : ""}</dd>
-          <dt>Bài đã tạo</dt><dd><a href="#" data-go="posts" data-brand="${esc(id)}">${x.written.length} đã ghi vào thương hiệu</a> · ${num(d, "ready")} qua kiểm tra chưa ghi · ${working} đang làm${num(d, "check_failed") + num(d, "image_failed") ? ` · <span class="bad-text">${num(d, "check_failed") + num(d, "image_failed")} lỗi</span>` : ""}</dd>
-          <dt>Đã gửi</dt><dd>${Object.keys(MC_TEXT).filter((k) => mc[k]).map((k) => `<span class="${k === "error" ? "bad-text" : ""}">${mc[k]} ${MC_TEXT[k]}</span>`).join(" · ") || "-"}</dd>` : ""}
-          <dt>Còn thiếu</dt><dd>${miss.length ? `<ul class="missing" style="margin:0">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : `<span class="ok-text">Không thiếu gì</span>`}</dd>
+          ${s ? `<dt>Bộ skill</dt><dd>${esc(s.id)}</dd>` : ""}
+          ${x ? `<dt>Kho</dt><dd>${kho}</dd>
+          ${research || blocked ? `<dt>Nghiên cứu gần nhất</dt><dd>${research}${blocked}</dd>` : ""}
+          <dt>Bài đã tạo</dt><dd>${posts}</dd>
+          ${sent ? `<dt>Đã gửi</dt><dd>${sent}</dd>` : ""}` : ""}
+          ${miss.length ? `<dt>Còn thiếu</dt><dd><ul class="missing" style="margin:0">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
         </dl>
+        <div class="picker" data-panel hidden></div>
       </div>`;
     };
     $("#ovList").innerHTML = rows.map(card).join("") || `<div class="meta">Chưa có thương hiệu nào.</div>`;
+    for (const btn of $$("#ovList [data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
+    for (const btn of $$("#ovList [data-unlink]")) btn.onclick = async () => {
+      if (!confirm(`Ngắt kết nối "${btn.dataset.unlink}" khỏi Metricool? Tool sẽ không gửi bài của brand này lên Metricool nữa; bộ skill và kho vẫn giữ.`)) return;
+      ovMsg(await postJson("/api/metricool-link", { name: btn.dataset.unlink, skill_path: null }).catch(() => offline), "Đã ngắt kết nối.");
+    };
+    const panelOf = (btn) => btn.closest(".card").querySelector("[data-panel]");
+    for (const btn of $$("#ovList [data-pick]")) btn.onclick = () => skillPicker(panelOf(btn), btn.dataset.pick);
+    for (const btn of $$("#ovList [data-connect]")) btn.onclick = () => {
+      const panel = panelOf(btn);
+      if (!panel.hidden) { panel.hidden = true; return; }
+      panel.hidden = false;
+      panel.innerHTML = `<div class="find-row"><select aria-label="Brand Metricool">${mcFree.map((m) => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join("")}</select><button class="btn primary" type="button">Nối</button></div>`;
+      panel.querySelector("button").onclick = async () => ovMsg(await postJson("/api/metricool-link", { name: panel.querySelector("select").value, skill_path: btn.dataset.connect }).catch(() => offline), "Đã kết nối.");
+    };
     for (const a of $$("#ovList [data-go]")) a.onclick = (e) => {
       e.preventDefault();
       if (a.dataset.go === "store") { $("#resBrand").innerHTML = `<option value="${esc(a.dataset.brand)}" selected></option>`; store.set("resBrand", a.dataset.brand); }
@@ -322,32 +410,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     };
   }
 
-  // ----- Cài đặt, Thương hiệu: every brand of the Metricool account, with its skill; Sửa opens social.json -----
-  async function loadBrands() {
-    $("#brandList").innerHTML = `<div class="meta">Đang chạy check-skill của từng skill…</div>`;
-    const r = await getJson("/api/brands").catch(() => offline);
-    if (r.error) { $("#brandList").innerHTML = `<div class="bad-text">${esc(r.error)}</div>`; return; }
-    brandData = r;
-    const m = r.metricool, acc = m.account || {};
-    $("#brandsRoot").textContent = `Tài khoản Metricool ${acc.user_id || ""}: ${m.brands.length}${acc.brand_limit ? `/${acc.brand_limit}` : ""} brand`;
-    const mcard = (b) => {
-      const s = b.skill;
-      const tag = !b.skill_id ? ["Chưa có skill", "c-amber"] : !s ? ["Skill không thấy", "c-red"] : s.usable ? ["Sẵn sàng", "c-green"] : s.enabled ? ["Bật nhưng còn thiếu", "c-red"] : s.ready ? ["Đủ, đang tắt", ""] : ["Còn thiếu", "c-amber"];
-      return `<div class="card ${s?.usable ? "ok" : "todo"}">
-        <div class="head-row"><h3>${esc(b.name)} <span class="status-tag ${tag[1]}">${tag[0]}</span></h3>${s ? `<button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button>` : ""}</div>
-        <div class="meta">Kênh: ${esc((b.networks || []).join(", ") || "-")} · múi giờ Metricool ${esc(b.timezone || "-")}</div>
-        ${b.tz_conflict ? `<div class="warn-text">social.json metricool.timezone (${esc(s.metricool_timezone)}) khác múi giờ brand trong Metricool (${esc(b.timezone)}): sửa cho khớp.</div>` : ""}${b.tz_mismatch ? `<div class="meta">Giờ đăng được quy đổi tự động sang múi giờ Metricool: lên lịch theo ${esc(s.timezone)} (khách xem), ghi theo ${esc(b.timezone)}.</div>` : ""}
-        ${!b.skill_id ? `<div class="warn-text">Chưa có bộ skill: tool không đụng tới brand này.</div>` : !s ? `<div class="bad-text">Không thấy skill "${esc(b.skill_id)}" trong thư mục thương hiệu.</div>` : ""}
-        ${s?.problems?.length ? `<ul class="missing">${s.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
-      </div>`;
-    };
-    const orphan = (m.skills_without_metricool || []).map((s) => `<div class="card todo"><div class="head-row"><h3>${esc(s.brand || s.id)} <span class="status-tag c-amber">Chưa có brand Metricool</span></h3><button class="btn" type="button" data-edit="${esc(s.id)}">Sửa</button></div>
-      <div class="meta">Skill ${esc(s.id)} chưa gắn với brand nào trong tài khoản Metricool (Cài đặt tool, Nâng cao).</div></div>`).join("");
-    $("#brandList").innerHTML = m.brands.map(mcard).join("") + orphan + (r.skipped || []).map((s) => `<div class="meta">Bỏ qua ${esc(s.dir)}: ${esc(s.reason)}</div>`).join("");
-    for (const btn of $$("[data-edit]")) btn.onclick = () => openBrand(btn.dataset.edit);
-  }
-  $("#brandsReload").onclick = loadBrands;
-
   // ----- Sửa một thương hiệu: only what people change; the rest under Nâng cao (raw JSON) -----
   let editing = null, rawMode = false;
   const DAYS = [["mon", "T2"], ["tue", "T3"], ["wed", "T4"], ["thu", "T5"], ["fri", "T6"], ["sat", "T7"], ["sun", "CN"]];
@@ -355,7 +417,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   async function openBrand(id) {
     $("#brandMsg").textContent = "";
     const r = await getJson(`/api/brand?id=${encodeURIComponent(id)}`).catch(() => offline);
-    if (r.error) { $("#brandMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; show("settings"); return; }
+    if (r.error) { $("#brandForm").innerHTML = ""; $("#brandTitle").textContent = id; $("#brandMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; show("brand"); return; }
     editing = { id, social: r.social, file: r.file };
     rawMode = false;
     const s = r.social, pi = s.product_images || {}, rr = pi.reference_redraw || {};
@@ -386,7 +448,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     show("brand");
   }
   const slotRow = (x) => `<div class="slot"><select>${DAYS.map(([v, t]) => `<option value="${v}"${x.day === v ? " selected" : ""}>${t}</option>`).join("")}</select><input type="text" value="${esc(x.time || "")}" placeholder="10:00" style="max-width:80px;flex:0 0 80px"><button class="btn" type="button" data-rm="1">Xoá</button></div>`;
-  $("#brandBack").onclick = () => show("settings");
+  $("#brandBack").onclick = () => show("overview");
   $("#brandSave").onclick = async () => {
     const msg = $("#brandMsg");
     let social;
@@ -408,7 +470,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { social }).catch(() => offline);
     if (r.error) msg.innerHTML = `<span class="bad-text">${esc(r.error)}</span>`;
     else if (!r.saved) msg.innerHTML = `<span class="bad-text">Không lưu, đã trả lại bản cũ: ${esc((r.errors || []).join("; "))}</span>`;
-    else { msg.innerHTML = `<span class="ok-text">Đã lưu.${r.tool_ready ? " Sẵn sàng cho tool." : ` Còn thiếu ${(r.missing || []).length} mục.`}</span>`; editing.added = []; setTimeout(() => show("settings"), 900); }
+    else { msg.innerHTML = `<span class="ok-text">Đã lưu.${r.tool_ready ? " Sẵn sàng cho tool." : ` Còn thiếu ${(r.missing || []).length} mục.`}</span>`; editing.added = []; setTimeout(() => show("overview"), 900); }
   };
 
   // ----- Nghiên cứu: the research store (kho) of each brand, kept apart per brand; "Bỏ" = never used for posts -----
@@ -849,37 +911,39 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#drStatus").onchange = () => { store.set("drStatus", $("#drStatus").value); loadDrafts(); };
   $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
 
-  // ----- Cài đặt: brands (skill status, Sửa social.json) + tool settings (summary; "Sửa" opens the form) -----
+  // ----- Cài đặt tool: short summary (one line each); "Sửa" opens the 2-column form, paths and commands under Nâng cao -----
   let mbText = "";
   async function loadSettings() {
     const [r, mb] = await Promise.all([getJson("/api/settings"), getJson("/api/metricool-brands")]).catch(() => [offline, {}]);
     if (r.error) { $("#settingsMsg").innerHTML = `<span class="bad-text">${esc(r.error)}</span>`; return; }
     const s = r.settings, dd = s.research.dedupe || {};
-    const yes = (v) => (v ? "có" : "không");
-    const mode = s.metricool?.default_mode === "schedule" ? "hẹn giờ thật" : "nháp (không tự đăng)";
+    const yes = (v) => (v ? "Có" : "Không");
+    const sched = s.metricool?.default_mode === "schedule";
+    const row = (k, v, tip = "") => `<dt title="${esc(tip || k)}">${esc(k)}</dt><dd>${v}</dd>`;
     $("#settingsView").innerHTML = `<dl class="kv">
-      <dt>Nghiên cứu</dt><dd>nghỉ ${esc(s.research.delay_seconds.join("–"))} giây giữa thao tác · bỏ trùng ảnh khi khác ≤ ${esc(dd.image_distance ?? 20)}/256 bit, caption giống ≥ ${Math.round((dd.caption_similarity ?? 0.9) * 100)}%</dd>
-      <dt>Gửi Metricool</dt><dd>mặc định ${mode}</dd>
-      <dt>Codex</dt><dd>chờ tối đa ${esc(s.codex.timeout_minutes)} phút</dd>
-      <dt>Host ảnh</dt><dd>${s.imageHost ? `tự đưa ảnh lên ngay sau khi ghi vào thương hiệu: ${yes(s.imageHost.auto_after_writeback !== false)}` : "chưa cấu hình"}</dd>
-      <dt>Metricool</dt><dd>${(mb.brands || []).length} brand (${esc((mb.brands || []).map((b) => b.name).join(", "))})</dd>
-      <dt>Đường dẫn</dt><dd class="meta">thương hiệu: ${esc(r.skillsRootResolved)} · repo ảnh: ${esc(s.imageHost?.path || "-")}</dd></dl>`;
-    const num = (k, v, label, step = "1") => `<div><label>${esc(label)}</label><input type="number" min="0" step="${step}" data-s="${k}" value="${esc(v)}"></div>`;
+      ${row("Gửi Metricool", sched ? "Hẹn giờ" : "Nháp", sched ? "Hẹn giờ thật" : "Nháp, không tự đăng")}
+      ${s.imageHost ? row("Tự đưa ảnh lên", yes(s.imageHost.auto_after_writeback !== false), "Đưa ảnh lên repo ảnh ngay sau khi ghi vào thương hiệu") : ""}
+      ${row("Metricool", `${(mb.brands || []).length} brand${(mb.brands || []).length ? `: ${esc((mb.brands || []).map((b) => b.name).join(", "))}` : ""}`)}</dl>`;
+    const num = (k, v, label, tip = "") => `<div><label title="${esc(tip || label)}">${esc(label)}</label><input type="number" min="0" step="1" data-s="${k}" value="${esc(v)}"></div>`;
+    const text = (k, v, label, tip) => `<div class="wide"><label title="${esc(tip)}">${esc(label)}</label><input data-s="${k}" value="${esc(v)}" title="${esc(tip)}"></div>`;
     mbText = JSON.stringify(mb, null, 2);
-    $("#settingsForm").innerHTML = `
-      ${num("research.delay_seconds.0", s.research.delay_seconds[0], "Nghỉ tối thiểu (giây)")}
-      ${num("research.delay_seconds.1", s.research.delay_seconds[1], "Nghỉ tối đa (giây)")}
-      <div><label>Gửi Metricool mặc định</label><select data-s="metricool.default_mode"><option value="draft"${s.metricool?.default_mode !== "schedule" ? " selected" : ""}>Nháp (không tự đăng)</option><option value="schedule"${s.metricool?.default_mode === "schedule" ? " selected" : ""}>Hẹn giờ thật</option></select></div>
-      ${num("codex.timeout_minutes", s.codex.timeout_minutes, "Codex chờ tối đa (phút)")}
-      ${s.imageHost ? `<div style="grid-column:1/-1" class="inline"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> tự đưa ảnh lên ngay sau khi ghi vào thương hiệu</label></div>` : ""}
-      <details style="grid-column:1/-1"><summary>Nâng cao (đường dẫn, lệnh, brand Metricool)</summary>
-        <div class="grid2"><div style="grid-column:1/-1"><label>Thư mục thương hiệu (skillsRoot)</label><input data-s="skillsRoot" value="${esc(s.skillsRoot)}"></div>
-        <div><label>Lệnh Codex</label><input data-s="codex.command" value="${esc(s.codex.command)}"></div>
-        <div><label>Lệnh ffmpeg (watermark, đọc ảnh WebP khi bỏ trùng)</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
-        <div style="grid-column:1/-1"><label>Script làm sạch metadata (remove-watermark-skill)</label><input data-s="remove_watermark.script" value="${esc(s.remove_watermark?.script || "")}"></div>
-        ${s.imageHost ? `<div style="grid-column:1/-1"><label>Repo ảnh (imageHost.path)</label><input data-s="imageHost.path" value="${esc(s.imageHost.path || "")}"></div>
-        <div style="grid-column:1/-1"><label>Gốc link công khai (imageHost.rawBase, https)</label><input data-s="imageHost.rawBase" value="${esc(s.imageHost.rawBase || "")}"></div>` : ""}
-        <div style="grid-column:1/-1"><label>Brand Metricool (JSON: name, blog_id, timezone, networks, skill_id hoặc null)</label><textarea class="prompt" id="mbJson" spellcheck="false">${esc(mbText)}</textarea></div></div></details>`;
+    $("#settingsForm").innerHTML = `<div class="set-grid">
+      <div><label title="Nháp: không tự đăng. Hẹn giờ: lên lịch thật.">Gửi Metricool</label><select data-s="metricool.default_mode"><option value="draft"${!sched ? " selected" : ""}>Nháp</option><option value="schedule"${sched ? " selected" : ""}>Hẹn giờ</option></select></div>
+      ${s.imageHost ? `<div><label class="check" title="Đưa ảnh lên repo ảnh ngay sau khi ghi vào thương hiệu"><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> Tự đưa ảnh lên</label></div>` : ""}
+      </div>
+      <details><summary>Nâng cao</summary>
+        <div class="set-grid">
+        ${num("research.delay_seconds.0", s.research.delay_seconds[0], "Nghỉ tối thiểu (giây)", "Nghỉ ngẫu nhiên giữa các thao tác khi nghiên cứu")}
+        ${num("research.delay_seconds.1", s.research.delay_seconds[1], "Nghỉ tối đa (giây)")}
+        ${num("codex.timeout_minutes", s.codex.timeout_minutes, "Codex chờ (phút)")}
+        <div><label title="Bài trùng không vào kho (chỉ xem; sửa trong workspace/settings.json)">Bỏ trùng</label><input disabled value="ảnh ≤${esc(dd.image_distance ?? 20)}/256 · caption ≥${Math.round((dd.caption_similarity ?? 0.9) * 100)}%"></div>
+        ${text("skillsRoot", s.skillsRoot, "Thư mục skill", `Thư mục chứa các bộ skill thương hiệu (brand nối bằng đường dẫn riêng ở Tổng quan vẫn dùng được). Hiện: ${r.skillsRootResolved}`)}
+        <div><label title="Lệnh chạy Codex">Lệnh Codex</label><input data-s="codex.command" value="${esc(s.codex.command)}"></div>
+        <div><label title="Dùng cho watermark và đọc ảnh WebP khi bỏ trùng">Lệnh ffmpeg</label><input data-s="ffmpeg.command" value="${esc(s.ffmpeg?.command || "ffmpeg")}"></div>
+        ${text("remove_watermark.script", s.remove_watermark?.script || "", "Script xoá metadata", "Script làm sạch metadata ảnh (remove-watermark-skill)")}
+        ${s.imageHost ? text("imageHost.path", s.imageHost.path || "", "Repo ảnh", "Thư mục repo ảnh (imageHost.path)") + text("imageHost.rawBase", s.imageHost.rawBase || "", "Link công khai", "Gốc link công khai của ảnh (imageHost.rawBase, https)") : ""}
+        <div class="wide"><label title="Danh sách brand Metricool: name, blog_id, timezone, networks, skill_id hoặc null">Brand Metricool (JSON)</label><textarea class="prompt" id="mbJson" spellcheck="false">${esc(mbText)}</textarea></div>
+        </div></details>`;
   }
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Sửa" : "Đóng"; };
   $("#settingsSave").onclick = async () => {

@@ -20,7 +20,7 @@
 //   facebook_post_type (default POST, REEL for a video).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands, skillDirs, linkedDir } from './lib.mjs';
 
 // WebP in any form Metricool refuses ("Unsupported .webp format"): the extension anywhere in the URL, or a CDN format
 // parameter (format=webp, fm=webp, f=webp, output=webp, ...). With --check-urls a content-type image/webp is refused too.
@@ -105,10 +105,9 @@ const addDays = (date, n) => { const d = new Date(`${date}T00:00:00Z`); d.setUTC
 const weekday = (date) => DAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
 
 // ----- brands (read directly; no check-skill spawn, nothing written) -----
+// The sub-folders of root plus the skill folders linked by path (lib.mjs skillDirs).
 function brandDirs(root) {
-  if (!fs.existsSync(root)) return [];
-  return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && fs.existsSync(path.join(root, e.name, 'project', 'social.json')))
-    .map((e) => path.join(root, e.name));
+  return skillDirs({ ...settings(), skillsRoot: root }).filter((d) => fs.existsSync(path.join(d, 'project', 'social.json')));
 }
 export function brandInfo(dir) {
   const social = readJson(path.join(dir, 'project', 'social.json'));
@@ -416,8 +415,16 @@ function sentTime(post, audienceTz) {
 // text, media, alt text and a posting time in the audience timezone (catalog schedule, --date/--time, cadence.slots or the
 // automatic table). Posts already sent through MCP (metricool.<network>.id) are skipped and keep their time taken.
 // Shared by metricool-csv.mjs export and metricool-mcp.mjs payload; nothing is written.
+// Ngắt kết nối (Tổng quan): the Metricool brand with this blogId no longer points to this skill -> nothing is sent.
+export function assertLinked(brand) {
+  let list = [];
+  try { list = metricoolBrands().brands || []; } catch {}
+  const byBlog = brand.blog_id && list.find((b) => String(b.blog_id) === String(brand.blog_id));
+  if (byBlog && (byBlog.skill_id !== brand.id || path.resolve(linkedDir(byBlog)).toLowerCase() !== path.resolve(brand.dir).toLowerCase())) throw new Error(`Brand Metricool "${byBlog.name}" không nối với bộ skill ${brand.id} (Tổng quan: Chọn skill / Ngắt kết nối): không gửi gì lên Metricool.`);
+}
 export function planPosts(args, { now = new Date(), root = settings().skillsRoot, brand = null } = {}) {
   brand = brand || findBrand(need(args, 'brand'), root);
+  assertLinked(brand);
   const social = brand.social;
   const warnings = [], skipped = [];
   if (!brand.audience_timezone || !validTz(brand.audience_timezone)) throw new Error(`cadence.timezone "${brand.cadence_timezone}" không hợp lệ.`);
@@ -508,6 +515,7 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
 
 export function buildExport(args, { now = new Date(), root = settings().skillsRoot } = {}) {
   const brand = findBrand(need(args, 'brand'), root);
+  assertLinked(brand);
   const header = templateHeader();
   const warnings = [];
   if (!brand.enabled) warnings.push(`social.json enabled: false (${brand.id}). Chỉ xuất file, không gửi gì.`);

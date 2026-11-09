@@ -62,12 +62,15 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
   async function refreshStatus() {
     if (!status) return;
     status.className = "setup-status";
+    status.hidden = true; // shown only when something is wrong
     status.innerHTML = `<span class="mark">○</span><span class="text muted">Đang kiểm tra cấu hình…</span>`;
     const report = await requestSetup();
     const steps = [].concat(report?.Steps || []);
-    if (!steps.length) { status.innerHTML = `<span class="mark">!</span><span class="text">Chưa kiểm tra được cấu hình. Bấm Cấu hình để xem.</span>`; return; }
+    if (!steps.length) { status.hidden = false; status.innerHTML = `<span class="mark">!</span><span class="text">Chưa kiểm tra được cấu hình. Bấm Cấu hình để xem.</span>`; return; }
     const missing = steps.filter((s) => s.Id in STEP_NAMES && s.State !== "ok" && s.State !== "warn").map((s) => STEP_NAMES[s.Id]);
     const done = !missing.length;
+    // All set: no banner (only shown when something is missing).
+    status.hidden = done;
     status.className = `setup-status ${done ? "ok" : "todo"}`;
     status.innerHTML = done
       ? `<span class="mark">✔</span><span class="text">Đã cấu hình đủ. Các công cụ sẵn sàng dùng.</span>`
