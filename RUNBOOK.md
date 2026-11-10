@@ -16,7 +16,7 @@ Trạng thái người dùng thấy: **To review** (chờ duyệt) / **Queued** 
 
 - Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`). "all usable brands" = mọi thương hiệu usable.
   - **Mode 1 (Research):** lần lượt từng thương hiệu và từng nguồn, **không song song** (một Chrome = một lượt crawl).
-  - **Mode 2 / Mode 3:** các thương hiệu **có thể chạy song song** (Claude Code, Run in = Sub-agent: **một sub-agent cho mỗi thương hiệu**). Bước 1 (Setup) và 2.0 (đồng bộ brand + giờ đăng, ghi file chung) làm **một lần** trước; mỗi sub-agent làm các bước riêng của một thương hiệu (2.1 → 2.6 ở Mode 2, 2.1 → 2.2 ở Mode 3); 2.8 → báo cáo làm một lần khi mọi sub-agent xong. Codex (không có sub-agent): lần lượt từng thương hiệu. Ảnh luôn làm song song (2.4, `draft.mjs image-batch`); cả máy không bao giờ quá `codex.concurrency` lượt Codex cùng lúc, kể cả khi nhiều thương hiệu chạy song song.
+  - **Mode 2 / Mode 3:** đường nhanh `scripts/pipeline.mjs` (mục "Mode 2 fast path"): **một pipeline cho mọi thương hiệu**, không cần sub-agent theo thương hiệu; agent chỉ dừng ở chỗ cần phán đoán (chọn ý, xem ảnh, viết caption). Các bước 2.0 → 2.10 bên dưới vẫn là quy trình đầy đủ và là **đường dự phòng** khi pipeline lỗi (khi đó các thương hiệu có thể chạy song song, một sub-agent mỗi thương hiệu). Ảnh luôn làm song song (2.4, `draft.mjs image-batch`); cả máy không bao giờ quá `codex.concurrency` lượt Codex cùng lúc, kể cả khi nhiều thương hiệu chạy song song.
 - **Run progress (tab Prompt của app):** bước Setup chạy `node scripts/brands.mjs --run <research|create|publish>`: lượt chạy hiện ở khung **Run progress** (nhận lượt "pending" do nút Copy prompt tạo, hoặc mở lượt mới). Các script của từng bước tự cập nhật `workspace/runs/current-<mode>.json` (`scripts/progress.mjs`); `runlog.mjs add` kết thúc lượt. Agent không phải làm gì thêm.
 - Skill không bao giờ được chép vào tool. Mỗi brand Metricool trỏ tới một thư mục skill (`skill_path` trong `workspace/metricool-brands.json`); tool chỉ **đọc** thư mục đó; **không bao giờ ghi vào skill** (bài đã duyệt, Metricool id, ngày đăng nằm trong sổ bài của tool `workspace/posts/<brand>/`). Mọi dữ kiện riêng của thương hiệu đọc từ skill (`SKILL.md`, `project/project.md`, `project/social.json`). Không hard-code thương hiệu, không trộn nguồn hay kho giữa thương hiệu.
 - Brand chỉ được làm và gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill, hoặc `removed: true` (đã mất khỏi tài khoản) trong `workspace/metricool-brands.json`, thì **không bao giờ**. Không dùng blogId khác `args.blogId` của payload; không `createScheduledPostForReview`.
@@ -133,6 +133,28 @@ Không làm ý, không tạo bài, không gửi Metricool trong chế độ này
 
 Không mở Facebook. Cần `node`, Codex CLI (tạo ảnh) và MCP Metricool của agent.
 
+### Mode 2 fast path (pipeline.mjs, mặc định)
+
+Cùng các bước và cùng các kiểm tra như 2.0 → 2.10 (pipeline gọi đúng các script đó), chỉ ít lượt qua lại của agent hơn: mọi ý trong **một** file, mọi caption trong **một** file, mọi ảnh mới trên **một** contact sheet. Pipeline dừng đúng 2 chỗ cần phán đoán và in chính xác việc phải làm (`next`). Gọi MCP Metricool vẫn do agent làm.
+```
+node scripts/pipeline.mjs mcp-plan --brand <id|all>        # 2.0: các lệnh MCP cần gọi (getBrandSettings, getBestTimeToPostByNetwork, đúng tham số) và file lưu
+node scripts/pipeline.mjs create --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp [--count N]
+   # A: brands --run, sync-brands/sync-times, payload + status từng brand (workspace/pipeline/publish.json), ideas init → workspace/pipeline/ideas-todo.json
+   # agent: gửi từng item của publish.json (createScheduledPost đúng args → lệnh record), đối chiếu status_queries (2.1-2.2)
+   # STOP (i): điền ideas-todo.json cho mọi thương hiệu một lượt (ý trừu tượng theo prompts/idea-abstract.md, ảnh sản phẩm của thương hiệu, cỡ thật, sign_text khi custom_text, mô tả sản phẩm từng chữ) hoặc "reject"
+node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json
+   # B: ideas set/pick, draft.mjs new, điền mô tả vào prompt.txt (giữ NO LOGO), image-batch chạy nền
+node scripts/pipeline.mjs create --resume
+   # C: chờ ảnh, contact sheet workspace/pipeline/contact-sheet-<n>.png (draft.mjs contact-sheet) + captions-todo.json
+   # agent: XEM từng contact sheet (sản phẩm hợp bối cảnh, cỡ thật, chữ đúng từng ký tự, không logo trên sản phẩm, không chữ mẫu; nghi ngờ thì mở ảnh riêng)
+   # STOP (ii): viết mọi caption trong captions-todo.json (theo brief.md) hoặc "redo" (mô tả/cỡ/chữ mới; tối đa 2 lần)
+node scripts/pipeline.mjs create --resume --captions workspace/pipeline/captions-todo.json
+   # D: ghi caption, làm sạch metadata, watermark nếu bật, draft.mjs check; chưa đạt → sửa và gửi lại file; đạt hết → queue + runlog (kết thúc)
+node scripts/pipeline.mjs status                            # lượt đang ở đâu, việc tiếp theo
+```
+- Một lượt Create một lúc (`workspace/pipeline/create.json`; `--restart` để bỏ lượt dở). Lượt dừng giữa chừng: vẫn `runlog.mjs add --mode create --reason "<lý do>"`.
+- Pipeline lỗi: làm tiếp theo các bước từng bước 2.0 → 2.10 bên dưới (đường dự phòng); không lách kiểm tra.
+
 2.0. Đồng bộ brand Metricool và giờ đăng tốt nhất (bước đầu của mọi lượt Mode 2):
 - Gọi tool MCP `getBrandSettings`, lưu nguyên câu trả lời JSON vào một file (vd `workspace/tmp/brand-settings.json`), rồi:
   ```
@@ -219,6 +241,8 @@ Tool tự lấy số liệu (bài đã hẹn giờ ở lượt này, bài mới 
 - **Khác:** brand Metricool mới/mất (2.0), bài đã đăng, kho còn bao nhiêu bài Unused.
 
 ## Mode 3. Publish approved
+
+Đường nhanh: `node scripts/pipeline.mjs mcp-plan` → gọi MCP, lưu file → `node scripts/pipeline.mjs publish --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp [--limit N] [--window w] [--start today]` (brands --run publish, sync, payload tính giờ ngay lúc này + status) → gửi từng item NGAY (createScheduledPost → record; quá `send_before` thì chạy lại payload) → đối chiếu → `node scripts/pipeline.mjs publish --resume` (queue + run log) → báo cáo 3.2. Dự phòng: các bước dưới đây.
 
 Chỉ gửi lên Metricool các bài người dùng đã **Approve** mà chưa gửi. Không làm ý, không tạo bài, không mở trình duyệt. Dùng lại đúng các bước của Mode 2, không lặp lại ở đây:
 - Setup (như mọi lượt), rồi **2.0** (đồng bộ brand và giờ đăng tốt nhất), **2.1** (hẹn giờ thật mọi bài đã duyệt chưa gửi), **2.2** (đối chiếu), **2.8** (số liệu: `node scripts/queue.mjs`).

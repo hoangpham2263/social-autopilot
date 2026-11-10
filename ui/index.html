@@ -803,8 +803,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // one background sub-agent so the chat stays free. Codex has no sub-agent tool (it runs in its own session); ChatGPT
   // runs nothing.
   const SUB_LINE = "Run this whole task in ONE background sub-agent (Agent tool, general-purpose) with the prompt below; keep this chat free; when it finishes, relay its 'Report' section to me.";
-  // Create & publish / Publish approved: brands may run in parallel, one sub-agent per brand (RUNBOOK "Rules for every run").
-  const SUB_LINE_BRANDS = "Run this task in background sub-agents (Agent tool, general-purpose) with the prompt below: steps 1-2 in one sub-agent, then ONE sub-agent PER BRAND in parallel for the per-brand steps (2.1 up to the step before the run log), then the run log and the report once all are done; keep this chat free; when they finish, relay the 'Report' section to me.";
   const subAllowed = () => /claude code/i.test($("#prAgent").value || "");
   function syncSub() {
     const agent = $("#prAgent").value || "";
@@ -814,7 +812,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   function buildPrompt() {
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
-    const lead = subAllowed() && $("#prSub").value === "sub" ? (isResearch(prMode) ? SUB_LINE : SUB_LINE_BRANDS) + "\n" : "";
+    const lead = subAllowed() && $("#prSub").value === "sub" ? SUB_LINE + "\n" : "";
     return lead + buildTask();
   }
   function buildTask() {

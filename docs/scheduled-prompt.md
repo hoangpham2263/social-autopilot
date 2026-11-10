@@ -2,7 +2,7 @@
 
 The only source of the prompts: the app (**Prompt** tab) and `node scripts/prompts.mjs show --mode "<mode>" --agent "<agent>" [--brand <id>]` read this file. Each prompt is a `### <mode> · <agent>` heading with a `text` block. Placeholders: `{{TOOL}}` = this tool's folder on the machine, `{{BRAND}}` = a brand id (example: `dreamyvows`) or "all usable brands", `{{OPTIONS}}` = this run's options (or "defaults"), `{{SKILLS}}` = one line per brand in scope, A-Z: `SKILL: <brand id> → <absolute skill folder> (read its SKILL.md + project/project.md + project/social.json)` (from the brand → skill links, `workspace/metricool-brands.json` `skill_path`).
 
-Every prompt follows ONE fixed template, so every run is the same: `TASK`, `OPTIONS`, `TOOL`, `SKILL` (one per brand), `STEPS` (numbered, one line each, mapping 1:1 to the RUNBOOK.md step numbers of the mode), `STOP IF`, `NEVER`. At most 18 lines (one SKILL line counted). The detail of each step, the rules and the report format live in `RUNBOOK.md`; change a step there and keep the line here in sync. The last two steps of every run are always: write the run log (`scripts/runlog.mjs`), then the report to the user with the fixed headings. Setup runs `node scripts/brands.mjs --run <research|create|publish>` so the run shows in the app's **Run progress** panel (Prompt tab, `scripts/progress.mjs`). Research: one brand and one source at a time. Create & publish / Publish approved: brands may run in parallel (Claude Code, Run in = Sub-agent: one sub-agent per brand); images always run in parallel (`draft.mjs image-batch`, at most `codex.concurrency` Codex runs on the machine).
+Every prompt follows ONE fixed template, so every run is the same: `TASK`, `OPTIONS`, `TOOL`, `SKILL` (one per brand), `STEPS` (numbered, one line each, mapping 1:1 to the RUNBOOK.md step numbers of the mode), `STOP IF`, `NEVER`. At most 18 lines (one SKILL line counted). The detail of each step, the rules and the report format live in `RUNBOOK.md`; change a step there and keep the line here in sync. The last two steps of every run are always: write the run log (`scripts/runlog.mjs`), then the report to the user with the fixed headings. Setup runs `node scripts/brands.mjs --run <research|create|publish>` so the run shows in the app's **Run progress** panel (Prompt tab, `scripts/progress.mjs`). Research: one brand and one source at a time. Create & publish / Publish approved use the fast path `scripts/pipeline.mjs` (one pipeline for all brands; it stops only for the agent's judgement: ideas, looking at the images, captions); images always run in parallel (`draft.mjs image-batch`, at most `codex.concurrency` Codex runs on the machine). The step-by-step commands stay in RUNBOOK as the fallback.
 
 ### Research only · Claude Code
 
@@ -58,17 +58,17 @@ TASK: Create & publish — brand: {{BRAND}} — agent: Claude Code
 OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
-STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip; brands may run in parallel: one sub-agent per brand when Run in = Sub-agent):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; node scripts/brands.mjs --run create.
-2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
-3. 2.1 Schedule approved posts not yet sent at the best times (payload → createScheduledPost → record).
-4. 2.2 Reconcile sent posts (status → getScheduledPosts).
-5. 2.3-2.6 Make enough new posts for the next days: ideas → drafts → all images at once (draft.mjs image-batch, in the background) → captions meanwhile → checks.
-6. 2.7 Stop at "To review"; 2.8 report data: node scripts/queue.mjs.
-7. 2.9 Write the run log: node scripts/runlog.mjs add --mode create --agent "Claude Code".
+STEPS (follow RUNBOOK.md Mode 2, fast path "pipeline.mjs"; in order, do not skip; ONE pipeline for all brands, no per-brand agents):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run" + "Mode 2 fast path"; for each SKILL line read that skill's SKILL.md + project/project.md + references/image-guide.md; node scripts/brands.mjs --run create.
+2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> → make its Metricool MCP calls in parallel, save each answer to its save_to file.
+3. 2.1 node scripts/pipeline.mjs create --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (OPTIONS: --count N) → send each workspace/pipeline/publish.json item now (createScheduledPost exactly, then its record command).
+4. 2.2 Reconcile: each status_queries entry → getScheduledPosts; PUBLISHED → posts.mjs mark-published; ERROR → report.
+5. 2.3-2.6 STOP (i) fill workspace/pipeline/ideas-todo.json (all brands, one pass) → pipeline.mjs create --resume --ideas <file> → pipeline.mjs create --resume → LOOK at every contact sheet → STOP (ii) all captions (or "redo") in captions-todo.json → pipeline.mjs create --resume --captions <file> until all ready.
+6. 2.7 Stop at "To review" (never approve); 2.8 report data: printed by the last resume (queue.mjs).
+7. 2.9 Run log: the last resume writes it (runlog.mjs add --mode create); a run that stops early: node scripts/runlog.mjs add --mode create --agent "Claude Code" --reason "<why>".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
-STOP IF: a Metricool tool error (record nothing for that post), Codex image quota still used up after image-batch's retry (image_failed). Then still do the run log (with the reason) and the report.
-NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId.
+STOP IF: a Metricool tool error (record nothing for that post), Codex image quota used up (image_failed after the retry); pipeline.mjs itself fails → continue with the step-by-step fallback (RUNBOOK 2.3-2.6). Then still the run log (with the reason) and the report.
+NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId, skip looking at an image.
 ```
 
 ### Create & publish · Codex
@@ -78,17 +78,17 @@ TASK: Create & publish — brand: {{BRAND}} — agent: Codex
 OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
-STEPS (follow RUNBOOK.md Mode 2; do them in order, do not skip; brands one at a time):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; check the Metricool MCP tools; node scripts/brands.mjs --run create.
-2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
-3. 2.1 Schedule approved posts not yet sent at the best times (payload → createScheduledPost → record).
-4. 2.2 Reconcile sent posts (status → getScheduledPosts).
-5. 2.3-2.6 Make enough new posts for the next days: ideas → drafts → all images at once (draft.mjs image-batch) → captions → checks.
-6. 2.7 Stop at "To review"; 2.8 report data: node scripts/queue.mjs.
-7. 2.9 Write the run log: node scripts/runlog.mjs add --mode create --agent "Codex".
+STEPS (follow RUNBOOK.md Mode 2, fast path "pipeline.mjs"; in order, do not skip; ONE pipeline for all brands, no per-brand agents):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run" + "Mode 2 fast path"; for each SKILL line read that skill's SKILL.md + project/project.md + references/image-guide.md; node scripts/brands.mjs --run create.
+2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> → make its Metricool MCP calls, save each answer to its save_to file.
+3. 2.1 node scripts/pipeline.mjs create --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (OPTIONS: --count N) → send each workspace/pipeline/publish.json item now (createScheduledPost exactly, then its record command).
+4. 2.2 Reconcile: each status_queries entry → getScheduledPosts; PUBLISHED → posts.mjs mark-published; ERROR → report.
+5. 2.3-2.6 STOP (i) fill workspace/pipeline/ideas-todo.json (all brands, one pass) → pipeline.mjs create --resume --ideas <file> → pipeline.mjs create --resume → LOOK at every contact sheet → STOP (ii) all captions (or "redo") in captions-todo.json → pipeline.mjs create --resume --captions <file> until all ready.
+6. 2.7 Stop at "To review" (never approve); 2.8 report data: printed by the last resume (queue.mjs).
+7. 2.9 Run log: the last resume writes it (runlog.mjs add --mode create); a run that stops early: node scripts/runlog.mjs add --mode create --agent "Codex" --reason "<why>".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
-STOP IF: no Metricool MCP tools (skip 2.0-2.2, still make posts, tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool).
-NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId.
+STOP IF: a Metricool tool error (record nothing for that post), Codex image quota used up (image_failed after the retry), no Metricool MCP tools (skip 2.0-2.2: create without --brand-settings; tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool); pipeline.mjs itself fails → continue with the step-by-step fallback (RUNBOOK 2.3-2.6). Then still the run log (with the reason) and the report.
+NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId, skip looking at an image.
 ```
 
 ### Create & publish · ChatGPT
@@ -106,14 +106,14 @@ TASK: Publish approved — brand: {{BRAND}} — agent: Claude Code
 OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
-STEPS (follow RUNBOOK.md Mode 3; do them in order, do not skip; brands may run in parallel: one sub-agent per brand when Run in = Sub-agent):
+STEPS (follow RUNBOOK.md Mode 3, fast path "pipeline.mjs publish"; in order, do not skip):
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; node scripts/brands.mjs --run publish.
-2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
-3. 2.1 Schedule every approved post not yet sent at the best times (payload → createScheduledPost → record).
-4. 2.2 Reconcile sent posts (status → getScheduledPosts); 2.8 report data: node scripts/queue.mjs.
-5. 3.1 Write the run log: node scripts/runlog.mjs add --mode publish --agent "Claude Code".
+2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> → make its Metricool MCP calls, save each answer to its save_to file.
+3. 2.1 node scripts/pipeline.mjs publish --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (+ OPTIONS flags) → send each item NOW (createScheduledPost exactly, then its record command; past send_before → payload again).
+4. 2.2 Reconcile: each status_query → getScheduledPosts (PUBLISHED → posts.mjs mark-published); 2.8: node scripts/pipeline.mjs publish --resume (queue + run log).
+5. 3.1 Run log: written by publish --resume (runlog.mjs add --mode publish); stopped early: node scripts/runlog.mjs add --mode publish --agent "Claude Code" --reason "<why>".
 6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
-STOP IF: a Metricool tool error (record nothing for that post). Then still do the run log (with the reason) and the report.
+STOP IF: a Metricool tool error (record nothing for that post). Then still the run log (with the reason) and the report.
 NEVER: make ideas or posts, open a browser, approve posts, make Metricool drafts, set posting times by hand, use another blogId.
 ```
 
@@ -124,14 +124,14 @@ TASK: Publish approved — brand: {{BRAND}} — agent: Codex
 OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
-STEPS (follow RUNBOOK.md Mode 3; do them in order, do not skip; brands one at a time):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; check the Metricool MCP tools; node scripts/brands.mjs --run publish.
-2. 2.0 Sync Metricool brands and best times: getBrandSettings → sync-brands; getBestTimeToPostByNetwork → sync-times.
-3. 2.1 Schedule every approved post not yet sent at the best times (payload → createScheduledPost → record).
-4. 2.2 Reconcile sent posts (status → getScheduledPosts); 2.8 report data: node scripts/queue.mjs.
-5. 3.1 Write the run log: node scripts/runlog.mjs add --mode publish --agent "Codex".
+STEPS (follow RUNBOOK.md Mode 3, fast path "pipeline.mjs publish"; in order, do not skip):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md; node scripts/brands.mjs --run publish.
+2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> → make its Metricool MCP calls, save each answer to its save_to file.
+3. 2.1 node scripts/pipeline.mjs publish --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (+ OPTIONS flags) → send each item NOW (createScheduledPost exactly, then its record command; past send_before → payload again).
+4. 2.2 Reconcile: each status_query → getScheduledPosts (PUBLISHED → posts.mjs mark-published); 2.8: node scripts/pipeline.mjs publish --resume (queue + run log).
+5. 3.1 Run log: written by publish --resume (runlog.mjs add --mode publish); stopped early: node scripts/runlog.mjs add --mode publish --agent "Codex" --reason "<why>".
 6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
-STOP IF: no Metricool MCP tools (tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool).
+STOP IF: a Metricool tool error (record nothing for that post); no Metricool MCP tools (tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool). Then still the run log (with the reason) and the report.
 NEVER: make ideas or posts, open a browser, approve posts, make Metricool drafts, set posting times by hand, use another blogId.
 ```
 
