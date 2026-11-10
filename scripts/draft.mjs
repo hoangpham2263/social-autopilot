@@ -19,6 +19,9 @@
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
 //                                                           product_images.watermark.enabled (default off; needs ffmpeg)
 //   node scripts/draft.mjs check --id <draft>               automatic checks of image + captions; passed -> ready
+//   node scripts/draft.mjs contact-sheet [--ids a,b | --brand <id|all>] [--status needs_caption] [--per-sheet 6] [--out <dir>]
+//        one PNG of several draft images (labelled #n + draft id), so every new image is LOOKED at in one read
+//        (pure Node; JPEG/WebP via ffmpeg when present). Default: drafts with an image waiting for captions/review.
 //   node scripts/draft.mjs show  --id <draft>
 //   node scripts/draft.mjs list  [--brand <id>] [--status s]
 import fs from 'node:fs';
@@ -30,6 +33,7 @@ import { cleanDraftImage } from './image-clean.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
 import { readStore, storeDir, storeIdeasFile, markUsed } from './store.mjs';
 import { track } from './progress.mjs';
+import { contactSheet } from './contact-sheet.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 // The brand's own photo: inside its skill folder, or inside a local folder its social.json lists in
@@ -363,6 +367,30 @@ export function confirmClean(args) {
   return { id: draft.id, status: st.status, logo_check: st.logo_check, next: `node scripts/draft.mjs check --id ${draft.id}` };
 }
 
+// Contact sheet(s) of draft images: at most perSheet per PNG (3 columns, 512 px tiles), labelled #n + draft id.
+export function contactSheets(args, s = settings()) {
+  const ids = args.ids && args.ids !== true ? String(args.ids).split(',').map((x) => x.trim()).filter(Boolean) : null;
+  const wanted = args.status && args.status !== true ? String(args.status).split(',') : ['needs_caption', 'ready', 'check_failed'];
+  const brand = args.brand && args.brand !== true && args.brand !== 'all' ? String(args.brand) : undefined;
+  const drafts = ids ? ids.map((id) => findDraft(id)) : listDrafts(brand).filter((d) => wanted.includes(d.status.status));
+  const items = drafts.map((d) => ({ id: d.draft?.id || d.id, file: path.join(d.dir, fs.existsSync(path.join(d.dir, 'image-watermarked.png')) ? 'image-watermarked.png' : 'image.png') })).filter((x) => fs.existsSync(x.file));
+  const per = Math.max(1, Math.min(12, Number(args['per-sheet']) || 6));
+  const outDir = path.resolve(args.out && args.out !== true ? String(args.out) : path.join(workspace, 'pipeline'));
+  fs.mkdirSync(outDir, { recursive: true });
+  const sheets = [];
+  for (let i = 0; i < items.length; i += per) {
+    const part = items.slice(i, i + per);
+    const r = contactSheet(part.map((x) => ({ file: x.file, label: x.id })), { cols: 3, tw: 512, th: 512, ffmpeg: s.ffmpeg?.command || 'ffmpeg' });
+    const file = path.join(outDir, `contact-sheet-${sheets.length + 1}.png`);
+    fs.writeFileSync(file, r.png);
+    sheets.push({ file, width: r.width, height: r.height, drafts: part.map((x, k) => ({ n: i + k + 1, id: x.id, image: x.file })), missing: r.missing });
+  }
+  // Older sheets of an earlier, longer run would mislead: drop the extra numbered files.
+  for (const f of fs.readdirSync(outDir)) { const m = f.match(/^contact-sheet-(d+).png$/); if (m && Number(m[1]) > sheets.length) fs.unlinkSync(path.join(outDir, f)); }
+  return { sheets, count: items.length, without_image: drafts.length - items.length,
+    next: items.length ? 'LOOK at every sheet (Read the PNG): product↔setting fit, real size vs surroundings, sign text exact, no logo on the product, no placeholder text. Unsure about one: open its image file.' : 'No draft image to show.' };
+}
+
 export function check(args) {
   const { dir, draft, status } = findDraft(need(args, 'id'));
   if (['approved', 'rejected'].includes(status.status)) return ({ id: draft.id, status: status.status, note: 'Đã xử lý, không kiểm lại.' });
@@ -383,6 +411,7 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'check') return out(check(args));
   if (cmd === 'watermark') return out(watermark(args, s));
   if (cmd === 'confirm-clean') return out(confirmClean(args));
+  if (cmd === 'contact-sheet') return out(contactSheets(args, s));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
   throw new Error('Lệnh: new | reprompt | image | image-batch | watermark | confirm-clean | check | show | list');
