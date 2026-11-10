@@ -60,8 +60,8 @@ function draftsData(brand, status) {
 }
 const arr = (v) => (Array.isArray(v) ? v : []);
 // The research store (kho) of one brand for the Nghiên cứu tab: items (newest first), counts, crawl progress, ideas.
-function storeData(brand, status, source) {
-  const r = listItems(brand, { status, source });
+function storeData(brand, status, source, platform = "") {
+  const r = listItems(brand, { status, source, platform });
   const dir = storeDir(brand);
   // Posts not stored because they matched an item (duplicates.json), shown in the item's preview.
   const dups = {};
@@ -73,7 +73,9 @@ function storeData(brand, status, source) {
   // Items per source in the current Show filter (Library Source dropdown).
   const inStatus = listItems(brand, { status }).items;
   const source_counts = Object.fromEntries(r.sources.map((s) => [s, inStatus.filter((i) => i.source_id === s).length]));
-  return { brand, dir, counts: r.counts, sources: r.sources, source_counts, progress: readProgress(brand).sources || {}, items, ideas, avatars };
+  // Items per platform in the current Show filter (Library Platform dropdown).
+  const platform_counts = Object.fromEntries(r.platforms.map((p) => [p, inStatus.filter((i) => i.platform === p).length]));
+  return { brand, dir, counts: r.counts, sources: r.sources, source_counts, platforms: r.platforms, platform_counts, progress: readProgress(brand).sources || {}, items, ideas, avatars };
 }
 
 // ----- HTTP -----
@@ -200,10 +202,11 @@ async function handle(req, res) {
   });
   if (path === "/api/store" && req.method === "GET") return api(res, () => {
     const brands = discovered().brands;
-    const brand = get("brand"), status = get("status"), source = get("source");
+    const brand = get("brand"), status = get("status"), source = get("source"), platform = get("platform");
     if (brand && !brands.some((b) => b.id === brand)) throw new Error(`Unknown brand "${brand}".`);
     if (source && !/^[a-z0-9][a-z0-9-]*$/.test(source)) throw new Error("Invalid source.");
-    return { brands: brands.map((b) => ({ id: b.id, name: b.brand, counts: listItems(b.id).counts })), current: brand ? storeData(brand, status, source) : null };
+    if (platform && !/^[a-z]+$/.test(platform)) throw new Error("Invalid platform.");
+    return { brands: brands.map((b) => ({ id: b.id, name: b.brand, counts: listItems(b.id).counts })), current: brand ? storeData(brand, status, source, platform) : null };
   });
   // "Remove" a library item (rejected: never picked for ideas, optional reason) or "Restore": store.mjs remove/restore.
   if (path === "/api/store-item" && req.method === "POST") return api(res, async () => {
@@ -236,7 +239,7 @@ async function handle(req, res) {
       }];
     })) };
   });
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], discovery_platforms: b.discovery_platforms || [], posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));

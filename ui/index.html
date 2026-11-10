@@ -243,6 +243,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div class="field"><label for="resBrand">Brand</label><select id="resBrand"></select></div>
       <div class="field auto"><span class="label">Show</span><span class="seg" id="resStatus" role="group" aria-label="Show"></span></div>
       <div class="field"><label for="resSource">Source</label><select id="resSource"></select></div>
+      <div class="field"><label for="resPlatform">Platform</label><select id="resPlatform"></select></div>
     </div>
     <div id="resBody" class="meta">Pick a brand.</div>
   </section>
@@ -275,9 +276,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
       <div class="field"><label for="prSub" title="Claude Code: hand the whole task to one background sub-agent so the chat stays free">Run in</label><select id="prSub"><option value="main">Main chat</option><option value="sub">Sub-agent</option></select></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
-      <div class="field" data-opt="research" hidden><span class="label">Sources</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
-      <div class="field" data-opt="research" hidden><label for="prMax" title="At most this many new posts for each brand in this run, shared evenly by its sources">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
-      <div class="field" data-opt="research" hidden><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
+      <div class="field" data-opt="research" hidden><span class="label" title="The brand's reference pages (social.json research.sources), collected first; none ticked = all">Reference pages</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
+      <div class="field" data-opt="research" hidden><span class="label" title="Search more posts by the brand's keywords/hashtags on these platforms after the reference pages (default: every enabled platform of the skill)">Discovery platforms</span><details class="select" id="prPlatBox"><summary id="prPlatSum">All</summary><div class="options" id="prPlat"></div></details></div>
+      <div class="field" data-opt="research" hidden><label for="prKw" title="Comma-separated; empty = the skill's keywords and hashtags">Keywords</label><input type="text" id="prKw" placeholder="from the skill"></div>
+      <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run: reference pages first, then discovery until it is met">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
+      <div class="field" data-opt="research" hidden><label for="prKind" title="How the reference pages are read">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
@@ -615,6 +618,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const itemState = (it) => it.status;
   const usedTimes = (it) => (usesN(it) ? `used ${usesN(it)}×` : "");
   const useTag = (it) => usedTimes(it) || (it.status === "new" ? "new" : "");
+  // Platforms of library items (reference pages and discovery), short badge + name.
+  const PLATFORM_TEXT = { facebook: "Facebook", instagram: "Instagram", pinterest: "Pinterest", tiktok: "TikTok", reddit: "Reddit", etsy: "Etsy", youtube: "YouTube", houzz: "Houzz" };
+  const platformName = (p) => PLATFORM_TEXT[p] || p || "";
+  // "reference page" or "keyword: …" / "hashtag: #…" (how the item was found).
+  const foundBy = (it) => { const f = String(it.found_by || "reference page"); return f.startsWith("hashtag:") ? `hashtag #${f.slice(8)}` : f.startsWith("keyword:") ? `keyword "${f.slice(8)}"` : f; };
   const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway", skipped: "skipped (quota)" };
   let resShown = 60, resStatus = store.get("resStatus") ?? "new", resAvatars = {}, resRemoveSuggest = [];
   if (!["new", "rejected", ""].includes(resStatus)) resStatus = "new";
@@ -638,13 +646,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // ‹ Prev / Next › of the overlay header, the same for both lists.
   const itemNav = (i, n) => `<span class="item-nav"><button class="btn" type="button" data-item="-1"${i ? "" : " disabled"}>‹ Prev</button><span class="meta">${i + 1}/${n}</span><button class="btn" type="button" data-item="1"${i < n - 1 ? "" : " disabled"}>Next ›</button></span>`;
   const loadResearch = safely("#resBody", async () => {
-    const brand = $("#resBrand").value || store.get("resBrand"), status = resStatus, source = $("#resSource").value;
-    const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
+    const brand = $("#resBrand").value || store.get("resBrand"), status = resStatus, source = $("#resSource").value, platform = $("#resPlatform").value;
+    const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}&platform=${encodeURIComponent(platform || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
     $("#resBrand").innerHTML = az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}</option>`).join("");
     const c = r.current;
     if (!c && !brand && r.brands?.length) { const first = az(r.brands, (x) => x.name || x.id)[0]; $("#resBrand").value = first.id; store.set("resBrand", first.id); return loadResearch(); } // no brand chosen yet: open the first (A–Z)
-    if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
+    if (!c) { $("#resSource").innerHTML = ""; $("#resPlatform").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
+    $("#resPlatform").innerHTML = `<option value="">All</option>` + arr(c.platforms).map((p) => `<option value="${esc(p)}"${p === platform ? " selected" : ""}>${esc(withCount(platformName(p), c.platform_counts?.[p]))}</option>`).join("");
+    setDisabled($("#resPlatform"), arr(c.platforms).length < 2 && !platform, "Items from one platform only");
     $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option value="${esc(s)}"${s === source ? " selected" : ""}>${esc(withCount(s, c.source_counts?.[s]))}</option>`).join("");
     setDisabled($("#resSource"), arr(c.sources).length < 2, "This brand has only one source");
     const k = c.counts || {};
@@ -656,13 +666,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const prog = Object.entries(c.progress || {});
     const progress = prog.length ? `<details><summary>Crawl progress by source</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Source</th><th>Last run</th><th>Result</th><th>Reached end</th><th>In library</th><th>Newest</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} new)</td><td>${p.reached_end ? "yes" : "no"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
     const list = items.slice(0, resShown);
-    const pageOf = (it) => it.store || it.source_id || "";
+    const pageOf = (it) => it.author || it.store || it.source_id || "";
     $("#resBody").innerHTML = `${progress}
       <div class="tiles spaced">${list.map((it) => tile({ id: it.id, img: arr(it.image_paths)[0] || "",
         title: String(it.caption || "").split(/\r?\n/).find((l) => l.trim()) || it.id,
         status: it.status === "rejected" ? `<span class="meta" title="${esc(removedWhy(it))}">Removed</span>` : "",
         sub: it.status === "rejected" ? [removedWhy(it), usedTimes(it)].filter(Boolean).join(" · ") : useTag(it),
-        who: pageOf(it), whoTip: `${pageOf(it)} · ${it.id}${it.posted_date ? ` · ${it.posted_date}` : ""}${it.status === "rejected" && it.note ? ` · ${it.note}` : ""}`,
+        who: pageOf(it), whoHtml: `${it.platform ? `<span class="status-tag" title="${esc(platformName(it.platform))} · found by ${esc(foundBy(it))}">${esc(platformName(it.platform))}</span> ` : ""}${esc(pageOf(it))}`,
+        whoTip: `${platformName(it.platform) ? platformName(it.platform) + " · " : ""}${pageOf(it)} · ${it.id} · found by ${foundBy(it)}${it.posted_date ? ` · ${it.posted_date}` : ""}${it.status === "rejected" && it.note ? ` · ${it.note}` : ""}`,
         actions: it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Remove</button>` : "" })).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
       ${items.length > resShown ? `<div class="actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
@@ -703,7 +714,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const side = `<dl class="kv">
           <dt>Status</dt><dd><span class="status-tag ${ITEM_COLOR[itemState(it)] || ""}">${ITEM_TEXT[itemState(it)] || esc(it.status)}</span> ${usedTimes(it) ? `<span class="meta">${usedTimes(it)}</span>` : ""} ${removedWhy(it) ? `<span class="meta">Reason: ${esc(removedWhy(it))}</span>` : ""}${it.status === "new" && resRemoveSuggest.includes(it.id) ? `<span class="meta">Used a lot: consider Remove</span>` : ""}</dd>
           ${it.filter ? `<dt>Filter</dt><dd>${it.filter.fit ? "Kept" : "<span class=\"bad-text\">Filtered out</span>"}${it.filter.reason ? `: ${esc(it.filter.reason)}` : ""}${it.filter.restored_at ? ` <span class="meta">(restored by you)</span>` : ""}</dd>` : ""}
-          <dt>Source</dt><dd>${it.source_url ? link(it.source_url, it.store || it.source_id) : esc(it.store || it.source_id)}</dd>
+          <dt>Platform</dt><dd>${esc(platformName(it.platform) || "-")}</dd>
+          <dt>Found by</dt><dd>${esc(foundBy(it))}</dd>
+          ${it.author ? `<dt>Author</dt><dd>${esc(it.author)}</dd>` : ""}
+          ${it.product_fit?.type ? `<dt>Product fit</dt><dd>${esc(it.product_fit.type)}${it.product_fit.reason ? ` <span class="meta">${esc(it.product_fit.reason)}</span>` : ""}</dd>` : ""}
+          <dt>Source</dt><dd>${it.source_url ? link(it.source_url, it.found_by && it.found_by !== "reference page" ? foundBy(it) : it.store || it.source_id) : esc(it.store || it.source_id)}</dd>
           <dt>Original</dt><dd>${it.post_url ? link(it.post_url, "Open original ↗") : "-"}</dd>
           <dt>Posted</dt><dd>${esc(it.posted_date || "-")}</dd>
           <dt>Captured</dt><dd>${esc(String(it.captured || "-").slice(0, 16).replace("T", " "))}</dd>
@@ -743,8 +758,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     };
     draw();
   }
-  $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; resShown = 60; loadResearch(); };
+  $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; $("#resPlatform").value = ""; resShown = 60; loadResearch(); };
   $("#resSource").onchange = () => { resShown = 60; loadResearch(); };
+  $("#resPlatform").onchange = () => { resShown = 60; loadResearch(); };
 
   // ----- Prompt: the short prompts of docs/scheduled-prompt.md (mode x agent); brand and this run's options filled in.
   // The prompt is read-only: rebuilt from the template and the options whenever one changes. -----
@@ -806,6 +822,12 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#prSrc").innerHTML = shown.map((x) => `${b ? "" : `<div class="opt-group">${esc(x.name || x.id)}</div>`}${group(x)}`).join("") || `<div class="meta">No enabled sources.</div>`;
     for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
     srcLabel();
+    // Discovery platforms: the enabled platforms of the chosen brand's skill (every brand: their union); all ticked by
+    // default, unticked ones remembered (prPlatOff).
+    const plats = [...new Set((b ? [b] : brands.filter((x) => x.usable)).flatMap((x) => arr(x.discovery_platforms)))];
+    $("#prPlat").innerHTML = plats.map((p) => `<label><input type="checkbox" value="${esc(p)}"${prPlatOff.has(p) ? "" : " checked"}>${esc(platformName(p))}</label>`).join("") || `<div class="meta">No discovery platforms in the skill.</div>`;
+    for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) prPlatOff.delete(c.value); else prPlatOff.add(c.value); platLabel(); regenerate(); };
+    platLabel();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
     $("#prCount").placeholder = publishOnly ? "all" : "auto";
     $("#prCount").title = publishOnly ? "Empty = every approved post not sent yet; N = at most N per brand, oldest approved first" : `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
@@ -821,6 +843,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     // The panel follows the selected mode (reloaded when the mode changes, or when nothing is polling).
     if (modeKey(prMode) !== shownRunMode || !runTimer) loadProgress();
   }
+  let prPlatOff = new Set();
+  function platLabel() {
+    const all = $$("#prPlat input"), on = all.filter((x) => x.checked).map((x) => platformName(x.value));
+    $("#prPlatSum").textContent = !all.length ? "None" : on.length === all.length ? "All" : on.length ? on.join(", ") : "None";
+  }
   function srcLabel() {
     const on = $$("#prSrc input:checked").map((x) => x.value.split(":").pop());
     $("#prSrcSum").textContent = on.length ? on.join(", ") : "All";
@@ -834,8 +861,13 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const per = {}; for (const v of src) { const [bid, s] = v.split(":"); (per[bid] ||= []).push(s); }
       for (const [bid, list] of Object.entries(per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
       if (!brand && src.length) lines.push(`only the brands listed above`);
-      if (max > 0) lines.push(`at most ${max} new posts per brand, shared by its sources (--max-posts ${max})`);
-      if (kind === "backfill") lines.push("backfill older posts (--backfill)");
+      // Discovery platforms: every one ticked = defaults (no flag); some = --platforms; none = no discovery.
+      const pall = $$("#prPlat input"), pon = pall.filter((x) => x.checked).map((x) => x.value);
+      if (pall.length && pon.length < pall.length) lines.push(pon.length ? `discovery platforms ${pon.map(platformName).join(", ")} (--platforms ${pon.join(",")})` : "no discovery, reference pages only (--platforms none)");
+      const kw = $("#prKw").value.split(",").map((x) => x.trim().replace(/"/g, "")).filter(Boolean);
+      if (kw.length) lines.push(`keywords ${kw.join(", ")} (--keywords "${kw.join(",")}")`);
+      if (max > 0) lines.push(`target ${max} new posts per brand: reference pages first, then discovery (--max-posts ${max})`);
+      if (kind === "backfill") lines.push("backfill older posts on the reference pages (--backfill)");
       if (kind === "full") lines.push("full rescan (--full)");
     } else {
       const pub = /publish approved/i.test(prMode);
@@ -908,9 +940,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
   $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").value === "sub" ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
-  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
+  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prKw"]) $(id).onchange = regenerate;
+  $("#prKw").oninput = regenerate;
   $("#prItemClear").onclick = () => { prItem = null; $("#prCount").value = ""; drawPrompt(); };
-  document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
+  document.addEventListener("click", (e) => { for (const id of ["#prSrcBox", "#prPlatBox"]) if ($(id).open && !e.target.closest(id)) $(id).open = false; });
   const baseHint = $("#prMsg").textContent;
   let hint = baseHint;
   const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
@@ -1017,6 +1050,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       if (l.mode === "research") {
         const rows = arr(b.research?.sources).map((x) => { const st = STATUS_TEXT_RUN[x.state] || x.state; return `<tr><td>${ext(x.url, x.name || x.id)}</td><td>${x.new}</td><td>${x.kept ?? "-"}</td><td class="${x.low_keep ? "warn-text" : ""}"${x.low_keep ? ` title="Most posts of this source were filtered out: check its what_to_take or replace it"` : ""}>${x.filtered ?? "-"}${x.low_keep ? " · low keep rate" : ""}</td><td class="${st === "Dried up" ? "dry" : st === "Blocked" || st === "Error" ? "bad-text" : ""}"${x.dry_runs >= dryRuns ? ` title="No new posts in ${x.dry_runs} runs: consider new sources"` : ""}>${esc(st)}${x.dry_runs >= dryRuns ? " · consider new sources" : ""}</td></tr>`; }).join("");
         body = rows ? `<table class="edit"><thead><tr><th>Source</th><th>New</th><th>Kept</th><th>Filtered</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="meta">No crawl.</div>`;
+        // Discovery: per platform (kept / off-brand skipped / duplicates) and per query.
+        const d = b.research?.discovery;
+        if (d && arr(d.queries).length) {
+          const QS = { pending: "Not done", done: "Done", limit: "Share reached", empty: "Nothing fitting", blocked: "Blocked", partial: "Stopped midway", skipped: "Skipped" };
+          const prow = arr(d.platforms).map((p) => `<tr><td><b>${esc(platformName(p.id))}</b></td><td>${p.done}/${p.queries} queries</td><td>${p.kept}</td><td>${p.rejected_off_brand}</td><td>${p.duplicates}</td><td class="${p.blocked ? "bad-text" : ""}">${p.blocked ? "Blocked" : p.capped ? "Max reached" : ""}</td></tr>`).join("");
+          const qrow = arr(d.queries).filter((q) => q.state !== "pending" || q.kept).map((q) => `<tr><td>${esc(platformName(q.platform))}</td><td>${ext(q.url, foundBy(q))}</td><td>${q.kept}</td><td>${q.rejected_off_brand}</td><td>${q.duplicates}</td><td class="${q.state === "blocked" ? "bad-text" : ""}"${q.note ? ` title="${esc(q.note)}"` : ""}>${esc(QS[q.state] || q.state)}</td></tr>`).join("");
+          body += `<table class="edit"><thead><tr><th>Discovery</th><th>Query</th><th>Kept</th><th>Off-brand</th><th>Duplicates</th><th>Status</th></tr></thead><tbody>${prow}${qrow}</tbody></table>`;
+        }
       } else {
         const c = b.create || {};
         const sched = arr(c.scheduled).map((x) => `${ext(x.planner_url, x.post)} · ${esc(String(x.publication).replace("T", " ").slice(0, 16))}${x.source ? ` <span class="meta">${esc(x.source)}</span>` : ""}`);
