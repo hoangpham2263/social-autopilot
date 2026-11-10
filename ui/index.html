@@ -73,6 +73,7 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .page-head { display: flex; gap: 12px; align-items: center; margin: 0 0 24px; }
 .page-head h2 { margin: 0; font-size: 16px; }
 #brandForm .field.wide { max-width: 720px; }
+#brandForm .brand-note { margin-bottom: 12px; }
 .missing.flush { margin: 0; }
 .tiles.spaced { margin-top: 8px; }
 fieldset.spaced { margin-top: 24px; }
@@ -101,6 +102,7 @@ details[open] > summary { margin-bottom: 6px; }
 /* Prompt: one options row, then Copy / Edit / Reset, then the prompt filling the rest of the window. */
 #page-prompt:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
 #page-prompt .fields, #page-prompt .actions { flex: 0 0 auto; }
+#page-prompt .field:has(#prStart) { width: 250px; }
 #prText { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prText[readonly] { background: #fafafa; }
 /* Prompt, Run progress: the fixed steps of the mode (numbered like the prompt), one dot each; the current step framed. */
