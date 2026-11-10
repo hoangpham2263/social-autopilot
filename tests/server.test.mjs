@@ -82,8 +82,12 @@ test('serves the page, the shell assets and the data APIs', async () => {
   assert.match(page, /Codex runs it in its own session/);
   // Mode button counts per brand: research (unused library items), create (posts still needed), publish (approved, not sent).
   const pc = await (await fetch(base + '/api/prompt-counts')).json();
-  assert.ok(pc.brands && Object.values(pc.brands).every((c) => ['research', 'create', 'publish'].every((k) => Number.isInteger(c[k]))), JSON.stringify(pc));
+  assert.ok(pc.brands && Object.values(pc.brands).every((c) => ['research', 'create', 'publish', 'on_metricool'].every((k) => Number.isInteger(c[k]))), JSON.stringify(pc));
   assert.ok(Array.isArray((await (await fetch(`${base}/api/queue`)).json()).brands));
+  // Posts tab: four states in order (no "Queued"); Prompt tab: the never-sent-again note under Publish approved.
+  assert.ok(page.includes('const STATES = [["review", "To review"], ["approved", "Approved"], ["scheduled", "Scheduled"], ["posted", "Posted"]];'));
+  assert.doesNotMatch(page, /Queued/);
+  assert.ok(page.includes('Already on Metricool: ${sum("on_metricool")} (never sent again)'));
   const settings = await (await fetch(`${base}/api/settings`)).json();
   assert.equal(settings.settings.metricool?.default_mode, undefined); // no Metricool draft mode: always scheduled
   assert.equal(settings.settings.approval, undefined);

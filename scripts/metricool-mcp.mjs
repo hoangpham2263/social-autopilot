@@ -8,7 +8,9 @@
 //        Times are computed when payload runs: run it right before sending; an item past its send_before is not sent,
 //        run payload again (it moves to the next slot).
 //   node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url>
-//          --publication <YYYY-MM-DDTHH:MM[:SS]> --tz <timezone> [--networks facebook] [--force]
+//          --publication <YYYY-MM-DDTHH:MM[:SS]> --tz <timezone> [--networks facebook]
+//        A post holds ONE live Metricool id: a different id is refused while it has a scheduled/published one (no double
+//        send); only posts.mjs unsend (the id goes to metricool_history) frees it for a fresh send.
 //   node scripts/metricool-mcp.mjs status --brand <id>
 // payload: one item per approved post with media_url/video_url and no metricool.<network>.id yet. Posting times come from
 // the shared planner of metricool-csv.mjs (catalog schedule, --date/--time, cadence.slots or automatic times), planned in
@@ -112,6 +114,10 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
       record: rec,
     });
   }
+  // Never twice: no item for a post that is not approved or already has a live (scheduled/published) Metricool id.
+  const regs = Object.fromEntries((readPosts(brand.id).posts || []).map((p) => [p.id, p]));
+  const twice = items.filter((i) => { const p = regs[i.post]; return !p || p.status !== 'approved' || sentNetworks(p).length; });
+  if (twice.length) throw new Error(`Refused: ${twice.map((i) => i.post).join(', ')} already on Metricool or not approved; a post is never sent twice.`);
   // A post that fails a check is blocked (listed with the reason); the others still go. Only when nothing is left is it an error.
   if (problems.length && !items.length) throw Object.assign(new Error(`Không tạo được payload: ${problems.join(' ')}`), { problems });
   return { brand, blogId, draft, plan, items, blocked: problems };
@@ -166,11 +172,11 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
     if (!['approved', 'scheduled'].includes(entry.status)) throw new Error(`${postId}: trạng thái "${entry.status}", chỉ ghi cho bài approved/scheduled.`);
     if ((entry.metricool_history || []).some((x) => String(x.id) === id)) throw new Error(`${postId}: Metricool id ${id} was unsent (metricool_history); it is never recorded again. Send the post fresh (payload).`);
     const mc = entry.metricool && typeof entry.metricool === 'object' && !Array.isArray(entry.metricool) ? entry.metricool : {};
-    for (const n of networks) {
-      const old = mc[n];
-      // A legacy Metricool draft of this post is replaced by the scheduled post (the draft stays in Metricool; delete it there).
-      if (old?.id && String(old.id) !== id && old.draft !== true && !args.force) throw new Error(`${postId}: metricool.${n}.id đã là ${old.id} (khác ${id}). Kiểm trong Metricool; ghi đè bằng --force.`);
-    }
+    if (entry.status === 'published') throw new Error(`${postId}: already published; nothing is recorded again.`);
+    // One live Metricool id per post (any network): a second, different id means the post would be on Metricool twice.
+    // A legacy Metricool draft of this post is replaced by the scheduled post (the draft stays in Metricool; delete it there).
+    const live = Object.entries(mc).filter(([, r]) => r && r.id && r.draft !== true && String(r.id) !== id);
+    if (live.length) throw new Error(`${postId}: already on Metricool (${live.map(([n, r]) => `${n} id ${r.id}`).join(', ')}), not ${id}: a post is never sent twice. If it was pulled back in Metricool, run posts.mjs unsend first.`);
     const sentAt = stamp();
     for (const n of networks) {
       const old = mc[n] || {};

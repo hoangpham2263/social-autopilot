@@ -227,6 +227,8 @@ async function handle(req, res) {
         // The same posts metricool-mcp.mjs payload sends: the tool's own approved posts with a hosted image, not sent yet
         // on the brand's channels (skill-owned catalog posts never count); a paused brand sends nothing.
         publish: b.enabled ? (qb.unsent_approved || []).length : 0,
+        // Already scheduled on Metricool: payload never sends these again (shown under Publish approved).
+        on_metricool: (qb.on_metricool || []).length,
         // Unused library items per source (Prompt Sources list).
         sources: listItems(b.id).items.filter((i) => i.status === "new").reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
       }];
@@ -267,7 +269,7 @@ async function handle(req, res) {
     if (x && !x.ok) throw new Error(x.error || "Not approved.");
     return { id, brand_post: x?.brand_post || null, image_host: x?.image_host || null };
   });
-  // Posts -> Queued -> "Back to review" (finalize.mjs unapprove, hidden child process): the approval is undone, the
+  // Posts -> Approved / Scheduled -> "Back to review" (finalize.mjs unapprove, hidden child process): the approval is undone, the
   // hosted image removed from the image repo, the post is To review again. Never for a Posted post. A post already
   // scheduled in Metricool needs metricool_deleted: true (the person confirmed they deleted it there).
   if (path === "/api/unapprove" && req.method === "POST") return api(res, async () => {

@@ -177,11 +177,22 @@ test('record: always scheduled (schedule.<network> + status); a legacy Metricool
   assert.equal(pay.ok, true, JSON.stringify(pay));
   assert.deepEqual(pay.items.map((i) => i.post), ['POST-02']);
   assert.deepEqual(pay.skipped.map((s) => s.post), []); // scheduled posts are no longer "approved": not planned again
+  // the app's states: POST-01 is Scheduled (on Metricool, counted apart), POST-02 Approved waiting (the Publish approved count)
+  const q = JSON.parse(spawnSync(process.execPath, [path.join(tool, 'scripts', 'queue.mjs'), '--brand', 'testbrand'], { env, encoding: 'utf8', windowsHide: true }).stdout);
+  const qb = q.brands.find((b) => b.brand === 'testbrand');
+  assert.deepEqual(qb.on_metricool, ['POST-01'], JSON.stringify(qb));
+  assert.deepEqual(qb.unsent_approved, ['POST-02']);
 
-  // another id for the same network is refused without --force
+  // never twice: another id (any network, even with the old --force) is refused while the post has a live id
   r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '5', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
   assert.equal(r.ok, false);
-  assert.match(r.error, /--force/);
+  assert.match(r.error, /already on Metricool/);
+  assert.match(run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '5', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles', '--force').error, /already on Metricool/);
+  assert.match(run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '6', '--networks', 'instagram', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles').error, /already on Metricool/);
+  // naming the scheduled post explicitly does not send it again either
+  const named = run('payload', '--brand', 'testbrand', '--posts', 'POST-01,POST-02');
+  assert.deepEqual(named.items.map((i) => i.post), ['POST-02']);
+  assert.ok(named.skipped.some((s) => s.post === 'POST-01'));
   // the same id again keeps the uuid of the first record
   r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '500', '--publication', '2026-12-18T01:00', '--tz', 'Indian/Christmas');
   assert.equal(r.ok, true, JSON.stringify(r));
@@ -217,6 +228,10 @@ test('record: always scheduled (schedule.<network> + status); a legacy Metricool
   assert.ok(['500', '501'].every((id) => st2.ignore_ids.includes(id)), JSON.stringify(st2.ignore_ids));
   assert.match(run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '501', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles').error, /unsent/);
   assert.ok(run('payload', '--brand', 'testbrand').items.some((i) => i.post === 'POST-01'), 'sent fresh next time');
+  // after unsend a new id is accepted (fresh send)
+  r = run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '777', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(catalog().posts.find((x) => x.id === 'POST-01').metricool.facebook.id, '777');
 });
 
 test('payload: a failing post is blocked, the others still go; an old settings default_mode is ignored', () => {

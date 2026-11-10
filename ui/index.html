@@ -128,6 +128,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .tile .tile-title { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .tile .tile-title .t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tile .tile-title .status-tag { flex: 0 0 auto; }
+.tile .tile-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .tile-foot { margin-top: auto; display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 24px; }
 .tile .tile-foot .who { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
 .tile .tile-foot .btn { height: 24px; padding: 0 8px 2px; font-size: 12px; flex: 0 0 auto; }
@@ -268,6 +269,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
          Copy prompt and the hint. Then the prompt. -->
     <div class="fields">
       <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
+      <div class="field auto"><span class="label">&nbsp;</span><span class="meta inline-control" id="prMcNote" hidden></span></div>
     </div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
@@ -469,9 +471,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} new`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} duplicates skipped`, arr(r.pending).length && `unfinished: ${esc(arr(r.pending).join(", "))}`]) : "";
       const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
       const written = arr(x?.written).length;
-      const posted = mc.published || 0, review = num(d, "ready"), queued = Math.max(0, written - posted), scheduled = num(mc, "scheduled");
+      const posted = mc.published || 0, review = num(d, "ready"), scheduled = num(mc, "scheduled");
+      const onMc = arr(x?.written).filter((w) => w.metricool !== "published" && liveIds(w).length).length, waiting = Math.max(0, written - posted - onMc);
       const go = (k, n, t) => `<a href="#" data-go="posts" data-state="${k}" data-brand="${esc(id)}">${esc(withCount(t, n))}</a>`;
-      const posts = queued || review || posted ? [go("review", review, "To review"), go("queued", queued, "Queued"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
+      const posts = waiting || onMc || review || posted ? [go("review", review, "To review"), go("approved", waiting, "Approved"), go("scheduled", onMc, "Scheduled"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
       const sug = !s && m.suggested_skill ? `<dt>Skill found</dt><dd>${esc(m.suggested_skill.id)} ${btn("data-suggest", m.suggested_skill.dir, "Link", "Link this skill folder to the brand", " primary")}</dd>` : "";
       return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
         <div class="head-row"><h3>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}<span class="dot after ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span></h3>${actions(m)}</div>
@@ -607,10 +610,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway", skipped: "skipped (quota)" };
   let resShown = 60, resStatus = store.get("resStatus") || "new", resAvatars = {};
   if (!["new", "used", "rejected", ""].includes(resStatus)) resStatus = "new";
-  // The one card template: { id, img, title, status (html), who (brand/page name), actions (html), hint }.
+  // The one card template: { id, img, title, status (html), sub (one meta line, e.g. the Metricool time), who (brand/page name), actions (html), hint }.
   const tile = (x) => `<div class="tile" data-id="${esc(x.id)}" tabindex="0">
     ${x.img ? `<img class="tile-img" loading="lazy" src="${img(x.img)}" alt="">` : `<div class="tile-img none">No image</div>`}
     <div class="tile-title"><span class="t" title="${esc(x.title)}">${esc(x.title)}</span>${x.status || ""}</div>
+    ${x.sub ? `<div class="tile-sub" title="${esc(x.sub)}">${esc(x.sub)}</div>` : ""}
     <div class="tile-foot"><span class="who" title="${esc(x.whoTip || x.who)}">${x.whoHtml || esc(x.who)}</span>${x.actions || ""}</div>
     <div class="msg"></div></div>`;
   // A whole card opens its preview (click or Enter); its buttons do their own thing.
@@ -729,7 +733,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#resSource").onchange = () => { resShown = 60; loadResearch(); };
 
   // ----- Prompt: the short prompts of docs/scheduled-prompt.md (mode x agent); brand and this run's options filled in.
-  // The prompt is read-only until Edit; Reset rebuilds it from the template and the options. -----
+  // The prompt is read-only: rebuilt from the template and the options whenever one changes. -----
   let promptData = { prompts: [], brands: [] };
   let prMode = "", prBase = "";
   const isResearch = (m) => /research/i.test(m);
@@ -836,6 +840,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const brand = $("#prBrand").value;
     const sum = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c[k] || 0), 0);
     for (const b of $$("#prMode button")) b.textContent = Object.keys(modeCounts).length ? withCount(b.dataset.mode, sum(modeKey(b.dataset.mode))) : b.dataset.mode;
+    // Under Publish approved: posts already scheduled on Metricool (payload never sends them again).
+    const note = $("#prMcNote"), pub = /publish approved/i.test(prMode) && Object.keys(modeCounts).length;
+    note.hidden = !pub;
+    if (pub) note.textContent = `Already on Metricool: ${sum("on_metricool")} (never sent again)`;
   }
   async function loadModeCounts() {
     const r = await getJson("/api/prompt-counts").catch(() => ({}));
@@ -982,17 +990,19 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const STATUS_TEXT = { ready: "Needs review", approved: "Approved", published: "Published", scheduled: "Scheduled", check_failed: "Failed checks", rejected: "Dropped", needs_prompt: "Making", needs_caption: "Making", generating: "Making", image_failed: "Image failed", preparing: "Making" };
   const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "", image_failed: "c-red", check_failed: "c-red" };
   const MC = (d) => d.brand_post?.metricool;
-  // What the user sees: To review (passed checks, waiting for Approve/Drop), Queued (approved: waiting for the next run
-  // or scheduled in Metricool), Posted (published). Failed posts stay in their state with a red dot and a short reason;
+  // The live Metricool ids of a post (scheduled/published, not an old draft): on Metricool, never sent again.
+  function liveIds(bp) { return arr(bp?.metricool_sent).filter((m) => m.id && !m.draft); }
+  // What the user sees: To review (passed checks, waiting for Approve/Drop), Approved (waiting to send: no live Metricool
+  // id; the next Publish approved sends it), Scheduled (on Metricool: a live id, never sent again), Posted (published). Failed posts stay in their state with a red dot and a short reason;
   // drafts still being made and dropped posts are not shown (only "N in progress").
   const failedOf = (d) => (["check_failed", "image_failed"].includes(d.status) ? (arr(d.problems)[0] || d.error || "Failed checks") : MC(d) === "error" ? "Metricool error" : d.brand_post?.host_error ? "Image not hosted" : "");
   const stateOf = (d) => {
     if (d.status === "rejected") return "";
-    if (d.brand_post) return MC(d) === "published" ? "posted" : "queued";
+    if (d.brand_post) return MC(d) === "published" ? "posted" : liveIds(d.brand_post).length ? "scheduled" : "approved";
     if (d.status === "ready" || ["check_failed", "image_failed"].includes(d.status)) return "review";
     return "";
   };
-  const STATES = [["review", "To review"], ["queued", "Queued"], ["posted", "Posted"]];
+  const STATES = [["review", "To review"], ["approved", "Approved"], ["scheduled", "Scheduled"], ["posted", "Posted"]];
   // A short title: POST-xx once saved, else the first caption line (or the idea), at most 40 characters.
   const titleOf = (d) => {
     if (d.brand_post?.post) return d.brand_post.post;
@@ -1010,7 +1020,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     setDisabled($("#drBrand"), arr(brandData.brands).length < 2, "Only one brand");
     const drafts = everyDraft.filter((d) => !brand || d.brand === brand);
     const count = (k) => drafts.filter((d) => stateOf(d) === k).length;
-    if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : "queued";
+    if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : count("approved") ? "approved" : "scheduled";
     $("#drState").innerHTML = STATES.map(([k, t]) => `<button class="btn" type="button" data-state="${k}" aria-pressed="${k === drState}">${esc(withCount(t, count(k)))}</button>`).join("");
     for (const b of $$("#drState button")) b.onclick = () => { drState = b.dataset.state; store.set("drState", drState); loadDrafts(); };
     const making = drafts.filter((d) => !stateOf(d) && d.status !== "rejected").length, failed = drafts.filter((d) => stateOf(d) && failedOf(d)).length;
@@ -1018,11 +1028,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const list = drafts.filter((d) => stateOf(d) === drState);
     drList = list;
     $("#draftList").innerHTML = list.length ? `<div class="tiles">${list.map((d) => {
-      const fail = failedOf(d), review = drState === "review" && !fail, when = plannedOf(d);
+      const fail = failedOf(d), review = drState === "review" && !fail, live = liveIds(d.brand_post)[0];
+      // Scheduled: "On Metricool" + its time (VN first, ET in brackets); Approved: "Waiting to send".
+      const badge = drState === "scheduled" ? `<span class="status-tag c-green" title="Scheduled on Metricool (id ${esc(live?.id || "-")}); never sent again">On Metricool</span>` : drState === "approved" ? `<span class="status-tag c-amber" title="Approved, not on Metricool yet: the next Publish approved sends it">Waiting to send</span>` : "";
+      const posted = drState === "posted" && liveIds(d.brand_post)[0];
+      const when = live && drState === "scheduled" ? vnEt(live.publication, live.timezone) : posted ? `Posted ${vnEt(posted.publication, posted.timezone)}` : drState === "approved" ? "Not on Metricool yet" : "";
       return tile({ id: d.id, img: draftThumb(d), title: titleOf(d),
-        status: fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : "",
-        who: [d.preview?.page_name || d.brand, when !== "-" ? when : ""].filter(Boolean).join(" · "), whoTip: [d.brand, fail || (when !== "-" ? when : drState === "queued" ? "next run" : "")].filter(Boolean).join(" · "),
-        actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : drState === "queued" && d.brand_post && MC(d) !== "published" ? `<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
+        status: (fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : "") + badge,
+        sub: when, who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (drState === "approved" ? "the next Publish approved sends it" : "")].filter(Boolean).join(" · "),
+        actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ["approved", "scheduled"].includes(drState) && d.brand_post && MC(d) !== "published" ? `<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
     wireTiles($("#draftList"), (i) => openPreview(list[i], { list, i }));
     $$("#draftList .tile").forEach((card, i) => {
@@ -1144,7 +1158,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", canUnreview = !!bp && bp.metricool !== "published", swap = d.image_mode === "scene-swap";
     const p = d.preview || { posts: [], media: [] };
     const initial = p.page_avatar ? `<img class="av-img" src="${esc(p.page_avatar)}" alt="">` : esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
-    const whenTxt = plannedOf(d) !== "-" ? esc(plannedOf(d)) : bp ? (bp.metricool === "published" ? "Posted" : "Queued · next best time") : "Draft preview";
+    const whenTxt = plannedOf(d) !== "-" ? esc(plannedOf(d)) : bp ? (bp.metricool === "published" ? "Posted" : liveIds(bp).length ? "Scheduled on Metricool" : "Approved · waiting to send") : "Draft preview";
     const media = () => {
       const m = arr(p.media).slice(0, 4);
       if (!m.length) return `<div class="placeholder-media"></div>`;
@@ -1174,7 +1188,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         ${review.length ? `<dt>Review only</dt><dd>${esc(review.map((x) => LANG_NAME(x.lang)).join(", "))} <span class="meta">(not posted)</span></dd>` : ""}
         <dt>Viewing</dt><dd>${o ? `${esc(LANG_NAME(o.lang) || "-")} · ${o.review ? `<span class="warn-text">Review only, not posted</span>` : `<span class="ok-text">Posted</span>`}` : "-"}</dd>
         <dt>Status</dt><dd>${draftTags(d)}</dd>
-        <dt>Time</dt><dd>${esc(plannedOf(d))}</dd>
+        <dt>Time</dt><dd>${esc(liveIds(bp)[0] ? vnEt(liveIds(bp)[0].publication, liveIds(bp)[0].timezone) : plannedOf(d))}</dd>
       </dl>
       ${bp ? hostBlock(d) + mcBlock(bp) : ""}
       ${arr(d.problems).length ? `<ul class="missing">${d.problems.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
@@ -1219,6 +1233,23 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   // Metricool: what metricool-mcp.mjs record wrote (draft or scheduled, time, planner link).
   // A Metricool wall time (YYYY-MM-DDTHH:MM in tz) as "ET … · VN …" (the brand plans in ET, the user reads VN time).
+  // A Metricool wall time as the moment it is (Date), or null.
+  function wallAt(wall, tz) {
+    try {
+      const [d, t] = String(wall).split("T"), guess = new Date(`${d}T${(t || "00:00").slice(0, 5)}:00Z`);
+      if (Number.isNaN(guess.getTime())) return null;
+      const off = (z) => { const p = new Intl.DateTimeFormat("en-US", { timeZone: z, timeZoneName: "longOffset" }).formatToParts(guess).find((x) => x.type === "timeZoneName").value; const m = p.match(/GMT([+-])(\d{2}):?(\d{2})?/); return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] || 0)) : 0; };
+      return new Date(guess.getTime() - off(tz || "America/New_York") * 60000);
+    } catch { return null; }
+  }
+  const fmtIn = (at, z, o) => new Intl.DateTimeFormat("en-GB", { timeZone: z, hourCycle: "h23", ...o }).format(at);
+  // "10/11 22:00 VN (10:00 ET)": the user reads VN time; ET (the brand's Metricool time) in brackets.
+  function vnEt(wall, tz) {
+    const at = wall && wallAt(wall, tz);
+    if (!at) return wall ? String(wall).replace("T", " ").slice(0, 16) : "";
+    const hm = { hour: "2-digit", minute: "2-digit" };
+    return `${fmtIn(at, "Asia/Ho_Chi_Minh", { day: "2-digit", month: "2-digit" })} ${fmtIn(at, "Asia/Ho_Chi_Minh", hm)} VN (${fmtIn(at, "America/New_York", hm)} ET)`;
+  }
   function etVn(wall, tz) {
     if (!wall) return "-";
     try {
@@ -1233,10 +1264,14 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const hist = arr(bp.metricool_history);
     const histHtml = hist.length ? `<details class="mc-hist"><summary>History (${hist.length})</summary><ul>${hist.map((h) => `<li>${esc(h.network || "")} id ${esc(h.id || "-")}${h.draft ? " (draft)" : ""}${h.publication ? ` · ${esc(etVn(h.publication, h.timezone))}` : ""}${h.replaced_draft ? ` · replaced ${esc(h.replaced_draft)}` : ""} · unsent ${esc(when(h.unsent_at))}${h.reason ? ` · ${esc(h.reason)}` : ""}</li>`).join("")}</ul></details>` : "";
     const pub = bp.published ? `<div class="host">Posted ${Object.entries(bp.published).map(([n, x]) => `${esc(n)} ${esc(x.date || "")}${x.url ? ` <a href="${esc(x.url)}" target="_blank" rel="noopener">Open post</a>` : ""}`).join(" · ")}</div>` : "";
-    if (!arr(bp.metricool_sent).length) return `<div class="host meta">Not sent to Metricool yet: the next Publish approved schedules it at a best time.</div>${pub}${histHtml}`;
+    const live = liveIds(bp);
+    const line = bp.metricool === "published" ? "" : live.length
+      ? `<div class="host"><span><span class="ok-text">Scheduled on Metricool</span> — ${live.map((m) => `id ${esc(m.id)}, ${esc(vnEt(m.publication, m.timezone).replace(/ \(.*\)$/, ""))}`).join("; ")}. <span class="meta">Never sent again.</span></span></div>`
+      : `<div class="host"><span><span class="warn-text">Approved · waiting to send</span> <span class="meta">not on Metricool yet</span></span></div>`;
+    if (!arr(bp.metricool_sent).length) return `${line}<div class="host meta">The next Publish approved schedules it at a best time.</div>${pub}${histHtml}`;
     const old = arr(bp.metricool_sent).filter((m) => m.draft);
-    if (old.length && old.length === bp.metricool_sent.length) return `<div class="host meta">Old Metricool draft ${old.map((m) => esc(m.id || "")).join(", ")} (delete it in Metricool); the next run sends this post as a scheduled post.</div>`;
-    return `<dl class="kv mc-kv">${bp.metricool_sent.map((m) => `<dt>${esc(m.network)}</dt><dd>${m.draft ? "old draft" : "scheduled"} ${esc(etVn(m.publication, m.timezone))}${m.time_source ? `<br><span class="meta">${esc(m.time_source)}</span>` : ""}<br><span class="meta">Metricool id ${esc(m.id || "-")}</span>${m.planner_url ? ` · <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}</dd>`).join("")}</dl>${pub}${histHtml}`;
+    if (old.length && old.length === bp.metricool_sent.length) return `${line}<div class="host meta">Old Metricool draft ${old.map((m) => esc(m.id || "")).join(", ")} (delete it in Metricool); the next run sends this post as a scheduled post.</div>`;
+    return `${line}<dl class="kv mc-kv">${bp.metricool_sent.map((m) => `<dt>${esc(m.network)}</dt><dd>${m.draft ? "old draft" : "scheduled"} ${esc(etVn(m.publication, m.timezone))}${m.time_source ? `<br><span class="meta">${esc(m.time_source)}</span>` : ""}<br><span class="meta">Metricool id ${esc(m.id || "-")}</span>${m.planner_url ? ` · <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}</dd>`).join("")}</dl>${pub}${histHtml}`;
   }
   document.addEventListener("click", async (e) => {
     const b = e.target.closest(".copy-link");
@@ -1267,7 +1302,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (at >= 0) openPreview(drList[at], { list: drList, i: at }); else closeOverlay();
   }
   $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
-  // "Back to review" (Queued, never Posted): undo the approval (finalize.mjs unapprove). A post already scheduled in
+  // "Back to review" (Approved or Scheduled, never Posted): undo the approval (finalize.mjs unapprove). A post already scheduled in
   // Metricool must be deleted there first; the confirm says which one.
   async function backToReview(d, msg, buttons = []) {
     const sched = arr(d.brand_post?.metricool_sent).filter((m) => m.id && !m.draft);

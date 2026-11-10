@@ -57,12 +57,15 @@ export function catalogPosts(b, drafts = listDrafts(b.id)) {
     const folder = postFolder(b.id, p);
     const image = folder && p.image && fs.existsSync(path.join(folder, p.image)) ? path.join(folder, p.image) : '';
     const sent = sentNetworks(p).some((n) => channels.includes(n));
-    const state = mc.state === 'published' ? 'posted' : ['approved', 'scheduled'].includes(p.status) ? 'queued' : 'other';
+    // approved = waiting to send (no live Metricool id); scheduled = on Metricool (live id, not published yet).
+    const live = sentNetworks(p).length > 0;
+    const state = mc.state === 'published' ? 'posted' : !['approved', 'scheduled'].includes(p.status) ? 'other' : live ? 'scheduled' : 'approved';
     return {
       post: p.id, group: p.group || '', status: p.status || '', in_app: linked.has(p.id), state, metricool: mc.state,
       metricool_sent: mc.sent.map(({ network, draft, publication, timezone, planner_url, id, sent_at, time_source }) => ({ network, draft, publication, timezone, planner_url, id, sent_at, time_source })),
       media_url: media.length ? media[0] : null, image, folder, captions: p.captions || {}, created: p.created || '',
       unsent: p.status === 'approved' && !!media.length && !sent,
+      on_metricool: state === 'scheduled',
     };
   });
 }
@@ -94,6 +97,8 @@ export function queueReport(args = {}) {
       // Plan ahead: days x posts per day, how many the tool's posts already cover, how many Create & publish still makes.
       plan: postsNeeded({ id: b.id, social: { cadence: { posts_per_day: b.posts_per_day } } }),
       unsent_approved: catalog.filter((c) => c.unsent).map((c) => c.post),
+      // Already on Metricool (live id, not published): never sent again by payload.
+      on_metricool: catalog.filter((c) => c.on_metricool).map((c) => c.post),
     };
   });
   // date = the tool's day in ET (brands' Metricool timezone); date_vn = the user's day in Vietnam (differs in the VN morning).
