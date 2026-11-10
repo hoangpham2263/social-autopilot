@@ -565,6 +565,7 @@ export function inspectBrand(dir) {
   result.metricool_timezone = typeof social.metricool?.timezone === 'string' ? social.metricool.timezone.trim() : '';
   result.review_languages = reviewLanguages(social);
   result.sources = brandSources(social).map((x) => x.id);
+  result.discovery_platforms = brandDiscovery(social).platforms.map((x) => x.id); // research.discovery: enabled platforms
   result.ai_scenes_allowed = social.product_images?.ai_scenes_allowed !== false; // on unless explicitly false
   result.reference_redraw = social.product_images?.reference_redraw?.enabled === true; // scene-swap allowed (opt-in)
   const checker = path.join(dir, 'scripts', 'check-skill.mjs');
@@ -608,6 +609,19 @@ export function brandSources(social) {
   return (Array.isArray(social.research?.sources) ? social.research.sources : [])
     .filter((x) => x && x.url && x.enabled === true && /^[a-z0-9][a-z0-9-]*$/.test(x.id || ''))
     .map((x) => ({ id: x.id, name: x.name || x.id, platform: x.platform || '', url: x.url, what_to_take: x.what_to_take || '', notes: x.notes || '' }));
+}
+
+// research.discovery of the brand's social.json (skill standard): search more reference posts by keywords/hashtags on
+// several platforms, keeping only posts whose product is a type the brand sells (product_fit). Enabled platforms only.
+export const DISCOVERY_PLATFORMS = ['instagram', 'pinterest', 'tiktok', 'facebook', 'reddit', 'etsy', 'youtube', 'houzz'];
+export function brandDiscovery(social) {
+  const d = social?.research?.discovery;
+  const strs = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()))] : []);
+  const pf = d?.product_fit || {};
+  const product_fit = { types: strs(pf.types), must_have: strs(pf.must_have), must_not: strs(pf.must_not) };
+  if (!d || typeof d !== 'object' || d.enabled !== true) return { enabled: false, platforms: [], keywords: [], hashtags: [], product_fit, max_per_platform: 0 };
+  const platforms = (Array.isArray(d.platforms) ? d.platforms : []).filter((p) => p && p.enabled === true && DISCOVERY_PLATFORMS.includes(p.id)).map((p) => ({ id: p.id, notes: typeof p.notes === 'string' ? p.notes : '' }));
+  return { enabled: true, platforms, keywords: strs(d.keywords), hashtags: strs(d.hashtags).map((h) => h.replace(/^#/, '')), product_fit, max_per_platform: Number.isInteger(d.max_per_platform) && d.max_per_platform > 0 ? d.max_per_platform : 15 };
 }
 
 export function latestRun(brand) {

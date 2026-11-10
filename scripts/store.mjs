@@ -2,7 +2,7 @@
 // separate from the dated crawl logs in workspace/runs/. Mode "Chỉ nghiên cứu" fills it (research.mjs ingest); mode
 // "Tạo bài từ kho" reads it (ideas.mjs init). Items are NOT used up (user, 10/11/2026): every post changes the scene and
 // the content, so one item may inspire several posts; each draft adds a use ({ draft, idea, scene, product, sign_text, at })
-// and the next idea from that item must take a new angle (reuseProblems: a different scene AND a different product or
+// and the next idea from that item must take a new angle (reuseProblems: a different scene OR a different sign_text;
 // sign_text). Never-used items are picked first, then the least used after a cooldown (settings ideas.reuse_cooldown_days).
 // Library states (UI and docs): Available (status new: can still be used; "new" or "used N×") · Removed (status
 // rejected: not used anymore, with its reason: the filter's, "used enough" or the user's note; Restore brings it back).
@@ -16,10 +16,14 @@
 // item: { id: "S0001", source_id, source_url, store, post_url, alt_urls?, post_key(s), post_ids, captured, posted_date,
 //         caption, caption_norm, caption_hash, main_product, price_seen, images: ["images/S0001-1-ab12cd34.jpg"],
 //         image_sha1: [..], image_phash: [..], status: new|rejected (Removed), uses: [{ draft, idea, scene, product, sign_text, at }],
-//         last_used, used_by: [draft ids] (history), note, run }   (old status "used" is read as new + uses: migrateUses)
+//         last_used, used_by: [draft ids] (history), note, run,
+//         platform (facebook|instagram|pinterest|tiktok|reddit|etsy|youtube|houzz), author, found_by ("reference page" |
+//         "keyword:<kw>" | "hashtag:<tag>"), product_fit: { type, reason }, query (discovery query id) }
+//         (old status "used" is read as new + uses: migrateUses; old items without platform: from the post link)
+//   workspace/store/<brand>/rejected.json    posts seen but NOT stored because their product is off-brand (product_fit)
 //   workspace/store/<brand>/duplicates.json  every post not stored because it matched an item (rule + item id)
 // Brands never mix: each brand has its own folder; a source id belongs to that brand's social.json only.
-//   node scripts/store.mjs list    --brand <id> [--status new|rejected] [--source <sid>] [--limit n]
+//   node scripts/store.mjs list    --brand <id> [--status new|rejected] [--source <sid>] [--platform <p>] [--limit n]
 //                                            new = Available (can still be used, used before included; each item has used = N)
 //   node scripts/store.mjs show    --brand <id> --id S0001
 //   node scripts/store.mjs reject  --brand <id> --id S0001 [--note "..."]      "bỏ": never picked for ideas
@@ -35,7 +39,7 @@
 //   node scripts/store.mjs migrate [--brand <id>]                             old runs/<brand>/<date>/<src>/refs.json -> store
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText, loadBrand, draftsRoot } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText, loadBrand, draftsRoot, brandDiscovery } from './lib.mjs';
 import { imageHashes, hamming } from './phash.mjs';
 
 export const STATUSES = ['new', 'rejected'];
@@ -113,19 +117,23 @@ export function pickItems(items, n, { source = '', busy = new Set(), cooldownDay
   if (res.length < n) res.push(...a.reusable.slice().sort((x, y) => usesOf(x).length - usesOf(y).length || lastMs(x) - lastMs(y) || x.id.localeCompare(y.id)).slice(0, n - res.length));
   return res;
 }
-// A new post from an item must differ from every earlier use: a different scene AND (a different product photo or a
-// different sign_text). product undefined (ideas.mjs set: not chosen yet) = only the scene is checked. Uses of the same
-// idea/draft are skipped (an idea re-filled, a draft remade).
+// A new post from an item must differ from every earlier use (user, 10/11/2026, reference modes): a different scene OR a
+// different sign_text. keep-scene reuses keep the scene and change the text; new-scene reuses change the scene and keep
+// the text. Blocked = the same scene + the same sign_text + the same product photo as an earlier use. Unknown parts are
+// not held against the idea: sign_text undefined (ideas.mjs set: text not chosen yet) = never a repeat yet; product
+// undefined = any product. Uses of the same idea/draft are skipped (an idea re-filled, a draft remade).
 const normText = (t) => normCaption(t || '');
 export const sameScene = (a, b) => { const x = normText(a), y = normText(b); return !!x && !!y && (x === y || captionSimilarity(x, y) >= 0.85); };
 const sameFile = (a, b) => !!a && !!b && path.resolve(String(a)).toLowerCase() === path.resolve(String(b)).toLowerCase();
-export function reuseProblems(item, { scene, product, sign_text = '', idea = '', draft = '' } = {}) {
+export function reuseProblems(item, { scene, product, sign_text, idea = '', draft = '' } = {}) {
   const problems = [];
   for (const u of usesOf(item)) {
     if ((draft && u.draft === draft) || (idea && u.idea === idea)) continue;
     const by = u.draft || u.idea || 'an earlier post';
-    if (sameScene(scene, u.scene)) problems.push(`${item.id} was already used with this scene (${by}: "${u.scene}"): pick a different scene`);
-    if (product !== undefined && sameFile(product, u.product) && normText(sign_text) === normText(u.sign_text)) problems.push(`${item.id} was already used with this product and sign text (${by}): change the product or the sign_text`);
+    const scenes = sameScene(scene, u.scene) || (!normText(scene) && !normText(u.scene));
+    const texts = sign_text !== undefined && normText(sign_text) === normText(u.sign_text);
+    const products = product === undefined || !u.product || sameFile(product, u.product);
+    if (scenes && texts && products) problems.push(`${item.id} was already used with this scene and this sign text${product !== undefined && u.product ? ' and product' : ''} (${by}: "${u.scene}"${u.sign_text ? `, "${u.sign_text}"` : ''}): change the scene (new-scene) or the sign_text (keep-scene)`);
   }
   return problems;
 }
@@ -150,14 +158,39 @@ export function postKey(url) {
   if (!raw) return '';
   let u; try { u = new URL(raw); } catch { return raw.toLowerCase(); }
   const host = u.hostname.toLowerCase().replace(/^(www|m|web|mbasic|mobile)\./, '');
-  const keep = /facebook\.com$|fb\.com$/.test(host) ? ['fbid', 'story_fbid', 'id', 'v'] : [];
+  const keep = /facebook\.com$|fb\.com$/.test(host) ? ['fbid', 'story_fbid', 'id', 'v'] : /youtube\.com$/.test(host) ? ['v'] : [];
   const q = keep.filter((k) => u.searchParams.get(k)).map((k) => `${k}=${u.searchParams.get(k)}`).join('&');
   return `${host}${u.pathname.replace(/\/+$/, '')}${q ? '?' + q : ''}`.toLowerCase();
 }
-// The post ids inside a Facebook link (several per link possible); other sites: none.
+// The platform of a link (host), '' when not one of the research platforms.
+export const PLATFORM_HOSTS = [['facebook', /(^|\.)(facebook\.com|fb\.com|fb\.watch)$/], ['instagram', /(^|\.)instagram\.com$/], ['pinterest', /(^|\.)pinterest\.[a-z.]+$|^pin\.it$/],
+  ['tiktok', /(^|\.)tiktok\.com$/], ['reddit', /(^|\.)(reddit\.com|redd\.it)$/], ['etsy', /(^|\.)etsy\.com$/], ['youtube', /(^|\.)(youtube\.com|youtu\.be)$/], ['houzz', /(^|\.)houzz\.[a-z.]+$/]];
+export function platformOfUrl(url) {
+  let u; try { u = new URL(String(url || '').trim()); } catch { return ''; }
+  const host = u.hostname.toLowerCase();
+  return (PLATFORM_HOSTS.find(([, re]) => re.test(host)) || [''])[0];
+}
+// An item's platform: stored, else from its post link, else from its source page.
+export const platformOf = (i) => i?.platform || platformOfUrl(i?.post_url) || platformOfUrl(i?.source_url) || '';
+// Post ids of the other platforms, prefixed (the same post under another link form is one post): Instagram /p/ = /reel/,
+// YouTube watch?v= = /shorts/ = youtu.be, Pinterest /pin/<slug>--<id>, TikTok /video/<id>, Reddit /comments/<id>,
+// Etsy /listing/<id>, Houzz photo ids.
+function otherIds(u) {
+  const host = u.hostname.toLowerCase(), p = u.pathname;
+  let m;
+  if (/(^|\.)instagram\.com$/.test(host)) return (m = p.match(/\/(?:p|reels?|tv)\/([\w-]{5,})/)) ? [`ig:${m[1]}`] : [];
+  if (/(^|\.)pinterest\.[a-z.]+$/.test(host)) return (m = p.match(/\/pin\/(?:[\w-]*?--)?(\d{6,})/)) ? [`pin:${m[1]}`] : [];
+  if (/(^|\.)tiktok\.com$/.test(host)) return (m = p.match(/\/(?:video|photo)\/(\d{8,})/)) ? [`tt:${m[1]}`] : [];
+  if (/(^|\.)(youtube\.com|youtu\.be)$/.test(host)) { const v = u.searchParams.get('v') || (/youtu\.be$/.test(host) ? p.slice(1).split('/')[0] : (p.match(/\/(?:shorts|embed|live)\/([\w-]{6,})/) || [])[1]); return v ? [`yt:${v}`] : []; }
+  if (/(^|\.)reddit\.com$/.test(host)) return (m = p.match(/\/comments\/([a-z0-9]{4,})/i)) ? [`reddit:${m[1].toLowerCase()}`] : [];
+  if (/(^|\.)etsy\.com$/.test(host)) return (m = p.match(/\/listing\/(\d{5,})/)) ? [`etsy:${m[1]}`] : [];
+  if (/(^|\.)houzz\.[a-z.]+$/.test(host)) return (m = p.match(/(?:~|phvw-vp~)(\d{5,})/)) ? [`houzz:${m[1]}`] : [];
+  return [];
+}
+// The post ids inside a link: Facebook ids (several per link possible), other platforms prefixed (otherIds).
 export function postIds(url) {
   let u; try { u = new URL(String(url || '').trim()); } catch { return []; }
-  if (!/(^|\.)(facebook\.com|fb\.com|fb\.watch)$/i.test(u.hostname)) return [];
+  if (!/(^|\.)(facebook\.com|fb\.com|fb\.watch)$/i.test(u.hostname)) return otherIds(u);
   const ids = new Set();
   for (const k of ['fbid', 'story_fbid', 'v']) { const v = u.searchParams.get(k); if (v && /^(\d{5,}|pfbid\w+)$/.test(v)) ids.add(v); }
   const m = u.pathname.match(/\/(?:posts|photos|videos|reel|permalink)\/(?:[^/]+\/)*?((?:\d{5,})|(?:pfbid\w+))\/?$/i) || u.pathname.match(/\/((?:\d{8,})|(?:pfbid\w{10,}))\/?$/i);
@@ -210,12 +243,42 @@ export function findDuplicate(post, items, cfg = dedupeSettings()) {
 const RULE_TEXT = { post_url: 'trùng link bài', post_id: 'trùng mã bài Facebook', image_sha1: 'trùng file ảnh', image_phash: 'trùng ảnh (gần giống)', caption: 'trùng caption', caption_similar: 'caption gần giống' };
 const validDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
 export const duplicatesFile = (brand) => path.join(storeDir(brand), 'duplicates.json');
+export const rejectedFile = (brand) => path.join(storeDir(brand), 'rejected.json');
+
+// Product fit (research.discovery.product_fit of the skill, user 10/11/2026): a post is stored only when its product is a
+// type the brand actually sells. On a post: product_fit { type, reason } (the agent judged it: kept) or { fit: false,
+// reason } (seen, off-brand). required = the post must carry a type (every post the agent captures; a post crawled by
+// crawl-fb.mjs has none and is judged by the filter step). Returns the reason it is off-brand, '' when it fits.
+export function fitProblem(post, rules = {}, { required = false } = {}) {
+  const pf = post?.product_fit && typeof post.product_fit === 'object' ? post.product_fit : null;
+  if (pf && pf.fit === false) return `off-brand: ${cleanText(String(pf.reason || 'not a product the brand sells')).text.trim().slice(0, 200)}`;
+  const type = pf && typeof pf.type === 'string' ? pf.type.trim() : '';
+  if (!type) return required ? "off-brand: no product_fit.type (one of the brand's product types)" : '';
+  const types = (rules.types || []).map((x) => String(x).trim().toLowerCase());
+  if (types.length && !types.includes(type.toLowerCase())) return `off-brand: "${type}" is not one of the brand's product types (${(rules.types || []).join(', ')})`;
+  return '';
+}
+// Off-brand posts are never stored; they are logged (rejected.json) with the reason.
+export function logRejected(brand, list, extra = {}) {
+  if (!list.length) return;
+  const file = rejectedFile(brand);
+  withLock(file, () => { const log = readJson(file, { rejected: [] }); log.rejected.push(...list.map((x) => ({ at: stamp(), ...extra, ...x }))); writeJson(file, log); });
+}
 
 // Adds crawled posts of one source to the brand's store. posts: [{ post_url, alt_urls?, caption, images: [abs path],
 // posted_date?, main_product?, price_seen?, store? }], images already checked by the caller. A duplicate (rules above)
 // is not stored; it is logged with the item it matched. since = drop posts dated before it; limit = at most that many
 // new. Returns { added: [ids], duplicates: [..], dropped: [..], hidden, unhashed }.
-export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, log = true, crawlMode = '' } = {}) {
+// src may carry platform, found_by ("reference page" | "keyword:<kw>" | "hashtag:<tag>") and query (discovery query id);
+// a post may carry its own platform, author, product_fit, likes. productFit = the skill's product_fit rules; requireFit =
+// a post without product_fit.type is off-brand. Off-brand posts are not stored (rejected[], logged in rejected.json).
+export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, log = true, crawlMode = '', productFit = null, requireFit = false } = {}) {
+  const rejected = [];
+  posts = posts.filter((p) => {
+    const why = productFit || requireFit || p.product_fit ? fitProblem(p, productFit || {}, { required: requireFit }) : '';
+    if (why) rejected.push({ post_url: String(p.post_url || ''), author: cleanText(p.author || '').text, platform: p.platform || src.platform || platformOfUrl(p.post_url), found_by: p.found_by || src.found_by || 'reference page', reason: why });
+    return !why;
+  });
   const cfg = dedupeSettings();
   const phashes = imageHashes(posts.flatMap((p) => p.images), { ffmpeg: process.env.SA_FFMPEG || settings().ffmpeg?.command || '' });
   const result = withStore(brand, (s) => {
@@ -252,11 +315,17 @@ export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, l
         ...(caption.text.trim() ? {} : { caption_empty: true }),
         ...(MEDIA_TYPES.includes(p.media_type) ? { media_type: p.media_type } : {}),
         ...(crawlMode ? { crawl_mode: crawlMode } : {}), ...(Number.isInteger(p.page_pos) ? { page_pos: p.page_pos } : {}),
+        platform: p.platform || src.platform || platformOfUrl(p.post_url) || platformOfUrl(src.url) || '',
+        found_by: cleanText(p.found_by || src.found_by || 'reference page').text,
+        ...(cleanText(p.author || '').text ? { author: cleanText(p.author).text.slice(0, 120) } : {}),
+        ...(typeof p.product_fit?.type === 'string' && p.product_fit.type.trim() ? { product_fit: { type: p.product_fit.type.trim(), reason: cleanText(String(p.product_fit.reason || '')).text.trim().slice(0, 300) } } : {}),
+        ...(src.query ? { query: src.query } : {}), ...(Number.isFinite(Number(p.likes)) && p.likes !== '' && p.likes !== null && p.likes !== undefined ? { likes: Number(p.likes) } : {}),
       });
       added.push(id);
     }
-    return { added, dropped, duplicates, hidden, unhashed };
+    return { added, dropped, duplicates, hidden, unhashed, rejected };
   });
+  if (log) logRejected(brand, rejected, { source: src.id, run, ...(src.query ? { query: src.query } : {}) });
   if (log && result.duplicates.length) {
     const file = duplicatesFile(brand);
     withLock(file, () => { const log = readJson(file, { duplicates: [] }); log.duplicates.push(...result.duplicates.map((d) => ({ at: stamp(), source: src.id, run, ...d }))); writeJson(file, log); });
@@ -314,12 +383,14 @@ export function counts(items, opts) {
     ...(after ? { remove_suggested: items.filter((i) => i.status === 'new' && usesOf(i).length >= after).map((i) => i.id) } : {}) };
 }
 const inFilter = (i, status) => !status || i.status === status;
-export function listItems(brand, { status = '', source = '' } = {}) {
+// Every item carries its platform (old items: from the post link) and found_by ("reference page" when not recorded).
+export function listItems(brand, { status = '', source = '', platform = '' } = {}) {
   if (status && !LIST_FILTERS.includes(status)) throw new Error(`Trạng thái phải là ${LIST_FILTERS.join(', ')}.`);
-  const all = readStore(brand).items;
+  const all = readStore(brand).items.map((i) => ({ ...i, platform: platformOf(i), found_by: i.found_by || 'reference page' }));
   const sources = [...new Set(all.map((i) => i.source_id))].sort();
-  const items = all.filter((i) => inFilter(i, status) && (!source || i.source_id === source));
-  return { brand, dir: storeDir(brand), counts: counts(all), sources, items };
+  const platforms = [...new Set(all.map((i) => i.platform).filter(Boolean))].sort();
+  const items = all.filter((i) => inFilter(i, status) && (!source || i.source_id === source) && (!platform || i.platform === platform));
+  return { brand, dir: storeDir(brand), counts: counts(all), sources, platforms, items };
 }
 export const findItem = (brand, id) => { const i = readStore(brand).items.find((x) => x.id === id); if (!i) throw new Error(`Kho ${brand} không có ${id}.`); return i; };
 
@@ -351,19 +422,20 @@ export const RULES_OF_THUMB = [
   'drop text-only posts and posts whose image is only text (no product)',
   'drop reshares without the product in the media',
   "drop products outside the brand's category (project.md product scope, the source's what_to_take)",
+  "drop when the product is not one of product_fit.types, misses product_fit.must_have or matches product_fit.must_not (off-brand: reason starts with \"off-brand:\")",
   "keep: a real product photo of the brand's category, a usable scene / angle / caption structure",
 ];
 const excerpt = (t, n = 220) => { const x = String(t || '').replace(/s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
 export function classifyBatch(brand, { limit = 40, source = '' } = {}) {
   const all = readStore(brand).items.filter((i) => i.status === 'new' && !i.filter && (!source || i.source_id === source));
-  let rules = { project_md: '', sources: {} };
-  try { const b = loadBrand(brand, { allowDisabled: true }); rules = { project_md: path.join(b.dir, 'project', 'project.md'), sources: Object.fromEntries((b.social.research?.sources || []).map((x) => [x.id, { name: x.name || x.id, what_to_take: x.what_to_take || '', notes: x.notes || '' }])) }; } catch { /* brand not linked: rules from the agent's skill */ }
+  let rules = { project_md: '', sources: {}, product_fit: null };
+  try { const b = loadBrand(brand, { allowDisabled: true }); rules = { project_md: path.join(b.dir, 'project', 'project.md'), product_fit: brandDiscovery(b.social).product_fit, sources: Object.fromEntries((b.social.research?.sources || []).map((x) => [x.id, { name: x.name || x.id, what_to_take: x.what_to_take || '', notes: x.notes || '' }])) }; } catch { /* brand not linked: rules from the agent's skill */ }
   const batch = all.slice(0, limit > 0 ? limit : all.length);
   return {
     brand, total_unjudged: all.length, batch_size: batch.length, remaining_after: all.length - batch.length,
     project_md: rules.project_md, sources: Object.fromEntries([...new Set(batch.map((i) => i.source_id))].map((id) => [id, rules.sources[id] || { name: id, what_to_take: '' }])),
-    rules_of_thumb: RULES_OF_THUMB,
-    items: batch.map((i) => ({ id: i.id, source: i.source_id, posted: i.posted_date || '', media: i.media_type || '', images: i.images.length, caption: i.caption_empty || !String(i.caption || '').trim() ? '(no caption)' : excerpt(i.caption), thumb: i.images[0] ? path.join(storeDir(brand), i.images[0]) : '' })),
+    product_fit: rules.product_fit, rules_of_thumb: RULES_OF_THUMB,
+    items: batch.map((i) => ({ id: i.id, source: i.source_id, platform: platformOf(i), found_by: i.found_by || 'reference page', ...(i.author ? { author: i.author } : {}), ...(i.product_fit ? { product_fit: i.product_fit } : {}), posted: i.posted_date || '', media: i.media_type || '', images: i.images.length, caption: i.caption_empty || !String(i.caption || '').trim() ? '(no caption)' : excerpt(i.caption), thumb: i.images[0] ? path.join(storeDir(brand), i.images[0]) : '' })),
     next: all.length ? 'Judge every item (open the thumbs), write [{ "id": "S0001", "fit": true|false, "reason": "..." }] to a file, then store.mjs verdict --brand <id> --file <file>; repeat classify until total_unjudged is 0.' : 'Nothing left to judge.',
   };
 }
@@ -468,9 +540,9 @@ if (isMain(import.meta.url)) main(() => {
   if (cmd === 'migrate') return out({ brands: (args.brand ? [String(args.brand)] : brandsInWorkspace()).map(migrateRuns) });
   const brand = need(args, 'brand');
   if (cmd === 'list') {
-    const r = listItems(brand, { status: args.status ? String(args.status) : '', source: args.source ? String(args.source) : '' });
+    const r = listItems(brand, { status: args.status ? String(args.status) : '', source: args.source ? String(args.source) : '', platform: args.platform && args.platform !== true ? String(args.platform) : '' });
     const limit = Number(args.limit) || 0;
-    return out({ ...r, items: (limit ? r.items.slice(-limit) : r.items).map(({ id, source_id, status, posted_date, post_url, main_product, images, uses, last_used }) => ({ id, source_id, status, posted_date, post_url, main_product, images: images.map((f) => path.join(storeDir(brand), f)), used: (uses || []).length, last_used: last_used || '', uses: previousUses({ uses }) })) });
+    return out({ ...r, items: (limit ? r.items.slice(-limit) : r.items).map(({ id, source_id, status, posted_date, post_url, main_product, images, uses, last_used, platform, found_by }) => ({ id, source_id, platform, found_by, status, posted_date, post_url, main_product, images: images.map((f) => path.join(storeDir(brand), f)), used: (uses || []).length, last_used: last_used || '', uses: previousUses({ uses }) })) });
   }
   if (cmd === 'show') { const it = findItem(brand, need(args, 'id')); return out({ item: { ...it, image_paths: it.images.map((f) => path.join(storeDir(brand), f)) } }); }
   if (cmd === 'reject' || cmd === 'remove') return out({ item: setItemStatus(brand, need(args, 'id'), 'rejected', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });

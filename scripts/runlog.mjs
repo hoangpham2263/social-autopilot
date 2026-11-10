@@ -47,7 +47,9 @@ function researchPart(brandId, since = '') {
   const run = readJson(path.join(workspace, 'runs', brandId, r.date, 'run.json'), {});
   if (since && String(run.restarted || run.started || '') < since) return { date: null, sources: [], new: 0, duplicates: 0, not_run: true };
   const sources = r.sources.map((x) => ({ id: x.id, name: x.name || x.id, url: x.url || '', new: x.new, kept: x.kept || 0, filtered: x.filtered || 0, low_keep: !!x.low_keep, duplicates: x.duplicates, backfilled: x.backfilled, reached_end: x.reached_end, state: sourceState(x), note: x.note || '' }));
-  return { date: r.date, crawl_mode: r.crawl_mode, sources, new: r.new_total || 0, kept: r.kept_total || 0, filtered: r.filtered_total || 0, duplicates: r.duplicates_total || 0, store: r.store };
+  // Discovery (research.discovery): per platform and per query, kept / rejected off-brand / duplicates.
+  const discovery = r.discovery ? { target: r.discovery.target || 0, platforms: r.discovery.platforms.map((p) => ({ id: p.id, queries: p.queries, done: p.done, kept: p.kept, rejected_off_brand: p.rejected_off_brand, duplicates: p.duplicates, blocked: p.blocked, capped: p.capped, filtered: p.filtered || 0 })), queries: r.discovery.queries } : null;
+  return { date: r.date, crawl_mode: r.crawl_mode, sources, new: r.new_total || 0, kept: r.kept_total || 0, filtered: r.filtered_total || 0, duplicates: r.duplicates_total || 0, rejected_off_brand: r.rejected_off_brand_total || 0, target: r.target || 0, discovery, store: r.store };
 }
 
 function createPart(brandId, since) {
@@ -71,7 +73,7 @@ export const keptText = (kept = 0, filtered = 0) => (kept || filtered ? `${kept}
 export function brandHeadline(mode, b) {
   if (mode === 'research') {
     const r = b.research || {}, dry = (r.sources || []).filter((x) => x.state === 'dried up').length, blocked = (r.sources || []).filter((x) => x.state === 'blocked').length;
-    return [`+${plural(r.new || 0, 'post')}`, keptText(r.kept, r.filtered), dry && `${plural(dry, 'source')} dried up`, blocked && `${blocked} blocked`, (b.errors || []).length && plural(b.errors.length, 'error')].filter(Boolean).join(' · ');
+    return [`+${plural(r.new || 0, 'post')}`, keptText(r.kept, r.filtered), r.rejected_off_brand && `${r.rejected_off_brand} off-brand skipped`, (r.discovery?.platforms || []).some((p) => p.blocked) && `blocked on ${r.discovery.platforms.filter((p) => p.blocked).map((p) => p.id).join(', ')}`, dry && `${plural(dry, 'source')} dried up`, blocked && `${blocked} blocked`, (b.errors || []).length && plural(b.errors.length, 'error')].filter(Boolean).join(' · ');
   }
   const c = b.create || {}, errs = (c.failed || []).length + (c.errors || []).length + (b.errors || []).length;
   return [`${(c.scheduled || []).length} scheduled`, `${(c.to_review || []).length} to review`, errs && plural(errs, 'error')].filter(Boolean).join(' · ');
@@ -82,6 +84,7 @@ const resultOf = (mode, b) => {
   if ((b.create?.failed || []).length) return 'error';
   if ((b.warnings || []).length) return 'warning';
   if ((b.research?.sources || []).some((x) => x.state === 'blocked' || x.state === 'unfinished')) return 'warning';
+  if ((b.research?.discovery?.platforms || []).some((p) => p.blocked)) return 'warning';
   return 'ok';
 };
 

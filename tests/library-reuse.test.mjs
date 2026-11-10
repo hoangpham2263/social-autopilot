@@ -1,5 +1,5 @@
 // Library items are not used up (user, 10/11/2026): the same reference may inspire several posts, each from a new
-// angle (a different scene AND a different product or sign_text). Fresh items first, then the least used after a
+// angle (a different scene OR a different sign_text; same scene + text + product = repeat). Fresh items first, then the least used after a
 // cooldown; Removed items (filtered, not suitable or used enough) are never picked; old "used" items migrate back to available with
 // their uses; --items picks exact items (ideas.mjs init and pipeline.mjs create pass it through).
 // node --test tests/library-reuse.test.mjs
@@ -67,11 +67,14 @@ test('pure: fresh first, then least used after the cooldown; a repeat of scene o
   const c = counts(list, { cooldownDays: 7, now });
   assert.deepEqual([c.new, c.fresh, c.used, c.ready, c.cooling, c.removed, c.uses], [4, 1, 3, 3, 1, 2, 4]);
   const b = list[1];
-  assert.equal(reuseProblems(b, { scene: 'Porch!', product: product2 }).length, 1, 'same scene (normalized) = repeat');
-  assert.equal(reuseProblems(b, { scene: 'rooftop bar at night', product, sign_text: '' }).length, 1, 'same product + same sign = repeat');
-  assert.deepEqual(reuseProblems(b, { scene: 'rooftop bar at night', product, sign_text: 'Cheers' }), [], 'new scene + new sign = fine');
-  assert.deepEqual(reuseProblems(b, { scene: 'rooftop bar at night', product: product2 }), [], 'new scene + other product = fine');
-  assert.deepEqual(reuseProblems(b, { scene: 'rooftop bar at night' }), [], 'product unknown yet: only the scene is checked');
+  // Reference modes: keep-scene reuses differ by text, new-scene reuses by scene; same scene + same text + same product = repeat.
+  assert.equal(reuseProblems(b, { scene: 'Porch!', product, sign_text: '' }).length, 1, 'same scene (normalized) + same text + same product = repeat');
+  assert.match(reuseProblems(b, { scene: 'porch', product, sign_text: '' })[0], /change the scene \(new-scene\) or the sign_text \(keep-scene\)/);
+  assert.equal(reuseProblems(b, { scene: 'porch', sign_text: '' }).length, 1, 'product unknown: same scene + same text = repeat');
+  assert.deepEqual(reuseProblems(b, { scene: 'porch', product, sign_text: 'Cheers' }), [], 'keep-scene: same scene, new text = fine');
+  assert.deepEqual(reuseProblems(b, { scene: 'rooftop bar at night', product, sign_text: '' }), [], 'new-scene: new scene, same text = fine');
+  assert.deepEqual(reuseProblems(b, { scene: 'porch', product: product2, sign_text: '' }), [], 'same scene + text but another product photo = fine');
+  assert.deepEqual(reuseProblems(b, { scene: 'porch' }), [], 'text not chosen yet (ideas set): not a repeat yet');
 });
 
 test('migration: old "used" items are available again, uses filled from their drafts; saved by migrate-uses', () => {
@@ -107,14 +110,13 @@ test('reuse: allowed from a new angle, a repeat is rejected; --items inside the 
   assert.match(i2.notes.join(' '), /cooldown/);
   assert.equal(i2.previous_uses.S0001[0].scene, 'cabin porch at dusk');
   assert.match(i2.reuse_rule, /NEW angle/);
+  // The same scene is allowed at the idea step (keep-scene changes the text later); the draft blocks the same scene +
+  // the same sign text + the same product.
   const same = fill(i2.added[0], 'Cabin porch at dusk.');
-  assert.equal(same.idea.status, 'todo');
-  assert.match(same.problems.join(' '), /already used with this scene/);
-  assert.match(run('ideas.mjs', 'pick', '--brand', 'fakebrand', '--id', i2.added[0]).error, /already used with this scene/);
-  assert.equal(fill(i2.added[0], 'rooftop bar at night').idea.status, 'ready');
+  assert.equal(same.idea.status, 'ready', JSON.stringify(same));
   run('ideas.mjs', 'pick', '--brand', 'fakebrand', '--id', i2.added[0]);
   const rep = run('draft.mjs', 'new', '--brand', 'fakebrand', '--idea', i2.added[0], '--product', product, ...size);
-  assert.match(rep.error, /same library item.*product and sign text/);
+  assert.match(rep.error, /same library item.*already used with this scene and this sign text and product/);
   assert.equal(fs.readdirSync(path.join(ws, 'drafts', 'fakebrand')).filter((d) => d.endsWith('-02')).length, 0, 'no half draft left');
   const d2 = run('draft.mjs', 'new', '--brand', 'fakebrand', '--idea', i2.added[0], '--product', product2, ...size);
   assert.equal(d2.ok, true, JSON.stringify(d2));

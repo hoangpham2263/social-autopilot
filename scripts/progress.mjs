@@ -18,9 +18,9 @@ export const MODES = ['research', 'create', 'publish'];
 export const STEPS = {
   research: [
     { keys: ['setup'], name: 'Setup' },
-    { keys: ['chrome'], name: 'Check crawl Chrome' },
-    { keys: ['start'], name: 'Open the crawl' },
-    { keys: ['crawl'], name: 'Crawl sources' },
+    { keys: ['chrome'], name: 'Check the browser (Playwright MCP)' },
+    { keys: ['start'], name: 'Open the run' },
+    { keys: ['crawl'], name: 'Collect: reference pages, then discovery' },
     { keys: ['filter'], name: 'Filter the library' },
     { keys: ['report'], name: 'Report data' },
     { keys: ['runlog'], name: 'Run log' },
@@ -174,7 +174,7 @@ export function trackCli(scriptPath, args, ok, data = {}) {
   const map = {
     brands: () => ['setup', 'brands.mjs'],
     'crawl-fb': () => (args.check ? ['chrome', ok ? 'Chrome ready, signed in' : 'not ready', { state: ok ? 'done' : 'failed', start: true }] : ['crawl', ok ? `${Object.keys(data.sources || {}).length} sources crawled${(data.blocked || []).length ? `, ${data.blocked.length} blocked` : ''}` : 'crawl-fb']),
-    research: () => ({ start: ['start', 'crawl opened', { state: 'done', start: true }], ingest: ['crawl', `ingest ${arg(args, 'source')}`], result: ['crawl', `${arg(args, 'source')}: ${data.result?.label || arg(args, 'state')}`], report: ['report', `${data.new_total ?? 0} new posts`, { state: 'done' }] })[cmd],
+    research: () => ({ browser: ['chrome', ok && data.browser === 'ok' ? 'Playwright MCP ready' : `not ready${data.note ? ': ' + data.note : ''}`, { state: ok && data.browser === 'ok' ? 'done' : 'failed', start: true }], start: ['start', 'run opened', { state: 'done', start: true }], next: ['crawl', data.step === 'discovery' ? `next: ${data.platform} ${data.found_by}` : data.step === 'reference' ? `next: ${data.source}` : `collect done: ${data.reason || ''}`, { items: { label: 'New posts', done: data.total || 0, total: data.target || null } }], ingest: ['crawl', `ingest ${arg(args, 'query') || arg(args, 'source')}`], result: ['crawl', `${arg(args, 'query') || arg(args, 'source')}: ${data.result?.label || data.label || arg(args, 'state')}`], report: ['report', `${data.new_total ?? 0} new posts`, { state: 'done' }] })[cmd],
     store: () => ({ classify: ['filter', `${data.total_unjudged ?? 0} left to filter`, { items: unjudgedItems(data.total_unjudged) }], verdict: ['filter', `${data.left ?? 0} left to filter`, { items: unjudgedItems(data.left), state: data.left === 0 ? 'done' : 'running' }] })[cmd],
     'metricool-mcp': () => ({ 'sync-brands': ['sync', 'Metricool brands synced'], 'sync-times': ['sync', 'best times synced'], payload: ['schedule', `${(data.items || []).length} to schedule${(data.blocked || []).length ? `, ${data.blocked.length} blocked` : ''}`, { items: { label: 'Scheduled', done: 0, total: (data.items || []).length } }], record: ['schedule', `recorded ${arg(args, 'post')}`, { items: (run, b) => { const p = run.item_parts?.Scheduled?.[b || '_'] || { done: 0, total: null }; return { label: 'Scheduled', done: p.done + 1, total: p.total === null ? null : Math.max(p.total, p.done + 1) }; } }], status: ['reconcile', data.query ? 'checking sent posts' : 'nothing sent waiting'] })[cmd],
     ideas: () => ['make', `ideas ${cmd}${arg(args, 'id') ? ` ${arg(args, 'id')}` : ''}`],

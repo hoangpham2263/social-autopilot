@@ -120,7 +120,7 @@ export function newDraft(args) {
   try { sized = sizeAndText(brand, args, idea, refInfo); } catch (e) { fs.rmSync(dir, { recursive: true, force: true }); throw e; }
   const { size: productSize, signText, customText } = sized;
   const so = sizeOpts(args, idea);
-  // The same library item again only from a new angle: a different scene AND a different product or sign_text.
+  // The same library item again only from a new angle: a different scene OR a different sign_text (same scene + text + product = repeat).
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) {
     const item = store.items.find((x) => x.id === it);
     const rp = item ? reuseProblems(item, { scene: idea.scene, product, sign_text: signText, idea: idea.id }) : [];

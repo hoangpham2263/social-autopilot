@@ -105,9 +105,9 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.deepEqual(sources.brands[0].sources.map((s) => s.id), ['shop-a', 'shop-b']);
 
   // ----- Mode 1 "Chỉ nghiên cứu": crawl -> store -----
-  const start = run('research.mjs', 'start', '--brand', 'dreamyvows');
+  const start = run('research.mjs', 'start', '--brand', 'dreamyvows', '--platforms', 'none'); // reference pages only (discovery: research-discovery.test.mjs)
   assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(run('research.mjs', 'start', '--brand', 'dreamyvows').reused, true);
+  assert.equal(run('research.mjs', 'start', '--brand', 'dreamyvows', '--platforms', 'none').reused, true);
   const [a, b] = start.run.sources;
   assert.equal(a.known_count, 0);
   assert.match(a.stop_rule, /cuộn tới hết trang/);
@@ -582,7 +582,7 @@ test('backfill: progress tracks newest/oldest seen, reached_end; backfill collec
   assert.match(rep.sources[0].older_posts, /bài cũ nhất/);
 
   // reached_end: backfill skips the source; the default run (new posts on top) still crawls it.
-  const again = run('research.mjs', 'start', '--brand', 'grenheim', '--backfill');
+  const again = run('research.mjs', 'start', '--brand', 'grenheim', '--backfill', '--platforms', 'none');
   assert.deepEqual(again.run.sources, []);
   assert.equal(again.run.status, 'done');
   assert.equal(again.run.skipped[0].id, 'wood-a');

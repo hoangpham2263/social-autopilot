@@ -1,4 +1,5 @@
-// Mode 1 step 1.2, scripted: crawl every source of an open research run (research.mjs start) with Playwright driving
+// OPTIONAL fast path of Mode 1 step 1.2 (Facebook reference pages only; the agent collects everything else with
+// Playwright MCP, research.mjs next). Scripted: crawl every source of an open research run (research.mjs start) with Playwright driving
 // the user's own, already signed-in Chrome, then ingest. "Crawl everything fast, then filter" (RUNBOOK 1.3): no AI
 // agent clicking post by post; the agent only steps in when a source ends "blocked" or "error".
 //   node scripts/crawl-fb.mjs --check [--cdp http://127.0.0.1:9222]   FIRST step of Mode 1 (before research.mjs start): is the
@@ -283,7 +284,9 @@ async function crawlBrand(args) {
   const s = settings();
   const { run } = openRun(args, brand);
   const only = args.source && args.source !== true ? String(args.source).split(',').map((x) => x.trim()) : [];
-  const sources = run.sources.filter((x) => (!only.length || only.includes(x.id)) && (args.redo || only.length || !x.result)).map((x) => ({ ...x, run_date: run.date }));
+  // Optional fast path for Facebook reference pages only; other pages and discovery are the agent's (research.mjs next).
+  const isFb = (x) => (x.platform || 'facebook') === 'facebook' && /^([a-z0-9-]+\.)*(facebook\.com|fb\.com)(\/|$)/i.test(String(x.url || '').replace(/^https?:\/\//, ''));
+  const sources = run.sources.filter((x) => isFb(x) && (!only.length || only.includes(x.id)) && (args.redo || only.length || !x.result)).map((x) => ({ ...x, run_date: run.date }));
   if (!sources.length) return out({ brand: brand.id, date: run.date, sources: [], next: 'Mọi source của lượt này đã có kết quả; chạy research.mjs report.' });
   const cfg = s.research?.browser || {};
   if (args.cdp && args.cdp !== true) cfg.cdp = String(args.cdp);

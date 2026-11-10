@@ -3,7 +3,7 @@
 // used) first, then the least-used items whose cooldown is over (settings ideas.reuse_cooldown_days, default 7); never a
 // removed item, never an item that already has an open idea. A reused item must get a NEW angle: the idea
 // batch lists its previous uses, and set/pick (scene) and draft.mjs new (scene + product + sign_text) reject a repeat
-// (store.mjs reuseProblems: a different scene AND a different product or sign_text). Each idea is ABSTRACT (product type, scene, angle, caption structure)
+// (store.mjs reuseProblems: a different scene OR a different sign_text). Each idea is ABSTRACT (product type, scene, angle, caption structure)
 // for the brand's own product; never the competitor's image, words, logo or shop name (prompts/idea-abstract.md).
 // Ideas live in workspace/store/<brand>/ideas.json (ids I001, I002, ... per brand).
 //   node scripts/ideas.mjs init   --brand <id> [--count N] [--items S0001,S0002] [--source <sid>]
@@ -32,7 +32,7 @@ export function postsNeeded(brand, s = settings()) {
 }
 import { readStore, storeDir, storeIdeasFile, setItemStatus, pickItems, fairOrder, availability, reuseProblems, previousUses, usesOf, reuseCooldownDays } from './store.mjs';
 // Shown with every reused item in the idea batch.
-export const REUSE_RULE = 'This library item was used before (previous_uses): keep only the inspiration and take a NEW angle: a different scene AND a different product or sign_text than every previous use. A repeat is rejected.';
+export const REUSE_RULE = 'This library item was used before (previous_uses): keep only the inspiration and take a NEW angle: a different scene (new-scene) OR a different sign_text (keep-scene) than every previous use. The same scene + the same sign_text + the same product is rejected.';
 const OPEN = ['todo', 'ready', 'picked'];
 
 // product_size (real size, from the skill's size_source), size_compare (the object it is measured against, with its real
