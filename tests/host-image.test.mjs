@@ -36,7 +36,9 @@ const RAW = 'https://raw.example.invalid/sources/main';
 const PAGES = 'https://pages.example.invalid/sources';
 const write = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); };
 const git = (cwd, ...args) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`); return r.stdout.trim(); };
-const catalogFile = path.join(brandDir, 'workspace', 'catalog.json');
+// The tool's own post register (scripts/posts.mjs); the copied skill stays read-only.
+const postsRoot = path.join(ws, 'posts', 'dreamyvows');
+const catalogFile = path.join(postsRoot, 'catalog.json');
 const entryOf = (id) => JSON.parse(fs.readFileSync(catalogFile, 'utf8')).posts.find((p) => p.id === id);
 
 // Host server: /main|raw/<path> -> the file at the bare repo's main; 404 the first time a URL is asked.
@@ -74,9 +76,9 @@ const run = (script, ...args) => new Promise((resolve, reject) => {
 });
 
 function post(id, status, image = png(16, 16, [20, 160, 90])) {
-  const folder = `workspace/posts/POST-host-test-${id.toLowerCase()}`;
-  write(path.join(brandDir, folder, 'image.png'), image);
-  for (const l of ['vn', 'en']) write(path.join(brandDir, folder, `content-${l}.txt`), `Bảng neon thử host (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
+  const folder = id;
+  write(path.join(postsRoot, folder, 'image.png'), image);
+  for (const l of ['vn', 'en']) write(path.join(postsRoot, folder, `content-${l}.txt`), `Bảng neon thử host (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
   const catalog = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
   catalog.posts.push({ id, folder, group: 'standard', status, source: `social-autopilot test-${id}`, created: '2026-11-09', image: 'image.png', image_dimensions: [16, 16],
     captions: { vn: 'content-vn.txt', en: 'content-en.txt' }, approval: status === 'approved' ? { by: 'Hoang', date: '2026-11-09', note: '' } : undefined });
@@ -84,10 +86,10 @@ function post(id, status, image = png(16, 16, [20, 160, 90])) {
 }
 
 function videoPost(id) {
-  const folder = `workspace/posts/VID-host-test-${id.toLowerCase()}`;
-  write(path.join(brandDir, folder, 'video.mp4'), mp4());
-  write(path.join(brandDir, folder, 'image.png'), png(16, 16, [90, 30, 160]));
-  for (const l of ['vn', 'en']) write(path.join(brandDir, folder, `content-${l}.txt`), `Video thử host (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
+  const folder = id;
+  write(path.join(postsRoot, folder, 'video.mp4'), mp4());
+  write(path.join(postsRoot, folder, 'image.png'), png(16, 16, [90, 30, 160]));
+  for (const l of ['vn', 'en']) write(path.join(postsRoot, folder, `content-${l}.txt`), `Video thử host (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
   const catalog = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
   catalog.posts.push({ id, folder, group: 'standard', status: 'approved', source: `social-autopilot test-${id}`, created: '2026-11-09', video: 'video.mp4', image: 'image.png', image_dimensions: [16, 16],
     captions: { vn: 'content-vn.txt', en: 'content-en.txt' }, approval: { by: 'Hoang', date: '2026-11-09', note: '' } });
@@ -106,6 +108,7 @@ test.before(async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   write(path.join(ws, 'settings.json'), JSON.stringify({ imageHost: { type: 'github-repo', path: host, pagesBase: '', rawBase: RAW, verify: { attempts: 4, delay_seconds: 0.05 } } }));
   env = { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: skills, SA_IMAGE_HOST_CHECK_BASE: `http://127.0.0.1:${server.address().port}/main` };
+  write(catalogFile, JSON.stringify({ updated: '', posts: [] }));
   post('POST-90', 'approved');
   post('POST-91', 'awaiting_review');
   videoPost('VID-93');
@@ -120,7 +123,7 @@ test('publish: approved only, clean only, commit + push + 200, media_url in the 
 
   const draft = await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-91');
   assert.equal(draft.ok, false);
-  assert.match(draft.error, /đã ghi vào thương hiệu/);
+  assert.match(draft.error, /đã duyệt/);
   const dirty = await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-92');
   assert.equal(dirty.ok, false);
   assert.match(dirty.error, /metadata/);
@@ -291,12 +294,13 @@ test('back to review: archive entry + folder, hosted image removed, draft ready;
   const mkDraft = (n, postId) => {
     const id = `dreamyvows-20261109-${n}`, dir = path.join(ws, 'drafts', 'dreamyvows', id);
     write(path.join(dir, 'draft.json'), JSON.stringify({ id, brand: 'dreamyvows', brand_dir: brandDir, idea: { product_type: 'x', scene: 'y' }, inspiration: {}, captions: { en: 'content-en.txt' } }));
-    write(path.join(dir, 'status.json'), JSON.stringify({ status: 'approved', by: 'user', approved: '2026-11-09', brand_post: { id: postId, folder: path.join(brandDir, `workspace/posts/POST-host-test-${postId.toLowerCase()}`), catalog: catalogFile } }));
+    write(path.join(dir, 'status.json'), JSON.stringify({ status: 'approved', by: 'user', approved: '2026-11-09', brand_post: { id: postId, folder: path.join(postsRoot, postId), catalog: catalogFile } }));
     post(postId, 'approved');
     const c = JSON.parse(fs.readFileSync(catalogFile, 'utf8')); c.posts.find((p) => p.id === postId).source = `social-autopilot ${id}`; fs.writeFileSync(catalogFile, JSON.stringify(c, null, 2));
     return { id, dir };
   };
-  const archiveDir = path.join(brandDir, 'workspace', 'local', 'archive');
+  const archiveDir = path.join(postsRoot, 'archive');
+  const skillBefore = JSON.stringify(fs.readdirSync(brandDir, { recursive: true }).sort());
   const inRepo = (rel) => spawnSync('git', ['--git-dir', bare, 'cat-file', '-e', `main:${rel}`]).status === 0;
 
   const a = mkDraft('95', 'POST-95');
@@ -306,9 +310,9 @@ test('back to review: archive entry + folder, hosted image removed, draft ready;
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.status, 'ready');
   assert.equal(entryOf('POST-95'), undefined, 'catalog entry gone');
-  assert.ok(!fs.existsSync(path.join(brandDir, 'workspace/posts/POST-host-test-post-95')), 'post folder moved');
+  assert.ok(!fs.existsSync(path.join(postsRoot, 'POST-95')), 'post folder moved');
   const arch = fs.readdirSync(archiveDir).find((n) => n.startsWith('POST-95-'));
-  assert.ok(arch && fs.existsSync(path.join(archiveDir, arch, 'entry.json')) && fs.existsSync(path.join(archiveDir, arch, 'POST-host-test-post-95', 'image.png')));
+  assert.ok(arch && fs.existsSync(path.join(archiveDir, arch, 'entry.json')) && fs.existsSync(path.join(archiveDir, arch, 'POST-95', 'image.png')));
   assert.ok(!inRepo('dreamyvows/2026/11/post-95.png'), 'hosted image removed and pushed');
   const st = JSON.parse(fs.readFileSync(path.join(a.dir, 'status.json'), 'utf8'));
   assert.equal(st.status, 'ready');
@@ -337,6 +341,7 @@ test('back to review: archive entry + folder, hosted image removed, draft ready;
   const c2 = JSON.parse(fs.readFileSync(catalogFile, 'utf8')); c2.posts.find((x) => x.id === 'POST-97').status = 'published'; fs.writeFileSync(catalogFile, JSON.stringify(c2, null, 2));
   assert.match((await run('finalize.mjs', 'unapprove', '--id', p.id)).error, /Posted/);
   assert.ok(entryOf('POST-97'));
+  assert.equal(JSON.stringify(fs.readdirSync(brandDir, { recursive: true }).sort()), skillBefore, 'skill folder untouched');
 });
 
 test('image repo missing on this machine: cloned from imageHost.remote_url into imageHost.path; a non-git folder with files is refused', { skip: !haveReal && 'no brand skill to copy' }, async () => {

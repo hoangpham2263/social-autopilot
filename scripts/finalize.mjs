@@ -1,14 +1,15 @@
 // Review step (user, 09/11/2026: the tool schedules REAL posts, so a person approves each one). A draft that passed
 // every automatic check (status "ready") waits as "Needs review". Approve (app, Posts -> Preview -> Approve, or this
 // command) checks it once more (image clean, captions per posted and reviewer-only language, the brand's footer/hashtag,
-// no copied words, no AI label, NO LOGO prompt, scene-swap logo check), then writes it into the brand's skill folder
-// (writeback.mjs: catalog entry "approved", approval.by "user", the skill's check-post.mjs) and hosts its image
+// no copied words, no AI label, NO LOGO prompt, scene-swap logo check), then writes it into the tool's own post register
+// (writeback.mjs -> workspace/posts/<brand>/: catalog entry "approved", approval.by "user", posts.mjs checkPost; the
+// brand skill is never written) and hosts its image
 // (host-image.mjs -> media_url). The next Create & publish run schedules it in Metricool (metricool-mcp.mjs payload).
 // A draft that fails stops there with its problems (status "check_failed"). Agents never approve on their own.
 //   node scripts/finalize.mjs approve --id <draft>                   one post a person approved
 //   node scripts/finalize.mjs cancel  --id <draft> [--note ..]       "Drop": drop a draft before it is approved
 //   node scripts/finalize.mjs unapprove --id <draft> [--metricool-deleted]   "Back to review" for a Queued post (never Posted):
-//        the catalog entry and post folder the tool wrote go to the skill's workspace/local/archive/, the hosted image is
+//        the register entry and post folder go to workspace/posts/<brand>/archive/<POST-xx>-<time>/, the hosted image is
 //        removed from the image repo (git rm + push), the draft is To review again; its store item stays used. A post
 //        already scheduled in Metricool needs --metricool-deleted (the person deleted it in Metricool first); the old
 //        Metricool id stays in the draft's history (status.json reverted[]) and the reconcile step ignores it.
@@ -17,6 +18,7 @@ import path from 'node:path';
 import { main, out, isMain, withLock, parseArgs, need, settings, loadBrand, stamp, findDraft, setStatus, readJson, writeJson } from './lib.mjs';
 import { checkDraft } from './draft-lib.mjs';
 import { writeBack } from './writeback.mjs';
+import { postsCatalogFile, postsArchiveDir, postFolder } from './posts.mjs';
 import { hostAfterWriteback, remove as hostRemove } from './host-image.mjs';
 
 export const APPROVER = 'user';
@@ -83,7 +85,7 @@ export function backToReview({ id, metricoolDeleted = false, by = 'user' }, s = 
     const bp = status.brand_post;
     if (!bp?.id) throw new Error(`Bản nháp ${id} chưa được duyệt (không ở Queued): không có gì để đưa về To review.`);
     const brand = loadBrand(draft.brand, { allowDisabled: true });
-    const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
+    const catalogFile = postsCatalogFile(brand.id);
     const entry = (readJson(catalogFile, { posts: [] }).posts || []).find((p) => p.id === bp.id);
     if (entry && entry.source !== `social-autopilot ${draft.id}`) throw new Error(`${bp.id} trong catalog không phải bài tool ghi cho ${draft.id}: không đụng tới.`);
     if (entry && (entry.status === 'published' || Object.values(entry.metricool || {}).some((v) => v && (v.published || v.status === 'published')))) throw new Error(`${bp.id} đã đăng (Posted): không đưa về To review.`);
@@ -100,9 +102,9 @@ export function backToReview({ id, metricoolDeleted = false, by = 'user' }, s = 
       try { host = hostRemove({ brand: brand.id, post: bp.id, force: true }, s); }
       catch (err) { if (hosted) throw new Error(`Gỡ ảnh khỏi repo ảnh lỗi (chưa đổi gì trong catalog): ${err.message}`); host = { removed: false, skipped: err.message }; }
     }
-    // 2. Catalog entry + post folder into the skill's workspace/local/archive/ (never deleted).
+    // 2. Register entry + post folder into workspace/posts/<brand>/archive/ (never deleted; the number is not used again).
     const at = stamp();
-    const archive = path.join(brand.dir, 'workspace', 'local', 'archive', `${bp.id}-${at.replace(/[:.]/g, '-')}`);
+    const archive = path.join(postsArchiveDir(brand.id), `${bp.id}-${at.replace(/[:.]/g, '-')}`);
     fs.mkdirSync(archive, { recursive: true });
     withLock(catalogFile, () => {
       const catalog = readJson(catalogFile, { posts: [] });
@@ -113,7 +115,7 @@ export function backToReview({ id, metricoolDeleted = false, by = 'user' }, s = 
         writeJson(catalogFile, catalog);
       }
     });
-    const folder = entry?.folder ? path.join(brand.dir, entry.folder) : bp.folder;
+    const folder = entry?.folder ? postFolder(brand.id, entry) : bp.folder;
     if (folder && fs.existsSync(folder)) fs.renameSync(folder, path.join(archive, path.basename(folder)));
     // 3. The draft is To review again; the old post id, Metricool ids and hosted links stay in its history.
     const file = path.join(dir, 'status.json');

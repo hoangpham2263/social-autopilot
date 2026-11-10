@@ -297,8 +297,12 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(JSON.parse(fs.readFileSync(path.join(draft.dir, 'status.json'), 'utf8')).status, 'check_failed');
   fs.writeFileSync(vnFile, vnText);
 
-  // Nothing in the brand before finalize; write-back refuses a draft not finalized.
-  assert.equal(JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.filter((p) => p.source === `social-autopilot ${draft.id}`).length, 0);
+  // Nothing in the register before finalize; write-back refuses a draft not finalized. The skill folder is read-only:
+  // Approve must leave it exactly as it is.
+  const registerFile = path.join(ws, 'posts', 'dreamyvows', 'catalog.json');
+  const skillSnapshot = () => fs.readdirSync(brandDir, { recursive: true }).sort().map((f) => { const p = path.join(brandDir, f); return fs.statSync(p).isFile() ? `${f}:${fs.statSync(p).size}:${fs.readFileSync(p).toString('base64').slice(0, 40)}` : f; }).join('|');
+  const skillBefore = skillSnapshot();
+  assert.equal((fs.existsSync(registerFile) ? JSON.parse(fs.readFileSync(registerFile, 'utf8')).posts : []).filter((p) => p.source === `social-autopilot ${draft.id}`).length, 0);
   assert.equal(run('writeback.mjs', '--id', draft.id).ok, false);
   // No bulk approval: a person approves each post.
   assert.match(run('finalize.mjs', 'approve', '--brand', 'dreamyvows').error, /No bulk approval/);
@@ -306,10 +310,12 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const done = run('finalize.mjs', 'approve', '--id', draft.id);
   assert.deepEqual(done.done, [draft.id], JSON.stringify(done));
   const ok = done.results[0];
-  const catalog = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'));
+  const catalog = JSON.parse(fs.readFileSync(registerFile, 'utf8'));
   const post = catalog.posts.find((p) => p.id === ok.brand_post.id);
   assert.match(post.id, /^POST-\d+$/);
-  assert.equal(catalog.posts.filter((p) => p.id === post.id).length, 1); // a new number, after the brand's own posts
+  assert.equal(catalog.posts.filter((p) => p.id === post.id).length, 1); // the tool's own numbering per brand
+  assert.equal(post.draft, draft.id);
+  assert.equal(skillSnapshot(), skillBefore, 'Approve leaves the skill folder untouched');
   assert.equal(post.status, 'approved');
   assert.equal(post.approval.by, 'user');
   assert.equal(post.inspiration.store_item, itemId);
@@ -317,8 +323,8 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.deepEqual(post.review_captions, { vn: 'content-vn.txt' });
   assert.equal(post.ai_disclosure.label, undefined); // never an AI label on a post
   assert.equal(post.ai_disclosure.ai_scene, true);
-  assert.ok(fs.existsSync(path.join(brandDir, post.folder, 'image.png')));
-  assert.ok(ok.check_post, "check-post.mjs of the skill must run");
+  assert.ok(fs.existsSync(path.join(ws, 'posts', 'dreamyvows', post.folder, 'image.png')));
+  assert.ok(ok.check_post, 'the register delivery check must run');
   assert.equal(ok.check_post.errors, 0, JSON.stringify(ok.check_post));
   // Wired after write-back: the image is committed and pushed to the host; the link check fails here (closed port), so
   // no media_url yet and the command to run again is given.
@@ -370,7 +376,7 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(shown.reference_image, refPath); // the shop's original beside the result in the app
   const swapOk = run('finalize.mjs', 'run', '--id', swap.id).results[0];
   assert.equal(swapOk.ok, true, JSON.stringify(swapOk));
-  const swapPost = JSON.parse(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8')).posts.find((p) => p.id === swapOk.brand_post.id);
+  const swapPost = JSON.parse(fs.readFileSync(path.join(ws, 'posts', 'dreamyvows', 'catalog.json'), 'utf8')).posts.find((p) => p.id === swapOk.brand_post.id);
   assert.equal(swapPost.image_mode, 'scene-swap');
   assert.equal(swapPost.ai_disclosure, true);
   assert.equal(swapPost.inspiration.source_shop, 'Shop A');

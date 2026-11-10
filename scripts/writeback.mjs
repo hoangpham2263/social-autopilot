@@ -1,15 +1,16 @@
-// Step 5: write-back. Writes ONE approved draft into the brand's own skill folder: workspace/posts/POST-<slug>/
-// (image cleaned by the skill's scripts/clean-image.mjs, content-<lang>.txt) and one entry in workspace/catalog.json,
-// in the format the skill already uses; then runs the skill's scripts/check-post.mjs on it. Refuses anything that is
-// not approved (finalize.mjs sets approved, by "auto", after every automatic check passed). finalize.mjs calls it; run it
-// alone only to retry a write-back that failed.
+// Step 5: write-back. Writes ONE approved draft into the TOOL's own post register (scripts/posts.mjs; user, 10/11/2026:
+// skills are read-only for the tool, social-autopilot never writes into a skill folder): workspace/posts/<brand>/<POST-id>/
+// (clean image, content-<lang>.txt) and one entry in workspace/posts/<brand>/catalog.json; then the register's delivery
+// check (posts.mjs checkPost). Refuses anything that is not approved (finalize.mjs sets approved after a person clicked
+// Approve and every automatic check passed). finalize.mjs calls it; run it alone only to retry a write-back that failed.
 //   node scripts/writeback.mjs --id <draft>      (then host-image.mjs publish, see the end of this file)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { cleanDraftImage } from './image-clean.mjs';
 import { hostAfterWriteback } from './host-image.mjs';
-import { main, out, parseArgs, need, isMain, settings, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus } from './lib.mjs';
+import { postsDir, postsCatalogFile, nextPostId, checkPost } from './posts.mjs';
+import { main, out, parseArgs, need, isMain, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus } from './lib.mjs';
 
 export function slugify(text) {
   const s = String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase()
@@ -21,36 +22,30 @@ export function slugify(text) {
 export function writeBack(id) {
   const { draft } = findDraft(id);
   const brand = loadBrand(draft.brand);
-  return withLock(path.join(brand.dir, 'workspace', 'catalog.json'), () => writeBackInner(id));
+  return withLock(postsCatalogFile(brand.id), () => writeBackInner(id));
 }
 
 function writeBackInner(id) {
   const { dir, draft, status } = findDraft(id);
   if (status.brand_post) return { id, status: 'approved', brand_post: status.brand_post, reused: true };
-  if (status.status !== 'approved') throw new Error(`Bản nháp ${id} chưa qua finalize.mjs (status "${status.status}"); không ghi vào thương hiệu.`);
+  if (status.status !== 'approved') throw new Error(`Bản nháp ${id} chưa qua finalize.mjs (status "${status.status}"); không ghi vào sổ bài.`);
   const brand = loadBrand(draft.brand);
   const { by = 'user', note = '' } = status;
   if (!fs.existsSync(path.join(dir, 'image.png'))) throw new Error('Bản nháp không có image.png.');
-  // The brand's catalog and post folder, as its skill writes them.
-  const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
-  const catalog = readJson(catalogFile, { updated: '', paths: 'Đường dẫn tính từ gốc skill.', posts: [], covers: [] });
-  // Posts sent back to review sit in workspace/local/archive/<POST-xx>-<time>/: their numbers are not used again.
-  const archiveDir = path.join(brand.dir, 'workspace', 'local', 'archive');
-  const archived = fs.existsSync(archiveDir) ? fs.readdirSync(archiveDir).map((n) => Number(/^POST-(\d+)-/.exec(n)?.[1] || 0)) : [];
-  const number = Math.max(0, ...archived, ...catalog.posts.map((p) => Number(/^POST-(\d+)$/.exec(p.id)?.[1] || 0))) + 1;
-  const postId = `POST-${String(number).padStart(2, '0')}`;
-  const taken = new Set(['posts', 'published'].flatMap((d) => { const p = path.join(brand.dir, 'workspace', d); return fs.existsSync(p) ? fs.readdirSync(p) : []; }));
-  const base = `POST-${slugify(`${draft.idea.product_type} ${draft.idea.scene}`)}`;
-  let name = base;
-  for (let i = 0; taken.has(name); i++) name = `${base}-${'bcdefghijklmnopqrstuvwxyz'[i] || 'z' + i}`;
-  const folderRel = `workspace/posts/${name}`;
-  const folder = path.join(brand.dir, folderRel);
+  // The tool's register (workspace/posts/<brand>/): catalog.json + one folder per post, named by its id.
+  const catalogFile = postsCatalogFile(brand.id);
+  const catalog = readJson(catalogFile, { updated: '', posts: [] });
+  const postId = nextPostId(brand.id);
+  const folderRel = postId;
+  const folder = path.join(postsDir(brand.id), folderRel);
+  if (fs.existsSync(folder)) throw new Error(`Thư mục bài đã có: ${folder}`);
   fs.mkdirSync(folder, { recursive: true });
 
   const warnings = [];
   // Clean again before it leaves the tool: the remove-watermark skill (skipped when image.png is still its clean output),
   // then the brand skill's own clean-image.mjs only when its --check does not already say SẠCH (no double work).
   try { cleanDraftImage(dir, { generator: 'codex' }); } catch (e) { fs.rmSync(folder, { recursive: true, force: true }); throw e; }
+  // The skill's clean-image.mjs is only run (read-only use of the skill), its output goes into the tool's folder.
   const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
   const already = fs.existsSync(cleaner) && /SẠCH:/.test(spawnSync(process.execPath, [cleaner, '--check', path.join(dir, 'image.png')], { encoding: 'utf8', windowsHide: true }).stdout || '');
   if (fs.existsSync(cleaner) && !already) {
@@ -68,8 +63,7 @@ function writeBackInner(id) {
   const date = today(brand.timezone);
   const rel = (p) => path.relative(brand.dir, p).split(path.sep).join('/');
   const entry = {
-    id: postId, folder: folderRel, group: 'standard',
-    sequence: Math.max(0, ...catalog.posts.filter((p) => p.group === 'standard').map((p) => Number(p.sequence) || 0)) + 1,
+    id: postId, draft: draft.id, folder: folderRel,
     status: 'approved', created: date,
     image: 'image.png', ...(dims ? { image_dimensions: dims } : {}),
     image_mode: draft.image_mode || 'brand-image',
@@ -86,6 +80,8 @@ function writeBackInner(id) {
     ...(draft.image_mode === 'scene-swap'
       ? { ai_disclosure: true }
       : { ai_disclosure: { ai_scene: true, tool: 'codex' } }),
+    ...(draft.sign_text ? { sign_text: draft.sign_text } : {}),
+    ...(draft.product_size ? { product_size: draft.product_size } : {}),
     approval: { by, date, note },
     source: `social-autopilot ${draft.id}`,
   };
@@ -93,15 +89,10 @@ function writeBackInner(id) {
   catalog.updated = date;
   writeJson(catalogFile, catalog);
 
-  let checkPost = null;
-  const checker = path.join(brand.dir, 'scripts', 'check-post.mjs');
-  if (fs.existsSync(checker)) {
-    const r = spawnSync(process.execPath, [checker, postId], { cwd: brand.dir, encoding: 'utf8', windowsHide: true });
-    try { const j = JSON.parse(r.stdout); checkPost = { errors: j.errors, results: j.results.map(({ errors, warnings }) => ({ errors, warnings })) }; } catch { checkPost = { errors: 1, output: (r.stdout || r.stderr).slice(0, 2000) }; }
-  }
-  const brandPost = { id: postId, folder: path.join(brand.dir, folderRel), catalog: catalogFile };
+  const check = checkPost(brand, entry);
+  const brandPost = { id: postId, folder, catalog: catalogFile };
   setStatus(dir, 'approved', { brand_post: brandPost, problems: [], error: '' });
-  return { id: draft.id, status: 'approved', brand_post: brandPost, check_post: checkPost, warnings, next: `node scripts/metricool-mcp.mjs payload --brand ${draft.brand} --posts ${postId}` };
+  return { id: draft.id, status: 'approved', brand_post: brandPost, check_post: check, warnings, next: `node scripts/metricool-mcp.mjs payload --brand ${draft.brand} --posts ${postId}` };
 }
 
 // Then the image goes to the image host (host-image.mjs, settings imageHost.auto_after_writeback); a hosting error is

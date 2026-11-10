@@ -14,7 +14,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'social-autopilot-mmcp-'));
 const skills = path.join(tmp, 'skills');
 const ws = path.join(tmp, 'workspace');
 const brandDir = path.join(skills, 'testbrand-skills');
-const catalogFile = path.join(brandDir, 'workspace', 'catalog.json');
+// The tool's own post register (scripts/posts.mjs); the skill folder is read-only for the tool.
+const postsRoot = path.join(ws, 'posts', 'testbrand');
+const catalogFile = path.join(postsRoot, 'catalog.json');
 process.env.SA_SKILLS_ROOT = skills;
 process.env.SA_WORKSPACE = ws;
 const env = { ...process.env };
@@ -35,8 +37,11 @@ write(path.join(ws, 'metricool-brands.json'), JSON.stringify({ version: 1, brand
   { name: 'Other Brand', blog_id: '2222', timezone: 'America/New_York', networks: ['facebook'], skill_id: null },
 ] }));
 
-function setup({ posts, metricool = { brand_name: 'Test Brand', blog_id: '1111' }, channels = [{ network: 'facebook', lang: ['en'], enabled: true }], en } = {}) {
+function setup({ posts, skillPosts = [], metricool = { brand_name: 'Test Brand', blog_id: '1111' }, channels = [{ network: 'facebook', lang: ['en'], enabled: true }], en } = {}) {
   fs.rmSync(skills, { recursive: true, force: true });
+  fs.rmSync(postsRoot, { recursive: true, force: true });
+  // The skill's own catalog (its private posts): never read for posting.
+  if (skillPosts.length) write(path.join(brandDir, 'workspace', 'catalog.json'), JSON.stringify({ posts: skillPosts.map((p) => ({ folder: `workspace/posts/${p.id}`, captions: { en: 'content-en.txt' }, status: 'approved', ...p })) }));
   write(path.join(brandDir, 'SKILL.md'), '# test\n');
   write(path.join(brandDir, 'project', 'project.md'), '# Test\n\n## 1. Nhận diện\n- Tên thương hiệu (*): TestBrand\n');
   write(path.join(brandDir, 'project', 'social.json'), JSON.stringify({
@@ -45,10 +50,10 @@ function setup({ posts, metricool = { brand_name: 'Test Brand', blog_id: '1111' 
     cadence: { timezone: 'America/Los_Angeles', posts_per_week: 3, slots: [] },
     metricool,
   }));
-  const folder = (id) => `workspace/posts/${id}`;
+  const folder = (id) => id;
   for (const p of posts) {
-    write(path.join(brandDir, folder(p.id), 'content-en.txt'), en ?? `Hello from ${p.id}\n\n#TestBrand`);
-    write(path.join(brandDir, folder(p.id), 'content-vn.txt'), `Xin chào ${p.id} (chỉ để duyệt)`);
+    write(path.join(postsRoot, folder(p.id), 'content-en.txt'), en ?? `Hello from ${p.id}\n\n#TestBrand`);
+    write(path.join(postsRoot, folder(p.id), 'content-vn.txt'), `Xin chào ${p.id} (chỉ để duyệt)`);
   }
   write(catalogFile, JSON.stringify({ posts: posts.map((p) => ({ folder: folder(p.id), captions: { en: 'content-en.txt' }, review_captions: { vn: 'content-vn.txt' }, caption_status: { en: 'approved' }, status: 'approved', source: `social-autopilot test-${p.id}`, ...p })) }, null, 2));
 }
@@ -209,13 +214,11 @@ test('payload: a failing post is blocked, the others still go; an old settings d
   assert.equal(r.blocked.length, 1);
   assert.match(r.blocked[0], /POST-02.*đã qua/);
   assert.equal(r.draft, false);
-  // The brand skill's check-post.mjs is part of the gate: errors block the post.
-  write(path.join(brandDir, 'scripts', 'check-post.mjs'), "console.log(JSON.stringify({ errors: process.argv[2] === 'POST-01' ? 1 : 0, results: [] }));");
-  setup({ posts: [{ id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } }, { id: 'POST-03', media_url: IMG(3), schedule: { date: FUTURE, time: '11:00' } }] });
-  write(path.join(brandDir, 'scripts', 'check-post.mjs'), "console.log(JSON.stringify({ errors: process.argv[2] === 'POST-01' ? 1 : 0, results: [] }));");
+  // The register's delivery check (posts.mjs checkPost) is part of the gate: errors block the post (here the caption does not quote the sign text).
+  setup({ posts: [{ id: 'POST-01', media_url: IMG(1), sign_text: 'The Copper Lounge', schedule: { date: FUTURE, time: '10:00' } }, { id: 'POST-03', media_url: IMG(3), schedule: { date: FUTURE, time: '11:00' } }] });
   r = run('payload', '--brand', 'testbrand');
   assert.deepEqual(r.items.map((i) => i.post), ['POST-03']);
-  assert.match(r.blocked[0], /POST-01: check-post/);
+  assert.match(r.blocked.join(' '), /POST-01/);
   // an old settings metricool.default_mode "draft" changes nothing: always scheduled.
   write(path.join(ws, 'settings.json'), JSON.stringify({ metricool: { default_mode: 'draft' } }));
   try {
@@ -266,12 +269,14 @@ test('payload --limit N: at most N approved posts, oldest approved first; the re
   assert.ok(w.items.every((i) => /in window/.test(i.time_source)), JSON.stringify(w.items.map((i) => i.time_source)));
 });
 
-test('skill-owned posts (no "social-autopilot" source) are never sent, recorded or exported, even when approved with media', () => {
+test('skill-owned posts (the skill catalog) are never sent, recorded or exported, even when approved with media', () => {
   setup({ posts: [
     { id: 'POST-01', media_url: IMG(1), schedule: { date: FUTURE, time: '10:00' } },
-    { id: 'POST-02', media_url: IMG(2), source: undefined }, // made by hand in the skill
-    { id: 'POST-05', media_url: IMG(5), source: 'skill manual' },
+  ], skillPosts: [
+    { id: 'POST-02', media_url: IMG(2) }, // made by hand in the skill
+    { id: 'POST-05', media_url: IMG(5), source: 'social-autopilot old' }, // even an old tool entry left in a skill
   ] });
+  const skillCatalog = fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8');
   let r = run('payload', '--brand', 'testbrand');
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.deepEqual(r.items.map((i) => i.post), ['POST-01']);
@@ -280,7 +285,8 @@ test('skill-owned posts (no "social-autopilot" source) are never sent, recorded 
   assert.equal(r.ok, false, 'asked by id: still refused');
   r = run('record', '--brand', 'testbrand', '--post', 'POST-02', '--id', '7', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
   assert.equal(r.ok, false);
-  assert.match(r.error, /riêng của skill/);
+  assert.match(r.error, /không có POST-02/);
   r = run('status', '--brand', 'testbrand');
   assert.ok(!JSON.stringify(r.posts || []).includes('POST-02'));
+  assert.equal(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'), skillCatalog, 'skill catalog untouched');
 });

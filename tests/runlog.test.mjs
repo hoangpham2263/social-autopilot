@@ -20,7 +20,7 @@ write(path.join(brandDir, 'SKILL.md'), '# rb');
 write(path.join(brandDir, 'project', 'project.md'), '# rb');
 write(path.join(brandDir, 'project', 'social.json'), { brand: 'RB', enabled: true, channels: [{ network: 'facebook', enabled: true, lang: ['en'], url: 'https://www.facebook.com/rb' }], cadence: { timezone: 'America/New_York' }, research: { sources: [{ id: 'a', name: 'A', url: 'https://x.test/a', enabled: true }] } });
 write(path.join(brandDir, 'scripts', 'check-skill.mjs'), "console.log('ok')");
-write(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [{ id: 'POST-01', source: 'social-autopilot rb-20261109-03', status: 'scheduled', metricool: { facebook: { id: '9', planner_url: 'https://app.metricool.com/planner?x=9', draft: false, publication: '2026-12-01T10:00:00', timezone: 'America/New_York', sent_at: '2099-01-01T00:00:00Z' } } }] });
+write(path.join(ws, 'posts', 'rb', 'catalog.json'), { posts: [{ id: 'POST-01', source: 'social-autopilot rb-20261109-03', status: 'scheduled', metricool: { facebook: { id: '9', planner_url: 'https://app.metricool.com/planner?x=9', draft: false, publication: '2026-12-01T10:00:00', timezone: 'America/New_York', sent_at: '2099-01-01T00:00:00Z' } } }] });
 const crawl = (date, sources) => write(path.join(ws, 'runs', 'rb', date, 'run.json'), { date, started: new Date().toISOString(), status: 'done', mode: {}, sources });
 
 test('research: per source new / dried up / blocked; dried-up streak across runs', () => {
@@ -54,7 +54,7 @@ test('create: scheduled this run, to review, failed checks count as errors; agen
   write(path.join(ws, 'drafts', 'rb', 'rb-20261109-02', 'draft.json'), { id: 'rb-20261109-02', brand: 'rb', brand_dir: brandDir, created: '2099-01-01T00:00:00Z', inspiration: {} });
   write(path.join(ws, 'drafts', 'rb', 'rb-20261109-02', 'status.json'), { status: 'check_failed', problems: ['caption has an AI label'] });
   write(path.join(ws, 'drafts', 'rb', 'rb-20261109-03', 'draft.json'), { id: 'rb-20261109-03', brand: 'rb', brand_dir: brandDir, created: '2026-01-01T00:00:00Z', inspiration: {} });
-  write(path.join(ws, 'drafts', 'rb', 'rb-20261109-03', 'status.json'), { status: 'approved', brand_post: { id: 'POST-01', folder: brandDir, catalog: path.join(brandDir, 'workspace', 'catalog.json') } });
+  write(path.join(ws, 'drafts', 'rb', 'rb-20261109-03', 'status.json'), { status: 'approved', brand_post: { id: 'POST-01', folder: brandDir, catalog: path.join(ws, 'posts', 'rb', 'catalog.json') } });
   const notes = path.join(tmp, 'notes.json');
   write(notes, { notes: 'all good', brands: { rb: { errors: ['image quota used up'] } } });
   const r = run('add', '--mode', 'create', '--agent', 'Claude Code', '--started', '2098-12-31T00:00:00Z', '--file', notes);

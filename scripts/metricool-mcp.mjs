@@ -1,6 +1,6 @@
 // Metricool MCP route (Starter plan has no REST API): this script never talks to Metricool. It prepares the exact
 // arguments the AGENT passes to its Metricool MCP tool createScheduledPost (any agent: Claude, ChatGPT, Codex), records what Metricool
-// answered into the brand catalog, and lists sent posts so the agent can reconcile them with getScheduledPosts.
+// answered into the tool's post register (workspace/posts/<brand>/catalog.json, scripts/posts.mjs), and lists sent posts so the agent can reconcile them with getScheduledPosts.
 //   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-01,POST-02] [--lang en]
 //          [--date YYYY-MM-DD --time HH:MM] [--allow-today] [--limit N] [--window morning|midday|afternoon|evening] [--start today|tomorrow]
 //        --limit N: at most N approved posts of the brand (oldest approved first); --window: only times in that window of
@@ -13,7 +13,7 @@
 // the audience timezone (cadence.timezone). publicationDate carries that timezone, so Metricool converts it itself (no
 // manual conversion as in the CSV route). Always a REAL scheduled post (draft:false, autoPublish at the brand's slot time;
 // user, 09/11/2026: the tool never makes Metricool drafts). A post recorded earlier as a Metricool draft (legacy) is
-// sent again as a scheduled post. A post whose check-post.mjs fails is blocked, the others go.
+// sent again as a scheduled post. A post whose delivery check (posts.mjs checkPost) fails is blocked, the others go.
 // The output is plain JSON for any agent's Metricool tool (Claude connector, ChatGPT connector, Codex MCP server).
 // Text = posted languages only (never language_policy.review_langs), never any AI label. Media must be public https links
 // (MCP copies them to static.metricool.com). A brand gets posts only when it is linked to a usable skill; a brand gone from
@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { main, out, fail, isMain, parseArgs, need, settings, readJson, writeJson, withLock, today, stamp, aiLabelHits, hasHidden, metricoolBrands, removedBlog, syncMetricoolBrands, listDrafts } from './lib.mjs';
+import { postsCatalogFile, readPosts, checkPost as checkRegisterPost } from './posts.mjs';
 import { timesFile, planPosts, findBrand, sentNetworks, toolMade, wallIn, zonedToInstant, nowIn, validDate, validTime, TEXT_LIMITS, NETWORKS, WEBP_URL } from './metricool-csv.mjs';
 
 // Networks whose createScheduledPost shape is known (facebookData / instagramData). Others: use the CSV route.
@@ -70,9 +71,9 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
     const p = it.post, { date, time } = it.when;
     if (!validDate(date) || !validTime(time)) { problems.push(`${p.id}: giờ "${date} ${time}" không hợp lệ.`); continue; }
     if (date < cur.date || (date === cur.date && (!(args['allow-today'] || args.start === 'today') || time <= cur.time))) { problems.push(`${p.id}: ${date} ${time} ${tz} đã qua hoặc là hôm nay (hôm nay ${cur.date} ${cur.time}); chỉ ngày mai trở đi (--allow-today cho giờ sau bây giờ).`); continue; }
-    // The brand skill's check-post.mjs must pass (no human approval step: automatic checks are the gate).
+    // The register's delivery check must pass (posts.mjs checkPost).
     const cp = checkPost(brand, p.id);
-    if (cp?.errors) { problems.push(`${p.id}: check-post.mjs của skill báo ${cp.errors} lỗi.`); continue; }
+    if (cp?.errors) { problems.push(`${p.id}: kiểm bài báo ${cp.errors} lỗi (${cp.results[0].errors.join('; ')}).`); continue; }
     const text = it.texts[0].text;
     if (!text.trim()) { problems.push(`${p.id}: caption trống.`); continue; }
     const ai = aiLabelHits(text);
@@ -126,12 +127,8 @@ function runPayload(args) {
 
 // ----- record -----
 const isUrl = (v) => { try { return new URL(v).protocol === 'https:'; } catch { return false; } };
-function checkPost(brand, postId) {
-  const checker = path.join(brand.dir, 'scripts', 'check-post.mjs');
-  if (!fs.existsSync(checker)) return null;
-  const r = spawnSync(process.execPath, [checker, postId], { cwd: brand.dir, encoding: 'utf8', windowsHide: true });
-  try { const j = JSON.parse(r.stdout); return { errors: j.errors, results: j.results.map(({ errors, warnings }) => ({ errors, warnings })) }; } catch { return { errors: 1, output: (r.stdout || r.stderr || '').slice(0, 2000) }; }
-}
+// Delivery check of a register post (posts.mjs checkPost; the skill is never run on the tool's posts).
+const checkPost = (brand, postId) => checkRegisterPost(brand, postId);
 
 export function record(args, { root = settings().skillsRoot, now = new Date() } = {}) {
   const brand = findBrand(need(args, 'brand'), root);
@@ -156,11 +153,11 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
   const networks = args.networks && args.networks !== true ? String(args.networks).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) : [...new Set(channels)];
   const bad = networks.filter((n) => !MCP_NETWORKS.includes(n));
   if (!networks.length || bad.length) throw new Error(`--networks: chỉ ${MCP_NETWORKS.join(', ')} (${bad.join(', ') || 'trống'}).`);
-  const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
+  const catalogFile = postsCatalogFile(brand.id);
   const result = withLock(catalogFile, () => {
-    const catalog = readJson(catalogFile);
+    const catalog = readJson(catalogFile, { posts: [] });
     const entry = (catalog.posts || []).find((p) => p.id === postId);
-    if (!entry) throw new Error(`Catalog của ${brand.id} không có ${postId}.`);
+    if (!entry) throw new Error(`Sổ bài của ${brand.id} (workspace/posts/${brand.id}/catalog.json) không có ${postId}.`);
     if (!toolMade(entry)) throw new Error(`${postId} là bài riêng của skill (không do tool tạo): tool không ghi gì cho bài này.`);
     if (!['approved', 'scheduled'].includes(entry.status)) throw new Error(`${postId}: trạng thái "${entry.status}", chỉ ghi cho bài approved/scheduled.`);
     const mc = entry.metricool && typeof entry.metricool === 'object' && !Array.isArray(entry.metricool) ? entry.metricool : {};
@@ -243,7 +240,7 @@ export function syncTimes(args) {
 const addDays = (date, n) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 export function status(args, { root = settings().skillsRoot } = {}) {
   const brand = findBrand(need(args, 'brand'), root);
-  const catalog = readJson(path.join(brand.dir, 'workspace', 'catalog.json'));
+  const catalog = readPosts(brand.id);
   const posts = [];
   const dates = [];
   let tz = '';
@@ -264,7 +261,7 @@ export function status(args, { root = settings().skillsRoot } = {}) {
   return {
     brand: brand.id, blog_id: brand.blog_id, posts, query, ignore_ids: [...new Set(ignore)],
     next: open.length
-      ? 'Gọi getScheduledPosts với query, khớp theo id. PENDING: không làm gì. Bài còn metricool.<network>.draft true (nháp cũ): payload sẽ gửi lại thành bài hẹn giờ thật. ERROR: báo lỗi cho người dùng (id, plannerUrl, lý do). PUBLISHED: chạy node <thư mục skill>/scripts/mark-published.mjs <POST> <yyyy-mm-dd theo audience_time> [link bài] --lang <ngôn ngữ đăng>. Nháp cũ đã được người hẹn giờ trong Metricool (draft false, có giờ): chạy record lại với cùng --id. Bài có id trong ignore_ids (đã đưa về To review): bỏ qua, không record/mark-published.'
+      ? 'Gọi getScheduledPosts với query, khớp theo id. PENDING: không làm gì. Bài còn metricool.<network>.draft true (nháp cũ): payload sẽ gửi lại thành bài hẹn giờ thật. ERROR: báo lỗi cho người dùng (id, plannerUrl, lý do). PUBLISHED: chạy node scripts/posts.mjs mark-published --brand <id> --post <POST> --date <yyyy-mm-dd theo audience_time> [--url <link bài>] --lang <ngôn ngữ đăng> (sổ bài của tool; không bao giờ ghi vào skill). Nháp cũ đã được người hẹn giờ trong Metricool (draft false, có giờ): chạy record lại với cùng --id. Bài có id trong ignore_ids (đã đưa về To review): bỏ qua, không record/mark-published.'
       : 'Không có bài nào đang chờ trên Metricool.',
   };
 }

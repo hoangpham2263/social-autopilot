@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands, skillDirs, linkedDir, workspace } from './lib.mjs';
+import { readPosts, postFolder } from './posts.mjs';
 
 // WebP in any form Metricool refuses ("Unsupported .webp format"): the extension anywhere in the URL, or a CDN format
 // parameter (format=webp, fm=webp, f=webp, output=webp, ...). With --check-urls a content-type image/webp is refused too.
@@ -404,7 +405,7 @@ function captionText(brand, post, langs, mode, separator) {
     if (!fileName) throw new Error(`${post.id}: catalog không có caption "${lang}".`);
     const st = post.caption_status?.[lang];
     if (st && st !== 'approved') throw new Error(`${post.id}: caption "${lang}" chưa "approved" (caption_status ${st}).`);
-    const file = path.join(brand.dir, post.folder || '', fileName);
+    const file = path.join(postFolder(brand.id, post), fileName);
     if (!fs.existsSync(file)) throw new Error(`${post.id}: không có file ${file}.`);
     texts.push(cleanText(fs.readFileSync(file, 'utf8')).text);
   }
@@ -493,8 +494,8 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
   const separator = typeof social.metricool?.bilingual_separator === 'string' ? social.metricool.bilingual_separator : '\n\n';
 
   // Posts.
-  const catalog = readJson(path.join(brand.dir, 'workspace', 'catalog.json'));
-  const all = (catalog.posts || []).filter(toolMade); // only the tool's own posts
+  // The tool's own register (workspace/posts/<brand>/catalog.json); skill catalogs are never read for posting.
+  const all = readPosts(brand.id).posts || [];
   const isSent = (p) => networkKeys.some((n) => sentNetworks(p).includes(n));
   const sentReason = (p) => `đã gửi lên Metricool (metricool.${sentNetworks(p).join('/')}.id)`;
   const wanted = args.posts && args.posts !== true ? String(args.posts).split(',').map((s) => s.trim()).filter(Boolean) : null;
@@ -504,7 +505,7 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
     posts = [];
     for (const id of wanted) {
       const p = all.find((x) => x.id === id);
-      if (!p) problems.push(`${id}: không có trong catalog (hoặc là bài riêng của skill, tool không đăng).`);
+      if (!p) problems.push(`${id}: không có trong sổ bài của tool.`);
       else if (isSent(p)) skipped.push({ post: id, reason: sentReason(p) });
       else if (p.status !== 'approved') problems.push(`${id}: trạng thái "${p.status}", chỉ xuất bài approved.`);
       else if (!list(p.media_url).length && !list(p.video_url).length) problems.push(`${id}: chưa có media_url/video_url (chạy host-image.mjs publish).`);

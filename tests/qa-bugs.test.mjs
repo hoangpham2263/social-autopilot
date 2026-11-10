@@ -65,10 +65,10 @@ test('queue: a written post whose catalog entry is missing does not crash writte
   w(path.join(brandDir, 'SKILL.md'), '# q'); w(path.join(brandDir, 'project', 'project.md'), '# q');
   w(path.join(brandDir, 'project', 'social.json'), { brand: 'QB', enabled: true, channels: [{ network: 'facebook', enabled: true, lang: ['en'] }], cadence: { timezone: 'Asia/Ho_Chi_Minh' } });
   w(path.join(brandDir, 'scripts', 'check-skill.mjs'), "console.log('ok')");
-  w(path.join(brandDir, 'workspace', 'catalog.json'), { posts: [] });
+  w(path.join(ws2, 'posts', 'qb', 'catalog.json'), { posts: [] });
   const d = path.join(ws2, 'drafts', 'qb', 'qb-20261109-01');
   w(path.join(d, 'draft.json'), { id: 'qb-20261109-01', brand: 'qb', brand_dir: brandDir, inspiration: {}, languages: ['en'] });
-  w(path.join(d, 'status.json'), { status: 'approved', brand_post: { id: 'POST-09', folder: path.join(brandDir, 'workspace', 'posts', 'POST-09'), catalog: path.join(brandDir, 'workspace', 'catalog.json') } });
+  w(path.join(d, 'status.json'), { status: 'approved', brand_post: { id: 'POST-09', folder: path.join(ws2, 'posts', 'qb', 'POST-09'), catalog: path.join(ws2, 'posts', 'qb', 'catalog.json') } });
   const r = spawnSync(process.execPath, [path.join(tool, 'scripts', 'queue.mjs')], { env: { ...process.env, SA_WORKSPACE: ws2, SA_SKILLS_ROOT: sk }, encoding: 'utf8', windowsHide: true });
   const j = JSON.parse(r.stdout);
   assert.equal(j.ok, true, r.stdout);

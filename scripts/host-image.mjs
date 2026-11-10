@@ -1,5 +1,5 @@
 // Media hosting for an APPROVED post: puts a copy of the post's clean image, or its MP4 video, at a public URL (Metricool
-// fetches media by URL; see docs/plan.md section 8) and records it in the brand's catalog entry: `media_url` for an image,
+// fetches media by URL; see docs/plan.md section 8) and records it in the tool's register entry (workspace/posts/<brand>/catalog.json): `media_url` for an image,
 // `video_url` (+ `video_thumbnail_url` when the post also has an image) for a video (project-skill-standard check-post
 // accepts these fields; scripts/metricool-csv.mjs reads them). Host = settings imageHost:
 //   { type: "github-repo", path: <local clone, default workspace/image-host; cloned from remote_url when missing>, remote_url: <git URL>, rawBase: <raw.githubusercontent.com URL of the branch>, pagesBase: "",
@@ -27,7 +27,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { main, out, isMain, parseArgs, need, settings, toolRoot, workspace, inside, withLock, loadBrand, readJson, writeJson, today, stamp, findDraft } from './lib.mjs';
 import { metadataChunks } from './image-clean.mjs';
-import { toolMade } from './metricool-csv.mjs';
+import { postsDir, postsCatalogFile, postFolder, checkPost as checkRegisterPost } from './posts.mjs';
 
 const APPROVED = ['approved', 'scheduled', 'published'];
 const URL_FIELDS = ['media_url', 'video_url', 'video_thumbnail_url'];
@@ -86,14 +86,13 @@ function commitPush(h, rels, message) {
   return { committed: staged, pushed, commit: git(h.repo, 'rev-parse', 'HEAD') };
 }
 
-// The brand's catalog entry for <post>.
+// The register entry for <post> (workspace/posts/<brand>/catalog.json, scripts/posts.mjs): only the tool's own posts.
 function postOf(brandId, postId) {
   if (!/^[A-Z]+-\d+$/.test(postId || '')) throw new Error(`Mã bài không hợp lệ: "${postId}" (vd POST-03).`);
   const brand = loadBrand(brandId, { allowDisabled: true });
-  const catalogFile = path.join(brand.dir, 'workspace', 'catalog.json');
+  const catalogFile = postsCatalogFile(brand.id);
   const entry = readJson(catalogFile, { posts: [] }).posts.find((p) => p.id === postId);
-  if (!entry) throw new Error(`Catalog của ${brand.id} không có ${postId}.`);
-  if (!toolMade(entry)) throw new Error(`${postId} là bài riêng của skill (không do tool tạo): tool không host ảnh cho bài này.`);
+  if (!entry) throw new Error(`Sổ bài của ${brand.id} (workspace/posts/${brand.id}/catalog.json) không có ${postId}.`);
   return { brand, catalogFile, entry };
 }
 
@@ -129,12 +128,8 @@ function setFields(catalogFile, postId, fields) {
   });
 }
 
-function checkPost(brand, postId) {
-  const checker = path.join(brand.dir, 'scripts', 'check-post.mjs');
-  if (!fs.existsSync(checker)) return null;
-  const r = spawnSync(process.execPath, [checker, postId], { cwd: brand.dir, encoding: 'utf8', windowsHide: true });
-  try { const j = JSON.parse(r.stdout); return { errors: j.errors, results: j.results.map(({ errors, warnings }) => ({ errors, warnings })) }; } catch { return { errors: 1, output: (r.stdout || r.stderr).slice(0, 2000) }; }
-}
+// Delivery check of a register post (posts.mjs).
+const checkPost = (brand, postId) => checkRegisterPost(brand, postId);
 
 // GitHub Pages / raw lag a little after a push: retried until the link answers 200 with exactly our bytes and the
 // expected content-type (video/mp4 for a video, image/* for an image).
@@ -186,10 +181,10 @@ const publicBase = (h) => h.pagesBase || h.rawBase;
 
 // What a post hosts: its video (+ cover image as thumbnail) or its image.
 function mediaOf(brand, entry, postId, wantVideo) {
-  const folder = path.resolve(brand.dir, entry.folder || '');
+  const folder = postFolder(brand.id, entry);
   const resolve = (name) => {
     const file = path.resolve(folder, name);
-    if (!inside(path.join(brand.dir, 'workspace'), file) || !fs.existsSync(file)) throw new Error(`Không thấy file của ${postId}: ${file}`);
+    if (!folder || !inside(postsDir(brand.id), file) || !fs.existsSync(file)) throw new Error(`Không thấy file của ${postId}: ${file}`);
     return file;
   };
   const images = [entry.image, ...[].concat(entry.images || []), ...Object.values(entry.localized_images || {})].filter(Boolean);
@@ -219,7 +214,7 @@ function imageExt(name) {
 export async function publish({ brand: brandId, post: postId, video: wantVideo = false, fast = false }, s = settings()) {
   const h = hostConfig(s);
   const { brand, catalogFile, entry } = postOf(brandId, postId);
-  if (!APPROVED.includes(entry.status)) throw new Error(`${postId} đang "${entry.status}"; chỉ host media của bài đã ghi vào thương hiệu (approved/scheduled/published).`);
+  if (!APPROVED.includes(entry.status)) throw new Error(`${postId} đang "${entry.status}"; chỉ host media của bài đã duyệt (approved/scheduled/published).`);
   const items = mediaOf(brand, entry, postId, wantVideo);
   const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
   for (const it of items) {

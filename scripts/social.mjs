@@ -1,9 +1,7 @@
-// A brand's project/social.json, read and saved the safe way (the UI's Brand settings page uses the same functions).
-// Save: refuses anything that looks like a token/password/cookie, writes atomically under a lock, then runs the skill's
-// own scripts/check-skill.mjs; if the new file brings a new error, the previous file is put back. Then reports what
-// check-skill --tool-ready says is still missing.
+// A brand's project/social.json, read only (the UI's Brand panel uses the same function), with what the skill's own
+// scripts/check-skill.mjs --tool-ready says is still missing. Skills are READ-ONLY for social-autopilot (user,
+// 10/11/2026): the tool never writes into a skill folder, so "set" is refused; edit the skill itself.
 //   node scripts/social.mjs show --brand <id>
-//   node scripts/social.mjs set  --brand <id> --file <new social.json>
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -41,34 +39,16 @@ export function readSocial(id) {
   return { id, dir, file, social: readJson(file), check: checkSkill(dir) };
 }
 
-export function saveSocial(id, social) {
-  if (!social || typeof social !== 'object' || Array.isArray(social)) throw new Error('social.json phải là một object JSON.');
-  const secrets = secretProblems(social);
-  if (secrets.length) throw new Error(`Không lưu: ${secrets.join('; ')}. Không bao giờ ghi token/mật khẩu vào skill.`);
-  const dir = brandDir(id);
-  const file = path.join(dir, 'project', 'social.json');
-  return withLock(file, () => {
-    const before = checkSkill(dir);
-    const previous = fs.readFileSync(file, 'utf8');
-    writeText(file, JSON.stringify(social, null, 2) + '\n');
-    const after = checkSkill(dir);
-    const added = after.errors.filter((e) => !before.errors.includes(e));
-    if (added.length) {
-      writeText(file, previous);
-      return { saved: false, restored: true, errors: added, missing: after.missing };
-    }
-    return { saved: true, file, errors_before: before.errors, tool_ready: after.tool_ready, missing: after.missing, warnings: after.warnings };
-  });
+// Skills are read-only for the tool: saving is refused (kept as a function so the app answers with a clear message).
+export function saveSocial(id) {
+  brandDir(id);
+  throw new Error('Skill chỉ đọc: social-autopilot không bao giờ ghi vào thư mục skill. Sửa project/social.json trong skill (rồi chạy scripts/check-skill.mjs --tool-ready của skill).');
 }
 
 if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();
   const cmd = args._[0];
   if (cmd === 'show') return out(readSocial(need(args, 'brand')));
-  if (cmd === 'set') {
-    const r = saveSocial(need(args, 'brand'), readJson(path.resolve(need(args, 'file'))));
-    if (!r.saved) throw Object.assign(new Error(`Không lưu (đã trả lại file cũ): ${r.errors.join('; ')}`));
-    return out(r);
-  }
-  throw new Error('Lệnh: show | set');
+  if (cmd === 'set') return saveSocial(need(args, 'brand'));
+  throw new Error('Lệnh: show (skill chỉ đọc: không có set)');
 });

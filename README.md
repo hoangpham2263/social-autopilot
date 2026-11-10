@@ -9,7 +9,7 @@ Agent (Claude Code hoặc Codex) làm việc; app chỉ để xem, duyệt và q
 1. Research   →  script crawl hết bài các trang tham khảo vào Library (bỏ trùng)
                 →  agent lọc một lượt (giữ / bỏ, có lý do)
 2. Create     →  từ Library làm ảnh + caption mới  →  To review
-3. Approve    →  bạn duyệt trong app  →  lưu vào skill + đưa ảnh lên
+3. Approve    →  bạn duyệt trong app  →  lưu vào sổ bài của tool + đưa ảnh lên
 4. Publish    →  lượt chạy sau hẹn giờ trên Metricool  →  Queued  →  Posted
 ```
 
@@ -33,7 +33,7 @@ Agent (Claude Code hoặc Codex) làm việc; app chỉ để xem, duyệt và q
 4. Tab **Overview** → **Link skill** → chọn thư mục skill.
    Chấm xanh = sẵn sàng; chấm đỏ = còn thiếu (xem dòng Missing).
 
-Tool không chép skill, chỉ trỏ tới thư mục skill. Brand chưa nối skill thì không bao giờ được làm hay gửi bài.
+Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc** nó (không bao giờ ghi vào skill). Bài đã duyệt nằm trong sổ bài của tool `workspace/posts/<brand>/`. Brand chưa nối skill thì không bao giờ được làm hay gửi bài.
 
 ## Dùng hằng ngày
 

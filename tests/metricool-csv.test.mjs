@@ -16,6 +16,9 @@ const skills = path.join(tmp, 'skills');
 const ws = path.join(tmp, 'workspace');
 const brandDir = path.join(skills, 'testbrand-skills');
 const outDir = path.join(tmp, 'out');
+// The tool's own post register (scripts/posts.mjs); the skill folder is read-only for the tool.
+const postsRoot = path.join(ws, 'posts', 'testbrand');
+const catalogFile = path.join(postsRoot, 'catalog.json');
 process.env.SA_SKILLS_ROOT = skills;
 process.env.SA_WORKSPACE = ws;
 const env = { ...process.env };
@@ -33,6 +36,7 @@ const header = lib.templateHeader();
 
 function setup({ metricool = { brand_name: 'Test Brand', timezone: 'Asia/Ho_Chi_Minh' }, posts } = {}) {
   fs.rmSync(skills, { recursive: true, force: true });
+  fs.rmSync(postsRoot, { recursive: true, force: true });
   write(path.join(brandDir, 'SKILL.md'), '# test\n');
   write(path.join(brandDir, 'project', 'project.md'), '# Test\n\n## 1. Nhận diện\n- Tên thương hiệu (*): TestBrand\n');
   write(path.join(brandDir, 'project', 'social.json'), JSON.stringify({
@@ -42,12 +46,12 @@ function setup({ metricool = { brand_name: 'Test Brand', timezone: 'Asia/Ho_Chi_
     cadence: { timezone: 'America/Los_Angeles', slots: [{ day: 'mon', time: '10:00' }, { day: 'thu', time: '19:30' }] },
     metricool,
   }));
-  const folder = (id) => `workspace/posts/${id}`;
+  const folder = (id) => id;
   for (const p of posts) {
-    write(path.join(brandDir, folder(p.id), 'content-vn.txt'), `Xin chào ${p.id}`);
-    write(path.join(brandDir, folder(p.id), 'content-en.txt'), p.en ?? `Hello "${p.id}",\nsecond line, with comma`);
+    write(path.join(postsRoot, folder(p.id), 'content-vn.txt'), `Xin chào ${p.id}`);
+    write(path.join(postsRoot, folder(p.id), 'content-en.txt'), p.en ?? `Hello "${p.id}",\nsecond line, with comma`);
   }
-  write(path.join(brandDir, 'workspace', 'catalog.json'), JSON.stringify({
+  write(catalogFile, JSON.stringify({
     posts: posts.map((p) => ({ folder: folder(p.id), captions: { vn: 'content-vn.txt', en: 'content-en.txt' }, caption_status: { vn: 'approved', en: 'approved' }, status: 'approved', source: `social-autopilot test-${p.id}`, ...p, en: undefined })),
   }));
 }
@@ -70,7 +74,7 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
     { id: 'POST-03', status: 'awaiting_review', media_url: IMG(4) },
     { id: 'POST-04' }, // approved, no media: skipped with a warning
   ] });
-  const before = fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8');
+  const before = fs.readFileSync(catalogFile, 'utf8');
   const file = path.join(outDir, 'export.csv');
   const r = run('export', '--brand', 'testbrand', '--out', file);
   assert.equal(r.ok, true, JSON.stringify(r));
@@ -107,7 +111,7 @@ test('export: approved posts with media, header order, quoting, bilingual text, 
   // Quoting: booleans bare, text quoted with doubled quotes and real newlines.
   assert.ok(raw.includes('"Xin chào POST-01\n\nHello ""POST-01"",\nsecond line, with comma"'));
   assert.ok(/,false,true,/.test(raw)); // Draft false (always scheduled), Facebook true
-  assert.equal(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'), before, 'catalog untouched');
+  assert.equal(fs.readFileSync(catalogFile, 'utf8'), before, 'catalog untouched');
   // The exported file validates.
   const v = run('validate', file, '--brand', 'testbrand');
   assert.equal(v.ok, true, JSON.stringify(v));

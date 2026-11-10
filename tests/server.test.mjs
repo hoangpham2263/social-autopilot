@@ -115,19 +115,14 @@ test('serves the page, the shell assets and the data APIs', async () => {
   assert.match((await cancel.json()).error, /Không có bản nháp/);
 });
 
-test('brand settings: a token is never written; a bad file is put back', { skip: !fs.existsSync(path.join(tool, '..', 'vaniecom-workspace', 'skills', 'grenheim-skills')) && 'no brand skill to copy' }, async () => {
+test('brand settings: skills are read-only, saving social.json is refused and the file stays as it is', { skip: !fs.existsSync(path.join(tool, '..', 'vaniecom-workspace', 'skills', 'grenheim-skills')) && 'no brand skill to copy' }, async () => {
   const file = path.join(tmp, 'skills', 'grenheim-skills', 'project', 'social.json');
   const before = fs.readFileSync(file, 'utf8');
   const { social } = await (await fetch(`${base}/api/brand?id=grenheim`)).json();
   const post = (s) => fetch(`${base}/api/brand?id=grenheim`, { method: 'POST', headers: hdr(), body: JSON.stringify({ social: s }) }).then((r) => r.json());
-  assert.match((await post({ ...social, metricool: { access_token: 'x' } })).error, /token/);
-  const bad = JSON.parse(JSON.stringify(social)); bad.channels[0].network = 'myspace';
-  const r = await post(bad);
-  assert.equal(r.saved, false);
+  const good = JSON.parse(JSON.stringify(social)); good.cadence = { ...good.cadence, posts_per_day: 2 };
+  assert.match((await post(good)).error, /chỉ đọc/);
   assert.equal(fs.readFileSync(file, 'utf8'), before);
-  const good = JSON.parse(JSON.stringify(social)); good.cadence = { ...good.cadence, posts_per_week: 4 };
-  assert.equal((await post(good)).saved, true);
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).cadence.posts_per_week, 4);
 });
 
 test('projectField keeps the value only (no trailing note)', async () => {

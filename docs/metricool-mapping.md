@@ -23,7 +23,7 @@ Một bài trong Metricool (rút gọn, giá trị minh hoạ):
 }
 ```
 - `providers[].status`: `PENDING`, `PUBLISHED`, `ERROR`; lý do lỗi ở `providers[].detailedStatus`. Tool đọc qua `getScheduledPosts` (`metricool-mcp.mjs status`).
-- Sau khi đăng, Metricool thêm `providers[].id` và `publicUrl`: dữ liệu cho `mark-published.mjs` của skill (Posted).
+- Sau khi đăng, Metricool thêm `providers[].id` và `publicUrl`: dữ liệu cho `posts.mjs mark-published` của tool (Posted).
 
 ## 2. Bảng ánh xạ
 

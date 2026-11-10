@@ -8,8 +8,9 @@ import { main, out, isMain, parseArgs, discoverBrands, readJson, listDrafts, wor
 import { summary } from './draft-lib.mjs';
 import { readStore, counts, storeIdeasFile } from './store.mjs';
 import { researchReport } from './research.mjs';
-import { sentNetworks, toolMade } from './metricool-csv.mjs';
+import { sentNetworks } from './metricool-csv.mjs';
 import { postsNeeded } from './ideas.mjs';
+import { readPosts, postFolder, findPost } from './posts.mjs';
 
 // Metricool state of a catalog entry, from what metricool-mcp.mjs record / mark-published wrote.
 export function metricoolState(entry) {
@@ -26,7 +27,7 @@ export function metricoolState(entry) {
 export function writtenPost(d) {
   const bp = d.status.brand_post;
   let entry = null;
-  try { entry = readJson(bp.catalog, { posts: [] }).posts.find((p) => p.id === bp.id) || null; } catch {}
+  try { entry = findPost(d.draft.brand, bp.id); } catch {}
   const media = entry ? [].concat(entry.media_url || []).filter(Boolean) : [];
   const host = d.status.image_host || null;
   const mc = metricoolState(entry);
@@ -39,18 +40,18 @@ export function writtenPost(d) {
   };
 }
 
-// The tool's own posts in the brand's skill catalog (workspace/catalog.json): entries writeback.mjs wrote (source
-// "social-autopilot <draft>"). The skill's own posts are its private data: never counted, listed or sent.
+// The tool's own posts: its register workspace/posts/<brand>/catalog.json (scripts/posts.mjs). Skill catalogs are never
+// read here: the skill's posts are its private data, never counted, listed or sent.
 // unsent = approved, hosted image, not sent yet on the brand's channels: exactly what Publish approved sends.
 export function catalogPosts(b, drafts = listDrafts(b.id)) {
   const linked = new Set(drafts.filter((d) => d.status.brand_post).map((d) => d.status.brand_post.id));
   let posts = [];
-  try { posts = (readJson(path.join(b.dir, 'workspace', 'catalog.json'), { posts: [] }).posts || []).filter(toolMade); } catch {}
+  try { posts = readPosts(b.id).posts || []; } catch {}
   const channels = (b.channels || []).map((n) => String(n).toLowerCase());
   return posts.filter((p) => p && p.id).map((p) => {
     const mc = metricoolState(p);
     const media = [].concat(p.media_url || [], p.video_url || []).filter(Boolean);
-    const folder = p.folder ? path.join(b.dir, p.folder) : '';
+    const folder = postFolder(b.id, p);
     const image = folder && p.image && fs.existsSync(path.join(folder, p.image)) ? path.join(folder, p.image) : '';
     const sent = sentNetworks(p).some((n) => channels.includes(n));
     const state = mc.state === 'published' ? 'posted' : ['approved', 'scheduled'].includes(p.status) ? 'queued' : 'other';
