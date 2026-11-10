@@ -130,6 +130,16 @@ export const makePost = ({ id, url, image_urls = [], caption = '', author = '', 
   ? { id, url, image_urls, caption: String(caption || '').slice(0, 2000), author: String(author || ''), found_by }
   : null);
 
+// Short checksum of the tile ids (FNV-1a 32 bit, base 36): SELF-CONTAINED, the page script embeds its source and
+// `collect.mjs from-page` recomputes it, so a pasted result that was cut off or edited by hand is caught.
+export function checksumOf(ids) {
+  let h = 0x811c9dc5;
+  const s = (ids || []).map(String).join('|');
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(36);
+}
+export const COMPACT = { caption: 100, author: 40, images: 2, chunk_size: 6 };
+
 // ---- in-page mode: no CDP Chrome. The agent pastes this into Playwright MCP browser_run_code_unsafe (one call per keyword/page).
 // A string `async (page) => {...}`: goes to the URL, scrolls with random pauses (delay [lo,hi] s, from collect.mjs: never below 5-15 s),
 // reads the tiles after every pause (lazy images get time to load), and, when the adapter says post_fallback and a tile still has
@@ -139,12 +149,13 @@ export const makePost = ({ id, url, image_urls = [], caption = '', author = '', 
 export function buildPageScript(S, opts) {
   const cfg = { link: S.link, url_pattern: S.url_pattern, container: S.container, img: S.img, img_skip: S.img_skip, author: S.author, caption: S.caption };
   const wall = { login_form: S.wall.login_form, captcha: S.wall.captcha, dialog: S.wall.dialog, url: S.wall.url };
-  const o = { ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
+  const o = { compact: COMPACT, ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
   return `async (page) => {
   const o = ${JSON.stringify(o)};
   await page.goto(o.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   const r = await page.evaluate(async (o) => {
     const extractTiles = ${extractTiles};
+    const checksumOf = ${checksumOf};
     const wallSignals = ${wallSignals};
     const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     const pause = () => sleep(1000 * (o.delay[0] + Math.random() * (o.delay[1] - o.delay[0])));
@@ -191,7 +202,15 @@ export function buildPageScript(S, opts) {
       }
     }
     if (o.caption_strip) for (const t of list) t.caption = String(t.caption || '').replace(new RegExp(o.caption_strip, 'i'), '').trim();
-    return { platform: o.platform, url: location.href, loginWall, signals, steps, note, tiles: list.map(({ id, url, image_urls, caption, author, found_by, via_post_page }) => ({ id, url, image_urls, caption, author, found_by, ...(via_post_page ? { via_post_page } : {}) })) };
+    // COMPACT result (short enough to read back and paste as is): fixed caption/author length, shortest url, first images only.
+    const cut = (x, n) => String(x || '').replace(/s+/g, ' ').trim().slice(0, n);
+    const shortUrl = (u) => { try { const x = new URL(u); x.hash = ''; if (!/[?&]v=/.test(x.search)) x.search = ''; return x.href; } catch (e) { return String(u || ''); } };
+    const C = o.compact;
+    const total = list.length, checksum = checksumOf(list.map((t) => t.id || t.url));
+    let part = list, chunk = null;
+    if (o.chunk !== undefined && o.chunk !== null) { part = list.slice(o.chunk * C.chunk_size, (o.chunk + 1) * C.chunk_size); chunk = { i: o.chunk, size: C.chunk_size, of: Math.max(1, Math.ceil(total / C.chunk_size)) }; }
+    return { platform: o.platform, url: shortUrl(location.href), loginWall, signals: loginWall ? signals : null, steps, note: cut(note, 80), total, checksum, ...(chunk ? { chunk } : {}),
+      tiles: part.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images), caption: cut(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
   }, o);
   return r;
 }`;

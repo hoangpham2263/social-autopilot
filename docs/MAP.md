@@ -6,6 +6,7 @@ Read this first when working ON the tool (code, tests, UI). Running the tool (re
 ## Folders
 - `scripts/` every step, one Node script each; each command prints ONE JSON (`ok: true|false`) via `lib.mjs out()/fail()`.
 - `scripts/collect-pagemode.mjs` in-page mode (`collect.mjs script` prints a Playwright MCP script, `collect.mjs from-page` turns its JSON into raw.json; tests `tests/collect-pagemode.test.mjs`).
+- `scripts/collect-fetch.mjs` + `scripts/platforms/fetch/*.mjs` direct fetch routes without a browser (`collect.mjs fetch`: reddit Atom RSS, houzz curl HTML, pinterest user/board RSS; polite throttle, 429/403 = blocked; tests `tests/collect-fetch.test.mjs`, fixtures `tests/fixtures/fetch-*`). `from-page` checks the compact result `total` + `checksum` and merges `--chunk` results.
 - `scripts/collect.mjs` generic collector + `scripts/platforms/<platform>.mjs` adapters (`index.mjs` registry: `status` untested|ok|broken + `checked` date; selectors only in each file's `SELECTORS` block; `common.mjs` generic tile/wall readers). Tests: `tests/collect.test.mjs` (pure parts + HTML fixtures `tests/fixtures/collect-*.html`, no browser).
 - `scripts/lib.mjs` shared core: settings, brand discovery (`discoverBrands`, `loadBrand`, `brandSocial`), Metricool brand list, `withLock` + atomic `writeJson`, `cleanText`, `parseArgs`.
 - `src/server.mjs` local app server (127.0.0.1, port from the folder hash, `SA_PORT` overrides) + `ui/index.html` (one file: HTML, CSS, JS). The app only calls functions of `scripts/`.

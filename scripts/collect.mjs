@@ -10,10 +10,15 @@
 //   node scripts/collect.mjs fit --brand <id> (--for-query <qid> | --for-source <sid>) --file decisions.json
 //        decisions [{ id, fit: true, type, reason } | { id, fit: false, reason }] (the agent LOOKED at the images): fit posts get
 //        product_fit, the others move to rejected[] (what ingest needs for a discovery query)
+//   FETCH MODE (no browser, first choice where a route exists: reddit, houzz, pinterest user/board; scripts/collect-fetch.mjs)
+//   node scripts/collect.mjs fetch (--brand <id> --for-query <qid> | --for-source <sid> | --platform <id> (--query <kw> | --url <page>)) [--max N] [--images N] [--from-file <saved response>]
+//        ONE polite request (>= 5 s per host, 429/403 = state blocked, no retry), same raw.json, then `fit` + ingest as below
 //   IN-PAGE MODE (default, no CDP Chrome; scripts/collect-pagemode.mjs): ONE Playwright MCP call per keyword/page
 //   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--max N] [--max-steps N]
-//        prints the script for browser_run_code_unsafe (scrolls with 5-15 s pauses, reads tiles, returns JSON): save the result to a file
-//   node scripts/collect.mjs from-page --brand <id> (--for-query <qid> | --for-source <sid>) --file <result.json> [--images N]
+//        [--chunk N] prints the script for browser_run_code_unsafe (scrolls with 5-15 s pauses, reads tiles, returns COMPACT JSON with total + checksum);
+//        --chunk N returns only tiles N*6.. (run --chunk 0,1,.. when the full result is too long to read back)
+//   node scripts/collect.mjs from-page --brand <id> (--for-query <qid> | --for-source <sid>) --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>' [--images N]
+//        paste the result AS IS (never retype): from-page checks tiles.length === total and the checksum of the ids and fails loudly if it was cut off or edited
 //        (or --platform <id> --file ...) drops posts already in the store, downloads images into the run folder, writes raw.json
 //   node scripts/collect.mjs status      every adapter with its status (untested | ok | broken)
 // Options: --max-steps N (scroll steps, default 10 for a query, research.browser.max_scroll_steps for a page), --images N (per post,
@@ -211,8 +216,9 @@ if (isMain(import.meta.url)) main(async () => {
   const cmd = args._[0] || '';
   if (cmd === 'status') return out({ statuses: STATUSES, adapters: Object.fromEntries(Object.keys(REGISTRY).map((id) => [id, adapterStatus(id)])) });
   if (cmd === 'fit') return fit(args);
+  if (cmd === 'fetch') return (await import('./collect-fetch.mjs')).runFetch(args);
   if (cmd === 'script') return (await import('./collect-pagemode.mjs')).script(args);
   if (cmd === 'from-page') return (await import('./collect-pagemode.mjs')).fromPage(args);
-  if (cmd) throw new Error('Lệnh: script | from-page | fit | status | (không lệnh = đường CDP tuỳ chọn)');
+  if (cmd) throw new Error('Lệnh: fetch | script | from-page | fit | status | (không lệnh = đường CDP tuỳ chọn)');
   await runCollect(args);
 });
