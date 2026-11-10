@@ -36,7 +36,10 @@ export function writtenPost(d) {
     media_url: media.length ? (media.length === 1 ? media[0] : media) : null,
     image_link: media.length ? media.join(', ') : host?.pending ? 'đang đưa ảnh lên' : 'chưa có link',
     ...(!media.length && !host?.pending ? { host_error: host && !host.ok ? host.error || 'lỗi không rõ' : (entry ? 'chưa đưa ảnh lên repo ảnh' : 'không thấy bài trong catalog'), next: host?.next || `node scripts/host-image.mjs publish --brand ${d.draft.brand} --post ${bp.id}` } : {}),
-    metricool: mc.state, metricool_sent: mc.sent.map(({ network, draft, publication, timezone, planner_url, id, sent_at, time_source }) => ({ network, draft, publication, timezone, planner_url, id, sent_at, time_source })),
+    metricool: mc.state, metricool_sent: mc.sent.map(({ network, draft, publication, timezone, planner_url, id, uuid, sent_at, time_source, replaced_draft }) => ({ network, draft, publication, timezone, planner_url, id, uuid, sent_at, time_source, replaced_draft })),
+    // History: Metricool ids the post had and lost (posts.mjs unsend), published info, approval.
+    metricool_history: (entry?.metricool_history || []).map(({ network, id, draft, publication, timezone, sent_at, unsent_at, reason, replaced_draft }) => ({ network, id, draft, publication, timezone, sent_at, unsent_at, reason, replaced_draft })),
+    published: entry?.published || null, approval: entry?.approval || null,
   };
 }
 

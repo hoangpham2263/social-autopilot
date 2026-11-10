@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as lib from './lib.mjs';
+import { findPost, postFolder } from './posts.mjs';
 
 const { readJson, cleanText } = lib;
 // The brand's posted and reviewer-only languages: lib.mjs's own rule when it has one, else the same rule here.
@@ -19,10 +20,14 @@ export function previewOf(d) {
   let social = {};
   try { social = lib.brandSocial(d.draft.brand_dir); } catch {}
   const review = reviewOf(social);
+  // An approved post (Queued / Posted) shows what goes out: the tool register's folder (final image + captions,
+  // workspace/posts/<brand>/<POST-xx>/); a draft shows its own folder.
+  let base = d.dir;
+  if (d.status?.brand_post?.id) { try { const f = postFolder(d.draft.brand, findPost(d.draft.brand, d.status.brand_post.id)); if (f && existsSync(join(f, 'image.png'))) base = f; } catch {} }
   const sep = typeof social.metricool?.bilingual_separator === 'string' ? social.metricool.bilingual_separator : '\n\n';
   // A caption file: the one the draft names, else content-<lang>.txt in the draft folder.
   const cap = (l) => {
-    const file = join(d.dir, d.draft.captions?.[l] || `content-${l}.txt`);
+    const file = join(base, d.draft.captions?.[l] || `content-${l}.txt`);
     return existsSync(file) ? cleanText(readFileSync(file, 'utf8')).text : '';
   };
   const draftMode = d.draft.language_mode || social.language_policy?.mode || 'single';
@@ -38,8 +43,8 @@ export function previewOf(d) {
   });
   const posted = new Set(posts.flatMap((p) => p.langs));
   const review_texts = review.filter((l) => !posted.has(l)).map((lang) => ({ lang, text: cap(lang) })).filter((x) => x.text);
-  const media = ['image.png'].map((f) => join(d.dir, f)).filter((f) => existsSync(f)).map((path) => ({ type: /\.(mp4|mov|webm)$/i.test(path) ? 'video' : 'image', path }));
+  const media = ['image.png'].map((f) => join(base, f)).filter((f) => existsSync(f)).map((path) => ({ type: /\.(mp4|mov|webm)$/i.test(path) ? 'video' : 'image', path }));
   // The brand's page as on Facebook: the channel's account name and the skill's avatar (served by /avatar?brand=).
   const avatar = d.draft.brand_dir && lib.brandAvatar(d.draft.brand_dir) ? `/avatar?brand=${encodeURIComponent(d.draft.brand)}` : '';
-  return { page_name: lib.pageName(social) || d.draft.brand_name || d.draft.brand, page_avatar: avatar, mode: posts[0]?.mode || draftMode, posts, review_texts, media };
+  return { from: base === d.dir ? 'draft' : 'register', page_name: lib.pageName(social) || d.draft.brand_name || d.draft.brand, page_avatar: avatar, mode: posts[0]?.mode || draftMode, posts, review_texts, media };
 }

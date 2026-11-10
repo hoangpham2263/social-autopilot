@@ -368,6 +368,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 
   // ----- Overview: per brand, from queue.mjs (library, last research, posts, Metricool) + the skill check -----
   let brandData = { brands: [], metricool: { brands: [] } };
+  const MC_COLOR = { draft: "c-amber", scheduled: "", published: "c-green", error: "c-red", not_sent: "" };
   const MC_TEXT = { draft: "waiting to send (old Metricool draft)", scheduled: "scheduled", published: "published", error: "Metricool error", not_sent: "not sent" };
   // Skill picker (Choose skill / Change skill): a source folder (or a skill folder path pasted), Find, the skill folders
   // found with their readiness (one choice), then Link: the Metricool brand points to that folder. Nothing is copied.
@@ -1143,7 +1144,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", canUnreview = !!bp && bp.metricool !== "published", swap = d.image_mode === "scene-swap";
     const p = d.preview || { posts: [], media: [] };
     const initial = p.page_avatar ? `<img class="av-img" src="${esc(p.page_avatar)}" alt="">` : esc(String(p.page_name || "?").trim().charAt(0).toUpperCase());
-    const whenTxt = plannedOf(d) !== "-" ? esc(plannedOf(d)) : "Draft preview";
+    const whenTxt = plannedOf(d) !== "-" ? esc(plannedOf(d)) : bp ? (bp.metricool === "published" ? "Posted" : "Queued · next best time") : "Draft preview";
     const media = () => {
       const m = arr(p.media).slice(0, 4);
       if (!m.length) return `<div class="placeholder-media"></div>`;
@@ -1217,11 +1218,25 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     return `<div class="host"><span class="muted">No image link yet</span>${bp?.host_error ? errLine(bp.host_error) : ""}</div>`;
   }
   // Metricool: what metricool-mcp.mjs record wrote (draft or scheduled, time, planner link).
+  // A Metricool wall time (YYYY-MM-DDTHH:MM in tz) as "ET … · VN …" (the brand plans in ET, the user reads VN time).
+  function etVn(wall, tz) {
+    if (!wall) return "-";
+    try {
+      const [d, t] = String(wall).split("T"), guess = new Date(`${d}T${(t || "00:00").slice(0, 5)}:00Z`);
+      const off = (z) => { const p = new Intl.DateTimeFormat("en-US", { timeZone: z, timeZoneName: "longOffset" }).formatToParts(guess).find((x) => x.type === "timeZoneName").value; const m = p.match(/GMT([+-])(\d{2}):?(\d{2})?/); return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] || 0)) : 0; };
+      const at = new Date(guess.getTime() - off(tz || "America/New_York") * 60000);
+      const f = (z) => new Intl.DateTimeFormat("en-GB", { timeZone: z, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+      return `${f("America/New_York")} ET · ${f("Asia/Ho_Chi_Minh")} VN`;
+    } catch { return String(wall).replace("T", " ").slice(0, 16); }
+  }
   function mcBlock(bp) {
-    if (!arr(bp.metricool_sent).length) return "";
+    const hist = arr(bp.metricool_history);
+    const histHtml = hist.length ? `<details class="mc-hist"><summary>History (${hist.length})</summary><ul>${hist.map((h) => `<li>${esc(h.network || "")} id ${esc(h.id || "-")}${h.draft ? " (draft)" : ""}${h.publication ? ` · ${esc(etVn(h.publication, h.timezone))}` : ""}${h.replaced_draft ? ` · replaced ${esc(h.replaced_draft)}` : ""} · unsent ${esc(when(h.unsent_at))}${h.reason ? ` · ${esc(h.reason)}` : ""}</li>`).join("")}</ul></details>` : "";
+    const pub = bp.published ? `<div class="host">Posted ${Object.entries(bp.published).map(([n, x]) => `${esc(n)} ${esc(x.date || "")}${x.url ? ` <a href="${esc(x.url)}" target="_blank" rel="noopener">Open post</a>` : ""}`).join(" · ")}</div>` : "";
+    if (!arr(bp.metricool_sent).length) return `<div class="host meta">Not sent to Metricool yet: the next Publish approved schedules it at a best time.</div>${pub}${histHtml}`;
     const old = arr(bp.metricool_sent).filter((m) => m.draft);
     if (old.length && old.length === bp.metricool_sent.length) return `<div class="host meta">Old Metricool draft ${old.map((m) => esc(m.id || "")).join(", ")} (delete it in Metricool); the next run sends this post as a scheduled post.</div>`;
-    return `<div class="host">${bp.metricool_sent.map((m) => `<span class="muted">${esc(m.network)}:</span> ${m.draft ? "old draft" : "scheduled"} ${esc(String(m.publication || "").slice(0, 16).replace("T", " "))}${m.time_source ? ` <span class="meta">(${esc(m.time_source)})</span>` : ""}${m.planner_url ? ` <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}`).join(" · ")}</div>`;
+    return `<dl class="kv mc-kv">${bp.metricool_sent.map((m) => `<dt>${esc(m.network)}</dt><dd>${m.draft ? "old draft" : "scheduled"} ${esc(etVn(m.publication, m.timezone))}${m.time_source ? `<br><span class="meta">${esc(m.time_source)}</span>` : ""}<br><span class="meta">Metricool id ${esc(m.id || "-")}</span>${m.planner_url ? ` · <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}</dd>`).join("")}</dl>${pub}${histHtml}`;
   }
   document.addEventListener("click", async (e) => {
     const b = e.target.closest(".copy-link");
