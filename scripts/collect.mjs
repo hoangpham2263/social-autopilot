@@ -10,6 +10,11 @@
 //   node scripts/collect.mjs fit --brand <id> (--for-query <qid> | --for-source <sid>) --file decisions.json
 //        decisions [{ id, fit: true, type, reason } | { id, fit: false, reason }] (the agent LOOKED at the images): fit posts get
 //        product_fit, the others move to rejected[] (what ingest needs for a discovery query)
+//   IN-PAGE MODE (default, no CDP Chrome; scripts/collect-pagemode.mjs): ONE Playwright MCP call per keyword/page
+//   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--max N] [--max-steps N]
+//        prints the script for browser_run_code_unsafe (scrolls with 5-15 s pauses, reads tiles, returns JSON): save the result to a file
+//   node scripts/collect.mjs from-page --brand <id> (--for-query <qid> | --for-source <sid>) --file <result.json> [--images N]
+//        (or --platform <id> --file ...) drops posts already in the store, downloads images into the run folder, writes raw.json
 //   node scripts/collect.mjs status      every adapter with its status (untested | ok | broken)
 // Options: --max-steps N (scroll steps, default 10 for a query, research.browser.max_scroll_steps for a page), --images N (per post,
 // default 4), --cdp <url>, --date YYYY-MM-DD (run of --for-*).
@@ -206,6 +211,8 @@ if (isMain(import.meta.url)) main(async () => {
   const cmd = args._[0] || '';
   if (cmd === 'status') return out({ statuses: STATUSES, adapters: Object.fromEntries(Object.keys(REGISTRY).map((id) => [id, adapterStatus(id)])) });
   if (cmd === 'fit') return fit(args);
-  if (cmd) throw new Error('Lệnh: (không lệnh) | fit | status');
+  if (cmd === 'script') return (await import('./collect-pagemode.mjs')).script(args);
+  if (cmd === 'from-page') return (await import('./collect-pagemode.mjs')).fromPage(args);
+  if (cmd) throw new Error('Lệnh: script | from-page | fit | status | (không lệnh = đường CDP tuỳ chọn)');
   await runCollect(args);
 });

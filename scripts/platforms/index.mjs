@@ -14,8 +14,8 @@ import * as houzz from './houzz.mjs';
 export const STATUSES = ['untested', 'ok', 'broken'];
 
 export const REGISTRY = {
-  instagram: { adapter: instagram, status: 'broken', checked: '', note: '2026-11-10: hashtag URL redirects to /explore/search/keyword/?q=%23tag; only 5 tiles, 4 without img after 12 s (lazy): needs a longer wait or another source of image/caption; not verified end to end' },
-  pinterest: { adapter: pinterest, status: 'untested', checked: '', note: '2026-11-10: extract verified live in Chrome (17 pins, ids, originals images, alt captions; author empty); download + collect.mjs end to end need a CDP Chrome (9222)' },
+  instagram: { adapter: instagram, status: 'ok', checked: '2026-11-10', note: 'in-page mode verified live (#neonweddingsign: script -> MCP -> from-page, 5 posts, 5 images; 3 via post page /p/<code>/ fallback). The search page only shows ~5 tiles per keyword; author comes from the post page og:description' },
+  pinterest: { adapter: pinterest, status: 'ok', checked: '2026-11-10', note: 'in-page mode verified live (live edge dining table: 12 pins, 12 images in one MCP call, ~10 s); author is not in the search grid DOM (empty); caption prefixes stripped' },
   tiktok: { adapter: tiktok, status: 'untested', checked: '', note: '' },
   facebook: { adapter: facebook, status: 'untested', checked: '', note: '' },
   reddit: { adapter: reddit, status: 'untested', checked: '', note: '' },

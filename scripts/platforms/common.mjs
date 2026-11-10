@@ -129,3 +129,70 @@ export const tagOf = (q) => String(q || '').trim().replace(/^#+/, '').replace(/\
 export const makePost = ({ id, url, image_urls = [], caption = '', author = '', found_by = '' }) => (id && url
   ? { id, url, image_urls, caption: String(caption || '').slice(0, 2000), author: String(author || ''), found_by }
   : null);
+
+// ---- in-page mode: no CDP Chrome. The agent pastes this into Playwright MCP browser_run_code_unsafe (one call per keyword/page).
+// A string `async (page) => {...}`: goes to the URL, scrolls with random pauses (delay [lo,hi] s, from collect.mjs: never below 5-15 s),
+// reads the tiles after every pause (lazy images get time to load), and, when the adapter says post_fallback and a tile still has
+// no image, reads that post's own page (GET only, same site) for og:image / og:description. Returns JSON
+// { platform, url, loginWall, signals, tiles:[{id,url,image_urls,caption,author,found_by}], steps, note }. Read only.
+// opts: { platform, url, found_by, max, steps, delay:[lo,hi], id_re (regex source, group 1 = id) }
+export function buildPageScript(S, opts) {
+  const cfg = { link: S.link, url_pattern: S.url_pattern, container: S.container, img: S.img, img_skip: S.img_skip, author: S.author, caption: S.caption };
+  const wall = { login_form: S.wall.login_form, captcha: S.wall.captcha, dialog: S.wall.dialog, url: S.wall.url };
+  const o = { ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
+  return `async (page) => {
+  const o = ${JSON.stringify(o)};
+  await page.goto(o.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  const r = await page.evaluate(async (o) => {
+    const extractTiles = ${extractTiles};
+    const wallSignals = ${wallSignals};
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    const pause = () => sleep(1000 * (o.delay[0] + Math.random() * (o.delay[1] - o.delay[0])));
+    const wallNow = () => {
+      const sig = wallSignals(document, o.wall);
+      const urlHit = (o.wall.url || []).some((x) => new RegExp(x, 'i').test(sig.url));
+      return { sig, loginWall: urlHit || sig.captcha || sig.login_form || sig.dialog };
+    };
+    const id = (u) => ((String(u).match(new RegExp(o.id_re, 'i')) || [])[1]) || '';
+    const tiles = new Map();
+    let steps = 0, idle = 0, loginWall = false, signals = null, note = '';
+    await pause();
+    for (; steps < o.steps; steps++) {
+      const w = wallNow();
+      signals = { url: w.sig.url, title: w.sig.title, captcha: w.sig.captcha, login_form: w.sig.login_form, dialog: w.sig.dialog, text: w.sig.text.slice(0, 300) };
+      if (w.loginWall) { loginWall = true; break; }
+      const d = extractTiles(document, Object.assign({ base: location.href }, o.cfg));
+      let fresh = 0;
+      for (const t of d.tiles) {
+        const k = id(t.url) || t.url;
+        const old = tiles.get(k);
+        if (!old) { tiles.set(k, { id: id(t.url), ...t, found_by: o.found_by }); fresh++; }
+        else if (t.image_urls.length > old.image_urls.length) { old.image_urls = t.image_urls; if (!old.caption) old.caption = t.caption; if (!old.author) old.author = t.author; }
+      }
+      if (tiles.size >= o.max) break;
+      idle = fresh ? 0 : idle + 1;
+      if (idle >= 3) break;
+      window.scrollBy(0, Math.round(innerHeight * 0.9));
+      await pause();
+    }
+    let list = [...tiles.values()].slice(0, o.max);
+    if (o.post_fallback && !loginWall) {
+      for (const t of list.filter((x) => !x.image_urls.length)) {
+        await pause();
+        try {
+          const res = await fetch(t.url, { credentials: 'include', headers: { Accept: 'text/html' } });
+          const html = new DOMParser().parseFromString(await res.text(), 'text/html');
+          const meta = (p) => (html.querySelector('meta[property="' + p + '"]') || {}).content || '';
+          const img = meta('og:image');
+          if (img) t.image_urls.push(img.replace(/&amp;/g, '&'));
+          if (!t.caption) t.caption = meta('og:description') || meta('og:title');
+          t.via_post_page = true;
+        } catch (e) { note = 'post page read failed: ' + String(e.message || e).slice(0, 80); }
+      }
+    }
+    if (o.caption_strip) for (const t of list) t.caption = String(t.caption || '').replace(new RegExp(o.caption_strip, 'i'), '').trim();
+    return { platform: o.platform, url: location.href, loginWall, signals, steps, note, tiles: list.map(({ id, url, image_urls, caption, author, found_by, via_post_page }) => ({ id, url, image_urls, caption, author, found_by, ...(via_post_page ? { via_post_page } : {}) })) };
+  }, o);
+  return r;
+}`;
+}

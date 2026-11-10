@@ -132,7 +132,8 @@ export function platformStats(d) {
 // The collector command of a step and the status of the platform's adapter (scripts/platforms/index.mjs).
 export function collectInfo(brand, kind, id, platform, share = 0) {
   const a = adapterStatus(platform);
-  return { collect: `node scripts/collect.mjs --brand ${brand} --for-${kind} ${id}${share ? ` --max ${share}` : ''}`, adapter: { platform, ...a } };
+  const mx = share ? ` --max ${share}` : '';
+  return { script: `node scripts/collect.mjs script --brand ${brand} --for-${kind} ${id}${mx}`, from_page: `node scripts/collect.mjs from-page --brand ${brand} --for-${kind} ${id} --file <page-result.json>`, collect: `node scripts/collect.mjs --brand ${brand} --for-${kind} ${id}${mx}`, adapter: { platform, ...a } };
 }
 export function nextTask(run) {
   const target = run.mode?.max_posts || 0, total = brandTotal(run), left = target ? Math.max(0, target - total) : 0;
@@ -142,7 +143,7 @@ export function nextTask(run) {
     if (target && !left) return { step: 'reference', source: src.id, share: 0, skip: true, total, target, do: `target reached: node scripts/research.mjs result --brand ${run.brand} --source ${src.id} --state skipped` };
     return { step: 'reference', source: src.id, name: src.name, platform: src.platform || platformOf({ source_url: src.url }) || '', url: src.url, what_to_take: src.what_to_take || '', dir: src.dir, raw_file: src.raw_file, downloads: src.downloads, known_file: src.known_file, stop_rule: src.stop_rule, share: target ? Math.ceil(left / waiting.length) : 0, total, target,
       found_by: 'reference page', ...collectInfo(run.brand, 'source', src.id, src.platform || platformOf({ source_url: src.url }) || ''),
-      do: `FIRST run the collector (see collect), then node scripts/research.mjs ingest --brand ${run.brand} --source ${src.id} and result --source ${src.id} --state <end|known|since|limit|blocked|partial>; hand-driven Playwright MCP (docs/research.md "Reference pages"; Facebook: optional crawl-fb.mjs) only when adapter.status is not ok or the collector failed (0 posts, error, login wall)` };
+      do: `FIRST run the collector in-page: print the script (see script), paste it into ONE Playwright MCP browser_run_code_unsafe call, save the JSON result to a file, node scripts/collect.mjs from-page (see from_page; the optional CDP path is collect), then node scripts/research.mjs ingest --brand ${run.brand} --source ${src.id} and result --source ${src.id} --state <end|known|since|limit|blocked|partial>; hand-driven Playwright MCP (docs/research.md "Reference pages"; Facebook: optional crawl-fb.mjs) only when adapter.status is not ok or the collector failed (0 posts, error, login wall)` };
   }
   if (target && !left) return { step: 'done', reason: `target reached (${total}/${target})`, total, target };
   const d = run.discovery;
@@ -154,7 +155,7 @@ export function nextTask(run) {
   const q = d.queries.find((x) => x.platform === pick.id && x.state === 'pending');
   const share = Math.max(0, Math.min(d.max_per_platform - pick.kept, target ? left : Infinity));
   return { step: 'discovery', query: q.id, platform: q.platform, kind: q.kind, term: q.term, found_by: q.found_by, url: q.url, dir: q.dir, raw_file: q.raw_file, downloads: q.downloads, share, platform_notes: pick.notes, product_fit: d.product_fit, total, target, ...collectInfo(run.brand, 'query', q.id, q.platform, share),
-    do: `FIRST run the collector (see collect: it scrolls, reads and downloads at most ${share} posts into raw.json), LOOK at the images and keep only posts whose product is one of product_fit.types (collect.mjs fit), then node scripts/research.mjs ingest --brand ${run.brand} --query ${q.id} and result --query ${q.id} --state <done|limit|empty|blocked|partial>; hand-driven Playwright MCP (docs/research.md "${q.platform}") only when adapter.status is not ok or the collector failed (0 posts, error, login wall)` };
+    do: `FIRST run the collector in-page: print the script (see script), paste it into ONE Playwright MCP browser_run_code_unsafe call, save the JSON result to a file, node scripts/collect.mjs from-page (see from_page: downloads at most ${share} posts into raw.json; the optional CDP path is collect), LOOK at the images and keep only posts whose product is one of product_fit.types (collect.mjs fit), then node scripts/research.mjs ingest --brand ${run.brand} --query ${q.id} and result --query ${q.id} --state <done|limit|empty|blocked|partial>; hand-driven Playwright MCP (docs/research.md "${q.platform}") only when adapter.status is not ok or the collector failed (0 posts, error, login wall)` };
 }
 
 function start(args, s) {
