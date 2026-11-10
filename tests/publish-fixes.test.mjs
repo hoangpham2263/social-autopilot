@@ -30,6 +30,9 @@ test('1 post a day: only primary times; --start today after the primary passed -
   // A primary slot well ahead today is taken.
   const ahead = pick(new Date('2026-11-09T12:00:00Z')); // Monday 07:00
   assert.deepEqual([ahead.date, ahead.time], ['2026-11-09', '09:00:00']);
+  // --start today with 3 a day: today still only primary (tonight's backup never), so the first goes to tomorrow.
+  const three = pick(new Date('2026-11-10T02:45:00Z'), 3);
+  assert.deepEqual([three.date, three.time], ['2026-11-10', '09:00:00']);
   // Two posts a day may use the backup hours.
   const two = timePicker({ brandId: 'x', network: 'Facebook', perDay: 2, audienceTz: TZ, taken: new Set(), now: new Date('2026-11-09T12:00:00Z'), best: null, research });
   const got = [two(), two()];
