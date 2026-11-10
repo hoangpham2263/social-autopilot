@@ -289,7 +289,7 @@ test('image: Pages link when ready, raw as fallback when Pages is not', { skip: 
   });
 });
 
-// Posts tab "Back to review" (finalize.mjs unapprove): a Queued post goes back to To review; never a Posted one.
+// Posts tab "Back to review" (finalize.mjs unapprove): an Approved/Scheduled post goes back to To review; never a Posted one.
 test('back to review: archive entry + folder, hosted image removed, draft ready; scheduled needs --metricool-deleted', { skip: !haveReal && 'no brand skill to copy' }, async () => {
   const mkDraft = (n, postId) => {
     const id = `dreamyvows-20261109-${n}`, dir = path.join(ws, 'drafts', 'dreamyvows', id);

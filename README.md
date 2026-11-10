@@ -10,7 +10,7 @@ Agent (Claude Code hoặc Codex) làm việc; app chỉ để xem, duyệt và q
                 →  agent lọc một lượt (giữ / bỏ, có lý do)
 2. Create     →  từ Library làm ảnh + caption mới  →  To review
 3. Approve    →  bạn duyệt trong app  →  lưu vào sổ bài của tool + đưa ảnh lên
-4. Publish    →  lượt chạy sau hẹn giờ trên Metricool  →  Queued  →  Posted
+4. Publish    →  Approved  →  lượt sau hẹn giờ trên Metricool  →  Scheduled  →  Posted
 ```
 
 ## Cài đặt (một lần)
@@ -37,16 +37,16 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 ## Dùng hằng ngày
 
-1. Tab **Prompt** → chọn **Mode** (Research only / Create & publish), Agent, Brand → **Copy prompt**.
+1. Tab **Prompt** → chọn **Mode** (Research only / Create & publish / Publish approved), Agent, Brand → **Copy prompt**.
 2. Dán vào Claude Code hoặc Codex mở trong thư mục tool. Khung **Run progress** dưới nút Copy hiện bước đang chạy, số ảnh/bài, thời gian và dòng cuối của lượt (tự cập nhật 3 giây một lần).
 3. Tab **Posts** → **To review** → xem trước → **Approve** hoặc **Drop**.
-4. Lần chạy Create & publish sau sẽ hẹn giờ các bài đã duyệt.
+4. Lần chạy Create & publish hoặc Publish approved sau hẹn giờ các bài **Approved** (chờ gửi) trên Metricool: chúng thành **Scheduled** (có id Metricool, không bao giờ gửi lại). Dưới nút Publish approved có dòng "Already on Metricool: N (never sent again)".
 
 | Tab | Dùng để |
 |---|---|
 | Overview | Brand, skill, trạng thái, số bài |
 | Library | Bài tham khảo đã crawl: Unused / Used / Dropped |
-| Posts | Bài của mình: To review / Queued / Posted |
+| Posts | Bài của mình: To review · Approved (chờ gửi) · Scheduled (trên Metricool) · Posted |
 | Prompt | Lấy prompt để chạy |
 | Settings | Tài khoản, yêu cầu, cài đặt tool |
 
@@ -54,7 +54,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 ## Quy tắc
 
-- Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay.
+- Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay. Publish approved có Start: From tomorrow (mặc định) / From today (giờ tốt nhất kế tiếp, chừa 15 phút; 1 bài/ngày chỉ giờ chính).
 - Không logo trên sản phẩm, không nhãn AI.
 - Ảnh được host ở repo công khai `social-autopilot-sources` (link raw GitHub); bản clone nằm trong tool ở `workspace/image-host` (tự clone từ `imageHost.remote_url` khi chưa có).
 - Agent không bao giờ tự duyệt bài.

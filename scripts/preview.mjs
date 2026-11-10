@@ -20,7 +20,7 @@ export function previewOf(d) {
   let social = {};
   try { social = lib.brandSocial(d.draft.brand_dir); } catch {}
   const review = reviewOf(social);
-  // An approved post (Queued / Posted) shows what goes out: the tool register's folder (final image + captions,
+  // An approved post (Approved / Scheduled / Posted) shows what goes out: the tool register's folder (final image + captions,
   // workspace/posts/<brand>/<POST-xx>/); a draft shows its own folder.
   let base = d.dir;
   if (d.status?.brand_post?.id) { try { const f = postFolder(d.draft.brand, findPost(d.draft.brand, d.status.brand_post.id)); if (f && existsSync(join(f, 'image.png'))) base = f; } catch {} }

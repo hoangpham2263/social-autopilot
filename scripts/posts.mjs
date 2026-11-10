@@ -13,7 +13,7 @@
 //   node scripts/posts.mjs fill-alt --brand <id>     media_alt for approved posts that have none (from the draft's idea)
 //   node scripts/posts.mjs unsend --brand <id> --post POST-xx --reason "<why>" [--metricool-id <id> --uuid <uuid>] [--network facebook]
 //        pulled back from Metricool (a person turned it into a draft or deleted it there; there is no delete tool): the post
-//        is "approved, not sent" again (Queued, waiting), its Metricool id(s) go to metricool_history (never matched or
+//        is "approved, not sent" again (Approved, waiting to send), its Metricool id(s) go to metricool_history (never matched or
 //        recorded again: status lists them in ignore_ids), and the next Publish approved sends it fresh as a scheduled
 //        post. --metricool-id/--uuid: the id it has in Metricool now when that changed (e.g. turned into a draft).
 import fs from 'node:fs';

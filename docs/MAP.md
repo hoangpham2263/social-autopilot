@@ -17,7 +17,9 @@ Read this first when working ON the tool (code, tests, UI). Running the tool (re
 2. Research (Mode 1): `research.mjs start` → `crawl-fb.mjs` (Playwright over CDP to the crawl Chrome :9222) → `store.mjs` ingest (dedupe) → `workspace/store/<brand>/items.json` → `store.mjs classify/verdict`.
 3. Create (Mode 2): `ideas.mjs` (store items → abstract ideas) → `draft.mjs new` (draft folder, prompt.txt) → `draft.mjs image-batch` (Codex, parallel, global slots) → `image-clean.mjs` (metadata) → captions → `draft.mjs check` → **To review**.
 4. Approve (user, app only): `finalize.mjs approve` → `writeback.mjs` → register `workspace/posts/<brand>/` (catalog.json + POST-xx folder, `media_alt`) → `host-image.mjs` (public repo clone `workspace/image-host`).
-5. Publish (Mode 2/3): `metricool-mcp.mjs payload` (exact `createScheduledPost` args; agent calls MCP) → `record` → `status` (agent `getScheduledPosts`) → `posts.mjs mark-published` / `unsend`.
+5. Publish (Mode 2/3): `metricool-mcp.mjs payload` (exact `createScheduledPost` args; agent calls MCP) → `record` → `status` (agent `getScheduledPosts`) → `posts.mjs mark-published` / `unsend`. Never twice: payload only takes `approved` posts with no live Metricool id (`sentNetworks`); `record` refuses a second id for a post unless it was `unsend`-ed.
+
+User-visible states (Posts tab, in order): **To review** (draft `ready`) · **Approved** (in the register, no live Metricool id: waiting to send) · **Scheduled** (live Metricool id, not published) · **Posted** (published). `queue.mjs` `catalogPosts` gives `state` approved/scheduled/posted, `unsent_approved` (= Publish approved count) and `on_metricool`.
 6. Every run: `brands.mjs --run <mode>` opens the Run progress (`progress.mjs`, `workspace/runs/current-<mode>.json`); `runlog.mjs add` closes it (`workspace/logs/runs/`).
 
 ## Main commands per mode

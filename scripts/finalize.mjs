@@ -8,7 +8,7 @@
 // A draft that fails stops there with its problems (status "check_failed"). Agents never approve on their own.
 //   node scripts/finalize.mjs approve --id <draft>                   one post a person approved
 //   node scripts/finalize.mjs cancel  --id <draft> [--note ..]       "Drop": drop a draft before it is approved
-//   node scripts/finalize.mjs unapprove --id <draft> [--metricool-deleted]   "Back to review" for a Queued post (never Posted):
+//   node scripts/finalize.mjs unapprove --id <draft> [--metricool-deleted]   "Back to review" for an Approved/Scheduled post (never Posted):
 //        the register entry and post folder go to workspace/posts/<brand>/archive/<POST-xx>-<time>/, the hosted image is
 //        removed from the image repo (git rm + push), the draft is To review again; its store item stays used. A post
 //        already scheduled in Metricool needs --metricool-deleted (the person deleted it in Metricool first); the old
@@ -77,13 +77,13 @@ export function scheduledIn(entry) {
     .map(([network, v]) => ({ network, id: String(v.id), publication: v.publication || entry.schedule?.publication || '', timezone: v.timezone || '', planner_url: v.planner_url || '' }));
 }
 
-// "Back to review": undo the approval of a Queued post. Posted (published) posts never go back.
+// "Back to review": undo the approval of an Approved or Scheduled post. Posted (published) posts never go back.
 export function backToReview({ id, metricoolDeleted = false, by = 'user' }, s = settings()) {
   const { dir } = findDraft(id);
   return withLock(path.join(dir, 'finalize'), () => {
     const { draft, status } = findDraft(id);
     const bp = status.brand_post;
-    if (!bp?.id) throw new Error(`Bản nháp ${id} chưa được duyệt (không ở Queued): không có gì để đưa về To review.`);
+    if (!bp?.id) throw new Error(`Bản nháp ${id} chưa được duyệt (không ở Approved/Scheduled): không có gì để đưa về To review.`);
     const brand = loadBrand(draft.brand, { allowDisabled: true });
     const catalogFile = postsCatalogFile(brand.id);
     const entry = (readJson(catalogFile, { posts: [] }).posts || []).find((p) => p.id === bp.id);

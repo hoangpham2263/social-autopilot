@@ -68,7 +68,7 @@ STEPS (follow RUNBOOK.md Mode 2, fast path "pipeline.mjs"; in order, do not skip
 7. 2.9 Run log: the last resume writes it (runlog.mjs add --mode create); a run that stops early: node scripts/runlog.mjs add --mode create --agent "Claude Code" --reason "<why>".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
 STOP IF: a Metricool tool error (record nothing for that post), Codex image quota used up (image_failed after the retry); pipeline.mjs itself fails → continue with the step-by-step fallback (RUNBOOK 2.3-2.6). Then still the run log (with the reason) and the report.
-NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId, skip looking at an image.
+NEVER: approve posts, write into a skill folder, send a post that already has a Metricool id, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId, skip looking at an image.
 ```
 
 ### Create & publish · Codex
@@ -88,7 +88,7 @@ STEPS (follow RUNBOOK.md Mode 2, fast path "pipeline.mjs"; in order, do not skip
 7. 2.9 Run log: the last resume writes it (runlog.mjs add --mode create); a run that stops early: node scripts/runlog.mjs add --mode create --agent "Codex" --reason "<why>".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
 STOP IF: a Metricool tool error (record nothing for that post), Codex image quota used up (image_failed after the retry), no Metricool MCP tools (skip 2.0-2.2: create without --brand-settings; tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool); pipeline.mjs itself fails → continue with the step-by-step fallback (RUNBOOK 2.3-2.6). Then still the run log (with the reason) and the report.
-NEVER: approve posts, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId, skip looking at an image.
+NEVER: approve posts, write into a skill folder, send a post that already has a Metricool id, make Metricool drafts, set posting times by hand, add AI labels, put logos on products, use another blogId, skip looking at an image.
 ```
 
 ### Create & publish · ChatGPT
@@ -114,7 +114,7 @@ STEPS (follow RUNBOOK.md Mode 3, fast path "pipeline.mjs publish"; in order, do 
 5. 3.1 Run log: written by publish --resume (runlog.mjs add --mode publish); stopped early: node scripts/runlog.mjs add --mode publish --agent "Claude Code" --reason "<why>".
 6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
 STOP IF: a Metricool tool error (record nothing for that post). Then still the run log (with the reason) and the report.
-NEVER: make ideas or posts, open a browser, approve posts, make Metricool drafts, set posting times by hand, use another blogId.
+NEVER: make ideas or posts, open a browser, approve posts, write into a skill folder, send a post that already has a Metricool id (Scheduled), make Metricool drafts, add AI labels, set posting times by hand, use another blogId.
 ```
 
 ### Publish approved · Codex
@@ -132,7 +132,7 @@ STEPS (follow RUNBOOK.md Mode 3, fast path "pipeline.mjs publish"; in order, do 
 5. 3.1 Run log: written by publish --resume (runlog.mjs add --mode publish); stopped early: node scripts/runlog.mjs add --mode publish --agent "Codex" --reason "<why>".
 6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
 STOP IF: a Metricool tool error (record nothing for that post); no Metricool MCP tools (tell me: codex mcp add metricool --url https://ai.metricool.com/mcp; codex mcp login metricool). Then still the run log (with the reason) and the report.
-NEVER: make ideas or posts, open a browser, approve posts, make Metricool drafts, set posting times by hand, use another blogId.
+NEVER: make ideas or posts, open a browser, approve posts, write into a skill folder, send a post that already has a Metricool id (Scheduled), make Metricool drafts, add AI labels, set posting times by hand, use another blogId.
 ```
 
 ### Publish approved · ChatGPT

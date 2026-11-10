@@ -1,21 +1,22 @@
-# social-autopilot: thiết kế (v0.3, hai chế độ + duyệt trong app)
+# social-autopilot: thiết kế (v0.4, ba chế độ + duyệt trong app)
 
 Các quyết định của người dùng dưới đây thắng mọi chỗ khác. Quy trình chi tiết: `RUNBOOK.md`. Tool phải chạy được trên mọi máy và mọi tài khoản Metricool: không đường dẫn tuyệt đối, không id tài khoản/blogId/thương hiệu cố định trong code hay tài liệu (tên thương hiệu chỉ là ví dụ).
 
-## 1. Hai chế độ + app
+## 1. Ba chế độ + app
 
 | Phần | Ai chạy | Gồm |
 |---|---|---|
 | **Mode 1: Research only** | Claude Code hoặc Codex + Chrome đã đăng nhập Facebook (cổng `--remote-debugging-port`), chạy riêng, vd mỗi tuần | `research.mjs start` → `crawl-fb.mjs` crawl hết bằng script, tự `ingest` (bỏ trùng) + `result` → agent lọc một lượt (`store.mjs classify` / `verdict`) → `report`. Crawl tay bằng Playwright MCP chỉ dự phòng. Không ý/bài |
 | **Mode 2: Create & publish** | Claude Code hoặc Codex khi người dùng bảo (ChatGPT chỉ gửi bài đã duyệt từ JSON payload); không mở Facebook | `getBrandSettings` → `sync-brands` → `payload` → `createScheduledPost` (hẹn giờ thật) → `record` → `status`/`getScheduledPosts` → `ideas.mjs` → `draft.mjs` (ảnh Codex, caption) → `check` → **To review**, dừng → `queue.mjs` |
+| **Mode 3: Publish approved** | Claude Code hoặc Codex (ChatGPT từ JSON payload) | `pipeline.mjs publish`: chỉ hẹn giờ các bài Approved chưa gửi (Start From tomorrow / From today, chừa 15 phút) → `record` → đối chiếu; không làm bài |
 | **App** | Người dùng | Overview (brand Metricool ↔ skill), Library, Posts (Approve / Drop), Prompt, Settings |
 
-- Prompt ở tab Prompt ngắn 5-10 dòng, chỉ chế độ, thương hiệu, tuỳ chọn và "follow RUNBOOK.md Mode N"; mọi bước ở RUNBOOK.
-- Trạng thái người dùng thấy: To review → Queued → Posted; lỗi hiện dấu đỏ.
+- Prompt ở tab Prompt ngắn (tối đa 18 dòng, mẫu TASK/OPTIONS/TOOL/SKILL/STEPS/STOP IF/NEVER, bước đánh số khớp 1:1 với RUNBOOK); mọi chi tiết ở RUNBOOK. Đường chính Mode 2/3: `scripts/pipeline.mjs`.
+- Trạng thái người dùng thấy: To review → Approved (chờ gửi) → Scheduled (trên Metricool, không bao giờ gửi lại) → Posted; lỗi hiện dấu đỏ.
 - Hai agent hoặc agent và app có thể chồng nhau: mọi đọc-sửa-ghi file chung có khoá và ghi nguyên tử.
 
 ## 2. Thương hiệu
-- Thương hiệu = một brand trong tài khoản Metricool (đồng bộ bằng `sync-brands` vào `workspace/metricool-brands.json`) trỏ tới một thư mục skill chuẩn (`SKILL.md`, `project/project.md`, `project/social.json`). Skill **không bao giờ được chép**: tool đọc/ghi thẳng thư mục đã trỏ (`skill_path`).
+- Thương hiệu = một brand trong tài khoản Metricool (đồng bộ bằng `sync-brands` vào `workspace/metricool-brands.json`) trỏ tới một thư mục skill chuẩn (`SKILL.md`, `project/project.md`, `project/social.json`). Skill **không bao giờ được chép**: tool chỉ **đọc** thư mục đã trỏ (`skill_path`), không bao giờ ghi vào skill; bài của tool nằm trong sổ bài `workspace/posts/<brand>/`.
 - Overview: Choose skill (tìm trong thư mục nguồn, mặc định `skillsRoot`, sâu 2 tầng, mỗi thư mục kèm trạng thái sẵn sàng), Change skill, Disconnect (chỉ bỏ liên kết). Sẵn sàng = `enabled: true` + `scripts/check-skill.mjs --tool-ready` của skill đạt.
 - Brand chỉ được gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill thì không.
 - Dữ kiện thương hiệu chỉ nằm trong skill: `research.sources[]`, `research.fb_account`, `channels[]`, `language_policy`, `product_images`, `caption_rules`, `cadence`, `metricool`.
@@ -27,7 +28,7 @@ Các quyết định của người dùng dưới đây thắng mọi chỗ khá
 - Người dùng xem kho ở tab Library, "Bỏ" bài không muốn dùng.
 
 ## 3b. Kiểm tra tự động + duyệt bởi người
-Trạng thái bản nháp: `needs_prompt` → `generating` → `needs_caption` / `image_failed` → `ready` (**To review**) → `approved` (Approve trong app: `finalize.mjs approve --id <draft>`) | `check_failed` | `rejected` (Drop). Kiểm: ảnh sạch metadata, đủ caption, dòng Website + hashtag cố định, không Markdown/ký tự ẩn, không chép caption tham khảo, không nhãn AI, NO LOGO, watermark nếu bật, scene-swap đã xác nhận sạch logo; sau khi ghi: `check-post.mjs` của skill. Approve là đường duy nhất ghi bài vào skill; agent không bao giờ tự duyệt.
+Trạng thái bản nháp: `needs_prompt` → `generating` → `needs_caption` / `image_failed` → `ready` (**To review**) → `approved` (Approve trong app: `finalize.mjs approve --id <draft>`) | `check_failed` | `rejected` (Drop). Kiểm: ảnh sạch metadata, đủ caption, dòng Website + hashtag cố định, không Markdown/ký tự ẩn, không chép caption tham khảo, không nhãn AI, NO LOGO, watermark nếu bật, scene-swap đã xác nhận sạch logo; sau khi ghi: `posts.mjs check` (kiểm bài trong sổ bài của tool). Approve là đường duy nhất ghi bài vào sổ bài `workspace/posts/<brand>/`; agent không bao giờ tự duyệt.
 
 ## 4. Luật ảnh
 - Ảnh sản phẩm là ảnh của chính thương hiệu; ảnh không khí không được là ảnh tham khảo. Dựng cảnh AI bật mặc định (`ai_scenes_allowed: false` mới tắt).
