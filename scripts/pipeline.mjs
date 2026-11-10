@@ -5,7 +5,9 @@
 //
 //   node scripts/pipeline.mjs mcp-plan [--brand <id|all>]
 //        the Metricool MCP calls to make first (getBrandSettings, getBestTimeToPostByNetwork per brand, exact args)
-//   node scripts/pipeline.mjs create --brand <id|all> [--count N] [--agent "Claude Code"]
+//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"]
+//        --items: ideas from exactly these library items (passed to ideas.mjs init; one brand); only their ideas go in the
+//        ideas file. A reused item comes with _context.previous_uses + reuse_rule (take a new angle).
 //        [--brand-settings <file> --best-times-dir <dir>]   (the saved MCP answers: sync-brands / sync-times run here)
 //        Stage A: brands --run create, sync, payload + status per brand, ideas init -> ideas file
 //        STOP (i): fill the ideas file (every brand, one pass), then:
@@ -32,6 +34,8 @@ import { fileURLToPath } from 'node:url';
 import { isoWithOffset } from './metricool-mcp.mjs';
 import { nowIn } from './metricool-csv.mjs';
 import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, loadBrand, findDraft, cleanText, metricoolBrands, isMain } from './lib.mjs';
+import { previousUses } from './store.mjs';
+import { REUSE_RULE } from './ideas.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pipeDir = () => path.join(workspace, 'pipeline');
@@ -121,6 +125,8 @@ function stageA(args) {
   const started = stamp();
   const brandArg = String(args.brand && args.brand !== true ? args.brand : 'all');
   const agent = String(args.agent && args.agent !== true ? args.agent : 'Claude Code');
+  const pickIds = args.items && args.items !== true ? String(args.items).split(',').map((x) => x.trim()).filter(Boolean) : [];
+  if (pickIds.length && brandArg === 'all') throw new Error('--items needs one brand (--brand <id>): library item ids belong to one brand.');
   const t0 = Date.now(), timing = {};
   const lap = (k, t) => { timing[k] = Date.now() - t; };
   let t = Date.now();
@@ -135,19 +141,21 @@ function stageA(args) {
   lap('sync_payload_status', t);
   // 2.3 ideas init per brand -> one ideas file for every brand
   t = Date.now();
-  const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder), description (the exact product: every letter and accent of its text, font, colours, material, proportions). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
+  const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder), description (the exact product: every letter and accent of its text, font, colours, material, proportions). A reused library item (_context.previous_uses): a NEW angle, a different scene AND a different product or sign_text than every previous use. Scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the reference photo is the product; only the scene changes). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
   for (const id of scope) {
-    const r = step('ideas.mjs', ['init', '--brand', id, ...(args.count && args.count !== true ? ['--count', String(args.count)] : [])]);
+    const r = step('ideas.mjs', ['init', '--brand', id, ...(pickIds.length ? ['--items', pickIds.join(',')] : args.count && args.count !== true ? ['--count', String(args.count)] : [])]);
+    for (const n of r.notes || []) notes.push(`${id}: ${n}`);
     if (r.ok === false) { errors.push(`${id} ideas: ${r.error}`); continue; }
     if (r.warning) notes.push(`${id}: ${r.warning}`);
     const b = loadBrand(id);
-    const ideas = readJson(path.join(workspace, 'store', id, 'ideas.json'), { ideas: [] }).ideas.filter((i) => ['todo', 'ready'].includes(i.status));
+    const ideas = readJson(path.join(workspace, 'store', id, 'ideas.json'), { ideas: [] }).ideas.filter((i) => ['todo', 'ready'].includes(i.status) && (!pickIds.length || pickIds.includes(i.item)));
     const items = readJson(path.join(workspace, 'store', id, 'items.json'), { items: [] }).items;
     const folders = productFolders(b);
-    todo.brands[id] = { skill: b.dir, skill_md: path.join(b.dir, 'SKILL.md'), project_md: path.join(b.dir, 'project', 'project.md'), image_guide: path.join(b.dir, 'references', 'image-guide.md'), size_source: b.social.product_images?.size_source || 'project.md section 5/10', custom_text: b.social.product_images?.custom_text === true, product_folders: folders, product_images: folders.flatMap((d) => someImages(d, 30)).slice(0, 60) };
+    todo.brands[id] = { skill: b.dir, skill_md: path.join(b.dir, 'SKILL.md'), project_md: path.join(b.dir, 'project', 'project.md'), image_guide: path.join(b.dir, 'references', 'image-guide.md'), size_source: b.social.product_images?.size_source || 'project.md section 5/10', custom_text: b.social.product_images?.custom_text === true, reference_redraw: b.social.product_images?.reference_redraw?.enabled === true, product_folders: folders, product_images: folders.flatMap((d) => someImages(d, 30)).slice(0, 60) };
     for (const i of ideas) {
       const it = items.find((x) => x.id === i.item) || {};
-      todo.ideas.push({ brand: id, id: i.id, _context: { item: i.item, ref_image: i.ref_image, reference_caption: String(it.caption || '').slice(0, 400), source: i.source }, idea: Object.fromEntries(IDEA_FIELDS.map((f) => [f, i[f] || ''])), product: '', size: i.product_size || '', sign_text: i.sign_text || '', description: '', reject: '' });
+      const prev = previousUses(it);
+      todo.ideas.push({ brand: id, id: i.id, _context: { item: i.item, ref_image: i.ref_image, reference_caption: String(it.caption || '').slice(0, 400), source: i.source, ...(prev.length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(todo.brands[id].reference_redraw ? { reference_redraw: true } : {}) }, idea: Object.fromEntries(IDEA_FIELDS.map((f) => [f, i[f] || ''])), product: '', size: i.product_size || '', sign_text: i.sign_text || '', description: '', reject: '' });
     }
   }
   const ideasFile = path.join(pipeDir(), 'ideas-todo.json');
@@ -193,7 +201,9 @@ function stageB(st, file) {
   for (const e of data.ideas || []) {
     const tag = `${e.brand} ${e.id}`;
     if (e.reject) { const r = step('ideas.mjs', ['reject', '--brand', e.brand, '--id', e.id, '--note', String(e.reject)]); r.ok === false ? problems.push(`${tag}: ${r.error}`) : rejected.push(tag); continue; }
-    const miss = ['product', 'size', 'description'].filter((k) => !String(e[k] || '').trim());
+    const swap = e.scene_swap === true;
+    const miss = [...(swap ? [] : ['product']), 'size', 'description'].filter((k) => !String(e[k] || '').trim());
+    if (swap && e.brand_can_produce !== true) { problems.push(`${tag}: scene_swap needs "brand_can_produce": true (the brand makes this exact product, project.md section 5)`); continue; }
     if (miss.length) { problems.push(`${tag}: missing ${miss.join(', ')}`); continue; }
     const ideaFile = path.join(pipeDir(), `idea-${e.brand}-${e.id}.json`);
     writeJson(ideaFile, { ...e.idea, product_size: e.size, ...(e.sign_text ? { sign_text: e.sign_text } : {}) });
@@ -202,7 +212,8 @@ function stageB(st, file) {
     if (s.ok === false || (s.problems || []).length || (s.missing || []).length) { problems.push(`${tag}: ${s.error || [...(s.missing || []).map((m) => 'missing ' + m), ...(s.problems || [])].join('; ')}`); continue; }
     const p = step('ideas.mjs', ['pick', '--brand', e.brand, '--id', e.id]);
     if (p.ok === false) { problems.push(`${tag}: ${p.error}`); continue; }
-    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, '--product', String(e.product), '--size', String(e.size), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : [])]);
+    const refImage = swap ? String(e.ref_image || e._context?.ref_image || '') : '';
+    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce'] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : [])]);
     if (n.ok === false) { problems.push(`${tag}: ${n.error}`); continue; }
     fillDescription(n.dir, cleanText(String(e.description)).text);
     made.push(n.id);
@@ -386,5 +397,5 @@ if (isMain(import.meta.url)) main(() => {
   if (cmd === 'create') return out(create(args));
   if (cmd === 'publish') return out(publishRun(args));
   if (cmd === 'status') { const st = readState(); return out({ state: st, file: stateFile() }); }
-  throw new Error('Commands: mcp-plan [--brand] | publish --brand <id|all> [--limit N] [--window w] [--start today] [--brand-settings f --best-times-dir d] | publish --resume | create --brand <id|all> [--count N] [--brand-settings f --best-times-dir d] | create --resume [--ideas f | --captions f | --finish] | status');
+  throw new Error('Commands: mcp-plan [--brand] | publish --brand <id|all> [--limit N] [--window w] [--start today] [--brand-settings f --best-times-dir d] | publish --resume | create --brand <id|all> [--count N | --items S0001,S0002] [--brand-settings f --best-times-dir d] | create --resume [--ideas f | --captions f | --finish] | status');
 });

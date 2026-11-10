@@ -566,6 +566,7 @@ export function inspectBrand(dir) {
   result.review_languages = reviewLanguages(social);
   result.sources = brandSources(social).map((x) => x.id);
   result.ai_scenes_allowed = social.product_images?.ai_scenes_allowed !== false; // on unless explicitly false
+  result.reference_redraw = social.product_images?.reference_redraw?.enabled === true; // scene-swap allowed (opt-in)
   const checker = path.join(dir, 'scripts', 'check-skill.mjs');
   if (!fs.existsSync(checker)) result.problems.push('skill thiếu scripts/check-skill.mjs');
   else {

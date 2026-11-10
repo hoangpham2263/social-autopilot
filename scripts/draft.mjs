@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { checkDraft, summary, logoWarnings } from './draft-lib.mjs';
 import { cleanDraftImage } from './image-clean.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
-import { readStore, storeDir, storeIdeasFile, markUsed } from './store.mjs';
+import { readStore, storeDir, storeIdeasFile, markUsed, reuseProblems } from './store.mjs';
 import { track } from './progress.mjs';
 import { contactSheet } from './contact-sheet.mjs';
 
@@ -101,6 +101,12 @@ export function newDraft(args) {
   const mode = brand.social.language_policy?.mode || 'single';
   const networks = (brand.social.channels || []).filter((x) => x.enabled).map((x) => ({ network: x.network, account: x.account || '', url: x.url || '', lang: [].concat(x.lang || []) }));
   const { size: productSize, signText, customText } = sizeAndText(brand, args, idea);
+  // The same library item again only from a new angle: a different scene AND a different product or sign_text.
+  for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) {
+    const item = store.items.find((x) => x.id === it);
+    const rp = item ? reuseProblems(item, { scene: idea.scene, product, sign_text: signText, idea: idea.id }) : [];
+    if (rp.length) { fs.rmSync(dir, { recursive: true, force: true }); throw new Error(`Repeat of an earlier post from the same library item: ${rp.join('; ')}`); }
+  }
   const draft = {
     id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(), product_size: productSize, ...(signText ? { sign_text: signText } : {}), custom_text: customText,
     idea: { run: 'store', id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'].map((f) => [f, idea[f] || ''])) },
@@ -134,7 +140,7 @@ export function newDraft(args) {
     it.status = 'drafted'; it.drafts = [...new Set([...(it.drafts || []), id])]; it.updated = stamp();
     writeJson(ideasFile, now);
   });
-  // The store item(s) behind this draft are "used" by it (never picked again for a new idea).
+  // The store item(s) behind this draft get one more use (scene, product, sign text); they stay available.
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) markUsed(brand.id, it, id);
   const status = setStatus(dir, 'needs_prompt', { image_mode: imageMode, ...(imageMode === 'scene-swap' ? { source_shop: draft.inspiration.source_shop, source_url: draft.inspiration.source_url } : {}) });
   return ({ id, dir, status: status.status, next: `Mở ${path.join(dir, 'prompt.txt')}, thay {{PRODUCT_DESCRIPTION}} bằng mô tả đúng sản phẩm trong ảnh, rồi chạy draft.mjs image --id ${id}. Viết caption theo brief.md.` });

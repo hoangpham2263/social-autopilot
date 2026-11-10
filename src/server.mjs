@@ -211,7 +211,7 @@ async function handle(req, res) {
     const brand = String(b.brand ?? ""), id = String(b.id ?? "");
     if (!discovered().brands.some((x) => x.id === brand)) throw new Error(`Unknown brand "${brand}".`);
     if (!/^S\d{4,}$/.test(id)) throw new Error("Invalid library item id (like S0001).");
-    return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
+    return { item: setItemStatus(brand, id, b.status === "new" ? "new" : b.status === "retired" ? "retired" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
   // Prompt tab, the counts on the Mode buttons per brand, each the number of items IN that state now: research = library
@@ -222,7 +222,9 @@ async function handle(req, res) {
     return { brands: Object.fromEntries(discovered().brands.map((b) => {
       const qb = q.brands.find((x) => x.brand === b.id) || {};
       return [b.id, {
-        research: listItems(b.id).counts.new || 0,
+        // Research: FRESH library items (never used); available = fresh + used before (reusable from a new angle),
+        // ready = fresh + reusable now (cooldown over) — shown in the tooltip.
+        research: listItems(b.id).counts.fresh || 0, library: (({ new: available, ready, cooling, cooldown_days }) => ({ available, ready, cooling, cooldown_days }))(listItems(b.id).counts),
         create: listDrafts(b.id).filter((d) => !d.status.brand_post && ["ready", "check_failed", "image_failed"].includes(d.status.status)).length,
         // The same posts metricool-mcp.mjs payload sends: the tool's own approved posts with a hosted image, not sent yet
         // on the brand's channels (skill-owned catalog posts never count); a paused brand sends nothing.
@@ -230,11 +232,11 @@ async function handle(req, res) {
         // Already scheduled on Metricool: payload never sends these again (shown under Publish approved).
         on_metricool: (qb.on_metricool || []).length,
         // Unused library items per source (Prompt Sources list).
-        sources: listItems(b.id).items.filter((i) => i.status === "new").reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
+        sources: listItems(b.id, { status: "fresh" }).items.reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
       }];
     })) };
   });
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], posts_per_week: b.posts_per_week ?? null })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));

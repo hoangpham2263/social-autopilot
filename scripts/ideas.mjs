@@ -1,16 +1,21 @@
 // Mode "Tạo bài từ kho", step 1: ideas. Ideas come only from the brand's STORE (workspace/store/<brand>/, filled by
-// mode "Chỉ nghiên cứu"); no browsing. init takes store items with status "new" only and marks them "used" (used_by =
-// the idea id), so an item never gives two ideas. Each idea is ABSTRACT (product type, scene, angle, caption structure)
+// mode "Chỉ nghiên cứu"); no browsing. Library items are not used up (user, 10/11/2026): init takes fresh items (never
+// used) first, then the least-used items whose cooldown is over (settings ideas.reuse_cooldown_days, default 7); never a
+// retired or dropped item, never an item that already has an open idea. A reused item must get a NEW angle: the idea
+// batch lists its previous uses, and set/pick (scene) and draft.mjs new (scene + product + sign_text) reject a repeat
+// (store.mjs reuseProblems: a different scene AND a different product or sign_text). Each idea is ABSTRACT (product type, scene, angle, caption structure)
 // for the brand's own product; never the competitor's image, words, logo or shop name (prompts/idea-abstract.md).
 // Ideas live in workspace/store/<brand>/ideas.json (ids I001, I002, ... per brand).
 //   node scripts/ideas.mjs init   --brand <id> [--count N] [--items S0001,S0002] [--source <sid>]
-//                                 N new store items (default: what the plan-ahead window still needs: settings
+//                                 N store items (default: what the plan-ahead window still needs: settings
 //                                 planning.ahead_days x cadence.posts_per_day, minus posts already approved and not yet
-//                                 published and drafts still in work; newest first, sources mixed)
+//                                 published and drafts still in work; fresh first, newest first, sources mixed; then reuse)
+//                                 --items: exactly these items (a used item is allowed even within the cooldown, with a
+//                                 note; a retired or dropped item is an error)
 //   node scripts/ideas.mjs set    --brand <id> --id I001 --json '{...}' | --file f   fill an idea; checked for copying
 //   node scripts/ideas.mjs pick   --brand <id> --id I001              mark for drafting
 //   node scripts/ideas.mjs reject --brand <id> --id I001 [--note ..] [--item rejected]   idea dropped; the store item
-//                                 stays "used" (or "rejected" with --item rejected), never back to "new"
+//                                 stays available (or "rejected" with --item rejected)
 //   node scripts/ideas.mjs list   --brand <id> [--status s]
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, withLock, stamp, sharedWords, cleanText, settings, listDrafts } from './lib.mjs';
@@ -25,7 +30,10 @@ export function postsNeeded(brand, s = settings()) {
   const covered = listDrafts(brand.id).filter((d) => d.status.status !== 'rejected' && !['check_failed', 'image_failed'].includes(d.status.status) && !published(d)).length;
   return { days, want, covered, need: Math.max(0, want - covered) };
 }
-import { readStore, storeDir, storeIdeasFile, markUsed, setItemStatus } from './store.mjs';
+import { readStore, storeDir, storeIdeasFile, setItemStatus, pickItems, fairOrder, availability, reuseProblems, previousUses, usesOf, reuseCooldownDays } from './store.mjs';
+// Shown with every reused item in the idea batch.
+export const REUSE_RULE = 'This library item was used before (previous_uses): keep only the inspiration and take a NEW angle: a different scene AND a different product or sign_text than every previous use. A repeat is rejected.';
+const OPEN = ['todo', 'ready', 'picked'];
 
 // product_size (real size, from the skill's size_source) and sign_text (custom-text products) are optional here and
 // can be given to draft.mjs new as --size / --sign-text.
@@ -44,15 +52,8 @@ export function copyProblems(idea, item) {
   return problems;
 }
 
-// New store items in a fair order: newest first within each source, sources taken in turn.
-export function pickNew(items, n, source = '') {
-  const by = {};
-  for (const i of items.filter((x) => x.status === 'new' && (!source || x.source_id === source))) (by[i.source_id] ||= []).push(i);
-  for (const list of Object.values(by)) list.sort((a, b) => String(b.posted_date || b.captured).localeCompare(String(a.posted_date || a.captured)) || b.id.localeCompare(a.id));
-  const res = [], lists = Object.keys(by).sort().map((k) => by[k]);
-  while (res.length < n && lists.some((l) => l.length)) for (const l of lists) if (l.length && res.length < n) res.push(l.shift());
-  return res;
-}
+// Fresh (never used) store items in a fair order: newest first within each source, sources taken in turn.
+export const pickNew = (items, n, source = '') => fairOrder(items.filter((x) => x.status === 'new' && !usesOf(x).length && (!source || x.source_id === source)), n);
 
 if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();
@@ -71,36 +72,51 @@ function run(args, cmd, brand, file) {
   if (cmd === 'init') {
     if (!store.items.length) throw new Error(`Kho ${brand.id} trống: chạy chế độ "Chỉ nghiên cứu" (research.mjs) trước.`);
     let chosen;
+    const notes = [];
+    const openIdea = (itemId) => data.ideas.find((i) => i.item === itemId && OPEN.includes(i.status));
+    const cooldown = reuseCooldownDays();
     if (args.items && args.items !== true) {
-      chosen = String(args.items).split(',').map((x) => x.trim()).filter(Boolean).map((id) => {
+      chosen = [];
+      for (const id of [...new Set(String(args.items).split(',').map((x) => x.trim()).filter(Boolean))]) {
         const it = store.items.find((x) => x.id === id);
         if (!it) throw new Error(`Kho ${brand.id} không có ${id}.`);
-        if (it.status !== 'new') throw new Error(`${id} đang "${it.status}": chỉ lấy bài "new" (chưa dùng, chưa bỏ).`);
-        return it;
-      });
+        if (it.status === 'retired') throw new Error(`${id} is retired (used enough${it.retired_note ? ': ' + it.retired_note : ''}): restore it in the Library first (store.mjs restore) or pick another item.`);
+        if (it.status !== 'new') throw new Error(`${id} is dropped ("${it.status}"${it.note ? ': ' + it.note : ''}): it is never used for posts.`);
+        const open = openIdea(id);
+        if (open) { notes.push(`${id} already has open idea ${open.id} (${open.status}): fill that one (no second idea made).`); continue; }
+        if (usesOf(it).length && availability([it], { cooldownDays: cooldown }).cooling.length) notes.push(`${id} was used ${usesOf(it).length}x, last ${String(it.last_used).slice(0, 10)} (within the ${cooldown}-day cooldown): allowed because you picked it; take a new angle.`);
+        chosen.push(it);
+      }
     } else {
       const n = Number(args.count) > 0 ? Number(args.count) : postsNeeded(brand).need;
       if (!n) return out({ brand: brand.id, added: [], note: `The next ${postsNeeded(brand).days} days are already covered: no new posts needed.` });
-      chosen = pickNew(store.items, n, args.source && args.source !== true ? String(args.source) : '');
+      const busy = new Set(data.ideas.filter((i) => OPEN.includes(i.status)).map((i) => i.item));
+      chosen = pickItems(store.items, n, { source: args.source && args.source !== true ? String(args.source) : '', busy, cooldownDays: cooldown });
     }
     const added = [];
     for (const it of chosen) {
       const id = `I${String(++data.next).padStart(3, '0')}`;
-      data.ideas.push({ id, item: it.id, source: it.source_id, ref_image: path.join(storeDir(brand.id), it.images[0]), post_url: it.post_url, status: 'todo', created: stamp(), ...Object.fromEntries(IDEA_FIELDS.map((f) => [f, ''])) });
+      data.ideas.push({ id, item: it.id, source: it.source_id, ref_image: path.join(storeDir(brand.id), it.images[0]), post_url: it.post_url, status: 'todo', created: stamp(), ...(usesOf(it).length ? { reuse: usesOf(it).length } : {}), ...Object.fromEntries(IDEA_FIELDS.map((f) => [f, ''])) });
       added.push(id);
     }
     save();
-    for (const [n, it] of chosen.entries()) markUsed(brand.id, it.id, added[n]);
-    const left = readStore(brand.id).items.filter((x) => x.status === 'new').length;
-    // Library low: fewer unused posts than twice what this run took -> run Research soon (also in the run log).
+    // Left for the next batches: fresh items + used items past the cooldown, minus what this run (and open ideas) took.
+    const taken = new Set([...chosen.map((x) => x.id), ...data.ideas.filter((i) => OPEN.includes(i.status)).map((i) => i.item)]);
+    const a = availability(store.items.filter((x) => !taken.has(x.id)), { cooldownDays: cooldown });
+    const left = a.fresh.length + a.reusable.length;
+    // Library low: fewer fresh + reusable posts than twice what this run took -> run Research soon (also in the run log).
     const low = left < Math.max(1, chosen.length) * 2;
-    return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: left, ...(low ? { warning: `Library low: ${left} unused posts left; run Research.` } : {}), next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài "new": chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
+    const prev = Object.fromEntries(chosen.filter((x) => usesOf(x).length).map((x) => [x.id, previousUses(x)]));
+    return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: a.fresh.length, store_ready_left: left,
+      ...(Object.keys(prev).length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(notes.length ? { notes } : {}),
+      ...(low ? { warning: `Library low: ${left} posts ready (${a.fresh.length} fresh, ${a.reusable.length} reusable after the ${cooldown}-day cooldown); run Research.` } : {}),
+      next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài dùng được (fresh hoặc hết cooldown): chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
   }
   if (cmd === 'set') {
     const idea = find();
     const patch = args.file ? readJson(path.resolve(String(args.file))) : JSON.parse(need(args, 'json'));
     for (const f of IDEA_FIELDS) if (patch[f] !== undefined) idea[f] = cleanText(patch[f]).text;
-    const problems = copyProblems(idea, itemOf(idea));
+    const problems = [...copyProblems(idea, itemOf(idea)), ...reuseProblems(itemOf(idea), { scene: idea.scene, idea: idea.id })];
     const missing = CORE.filter((f) => !idea[f]);
     idea.problems = problems;
     if (!['picked', 'rejected', 'drafted'].includes(idea.status)) idea.status = problems.length || missing.length ? 'todo' : 'ready';
@@ -111,7 +127,7 @@ function run(args, cmd, brand, file) {
   if (cmd === 'pick' || cmd === 'reject') {
     const idea = find();
     if (cmd === 'pick') {
-      const problems = copyProblems(idea, itemOf(idea));
+      const problems = [...copyProblems(idea, itemOf(idea)), ...reuseProblems(itemOf(idea), { scene: idea.scene, idea: idea.id })];
       const missing = CORE.filter((f) => !idea[f]);
       if (problems.length || missing.length) throw new Error(`Ý ${idea.id} chưa chọn được: ${[...missing.map((m) => 'thiếu ' + m), ...problems].join('; ')}`);
     }

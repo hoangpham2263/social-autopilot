@@ -120,7 +120,7 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
     // errors = still open (red); resolved = fixed during the run (shown, not red); warnings = amber.
     const entry = { brand: b.id, name: b.brand || b.id, page_url: page, notes: String(x.notes || ''), errors: [].concat(x.errors || []).map(String), resolved: [].concat(x.resolved || []).map(String), warnings: [].concat(x.warnings || []).map(String) };
     if (mode === 'research') entry.research = researchPart(b.id, since); else entry.create = createPart(b.id, since);
-    if (mode !== 'research') { const unused = listItems(b.id).counts.new || 0, need = postsNeeded({ id: b.id, social: { cadence: { posts_per_day: b.posts_per_day } } }).want; if (unused < need * 2) entry.warnings.push(`Library low: ${unused} unused posts; run Research.`); }
+    if (mode !== 'research') { const c = listItems(b.id).counts, ready = c.ready || 0, need = postsNeeded({ id: b.id, social: { cadence: { posts_per_day: b.posts_per_day } } }).want; if (ready < need * 2) entry.warnings.push(`Library low: ${ready} posts ready (${c.fresh || 0} fresh + ${ready - (c.fresh || 0)} reusable after the cooldown); run Research.`); }
     entry.headline = entry.research?.not_run ? 'not run' : brandHeadline(mode, entry);
     entry.result = resultOf(mode, entry);
     return entry;

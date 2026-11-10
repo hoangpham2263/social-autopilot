@@ -191,9 +191,13 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(init.added.length, 2);
   assert.ok(!init.items.includes('S0002'), 'rejected item not used');
   items = readItems('dreamyvows');
-  for (const [n, id] of init.items.entries()) { const it = items.find((x) => x.id === id); assert.equal(it.status, 'used'); assert.deepEqual(it.used_by, [init.added[n]]); }
-  // Only "new" items: an item already used cannot be picked again.
-  assert.match(run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', init.items[0]).error, /chỉ lấy bài "new"/);
+  // Items are not used up: an idea alone is no use (status stays new, no uses until a draft is made).
+  for (const id of init.items) { const it = items.find((x) => x.id === id); assert.equal(it.status, 'new'); assert.deepEqual(it.uses || [], []); }
+  // An item with an open idea gets no second idea (--items says so); a dropped item is an error.
+  const twice = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', init.items[0]);
+  assert.deepEqual(twice.added, []);
+  assert.match(twice.notes.join(' '), /already has open idea/);
+  assert.match(run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', 'S0002').error, /dropped/);
   assert.equal(run('store.mjs', 'restore', '--brand', 'dreamyvows', '--id', 'S0002').item.status, 'new');
   const rest = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--count', '10');
   assert.equal(rest.added.length, 3);
@@ -417,7 +421,7 @@ test('perceptual hash: same picture resized matches, different picture does not'
   assert.ok(hamming(a, c) > 40, `different: ${hamming(a, c)}`);
 });
 
-test('migrate: old dated runs into the store, duplicates once, drafted references marked used', async () => {
+test('migrate: old dated runs into the store, duplicates once, drafted references get a use', async () => {
   const brand = 'migr';
   const day = path.join(ws, 'runs', brand, '2026-11-08', 'src1');
   write(path.join(day, 'refs', 'R01-a.png'), pattern([0, 0, 0, 255, 255, 255]));
@@ -433,8 +437,9 @@ test('migrate: old dated runs into the store, duplicates once, drafted reference
   assert.equal(run('store.mjs', 'migrate', '--brand', brand).brands[0].added, 0);
   const items = readItems(brand);
   assert.equal(items.length, 2);
-  assert.equal(items[1].status, 'used');
+  assert.equal(items[1].status, 'new', 'never a one-shot "used" status');
   assert.deepEqual(items[1].used_by, ['migr-20261108-01']);
+  assert.deepEqual(items[1].uses.map((u) => u.draft), ['migr-20261108-01']);
   assert.equal(items[0].status, 'new');
 });
 

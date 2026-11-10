@@ -1,6 +1,11 @@
 // The research STORE (kho) of each brand: every post crawled from the brand's own research sources, kept across crawls,
 // separate from the dated crawl logs in workspace/runs/. Mode "Chỉ nghiên cứu" fills it (research.mjs ingest); mode
-// "Tạo bài từ kho" reads it (ideas.mjs init takes only items with status "new" and marks them "used").
+// "Tạo bài từ kho" reads it (ideas.mjs init). Items are NOT used up (user, 10/11/2026): every post changes the scene and
+// the content, so one item may inspire several posts; each draft adds a use ({ draft, idea, scene, product, sign_text, at })
+// and the next idea from that item must take a new angle (reuseProblems: a different scene AND a different product or
+// sign_text). Fresh items (no use) are picked first, then the least used after a cooldown (settings ideas.reuse_cooldown_days).
+// The user may RETIRE an item that feels overused (status retired: fine, but used enough; never picked again until
+// restored); "rejected" (Dropped) = filtered / not suitable.
 //   workspace/store/<brand>/items.json      { brand, updated, next, items: [ item ] }
 //   workspace/store/<brand>/images/          <item-id>-<n>-<sha8>.<ext> (copies of the downloaded post images)
 //   workspace/store/<brand>/progress.json    per source: newest_seen / oldest_seen ({ date, post_id, post_url, item }),
@@ -9,13 +14,17 @@
 //   workspace/store/<brand>/ideas.json       the brand's ideas (ideas.mjs), each tied to one store item
 // item: { id: "S0001", source_id, source_url, store, post_url, alt_urls?, post_key(s), post_ids, captured, posted_date,
 //         caption, caption_norm, caption_hash, main_product, price_seen, images: ["images/S0001-1-ab12cd34.jpg"],
-//         image_sha1: [..], image_phash: [..], status: new|used|rejected, used_by: [idea/draft ids], note, run }
+//         image_sha1: [..], image_phash: [..], status: new|retired|rejected, uses: [{ draft, idea, scene, product, sign_text, at }],
+//         last_used, used_by: [draft ids] (history), note, run }   (old status "used" is read as new + uses: migrateUses)
 //   workspace/store/<brand>/duplicates.json  every post not stored because it matched an item (rule + item id)
 // Brands never mix: each brand has its own folder; a source id belongs to that brand's social.json only.
-//   node scripts/store.mjs list    --brand <id> [--status new|used|rejected] [--source <sid>] [--limit n]
+//   node scripts/store.mjs list    --brand <id> [--status new|fresh|used|retired|rejected] [--source <sid>] [--limit n]
+//                                            new = available (fresh + used before), fresh = never used, used = used before
 //   node scripts/store.mjs show    --brand <id> --id S0001
 //   node scripts/store.mjs reject  --brand <id> --id S0001 [--note "..."]      "bỏ": never picked for ideas
-//   node scripts/store.mjs restore --brand <id> --id S0001                     rejected -> new
+//   node scripts/store.mjs retire  --brand <id> --id S0001 [--note "..."]      "retired": used enough, never picked again
+//   node scripts/store.mjs restore --brand <id> --id S0001                     rejected|retired -> new
+//   node scripts/store.mjs migrate-uses [--brand <id>]                        old "used" items -> available, uses filled (saved)
 //   node scripts/store.mjs known   --brand <id> [--source <sid>]               post links already in the store
 //   node scripts/store.mjs classify --brand <id> [--limit 40] [--source <sid>]   the batch filter (RUNBOOK 1.3): unjudged
 //                                            "new" items, compact (id, source, caption excerpt, thumbnail path) + what
@@ -25,10 +34,12 @@
 //   node scripts/store.mjs migrate [--brand <id>]                             old runs/<brand>/<date>/<src>/refs.json -> store
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText, loadBrand } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText, loadBrand, draftsRoot } from './lib.mjs';
 import { imageHashes, hamming } from './phash.mjs';
 
-export const STATUSES = ['new', 'used', 'rejected'];
+export const STATUSES = ['new', 'retired', 'rejected'];
+// list filters: new = available (fresh + used before), fresh = never used, used = used before (still available).
+export const LIST_FILTERS = ['new', 'fresh', 'used', 'retired', 'rejected'];
 export const MEDIA_TYPES = ['photo', 'album', 'video', 'text'];
 const validBrand = (b) => { if (!/^[a-z0-9][a-z0-9-]*$/.test(String(b || ''))) throw new Error('Mã thương hiệu không hợp lệ.'); return String(b); };
 export const storeDir = (brand) => path.join(workspace, 'store', validBrand(brand));
@@ -43,7 +54,79 @@ export const itemsFile = (brand) => path.join(storeDir(brand), 'items.json');
 export const progressFile = (brand) => path.join(storeDir(brand), 'progress.json');
 export const storeIdeasFile = (brand) => path.join(storeDir(brand), 'ideas.json');
 
-export const readStore = (brand) => { const s = readJson(itemsFile(brand), null) || {}; return { brand, updated: s.updated || '', next: s.next || 0, items: Array.isArray(s.items) ? s.items : [] }; };
+export const readStore = (brand) => { const s = readJson(itemsFile(brand), null) || {}; return { brand, updated: s.updated || '', next: s.next || 0, items: (Array.isArray(s.items) ? s.items : []).map((i) => withUses(brand, i)) }; };
+
+// ----- uses: a library item may inspire several posts, each from a new angle (user, 10/11/2026) -----
+// One use per draft, read from the draft's draft.json (scene, product photo, sign text). A draft folder that is gone
+// leaves a use with only the draft id (and the item's old used_at).
+const DRAFT_ID = /^[a-z0-9][a-z0-9-]*-\d{8}-\d{2,}$/;
+export function useFromDraft(brand, draftId, fallbackAt = '') {
+  const d = readJson(path.join(draftsRoot, brand, String(draftId), 'draft.json'), null);
+  if (!d) return { draft: String(draftId), idea: '', scene: '', product: '', sign_text: '', at: fallbackAt || stamp() };
+  return { draft: d.id || String(draftId), idea: d.idea?.id || '', scene: d.idea?.scene || '', product: d.product_image || '', sign_text: d.sign_text || '', ...(d.image_mode === 'scene-swap' ? { image_mode: 'scene-swap' } : {}), at: d.created || fallbackAt || stamp() };
+}
+const lastOf = (uses) => uses.map((u) => u.at || '').filter(Boolean).sort().at(-1) || '';
+// Migration (in memory on every read, saved with the next write or by migrate-uses): status "used" -> "new", uses from
+// the draft ids in used_by (idea ids are only history: an idea alone is not a post).
+function withUses(brand, it) {
+  if (Array.isArray(it.uses) && it.status !== 'used') return it;
+  const uses = Array.isArray(it.uses) ? it.uses : [...new Set(it.used_by || [])].filter((x) => DRAFT_ID.test(x)).map((x) => useFromDraft(brand, x, it.used_at));
+  return { ...it, status: it.status === 'used' ? 'new' : it.status, uses, last_used: lastOf(uses) };
+}
+export function migrateUses(brand) {
+  const raw = readJson(itemsFile(brand), { items: [] }).items || [];
+  const todo = raw.filter((i) => !Array.isArray(i.uses) || i.status === 'used').map((i) => i.id);
+  if (todo.length) withStore(brand, () => null); // readStore already migrated them in memory; saving writes them
+  return { brand, migrated: todo.length, items: todo };
+}
+export const reuseCooldownDays = (s = settings()) => { const d = Number(s.ideas?.reuse_cooldown_days); return Number.isFinite(d) && d >= 0 ? d : 7; };
+// settings ideas.auto_retire_after (default 0 = off): from this many uses an item is only SUGGESTED for Retire.
+export const autoRetireAfter = (s = settings()) => { const n = Number(s.ideas?.auto_retire_after); return Number.isInteger(n) && n > 0 ? n : 0; };
+export const usesOf = (i) => (Array.isArray(i?.uses) ? i.uses : []);
+const lastMs = (i) => { const t = Date.parse(i.last_used || lastOf(usesOf(i))); return Number.isFinite(t) ? t : 0; };
+// Available items by kind: fresh (never used), reusable (used before, cooldown over), cooling (used within the cooldown).
+// Retired and rejected items are never available.
+export function availability(items, { cooldownDays = reuseCooldownDays(), now = Date.now() } = {}) {
+  const cutoff = now - cooldownDays * 86400000;
+  const ok = items.filter((i) => i.status === 'new');
+  const fresh = ok.filter((i) => !usesOf(i).length), used = ok.filter((i) => usesOf(i).length);
+  return { fresh, reusable: used.filter((i) => lastMs(i) <= cutoff), cooling: used.filter((i) => lastMs(i) > cutoff), cooldown_days: cooldownDays };
+}
+// Fair order: newest first within each source, sources taken in turn.
+export function fairOrder(items, n) {
+  const by = {};
+  for (const i of items) (by[i.source_id] ||= []).push(i);
+  for (const list of Object.values(by)) list.sort((a, b) => String(b.posted_date || b.captured).localeCompare(String(a.posted_date || a.captured)) || b.id.localeCompare(a.id));
+  const res = [], lists = Object.keys(by).sort().map((k) => by[k]);
+  while (res.length < n && lists.some((l) => l.length)) for (const l of lists) if (l.length && res.length < n) res.push(l.shift());
+  return res;
+}
+// What ideas.mjs init picks: fresh items first (fair order), then used items whose cooldown is over, least used first
+// (then the longest ago). busy = items with an open idea (not picked twice at once).
+export function pickItems(items, n, { source = '', busy = new Set(), cooldownDays = reuseCooldownDays(), now = Date.now() } = {}) {
+  const a = availability(items.filter((i) => !busy.has(i.id) && (!source || i.source_id === source)), { cooldownDays, now });
+  const res = fairOrder(a.fresh, n);
+  if (res.length < n) res.push(...a.reusable.slice().sort((x, y) => usesOf(x).length - usesOf(y).length || lastMs(x) - lastMs(y) || x.id.localeCompare(y.id)).slice(0, n - res.length));
+  return res;
+}
+// A new post from an item must differ from every earlier use: a different scene AND (a different product photo or a
+// different sign_text). product undefined (ideas.mjs set: not chosen yet) = only the scene is checked. Uses of the same
+// idea/draft are skipped (an idea re-filled, a draft remade).
+const normText = (t) => normCaption(t || '');
+export const sameScene = (a, b) => { const x = normText(a), y = normText(b); return !!x && !!y && (x === y || captionSimilarity(x, y) >= 0.85); };
+const sameFile = (a, b) => !!a && !!b && path.resolve(String(a)).toLowerCase() === path.resolve(String(b)).toLowerCase();
+export function reuseProblems(item, { scene, product, sign_text = '', idea = '', draft = '' } = {}) {
+  const problems = [];
+  for (const u of usesOf(item)) {
+    if ((draft && u.draft === draft) || (idea && u.idea === idea)) continue;
+    const by = u.draft || u.idea || 'an earlier post';
+    if (sameScene(scene, u.scene)) problems.push(`${item.id} was already used with this scene (${by}: "${u.scene}"): pick a different scene`);
+    if (product !== undefined && sameFile(product, u.product) && normText(sign_text) === normText(u.sign_text)) problems.push(`${item.id} was already used with this product and sign text (${by}): change the product or the sign_text`);
+  }
+  return problems;
+}
+// The earlier uses of an item in short, for the idea batch (the agent picks a new angle).
+export const previousUses = (item) => usesOf(item).map((u) => ({ draft: u.draft || '', scene: u.scene || '', product: u.product ? path.basename(u.product) : '', sign_text: u.sign_text || '', ...(u.image_mode ? { image_mode: u.image_mode } : {}), at: String(u.at || '').slice(0, 10) }));
 const saveStore = (brand, s) => { s.updated = stamp(); writeJson(itemsFile(brand), s); };
 // Every change of a brand's store runs inside the items.json lock.
 export const withStore = (brand, fn) => withLock(itemsFile(brand), () => { const s = readStore(brand); const r = fn(s); saveStore(brand, s); return r; });
@@ -215,28 +298,44 @@ export function knownPosts(brand, sourceId) {
     brand_post_urls: all.flatMap((i) => [i.post_url, ...(i.alt_urls || [])]).filter(Boolean), brand_post_ids: [...new Set(all.flatMap((i) => i.post_ids || []))] };
 }
 
-export function counts(items) {
-  const c = { total: items.length, new: 0, used: 0, rejected: 0 };
-  for (const i of items) c[i.status] = (c[i.status] || 0) + 1;
-  return c;
+// new = available (fresh + used before); fresh = never used; used = used before (available); ready = fresh + reusable
+// now (cooldown over: what the next idea batch can take); cooling = used within the cooldown; retired = used enough
+// (user); rejected = dropped; uses = posts made from the library; retire_suggested = available items with at least
+// ideas.auto_retire_after uses (only a suggestion; off by default).
+export function counts(items, opts) {
+  const a = availability(items, opts), after = autoRetireAfter();
+  return { total: items.length, new: a.fresh.length + a.reusable.length + a.cooling.length, fresh: a.fresh.length, used: a.reusable.length + a.cooling.length,
+    retired: items.filter((i) => i.status === 'retired').length, rejected: items.filter((i) => i.status === 'rejected').length,
+    ready: a.fresh.length + a.reusable.length, cooling: a.cooling.length, uses: items.reduce((n, i) => n + usesOf(i).length, 0), cooldown_days: a.cooldown_days,
+    ...(after ? { retire_suggested: items.filter((i) => i.status === 'new' && usesOf(i).length >= after).map((i) => i.id) } : {}) };
 }
+const inFilter = (i, status) => !status || (status === 'fresh' ? i.status === 'new' && !usesOf(i).length : status === 'used' ? i.status === 'new' && usesOf(i).length > 0 : i.status === status);
 export function listItems(brand, { status = '', source = '' } = {}) {
-  if (status && !STATUSES.includes(status)) throw new Error(`Trạng thái phải là ${STATUSES.join(', ')}.`);
+  if (status && !LIST_FILTERS.includes(status)) throw new Error(`Trạng thái phải là ${LIST_FILTERS.join(', ')}.`);
   const all = readStore(brand).items;
   const sources = [...new Set(all.map((i) => i.source_id))].sort();
-  const items = all.filter((i) => (!status || i.status === status) && (!source || i.source_id === source));
+  const items = all.filter((i) => inFilter(i, status) && (!source || i.source_id === source));
   return { brand, dir: storeDir(brand), counts: counts(all), sources, items };
 }
 export const findItem = (brand, id) => { const i = readStore(brand).items.find((x) => x.id === id); if (!i) throw new Error(`Kho ${brand} không có ${id}.`); return i; };
 
-// "Bỏ" (rejected: never picked for ideas) and "khôi phục" (back to new). A used item keeps its history (used_by).
+// "Bỏ" (rejected: not suitable, never picked), "Retire" (retired: fine but used enough, never picked) and "khôi phục"
+// (back to new). An item keeps its uses either way.
 export function setItemStatus(brand, id, status, { note = '', by = 'user' } = {}) {
-  if (!['rejected', 'new'].includes(status)) throw new Error('Chỉ đổi được sang rejected (bỏ) hoặc new (khôi phục).');
+  if (!['rejected', 'retired', 'new'].includes(status)) throw new Error('Chỉ đổi được sang rejected (bỏ), retired (retire) hoặc new (khôi phục).');
+  if (status === 'retired') return withStore(brand, (s) => {
+    const it = s.items.find((x) => x.id === id);
+    if (!it) throw new Error(`Kho ${brand} không có ${id}.`);
+    if (it.status !== 'new') throw new Error(`Only an available item can be retired (${id} is "${it.status}").`);
+    Object.assign(it, { status: 'retired', retired_note: String(note || '').trim(), retired_by: String(by || 'user').trim() || 'user', retired_at: stamp() });
+    return { ...it };
+  });
   return withStore(brand, (s) => {
     const it = s.items.find((x) => x.id === id);
     if (!it) throw new Error(`Kho ${brand} không có ${id}.`);
     if (status === 'rejected' && it.status === 'rejected') throw new Error(`${id} đã bỏ rồi.`);
-    if (status === 'new' && it.status !== 'rejected') throw new Error(`Chỉ khôi phục được bài đã bỏ (${id} đang "${it.status}").`);
+    if (status === 'new' && !['rejected', 'retired'].includes(it.status)) throw new Error(`Chỉ khôi phục được bài đã bỏ hoặc đã retire (${id} đang "${it.status}").`);
+    if (status === 'new' && it.status === 'retired') { it.status = 'new'; delete it.retired_note; delete it.retired_by; delete it.retired_at; return { ...it }; }
     it.status = status;
     if (status === 'rejected') Object.assign(it, { note: String(note || '').trim(), rejected_by: String(by || 'user').trim() || 'user', rejected_at: stamp() });
     else { delete it.note; delete it.rejected_by; delete it.rejected_at; if (it.filter) it.filter = { ...it.filter, restored_at: stamp() }; } // a restored filtered post is not judged again
@@ -290,15 +389,17 @@ export function applyVerdicts(brand, list) {
   });
 }
 
-// Marks items used by an idea or a draft (ideas.mjs init, draft.mjs new); used items are never picked again.
+// One more use of an item by a draft (draft.mjs new, after draft.json is written): uses gets the draft's scene, product
+// and sign text; the item stays available (status unchanged). A draft is counted once.
 export function markUsed(brand, ids, by) {
   return withStore(brand, (s) => {
     for (const id of [].concat(ids)) {
       const it = s.items.find((x) => x.id === id);
       if (!it) throw new Error(`Kho ${brand} không có ${id}.`);
-      it.status = 'used';
       it.used_by = [...new Set([...(it.used_by || []), by])];
-      it.used_at ||= stamp();
+      it.uses = usesOf(it);
+      if (DRAFT_ID.test(by) && !it.uses.some((u) => u.draft === by)) it.uses.push(useFromDraft(brand, by));
+      it.last_used = lastOf(it.uses);
     }
   });
 }
@@ -326,7 +427,7 @@ export function recordProgress(brand, sourceId, result, run = {}) {
 }
 
 // Old dated runs (workspace/runs/<brand>/<date>/<source>/refs.json, before the store existed) into the store, oldest
-// run first, duplicates dropped. Ideas of those runs that became drafts mark their reference "used" (used_by = drafts).
+// run first, duplicates dropped. Ideas of those runs that became drafts add a use to their reference (uses = drafts).
 // Run again any time: nothing is added twice.
 export function migrateRuns(brand) {
   const root = path.join(workspace, 'runs', validBrand(brand));
@@ -366,18 +467,20 @@ const brandsInWorkspace = () => { const d = path.join(workspace, 'runs'); return
 if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();
   const cmd = args._[0];
+  if (cmd === 'migrate-uses') return out({ brands: (args.brand ? [String(args.brand)] : (fs.existsSync(path.join(workspace, 'store')) ? fs.readdirSync(path.join(workspace, 'store')).filter((d) => /^[a-z0-9][a-z0-9-]*$/.test(d) && fs.existsSync(itemsFile(d))) : [])).map(migrateUses) });
   if (cmd === 'migrate') return out({ brands: (args.brand ? [String(args.brand)] : brandsInWorkspace()).map(migrateRuns) });
   const brand = need(args, 'brand');
   if (cmd === 'list') {
     const r = listItems(brand, { status: args.status ? String(args.status) : '', source: args.source ? String(args.source) : '' });
     const limit = Number(args.limit) || 0;
-    return out({ ...r, items: (limit ? r.items.slice(-limit) : r.items).map(({ id, source_id, status, posted_date, post_url, main_product, images, used_by }) => ({ id, source_id, status, posted_date, post_url, main_product, images: images.map((f) => path.join(storeDir(brand), f)), used_by })) });
+    return out({ ...r, items: (limit ? r.items.slice(-limit) : r.items).map(({ id, source_id, status, posted_date, post_url, main_product, images, uses, last_used }) => ({ id, source_id, status, posted_date, post_url, main_product, images: images.map((f) => path.join(storeDir(brand), f)), used: (uses || []).length, last_used: last_used || '', uses: previousUses({ uses }) })) });
   }
   if (cmd === 'show') { const it = findItem(brand, need(args, 'id')); return out({ item: { ...it, image_paths: it.images.map((f) => path.join(storeDir(brand), f)) } }); }
   if (cmd === 'reject') return out({ item: setItemStatus(brand, need(args, 'id'), 'rejected', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });
+  if (cmd === 'retire') return out({ item: setItemStatus(brand, need(args, 'id'), 'retired', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });
   if (cmd === 'restore') return out({ item: setItemStatus(brand, need(args, 'id'), 'new') });
   if (cmd === 'classify') return out(classifyBatch(brand, { limit: args.limit === undefined ? 40 : Number(args.limit) || 0, source: args.source && args.source !== true ? String(args.source) : '' }));
   if (cmd === 'verdict') { const r = applyVerdicts(brand, readJson(path.resolve(need(args, 'file')))); return out({ ...r, left: classifyBatch(brand, { limit: 0 }).total_unjudged }); }
   if (cmd === 'known') { const k = knownPosts(brand, args.source ? String(args.source) : ''); return out(k); }
-  throw new Error('Lệnh: list | show | reject | restore | classify | verdict | known | migrate');
+  throw new Error('Lệnh: list | show | reject | retire | restore | classify | verdict | known | migrate | migrate-uses');
 });
