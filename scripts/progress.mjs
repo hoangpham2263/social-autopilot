@@ -3,7 +3,7 @@
 //     steps: [{ n, key, name, state: pending|running|done|failed|stopped, detail, at }], items: { label, done, total } }
 // The step numbers are the prompt's (docs/scheduled-prompt.md, RUNBOOK.md). The app's Copy prompt makes a new pending run
 // (POST /api/progress); `brands.mjs --run <mode>` (Setup) reuses it or starts one; every step script then reports through
-// lib.mjs out()/fail() (trackCli below: one table, script + command -> step), and the long ones (crawl-fb, image-batch)
+// lib.mjs out()/fail() (trackCli below: one table, script + command -> step), and the long ones (image-batch)
 // also report live. runlog.mjs add ends the run. Writes are atomic (writeJson) under a short lock and never throw:
 // progress must never break a run. SA_PROGRESS=off turns it off (image-batch's own child processes).
 //   node scripts/progress.mjs show --mode research|create|publish
@@ -173,7 +173,6 @@ export function trackCli(scriptPath, args, ok, data = {}) {
   const fails = (key, label, start) => track(key, { state: 'failed', brand, start, detail: `${label}: ${String(data.error || 'failed').split('\n')[0].slice(0, 200)}` });
   const map = {
     brands: () => ['setup', 'brands.mjs'],
-    'crawl-fb': () => (args.check ? ['chrome', ok ? 'Chrome ready, signed in' : 'not ready', { state: ok ? 'done' : 'failed', start: true }] : ['crawl', ok ? `${Object.keys(data.sources || {}).length} sources crawled${(data.blocked || []).length ? `, ${data.blocked.length} blocked` : ''}` : 'crawl-fb']),
     research: () => ({ browser: ['chrome', ok && data.browser === 'ok' ? 'Playwright MCP ready' : `not ready${data.note ? ': ' + data.note : ''}`, { state: ok && data.browser === 'ok' ? 'done' : 'failed', start: true }], start: ['start', 'run opened', { state: 'done', start: true }], next: ['crawl', data.step === 'discovery' ? `next: ${data.platform} ${data.found_by}` : data.step === 'reference' ? `next: ${data.source}` : `collect done: ${data.reason || ''}`, { items: { label: 'New posts', done: data.total || 0, total: data.target || null } }], ingest: ['crawl', `ingest ${arg(args, 'query') || arg(args, 'source')}`], result: ['crawl', `${arg(args, 'query') || arg(args, 'source')}: ${data.result?.label || data.label || arg(args, 'state')}`], report: ['report', `${data.new_total ?? 0} new posts`, { state: 'done' }] })[cmd],
     store: () => ({ classify: ['filter', `${data.total_unjudged ?? 0} left to filter`, { items: unjudgedItems(data.total_unjudged) }], verdict: ['filter', `${data.left ?? 0} left to filter`, { items: unjudgedItems(data.left), state: data.left === 0 ? 'done' : 'running' }] })[cmd],
     'metricool-mcp': () => ({ 'sync-brands': ['sync', 'Metricool brands synced'], 'sync-times': ['sync', 'best times synced'], payload: ['schedule', `${(data.items || []).length} to schedule${(data.blocked || []).length ? `, ${data.blocked.length} blocked` : ''}`, { items: { label: 'Scheduled', done: 0, total: (data.items || []).length } }], record: ['schedule', `recorded ${arg(args, 'post')}`, { items: (run, b) => { const p = run.item_parts?.Scheduled?.[b || '_'] || { done: 0, total: null }; return { label: 'Scheduled', done: p.done + 1, total: p.total === null ? null : Math.max(p.total, p.done + 1) }; } }], status: ['reconcile', data.query ? 'checking sent posts' : 'nothing sent waiting'] })[cmd],

@@ -9,18 +9,6 @@
     "dedupe": {
       "image_distance": 20,
       "caption_similarity": 0.9
-    },
-    "browser": {
-      "cdp": "http://127.0.0.1:9222",
-      "user_data_dir": "",
-      "channel": "chrome",
-      "fallback_tabs": [
-        "posts",
-        "photos",
-        "reels"
-      ],
-      "stall_posts": 5,
-      "max_scroll_steps": 300
     }
   },
   "codex": {

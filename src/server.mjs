@@ -309,15 +309,7 @@ async function handle(req, res) {
   // Tổng quan, Chọn skill / Đổi skill: the skill folders found in a source folder (default the vaniecom-workspace skills).
   // POST (session token), so no other page can list folders on this machine.
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
-  if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })(), cdp: settings().research?.browser?.cdp || "http://127.0.0.1:9222" }));
-  // Settings, Requirements: start the crawl Chrome (start-crawl-chrome.cmd / .command in the tool folder).
-  if (path === "/api/start-crawl-chrome" && req.method === "POST") return api(res, () => {
-    const win = process.platform === "win32";
-    const file = join(root, win ? "start-crawl-chrome.cmd" : "start-crawl-chrome.command");
-    if (!existsSync(file)) throw new Error("Missing " + file);
-    spawn(win ? "cmd.exe" : "bash", win ? ["/c", file] : [file], { cwd: root, detached: true, stdio: "ignore", windowsHide: true }).unref();
-    return { ok: true };
-  });
+  if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
   if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: defaultSource() }));
   if (path === "/api/skills/sources" && req.method === "POST") return api(res, async () => listSources(String((await body(req)).from || "").trim() || defaultSource()));
   // A brand's avatar (previews, Overview): only the avatar file inside a linked skill folder (lib.mjs brandAvatar).

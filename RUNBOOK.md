@@ -30,7 +30,7 @@ Trạng thái người dùng thấy (tab Posts, đúng thứ tự): **To review*
 - Báo cáo bằng tiếng Việt (mục 1.6 / 2.10 / 3.2), nhắc người dùng mở app (tab Library / Posts).
 
 ### Công cụ theo agent
-- **Claude Code**: Playwright MCP (`--extension`, gắn vào Chrome đã đăng nhập của người dùng) cho Mode 1 (trang tham khảo + discovery; `crawl-fb.mjs` chỉ là đường nhanh tuỳ chọn cho trang Facebook); connector claude.ai "Metricool" cho Mode 2; Codex CLI để tạo ảnh.
+- **Claude Code**: Playwright MCP (`--extension`, gắn vào Chrome đã đăng nhập của người dùng) cho Mode 1 (trang tham khảo + discovery; Facebook chưa có script in-page (`pageScript`): lấy tay bằng Playwright MCP cho tới khi script đó được viết và kiểm trên trang thật); connector claude.ai "Metricool" cho Mode 2; Codex CLI để tạo ảnh.
 - **Codex** (CLI/app, đọc `AGENTS.md`): Mode 1 cần MCP trình duyệt như Claude Code, trong `~/.codex/config.toml` (`[mcp_servers.playwright]`, `command = "npx"`, `args = ["-y", "@playwright/mcp@latest", "--extension"]`). Mode 2 cần MCP Metricool:
   ```
   codex mcp add metricool --url https://ai.metricool.com/mcp
@@ -59,9 +59,9 @@ Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo khô
 
 ## Mode 1. Research only
 
-**Agent thu thập bằng Playwright MCP trên Chrome đã đăng nhập của người dùng, rồi lọc một lượt.** Thứ tự (người dùng, 10/11/2026): (1) **trang tham khảo** của thương hiệu (`research.sources[]`: bài mới chưa có trong kho); (2) hết trang tham khảo mà chưa đủ mục tiêu (`--max-posts N` mỗi thương hiệu, hoặc không đặt mục tiêu): **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` của skill trên các nền tảng bật (Instagram, Pinterest, TikTok, Facebook tìm bài + nhóm, Reddit, Etsy, YouTube/Shorts, Houzz cho nội thất), xoay vòng các nền tảng tới khi đủ mục tiêu hoặc hết truy vấn. **Chỉ lấy bài có sản phẩm đúng loại thương hiệu bán** (`research.discovery.product_fit`: `types`, `must_have`, `must_not`): bài sai loại không tải, không lưu (ghi `rejected[]`), và bị lọc lần nữa ở 1.3. Script `research.mjs next` nói việc tiếp theo; chi tiết từng nền tảng: `docs/research.md`. `scripts/crawl-fb.mjs` chỉ là **đường nhanh tuỳ chọn** cho trang tham khảo Facebook (mục "Chrome cho crawl"). Một trình duyệt = một agent, không song song.
+**Script `collect.mjs` thu thập trên Chrome đã đăng nhập của người dùng, agent nhìn ảnh để lọc (và viết/sửa adapter), rồi lọc một lượt.** Thứ tự (người dùng, 10/11/2026): (1) **trang tham khảo** của thương hiệu (`research.sources[]`: bài mới chưa có trong kho); (2) hết trang tham khảo mà chưa đủ mục tiêu (`--max-posts N` mỗi thương hiệu, hoặc không đặt mục tiêu): **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` của skill trên các nền tảng bật (Instagram, Pinterest, TikTok, Facebook tìm bài + nhóm, Reddit, Etsy, YouTube/Shorts, Houzz cho nội thất), xoay vòng các nền tảng tới khi đủ mục tiêu hoặc hết truy vấn. **Chỉ lấy bài có sản phẩm đúng loại thương hiệu bán** (`research.discovery.product_fit`: `types`, `must_have`, `must_not`): bài sai loại không tải, không lưu (ghi `rejected[]`), và bị lọc lần nữa ở 1.3. Script `research.mjs next` nói việc tiếp theo **và in sẵn lệnh `collect` + `adapter.status`**; chi tiết từng nền tảng và quy trình adapter: `docs/research.md`. Facebook chưa có script in-page (`pageScript`): lấy tay bằng Playwright MCP cho tới khi script đó được viết và kiểm trên trang thật. Một trình duyệt = một agent, không song song.
 
-1.0. Kiểm tra trình duyệt (**bước đầu tiên**, trước `research.mjs start`): công cụ Playwright MCP có và đang nối Chrome của người dùng (vd `browser_tabs` trả danh sách tab). Không đụng Chrome cổng 9222.
+1.0. Kiểm tra trình duyệt (**bước đầu tiên**, trước `research.mjs start`): công cụ Playwright MCP có và đang nối Chrome của người dùng (vd `browser_tabs` trả danh sách tab). Một trình duyệt = một agent: không chạy hai agent cùng lúc trên Chrome đã đăng nhập đó.
 ```
 node scripts/research.mjs browser --brand <id> --state ok
 node scripts/research.mjs browser --brand <id> --state fail --note "<lý do>"   # không có MCP / không nối được: dừng, không start
@@ -78,7 +78,14 @@ node scripts/research.mjs start --brand <id> [--source a,b|none] [--platforms a,
 - Mở lại cùng ngày: `run.json`, `raw.json`, `raw/`, `ingest.json` và thư mục `discovery/` cũ chuyển vào `archive/<giờ>/`, không bao giờ ingest lại.
 - Tiến độ từng trang: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen`, `reached_end`).
 
-1.2. Thu thập, lặp tới khi `next` trả `done`:
+1.2. Thu thập, lặp tới khi `next` trả `done`. **Đường mặc định (in-page):** `node scripts/collect.mjs script --brand <id> --for-query|--for-source <id>` in ra script; dán vào MỘT lần gọi Playwright MCP `browser_run_code_unsafe` (hoặc `filename`), lưu JSON kết quả, rồi `node scripts/collect.mjs from-page --brand <id> --for-query|--for-source <id> --file <result.json>` (bỏ bài đã có trong kho trước khi tải, tải ảnh vào thư mục lượt, ghi raw.json) → nhìn ảnh, `collect.mjs fit` → `ingest`. **Mỗi bước chạy `collect.mjs` trước** (lệnh nằm trong `collect` của `next`); chỉ lái tay bằng Playwright MCP khi `adapter.status` là `untested`/`broken`/`missing` hoặc collector hỏng (0 bài, `error`, tường đăng nhập): **Đường fetch (không trình duyệt, ưu tiên khi `next` có trường `fetch`):** Reddit (Atom `search.rss`), Houzz (HTML qua curl), Pinterest user/board RSS (chỉ trang tham chiếu): `node scripts/collect.mjs fetch --brand <id> --for-query|--for-source <id>` = 1 request lịch sự (cách ≥5 s/host), HTTP 429/403 hoặc trang captcha = `blocked`, dừng, KHÔNG thử lại/vòng; ra cùng raw.json rồi `fit` + `ingest`. **In-page:** kết quả script đã gọn (id, url, ảnh, caption cắt 100 ký tự, `total` + `checksum`): dán NGUYÊN VĂN vào `from-page --json/--stdin/--file`, không gõ lại; `from-page` kiểm `tiles.length === total` và checksum, JSON bị cắt/sửa thì báo lỗi; quá dài thì `script --chunk 0,1,..` rồi đưa tất cả file cho `from-page`.
+```
+node scripts/collect.mjs fit --brand <id> --for-query <qid> --file <decisions.json>   # agent NHÌN ảnh review[].image: [{id, fit:true, type, reason}|{id, fit:false, reason}]
+node scripts/collect.mjs status                                       # trạng thái từng adapter
+```
+- Adapter `untested` (viết khi chưa có trình duyệt): chạy `collect.mjs` thử, rồi mở cùng trang bằng Playwright MCP, so vài bài đầu với `review[]`; đúng thì đặt `status: "ok"` + `checked: "<ngày>"` trong `scripts/platforms/index.mjs`, sai/thiếu thì sửa adapter (selector chỉ ở khối `SELECTORS` đầu file), chạy lại, `npm test`. Chưa sửa được thì lấy tay như dưới. Quy trình đầy đủ: `docs/research.md` "Adapter workflow".
+- `collect.mjs` chỉ xem, không đăng nhập, dừng ngay khi gặp tường đăng nhập/captcha (`state: blocked` → `result --state blocked`).
+Các bước dưới là việc `collect` đã làm (hoặc agent làm tay khi fallback):
 ```
 node scripts/store.mjs known --brand <id>            # một lần: link/mã bài đã có (không mở, không tải lại)
 node scripts/research.mjs next --brand <id>
@@ -89,22 +96,11 @@ node scripts/research.mjs result --brand <id> --source <sid> --state end|known|s
 node scripts/research.mjs ingest --brand <id> --query <qid>
 node scripts/research.mjs result --brand <id> --query <qid> --state done|limit|empty|blocked|partial [--note ..]
 ```
-- Luật chung (docs/research.md): chỉ xem (không like/lưu/theo dõi/bình luận/nhắn tin/tham gia nhóm/đăng); nghỉ **ngẫu nhiên 5-15 giây** giữa mọi lần mở, cuộn, bấm; mỗi bài đọc link bài, ảnh lớn nhất, caption, tác giả, ngày, lượt thích nếu thấy, `product_fit` { type, reason }; bài sai loại → `rejected[]` (không tải).
+- Luật chung (docs/research.md, cả collector lẫn lái tay): chỉ xem (không like/lưu/theo dõi/bình luận/nhắn tin/tham gia nhóm/đăng); nghỉ **ngẫu nhiên 5-15 giây** giữa mọi lần mở, cuộn, bấm; mỗi bài đọc link bài, ảnh lớn nhất, caption, tác giả, ngày, lượt thích nếu thấy, `product_fit` { type, reason }; bài sai loại → `rejected[]` (không tải).
 - `ingest` bỏ trùng trên **mọi nền tảng** của thương hiệu (link/mã bài kể cả `alt_urls`, Instagram `/p/` = `/reel/`, YouTube `watch` = `shorts`; SHA-1 + dHash ảnh; caption), từ chối bài thiếu/sai `product_fit.type` (ghi `workspace/store/<brand>/rejected.json` kèm lý do), giữ `platform`, `source_url`, `author`, `found_by` (`reference page` | `keyword:<kw>` | `hashtag:<tag>`), `product_fit`.
 - Tường đăng nhập, captcha, checkpoint: dừng ngay nền tảng đó, `result --state blocked --note "<thấy gì>"`: truy vấn còn lại của nền tảng đó bị bỏ trong lượt, nền tảng khác vẫn tiếp. Trang tham khảo Facebook bị chặn: các trang Facebook còn lại `--state skipped`.
 - `next` trả `skip: true` (mục tiêu đã đủ khi còn trang tham khảo): chạy đúng lệnh `do` (`result --state skipped`).
-- Đường nhanh tuỳ chọn cho trang tham khảo **Facebook**: `node scripts/crawl-fb.mjs --check` rồi `node scripts/crawl-fb.mjs --brand <id>` (Chrome crawl riêng cổng 9222, mục dưới; tự ingest + result các trang Facebook), rồi tiếp `research.mjs next` cho discovery.
-
-### Chrome cho crawl (chỉ cho đường nhanh `crawl-fb.mjs`, tuỳ chọn)
-- `npm install` một lần trong thư mục tool (thư viện `playwright-core`; không tải trình duyệt).
-- Chrome mới không cho điều khiển profile mặc định, nên dùng **một profile riêng** cho crawl, đăng nhập Facebook tài khoản phụ (`research.fb_account`) trong profile đó **một lần, bằng tay**. Cookie nằm trong profile Chrome đó (ngoài repo), tool không bao giờ lưu cookie.
-- Lần đầu: chạy **`start-crawl-chrome.cmd`** (Windows) hoặc **`start-crawl-chrome.command`** (macOS) trong thư mục tool, hoặc nút **Start crawl Chrome** ở Settings → Requirements (dòng "Crawl Chrome" xanh khi Chrome đang chạy). Đăng nhập Facebook tài khoản phụ trong cửa sổ đó **một lần**. Các lần sau chỉ cần mở lại bằng launcher trước khi crawl.
-- Nếu một cửa sổ Chrome dùng profile crawl đang mở **không có** cổng điều khiển (mở tay, không qua launcher), lần mở mới chỉ nhập vào cửa sổ đó và cổng 9222 không bao giờ mở: launcher phát hiện việc này và yêu cầu đóng hết cửa sổ Chrome đó trước rồi chạy lại.
-- Launcher làm đúng lệnh sau (Chrome có cổng điều khiển, chỉ nghe ở 127.0.0.1):
-  - Windows: `"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%LOCALAPPDATA%\social-autopilot-chrome"`
-  - macOS: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/social-autopilot-chrome"`
-  - Kiểm tra: mở `http://127.0.0.1:9222/json/version` thấy JSON là được.
-- Settings (`workspace/settings.json`, mặc định ở `config/settings.json`): `research.browser.cdp` (mặc định `http://127.0.0.1:9222`). Hoặc `research.browser.user_data_dir` = thư mục profile riêng (ngoài thư mục tool): tool tự mở Chrome với profile đó (Chrome của profile đó phải đang tắt). Khác: `fallback_tabs` (`posts`, `photos`, `reels`), `stall_posts` (5), `max_scroll_steps` (300).
+- Trang tham khảo **Facebook**: Facebook chưa có script in-page (`pageScript`): lấy tay bằng Playwright MCP cho tới khi script đó được viết và kiểm trên trang thật; rồi tiếp `research.mjs next` cho discovery.
 
 1.3. Lọc một lượt (agent tự quyết, không mở trình duyệt):
 ```
@@ -114,7 +110,7 @@ node scripts/store.mjs verdict  --brand <id> --file <verdicts.json>
 - `classify` in một lô gọn các bài `new` chưa lọc: `id`, `source`, `platform`, `found_by`, `author`, `product_fit` (ghi lúc lấy), đoạn đầu caption (`(no caption)` khi bài chỉ có ảnh), `media`, `thumb` (đường dẫn ảnh), kèm `what_to_take` của từng nguồn, `product_fit` của skill (`types`, `must_have`, `must_not`), đường dẫn `project.md` (phạm vi sản phẩm) và `rules_of_thumb`.
 - Agent xem chữ + ảnh thumb (đọc file ảnh), đối chiếu `what_to_take` và phạm vi sản phẩm trong `project.md`, ghi `[{ "id": "S0001", "fit": true|false, "reason": "..." }]` (lý do ngắn, bắt buộc khi `fit:false`), rồi `verdict`. Lặp tới khi `total_unjudged` = 0.
 - `fit:false` → bài thành **Removed** (`rejected`), ghi chú `filter: <lý do>`; `fit:true` → giữ (Available). Người dùng vẫn Restore được ở tab Library (bài đó không bị lọc lại).
-- Luật nhanh: bỏ sản phẩm không thuộc `product_fit.types` hoặc dính `must_not` (lý do `off-brand: ...`; lần kiểm thứ hai, kể cả bài crawl-fb lấy); bỏ bài tuyển dụng; bỏ cuộc thi, minigame, giveaway; bỏ bài chỉ có chữ (hoặc ảnh chỉ là chữ, không thấy sản phẩm); bỏ bài chia sẻ lại mà không có ảnh sản phẩm; bỏ sản phẩm ngoài ngành hàng của thương hiệu. Giữ: ảnh sản phẩm thật đúng ngành hàng, có bối cảnh/góc chụp/khung caption học được.
+- Luật nhanh: bỏ sản phẩm không thuộc `product_fit.types` hoặc dính `must_not` (lý do `off-brand: ...`; lần kiểm thứ hai); bỏ bài tuyển dụng; bỏ cuộc thi, minigame, giveaway; bỏ bài chỉ có chữ (hoặc ảnh chỉ là chữ, không thấy sản phẩm); bỏ bài chia sẻ lại mà không có ảnh sản phẩm; bỏ sản phẩm ngoài ngành hàng của thương hiệu. Giữ: ảnh sản phẩm thật đúng ngành hàng, có bối cảnh/góc chụp/khung caption học được.
 
 1.4. Số liệu báo cáo:
 ```

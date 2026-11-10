@@ -247,8 +247,7 @@ export const rejectedFile = (brand) => path.join(storeDir(brand), 'rejected.json
 
 // Product fit (research.discovery.product_fit of the skill, user 10/11/2026): a post is stored only when its product is a
 // type the brand actually sells. On a post: product_fit { type, reason } (the agent judged it: kept) or { fit: false,
-// reason } (seen, off-brand). required = the post must carry a type (every post the agent captures; a post crawled by
-// crawl-fb.mjs has none and is judged by the filter step). Returns the reason it is off-brand, '' when it fits.
+// reason } (seen, off-brand). required = the post must carry a type (every post the agent captures; a post without one is judged by the filter step). Returns the reason it is off-brand, '' when it fits.
 export function fitProblem(post, rules = {}, { required = false } = {}) {
   const pf = post?.product_fit && typeof post.product_fit === 'object' ? post.product_fit : null;
   if (pf && pf.fit === false) return `off-brand: ${cleanText(String(pf.reason || 'not a product the brand sells')).text.trim().slice(0, 200)}`;

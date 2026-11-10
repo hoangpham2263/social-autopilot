@@ -1,7 +1,6 @@
-// Facebook page extraction for the scripted crawl (scripts/crawl-fb.mjs). Every selector lives here, each with
+// Facebook page extraction (used by scripts/platforms/facebook.mjs). Every selector lives here, each with
 // fallbacks (a list is tried in order and the matches are merged), so a Facebook DOM change is fixed in ONE place.
-// extractFeed / extractGrid / extractViewer are PURE and SELF-CONTAINED (no imports, no outer variables): the crawler
-// sends their source text into the page (one page.evaluate per scroll step) and the tests run them on saved HTML
+// extractFeed / extractGrid / extractViewer are PURE and SELF-CONTAINED (no imports, no outer variables): the source text is sent into the page (one page.evaluate per scroll step) and the tests run them on saved HTML
 // (tests/fixtures/fb-*.html, linkedom). They read the DOM only; the browser-side wrapper browserStep may click
 // "See more" inside a post's text and hover timestamps (never like / comment / follow / share).
 // Node-side helpers: parseFbDate (relative and absolute Facebook dates -> YYYY-MM-DD), detectBlock (checkpoint,
@@ -179,7 +178,7 @@ export function extractViewer(root, sel) {
   };
 }
 
-// Runs in the page (crawl-fb.mjs sends `(${browserStep})(${extractFeed}, sel, opts)` as one expression): expands
+// Runs in the page (sent as `(${browserStep})(${extractFeed}, sel, opts)` as one expression): expands
 // "See more" inside post texts, hovers timestamps so their permalink appears, waits a moment, extracts, then scrolls.
 export async function browserStep(extract, sel, opts) {
   const doc = document;

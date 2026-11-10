@@ -6,7 +6,7 @@ Các quyết định của người dùng dưới đây thắng mọi chỗ khá
 
 | Phần | Ai chạy | Gồm |
 |---|---|---|
-| **Mode 1: Research only** | Claude Code hoặc Codex + Chrome đã đăng nhập Facebook (cổng `--remote-debugging-port`), chạy riêng, vd mỗi tuần | `research.mjs start` → `crawl-fb.mjs` crawl hết bằng script, tự `ingest` (bỏ trùng) + `result` → agent lọc một lượt (`store.mjs classify` / `verdict`) → `report`. Crawl tay bằng Playwright MCP chỉ dự phòng. Không ý/bài |
+| **Mode 1: Research only** | Claude Code hoặc Codex + Playwright MCP gắn vào Chrome đã đăng nhập, chạy riêng, vd mỗi tuần | `research.mjs start` → `collect.mjs` (fetch hoặc script in-page) + `ingest` (bỏ trùng) + `result` → agent lọc một lượt (`store.mjs classify` / `verdict`) → `report`. Lấy tay bằng Playwright MCP chỉ dự phòng (Facebook: chưa có script in-page). Không ý/bài |
 | **Mode 2: Create & publish** | Claude Code hoặc Codex khi người dùng bảo (ChatGPT chỉ gửi bài đã duyệt từ JSON payload); không mở Facebook | `getBrandSettings` → `sync-brands` → `payload` → `createScheduledPost` (hẹn giờ thật) → `record` → `status`/`getScheduledPosts` → `ideas.mjs` → `draft.mjs` (ảnh Codex, caption) → `check` → **To review**, dừng → `queue.mjs` |
 | **Mode 3: Publish approved** | Claude Code hoặc Codex (ChatGPT từ JSON payload) | `pipeline.mjs publish`: chỉ hẹn giờ các bài Approved chưa gửi (Start From tomorrow / From today, chừa 15 phút) → `record` → đối chiếu; không làm bài |
 | **App** | Người dùng | Overview (brand Metricool ↔ skill), Library, Posts (Approve / Drop), Prompt, Settings |

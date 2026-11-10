@@ -15,13 +15,13 @@ STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one b
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run" + docs/research.md; for each SKILL line read that skill's SKILL.md + project/project.md + project/social.json (research.sources, research.discovery: keywords, hashtags, product_fit); node scripts/brands.mjs --run research.
 2. 1.0 Check the browser FIRST: Playwright MCP connected to my signed-in Chrome (browser_tabs) → node scripts/research.mjs browser --brand <id> --state ok|fail (fail → stop, do not start).
 3. 1.1 Open the run: node scripts/research.mjs start --brand <id> (with the OPTIONS flags); node scripts/store.mjs known --brand <id>.
-4. 1.2 Loop node scripts/research.mjs next: reference pages first, then discovery queries round-robin across platforms; collect with Playwright MCP (random 5-15 s pauses); keep ONLY posts whose product is one of product_fit.types (others: raw.json rejected[], never downloaded) → ingest --source|--query → result; until next says done.
+4. 1.2 Loop node scripts/research.mjs next: FIRST its `fetch` command if present (no browser; blocked = stop), else its `script` command → ONE Playwright MCP browser_run_code_unsafe call → paste the compact result AS IS (never retype) → its `from_page` command (scripts/collect.mjs); LOOK at the images, keep ONLY posts whose product is one of product_fit.types (collect.mjs fit) → ingest --source|--query → result; Playwright MCP by hand (random 5-15 s pauses) only when adapter.status is not ok or collect fails (0 posts, error, login wall), and then fix the adapter (docs/research.md "Adapter workflow"); until next says done.
 5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails against product_fit, store.mjs verdict --file; repeat until 0 left.
 6. 1.4 Report data: node scripts/research.mjs report.
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
-NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; touch the Chrome on port 9222; make ideas or posts; send anything to Metricool.
+STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint (collect says blocked) → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
+NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; make ideas or posts; send anything to Metricool.
 ```
 
 ### Research only · Codex
@@ -35,13 +35,13 @@ STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one b
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run" + docs/research.md; for each SKILL line read that skill's SKILL.md + project/project.md + project/social.json (research.sources, research.discovery: keywords, hashtags, product_fit); node scripts/brands.mjs --run research.
 2. 1.0 Check the browser FIRST: Playwright MCP connected to my signed-in Chrome (browser_tabs) → node scripts/research.mjs browser --brand <id> --state ok|fail (fail → stop, do not start).
 3. 1.1 Open the run: node scripts/research.mjs start --brand <id> (with the OPTIONS flags); node scripts/store.mjs known --brand <id>.
-4. 1.2 Loop node scripts/research.mjs next: reference pages first, then discovery queries round-robin across platforms; collect with Playwright MCP (random 5-15 s pauses); keep ONLY posts whose product is one of product_fit.types (others: raw.json rejected[], never downloaded) → ingest --source|--query → result; until next says done.
+4. 1.2 Loop node scripts/research.mjs next: FIRST its `fetch` command if present (no browser; blocked = stop), else its `script` command → ONE Playwright MCP browser_run_code_unsafe call → paste the compact result AS IS (never retype) → its `from_page` command (scripts/collect.mjs); LOOK at the images, keep ONLY posts whose product is one of product_fit.types (collect.mjs fit) → ingest --source|--query → result; Playwright MCP by hand (random 5-15 s pauses) only when adapter.status is not ok or collect fails (0 posts, error, login wall), and then fix the adapter (docs/research.md "Adapter workflow"); until next says done.
 5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails against product_fit, store.mjs verdict --file; repeat until 0 left.
 6. 1.4 Report data: node scripts/research.mjs report.
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
-NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; touch the Chrome on port 9222; make ideas or posts; send anything to Metricool.
+STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint (collect says blocked) → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
+NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; make ideas or posts; send anything to Metricool.
 ```
 
 ### Research only · ChatGPT

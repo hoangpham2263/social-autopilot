@@ -1427,9 +1427,8 @@ function draftTags(d) {
         c.installed ? `<button class="btn${c.signed_in ? "" : " primary"}" type="button" id="setLogin">${c.signed_in ? "Switch account" : "Sign in"}</button>` : "")
       + dotRow(g.signed_in, "GitHub (image host)", g.signed_in ? esc(g.login) : g.installed ? "Not signed in (gh auth login)" : "gh CLI not installed")
       + dotRow(m.user_id ? true : null, "Metricool", `${m.user_id ? `account ${esc(m.user_id)} · ` : ""}${arr(m.brands).length} brands <span class="meta">via the Claude/ChatGPT connector</span>`);
-    $("#setReqs").innerHTML = a.requirements.map((r) => dotRow(r.ok, r.name, r.id === "crawl_chrome" ? esc(r.note || "") : r.ok ? `v${esc(r.version || "?")}` : "Not installed",
-      r.action === "install" ? `<button class="btn primary" type="button" data-install>Install</button>` : r.action === "start_chrome" ? `<button class="btn" type="button" data-startchrome title="Chrome with its own profile and the control port for research">Start crawl Chrome</button>` : "")).join("");
-    for (const b of $$("#setReqs [data-startchrome]")) b.onclick = async () => { b.disabled = true; const x = await postJson("/api/start-crawl-chrome", {}).catch(() => offline); $("#setLoginMsg").innerHTML = x.error ? errLine(x.error) : `<span class="ok-text">Chrome started. Sign in to the secondary Facebook account the first time.</span>`; setTimeout(loadAccounts, 4000); };
+    $("#setReqs").innerHTML = a.requirements.map((r) => dotRow(r.ok, r.name, r.ok ? `v${esc(r.version || "?")}` : "Not installed",
+      r.action === "install" ? `<button class="btn primary" type="button" data-install>Install</button>` : "")).join("");
     if ($("#setLogin")) $("#setLogin").onclick = () => setupStep("login");
     for (const b of $$("#setReqs [data-install]")) b.onclick = () => setupStep("install");
   });
