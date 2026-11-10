@@ -314,7 +314,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <div class="page-head"><button class="btn" type="button" id="brandBack">← Overview</button><h2 id="brandTitle"></h2></div>
     <fieldset><legend id="brandLegend">Brand settings</legend>
       <div id="brandForm"></div>
-      <div class="row-actions"><button class="btn primary" type="button" id="brandSave" title="After saving, the skill's check-skill runs; a broken file is put back">Save</button></div>
+      <div class="row-actions"><button class="btn primary" type="button" id="brandSave" title="Saved in the tool (workspace/brands/&lt;id&gt;.json) — the skill is not changed">Save</button></div>
       <div class="msg" id="brandMsg"></div>
     </fieldset>
   </section>
@@ -529,58 +529,73 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     };
   });
 
-  // ----- Edit a brand: only what people change; the rest in the skill folder (Open skill folder) -----
+  // ----- Edit a brand: only what people change, saved IN THE TOOL (workspace/brands/<id>.json, merged over the skill's
+  // social.json); the skill is read-only and never changed. Everything else: Open skill folder. -----
   let editing = null;
   const slug = (u) => "src-" + u.replace(/^https?:\/\/(www\.)?/, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 40);
   async function openBrand(id) {
     $("#brandMsg").textContent = "";
     const r = await getJson(`/api/brand?id=${encodeURIComponent(id)}`).catch(() => offline);
     if (r.error || !r.social) { $("#brandForm").innerHTML = ""; $("#brandTitle").textContent = id; $("#brandMsg").innerHTML = errLine(r.error || RESTART); show("brand"); return; }
-    editing = { id, social: r.social, file: r.file };
-    const s = r.social, cad = s.cadence || {};
-    const sources = arr(s.research?.sources);
-    const perDay = Number.isInteger(cad.posts_per_day) && cad.posts_per_day > 0 ? cad.posts_per_day : Number.isInteger(cad.posts_per_week) && cad.posts_per_week > 0 ? Math.ceil(cad.posts_per_week / 7) : 1;
-    $("#brandTitle").textContent = s.brand || id;
-    $("#brandLegend").textContent = s.brand || id;
+    const skill = r.skill_social || r.social, ov = r.override || { posts_per_day: null, paused: false, sources_add: [], sources_disabled: [] };
+    editing = { id, skill, added: arr(ov.sources_add).map((x) => ({ ...x })) };
+    const cad = skill.cadence || {};
+    const skillPerDay = Number.isInteger(cad.posts_per_day) && cad.posts_per_day > 0 ? cad.posts_per_day : Number.isInteger(cad.posts_per_week) && cad.posts_per_week > 0 ? Math.ceil(cad.posts_per_week / 7) : 1;
+    const off = new Set(arr(ov.sources_disabled));
+    const skillOff = skill.enabled !== true;
+    $("#brandTitle").textContent = skill.brand || id;
+    $("#brandLegend").textContent = skill.brand || id;
+    const srcRow = (x, kind, note = "added in the tool") => {
+      const inSkillOff = kind === "skill" && !x.enabled;
+      const tip = inSkillOff ? "Off in the skill: turn it on in the skill folder" : "Tick = crawled";
+      return `<div class="slot" data-kind="${kind}" data-id="${esc(x.id)}"><input type="checkbox"${!inSkillOff && !off.has(x.id) ? " checked" : ""}${inSkillOff ? " disabled" : ""} title="${esc(tip)}"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}${kind === "tool" ? ` <span class="meta">(${esc(note)})</span>` : ""}</span>${kind === "tool" ? `<button class="btn" type="button" data-rmsrc="1">Remove</button>` : ""}</div>`;
+    };
+    const rows = [...arr(skill.research?.sources).filter((x) => x && x.id).map((x) => srcRow(x, "skill")), ...editing.added.map((x) => srcRow(x, "tool"))];
     // Posting times are automatic (Metricool's best times, else the research table); channels are the Metricool brand's.
-    $("#brandForm").innerHTML = `<div class="fields">
-        <div class="field"><label for="fPpd" title="Posts every day; times are chosen automatically (Metricool best times)">Posts per day</label><input type="number" id="fPpd" min="1" step="1" value="${esc(perDay)}"></div>
-        <div class="field"><span class="label">Status</span><div class="checks"><label title="A paused brand gets no new posts and nothing sent"><input type="checkbox" id="fPaused"${s.enabled ? "" : " checked"}> Paused</label></div></div>
+    $("#brandForm").innerHTML = `<div class="meta brand-note">Saved in the tool — the skill is not changed.</div>
+      <div class="fields">
+        <div class="field"><label for="fPpd" title="Posts every day; times are chosen automatically (Metricool best times). Empty = the skill's value (${esc(skillPerDay)})">Posts per day</label><input type="number" id="fPpd" min="1" max="20" step="1" placeholder="${esc(skillPerDay)}" value="${ov.posts_per_day ? esc(ov.posts_per_day) : ""}"></div>
+        <div class="field"><span class="label">Status</span><div class="checks"><label title="${skillOff ? "Off in the skill (enabled: false): turn it on in the skill folder" : "A paused brand gets no new posts and nothing sent"}"><input type="checkbox" id="fPaused"${ov.paused || skillOff ? " checked" : ""}${skillOff ? " disabled" : ""}> Paused</label></div></div>
         <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">${icon("folder")}<span>Open skill folder</span></button></div>
       </div>
       <div class="fields">
-        <div class="field wide"><span class="label">Sources</span><div id="fSources">${sources.map((x, i) => `<div class="slot" data-i="${i}"><input type="checkbox"${x.enabled ? " checked" : ""} title="enabled"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span><button class="btn" type="button" data-rmsrc="1">Remove</button></div>`).join("") || `<div class="meta">No sources.</div>`}</div>
+        <div class="field wide"><span class="label">Sources</span><div id="fSources">${rows.join("") || `<div class="meta">No sources.</div>`}</div>
           <div class="slot"><input type="text" id="fNewSrc" placeholder="Add a source: paste the page URL"><button class="btn" type="button" id="addSrc">Add</button></div></div>
       </div>`;
     $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
-    $("#fSources").onclick = (e) => { if (e.target.dataset.rmsrc) { const row = e.target.closest(".slot"); if (row.dataset.i !== undefined) (editing.removed ||= []).push(Number(row.dataset.i)); row.remove(); } };
+    $("#fSources").onclick = (e) => {
+      if (!e.target.dataset.rmsrc) return;
+      const row = e.target.closest(".slot");
+      editing.added = editing.added.filter((a) => a.id !== row.dataset.id);
+      row.parentNode.removeChild(row);
+    };
     $("#addSrc").onclick = () => {
       const u = $("#fNewSrc").value.trim();
       if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">The URL must start with http(s)://</span>`; return; }
-      editing.added = [...(editing.added || []), { id: slug(u), name: u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60), platform: /facebook\.com/.test(u) ? "facebook" : "", url: u, enabled: true, what_to_take: "", notes: "" }];
-      $("#fSources").insertAdjacentHTML("beforeend", `<div class="slot"><input type="checkbox" checked disabled><span class="src-url">${esc(u)} <span class="meta">(new, Save to keep)</span></span></div>`);
+      const a = { id: slug(u), name: u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60), platform: /facebook\.com/.test(u) ? "facebook" : "", url: u, what_to_take: "", notes: "" };
+      if ([...arr(skill.research?.sources), ...editing.added].some((x) => x?.id === a.id || x?.url === u)) { $("#brandMsg").innerHTML = `<span class="bad-text">That source is already in the list.</span>`; return; }
+      editing.added.push(a);
+      $("#fSources").insertAdjacentHTML("beforeend", srcRow(a, "tool", "new, Save to keep"));
       $("#fNewSrc").value = ""; $("#brandMsg").textContent = "";
     };
-    const syncOff = () => { const off = $("#fPaused").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fPaused" && el.id !== "fOpen") setDisabled(el, off, "Paused: untick Paused to change this"); };
+    const syncOff = () => { const paused = $("#fPaused").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fPaused" && el.id !== "fOpen") setDisabled(el, paused, "Paused: untick Paused to change this"); };
     $("#fPaused").onchange = syncOff; syncOff();
     show("brand");
   }
   $("#brandBack").onclick = () => show("overview");
   $("#brandSave").onclick = async () => {
     const msg = $("#brandMsg");
-    const social = JSON.parse(JSON.stringify(editing.social));
-    social.enabled = !$("#fPaused").checked;
-    const cad = (social.cadence ||= {});
-    cad.posts_per_day = Math.max(1, parseInt($("#fPpd").value, 10) || 1);
-    const src = (social.research ||= {}).sources ||= [];
-    $$("#fSources .slot[data-i]").forEach((row) => { src[Number(row.dataset.i)].enabled = $("input", row).checked; });
-    social.research.sources = src.filter((_, i) => !(editing.removed || []).includes(i));
-    for (const a of editing.added || []) if (!social.research.sources.some((x) => x.id === a.id)) social.research.sources.push(a);
-    msg.textContent = "Saving and running check-skill…";
-    const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { social }).catch(() => offline);
+    const ppd = parseInt($("#fPpd").value, 10);
+    const override = {
+      posts_per_day: ppd > 0 ? ppd : null,
+      paused: editing.skill.enabled === true && $("#fPaused").checked,
+      sources_add: editing.added,
+      sources_disabled: $$("#fSources .slot[data-id]").filter((row) => { const c = $("input", row); return !c.disabled && !c.checked; }).map((row) => row.dataset.id),
+    };
+    msg.textContent = "Saving…";
+    const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { override }).catch(() => offline);
     if (r.error) msg.innerHTML = errLine(r.error);
-    else if (!r.saved) msg.innerHTML = `<span class="bad-text" title="${esc(arr(r.errors).join("\n"))}">Not saved; the previous file was kept (${arr(r.errors).length} problems).</span>`;
-    else { msg.innerHTML = `<span class="ok-text">Saved.${r.tool_ready ? " Ready for the tool." : ` Missing ${arr(r.missing).length} items.`}</span>`; editing.added = []; editing.removed = []; setTimeout(() => show("overview"), 900); }
+    else { msg.innerHTML = `<span class="ok-text">Saved in the tool — the skill is not changed.</span>`; setTimeout(() => show("overview"), 900); }
   };
 
   // ----- Library: the research store of each brand, kept apart per brand; "Drop" = never used for posts -----

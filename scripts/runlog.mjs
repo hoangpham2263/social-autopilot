@@ -9,7 +9,7 @@
 // Files: workspace/logs/runs/<yyyymmdd-hhmmss>-<mode>.json (one per run).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, readJson, writeJson, workspace, discoverBrands, listDrafts, stamp } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, readJson, writeJson, workspace, discoverBrands, listDrafts, stamp, brandSocial } from './lib.mjs';
 
 const USAGE = `node scripts/runlog.mjs add --mode research|create|publish --agent "<Claude Code|Codex>" [--brand a,b] [--started <ISO>]
      [--file <notes.json> | --stdin] [--notes "..."] [--reason "<why the run stopped>" | --stopped] [--warning "<text>"]
@@ -101,7 +101,7 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
   const per = pick.map((b) => {
     const x = extra.brands?.[b.id] || {};
     // The brand's Facebook page (its enabled facebook channel's url), linked from the Log.
-    const page = (readJson(path.join(b.dir, 'project', 'social.json'), {}).channels || []).find((c) => c?.enabled && c.network === 'facebook' && /^https:\/\//.test(c.url || ''))?.url || '';
+    const page = ((() => { try { return brandSocial(b.dir, b.id); } catch { return {}; } })().channels || []).find((c) => c?.enabled && c.network === 'facebook' && /^https:\/\//.test(c.url || ''))?.url || '';
     // errors = still open (red); resolved = fixed during the run (shown, not red); warnings = amber.
     const entry = { brand: b.id, name: b.brand || b.id, page_url: page, notes: String(x.notes || ''), errors: [].concat(x.errors || []).map(String), resolved: [].concat(x.resolved || []).map(String), warnings: [].concat(x.warnings || []).map(String) };
     if (mode === 'research') entry.research = researchPart(b.id, since); else entry.create = createPart(b.id, since);

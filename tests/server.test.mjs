@@ -125,6 +125,33 @@ test('brand settings: skills are read-only, saving social.json is refused and th
   assert.equal(fs.readFileSync(file, 'utf8'), before);
 });
 
+// Brand Edit saves per-brand overrides IN THE TOOL (workspace/brands/<id>.json), merged over social.json; skill untouched.
+test('brand settings: Brand Edit saves overrides in the tool, merged over the skill; the skill file is not changed', { skip: !fs.existsSync(path.join(tool, '..', 'vaniecom-workspace', 'skills', 'grenheim-skills')) && 'no brand skill to copy' }, async () => {
+  const file = path.join(tmp, 'skills', 'grenheim-skills', 'project', 'social.json');
+  const before = fs.readFileSync(file, 'utf8');
+  const skillSources = (JSON.parse(before).research?.sources || []).filter((x) => x?.id);
+  const post = (o) => fetch(`${base}/api/brand?id=grenheim`, { method: 'POST', headers: hdr(), body: JSON.stringify({ override: o }) }).then((r) => r.json());
+  const disabled = skillSources.slice(0, 1).map((x) => x.id);
+  const r = await post({ posts_per_day: 3, paused: false, sources_add: [{ id: 'src-new-page', url: 'https://www.facebook.com/newpage', name: 'New page' }], sources_disabled: disabled });
+  assert.equal(r.saved, true, JSON.stringify(r));
+  const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'workspace', 'brands', 'grenheim.json'), 'utf8'));
+  assert.equal(saved.posts_per_day, 3);
+  assert.equal(fs.readFileSync(file, 'utf8'), before, 'the skill is never written');
+  const got = await (await fetch(`${base}/api/brand?id=grenheim`)).json();
+  assert.equal(got.social.cadence.posts_per_day, 3);
+  assert.ok(got.social.research.sources.some((x) => x.id === 'src-new-page' && x.enabled));
+  for (const id of disabled) assert.equal(got.social.research.sources.find((x) => x.id === id).enabled, false);
+  assert.equal(got.skill_social.cadence?.posts_per_day, JSON.parse(before).cadence?.posts_per_day);
+  assert.match((await post({ posts_per_day: 0 })).error, /posts_per_day/);
+  assert.match((await post({ sources_add: [{ id: 'x', url: 'javascript:alert(1)' }] })).error, /http/);
+  // paused: the brand leaves the run
+  await post({ paused: true });
+  const brands = await (await fetch(`${base}/api/brands`)).json();
+  const g = (brands.brands || []).find((b) => b.id === 'grenheim');
+  if (g) assert.equal(g.usable, false);
+  await post({});
+});
+
 // Prompt tab, Run progress: GET the steps + current run of a mode; Copy prompt (POST) makes a new pending run.
 test('/api/progress: fixed steps per mode, Copy prompt starts a pending run, the step scripts move it', async () => {
   const get = async (mode) => (await fetch(`${base}/api/progress?mode=${mode}`)).json();

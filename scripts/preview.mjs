@@ -17,7 +17,7 @@ const reviewOf = (social) => (lib.reviewLanguages || lib.reviewLangs || ((s) => 
 
 export function previewOf(d) {
   let social = {};
-  try { social = readJson(join(d.draft.brand_dir, 'project', 'social.json')); } catch {}
+  try { social = lib.brandSocial(d.draft.brand_dir); } catch {}
   const review = reviewOf(social);
   const sep = typeof social.metricool?.bilingual_separator === 'string' ? social.metricool.bilingual_separator : '\n\n';
   // A caption file: the one the draft names, else content-<lang>.txt in the draft folder.

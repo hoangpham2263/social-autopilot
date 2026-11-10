@@ -254,7 +254,8 @@ node scripts/store.mjs migrate [--brand <id>]                             # dữ
 node scripts/prompts.mjs list | show --mode "<mode>" --agent "<agent>" [--brand <id>]
 node scripts/progress.mjs show --mode research|create|publish            # Run progress (tab Prompt) của lượt đang chạy / lượt cuối
 node scripts/progress.mjs new --mode <mode> [--brand a,b]                 # lượt pending mới (như nút Copy prompt)
-node scripts/social.mjs show --brand <id>                                 # xem social.json (chỉ đọc; sửa trong skill)
+node scripts/social.mjs show --brand <id>                                 # social.json tool dùng (skill + chỉnh riêng trong tool)
+node scripts/social.mjs override --brand <id> --json '{"posts_per_day":2,"paused":false,"sources_add":[],"sources_disabled":[]}'   # như Edit brand: lưu ở workspace/brands/<id>.json, skill không đổi
 node scripts/research.mjs clean --in <file> [--out <file>]                 # lọc U+034F / zero-width / NBSP
 node scripts/image-clean.mjs --id <draft>                                  # làm sạch metadata lại
 node scripts/writeback.mjs --id <draft>                                    # chạy lại ghi vào sổ bài của tool khi Approve lỗi giữa chừng

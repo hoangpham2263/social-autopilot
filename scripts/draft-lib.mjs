@@ -4,12 +4,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { cleanProblems } from './image-clean.mjs';
 import { readStore, postKey } from './store.mjs';
-import { readJson, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
+import { readJson, brandSocial, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
 
 // Which caption languages of a draft are posted and which are only for the approver to read (social.json
 // language_policy.review_langs). Read from the brand's social.json now, so older drafts follow the current policy.
 export function draftLangs(draft, social) {
-  if (!social) { try { social = readJson(path.join(draft.brand_dir, 'project', 'social.json')); } catch { social = {}; } }
+  if (!social) { try { social = brandSocial(draft.brand_dir); } catch { social = {}; } }
   const review = reviewLanguages(social);
   const postedNow = brandLanguages(social);
   const all = [...new Set([...Object.keys(draft.captions || {}), ...postedNow, ...review])];
@@ -32,7 +32,7 @@ export function checkDraft(dir, draft, status = {}) {
   const promptFile = path.join(dir, 'prompt.txt');
   const warnings = logoWarnings(fs.existsSync(promptFile) ? fs.readFileSync(promptFile, 'utf8') : '');
   try {
-    const social = readJson(path.join(draft.brand_dir, 'project', 'social.json'));
+    const social = brandSocial(draft.brand_dir);
     if (social.product_images?.watermark?.enabled && !status.watermark) problems.push('thương hiệu bật watermark nhưng chưa chèn (draft.mjs watermark)');
   } catch {}
   const project = fs.readFileSync(path.join(draft.brand_dir, 'project', 'project.md'), 'utf8');

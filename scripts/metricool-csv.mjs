@@ -21,7 +21,7 @@
 //   facebook_post_type (default POST, REEL for a video).
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands, skillDirs, linkedDir, workspace } from './lib.mjs';
+import { main, out, fail, isMain, parseArgs, need, settings, toolRoot, readJson, projectField, cleanText, hasHidden, parseCsv, inside, aiLabelHits, reviewLanguages, metricoolBrands, skillDirs, linkedDir, workspace, brandSocial } from './lib.mjs';
 import { readPosts, postFolder } from './posts.mjs';
 
 // WebP in any form Metricool refuses ("Unsupported .webp format"): the extension anywhere in the URL, or a CDN format
@@ -112,7 +112,7 @@ function brandDirs(root) {
   return skillDirs({ ...settings(), skillsRoot: root }).filter((d) => fs.existsSync(path.join(d, 'project', 'social.json')));
 }
 export function brandInfo(dir) {
-  const social = readJson(path.join(dir, 'project', 'social.json'));
+  const social = brandSocial(dir);
   const projectFile = path.join(dir, 'project', 'project.md');
   const project = fs.existsSync(projectFile) ? fs.readFileSync(projectFile, 'utf8') : '';
   const mc = social.metricool && typeof social.metricool === 'object' ? social.metricool : {};

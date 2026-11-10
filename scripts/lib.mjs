@@ -490,6 +490,56 @@ export function brandAvatar(dir) {
 // The page name a post shows: the enabled Facebook channel's account, else the brand name.
 export const pageName = (social) => String((social?.channels || []).find((c) => c?.enabled && c.network === 'facebook' && c.account)?.account || social?.brand || '');
 
+// ----- per-brand overrides kept IN THE TOOL (skills are read-only) -----
+// workspace/brands/<id>.json { posts_per_day, paused, sources_add[], sources_disabled[] } is merged over the skill's
+// project/social.json wherever the tool reads cadence, sources or enabled (brandSocial). The app's Brand Edit panel
+// saves here; the skill folder is never changed.
+export const brandOverrideFile = (id) => path.join(workspace, 'brands', `${id}.json`);
+const SRC_ID = /^[a-z0-9][a-z0-9-]*$/;
+export function normalizeOverride(input = {}) {
+  const o = input && typeof input === 'object' ? input : {};
+  const ppd = o.posts_per_day === null || o.posts_per_day === undefined || o.posts_per_day === '' ? null : Number(o.posts_per_day);
+  if (ppd !== null && !(Number.isInteger(ppd) && ppd >= 1 && ppd <= 20)) throw new Error('posts_per_day must be a whole number from 1 to 20.');
+  const add = [];
+  for (const x of Array.isArray(o.sources_add) ? o.sources_add : []) {
+    let u; try { u = new URL(String(x?.url || '')); } catch { throw new Error(`Source URL "${x?.url || ''}" is not a link.`); }
+    if (!/^https?:$/.test(u.protocol)) throw new Error(`Source URL "${x.url}" must start with http(s)://`);
+    const id = String(x.id || '');
+    if (!SRC_ID.test(id)) throw new Error(`Source id "${id}" must be lower-case letters, digits and dashes.`);
+    if (add.some((a) => a.id === id)) continue;
+    add.push({ id, name: String(x.name || id).slice(0, 120), platform: String(x.platform || (/facebook.com/.test(u.host) ? 'facebook' : '')), url: u.href, enabled: true, what_to_take: String(x.what_to_take || ''), notes: String(x.notes || '') });
+  }
+  const disabled = [...new Set((Array.isArray(o.sources_disabled) ? o.sources_disabled : []).map(String).filter((s) => SRC_ID.test(s)))];
+  return { posts_per_day: ppd, paused: o.paused === true, sources_add: add, sources_disabled: disabled };
+}
+export function readBrandOverride(id) {
+  try { return normalizeOverride(readJson(brandOverrideFile(id), {})); } catch { return normalizeOverride({}); }
+}
+export function saveBrandOverride(id, input) {
+  if (!SRC_ID.test(String(id || ''))) throw new Error(`Bad brand id "${id}".`);
+  const ov = normalizeOverride(input);
+  const file = brandOverrideFile(id);
+  withLock(file, () => writeJson(file, { ...ov, updated: stamp() }));
+  return { id, file, override: ov };
+}
+// The skill's social.json with the tool's override on top (a copy; the skill file is never written).
+export function applyBrandOverride(social, ov) {
+  const s = JSON.parse(JSON.stringify(social || {}));
+  if (!ov) return s;
+  if (ov.posts_per_day) s.cadence = { ...(s.cadence || {}), posts_per_day: ov.posts_per_day };
+  if (ov.paused) { s.enabled = false; s.paused_in_tool = true; }
+  const off = new Set(ov.sources_disabled || []);
+  if (off.size || (ov.sources_add || []).length) {
+    s.research = { ...(s.research || {}) };
+    const own = (Array.isArray(s.research.sources) ? s.research.sources : []).map((x) => (x && off.has(x.id) ? { ...x, enabled: false } : x));
+    for (const a of ov.sources_add || []) if (!own.some((x) => x?.id === a.id)) own.push({ ...a, enabled: !off.has(a.id), added_in_tool: true });
+    s.research.sources = own;
+  }
+  return s;
+}
+export const skillSocial = (dir) => readJson(path.join(dir, 'project', 'social.json'));
+export const brandSocial = (dir, id = skillIdOf(dir)) => applyBrandOverride(skillSocial(dir), readBrandOverride(id));
+
 // One brand = one skill folder (under skillsRoot, or linked by path from Tổng quan) with SKILL.md, project/project.md and project/social.json.
 // Readiness is the skill's own check (scripts/check-skill.mjs --tool-ready, exit 0 = ready); the tool does not
 // re-implement it. Usable (in the run) = enabled: true and ready.
@@ -499,9 +549,10 @@ export function inspectBrand(dir) {
   const missing = ['SKILL.md', 'project/project.md', 'project/social.json'].filter((f) => !fs.existsSync(path.join(dir, f)));
   if (missing.length) { result.skip = `thiếu ${missing.join(', ')}`; return result; }
   let social;
-  try { social = readJson(path.join(dir, 'project/social.json')); } catch (e) { result.problems.push(`social.json không đọc được: ${e.message}`); return result; }
+  try { social = brandSocial(dir, id); } catch (e) { result.problems.push(`social.json không đọc được: ${e.message}`); return result; }
   result.brand = social.brand || '';
   result.enabled = social.enabled === true;
+  result.paused = social.paused_in_tool === true;
   result.channels = (social.channels || []).filter((c) => c.enabled).map((c) => c.network);
   result.languages = brandLanguages(social);
   result.language_mode = social.language_policy?.mode || '';
@@ -542,8 +593,8 @@ export function loadBrand(id, { allowDisabled = false } = {}) {
   const { brands, root } = discoverBrands();
   const b = brands.find((x) => x.id === id);
   if (!b) throw new Error(`Không có thương hiệu "${id}" trong ${root}.`);
-  if (!allowDisabled && !b.usable) throw new Error(`Thương hiệu "${id}" chưa dùng được: ${b.enabled ? b.problems.join('; ') : 'social.json enabled: false'}.`);
-  return { ...b, social: readJson(path.join(b.dir, 'project/social.json')), project: fs.readFileSync(path.join(b.dir, 'project/project.md'), 'utf8') };
+  if (!allowDisabled && !b.usable) throw new Error(`Thương hiệu "${id}" chưa dùng được: ${b.enabled ? b.problems.join('; ') : b.paused ? 'paused in the tool (Brand Edit)' : 'social.json enabled: false'}.`);
+  return { ...b, social: brandSocial(b.dir, b.id), project: fs.readFileSync(path.join(b.dir, 'project/project.md'), 'utf8') };
 }
 
 // ----- runs, ideas, drafts -----

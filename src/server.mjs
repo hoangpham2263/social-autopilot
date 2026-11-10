@@ -14,7 +14,7 @@ import { workspace, discoverBrands, listDrafts, brandAvatar, readJson, rawSettin
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
-import { readSocial, saveSocial } from "../scripts/social.mjs";
+import { readSocial, saveSocial, saveOverride } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar } from "../scripts/store.mjs";
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
@@ -193,7 +193,9 @@ async function handle(req, res) {
   if (path === "/api/brand" && req.method === "POST") return api(res, async () => {
     if (!get("id")) throw new Error("Missing brand id (id).");
     const b = await body(req);
-    if (!isObject(b.social)) throw new Error("Missing social.json content (social must be a JSON object).");
+    // Brand Edit saves per-brand overrides in the tool (workspace/brands/<id>.json); the skill is never changed.
+    if (isObject(b.override)) return saveOverride(get("id"), b.override);
+    if (!isObject(b.social)) throw new Error("Missing override or social (override must be a JSON object; social.json itself is read-only).");
     return saveSocial(get("id"), b.social);
   });
   if (path === "/api/store" && req.method === "GET") return api(res, () => {

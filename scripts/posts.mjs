@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, isMain, parseArgs, need, workspace, readJson, writeJson, withLock, loadBrand, today, projectField, hasHidden, aiLabelHits, brandLanguages, inside } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, workspace, readJson, writeJson, withLock, loadBrand, today, projectField, hasHidden, aiLabelHits, brandLanguages, inside, brandSocial } from './lib.mjs';
 
 export const postsDir = (brandId) => path.join(workspace, 'posts', brandId);
 export const postsCatalogFile = (brandId) => path.join(postsDir(brandId), 'catalog.json');
@@ -56,7 +56,7 @@ export function checkPost(brand, postOrId) {
   if (!folder || !inside(postsDir(brand.id), folder) || !fs.existsSync(folder)) errors.push(`Thiếu thư mục bài ${entry.folder || ''}.`);
   else {
     const project = brand.project ?? fs.readFileSync(path.join(brand.dir, 'project', 'project.md'), 'utf8');
-    const social = brand.social ?? readJson(path.join(brand.dir, 'project', 'social.json'), {});
+    const social = brand.social ?? (() => { try { return brandSocial(brand.dir); } catch { return {}; } })();
     const website = projectField(project, 'Website').split(/\s/)[0];
     const tag = projectField(project, 'Hashtag cố định').split(/\s/)[0];
     const langs = brandLanguages(social);
