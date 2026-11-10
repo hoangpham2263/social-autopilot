@@ -14,8 +14,8 @@ import * as houzz from './houzz.mjs';
 export const STATUSES = ['untested', 'ok', 'broken'];
 
 export const REGISTRY = {
-  instagram: { adapter: instagram, status: 'untested', checked: '', note: '' },
-  pinterest: { adapter: pinterest, status: 'untested', checked: '', note: '' },
+  instagram: { adapter: instagram, status: 'broken', checked: '2026-11-10', note: 'hashtag URL redirects to /explore/search/keyword/?q=%23tag; only 5 tiles, 4 without img after 12 s (lazy): needs a longer wait or another source of image/caption; not verified end to end' },
+  pinterest: { adapter: pinterest, status: 'untested', checked: '2026-11-10', note: 'extract verified live in Chrome (17 pins, ids, originals images, alt captions; author empty); download + collect.mjs end to end need a CDP Chrome (9222)' },
   tiktok: { adapter: tiktok, status: 'untested', checked: '', note: '' },
   facebook: { adapter: facebook, status: 'untested', checked: '', note: '' },
   reddit: { adapter: reddit, status: 'untested', checked: '', note: '' },
