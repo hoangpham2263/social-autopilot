@@ -176,3 +176,12 @@ test('CLI: fetch --from-file writes the same raw.json shape as from-page (temp w
     assert.match(n.do, /"fetch" field/);
   } finally { server.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('network error (no HTTP answer) fails fast: at most 1 retry after 3 s', async () => {
+  let t = 7000000, calls = 0; const sleeps = [];
+  const sleep = async (ms) => { sleeps.push(ms); t += ms; };
+  const limiter = makeLimiter({ now: () => t, sleep });
+  await assert.rejects(politeGet({ url: 'https://net.test/' }, async () => { calls++; throw new Error('fetch failed'); }, { limiter, sleep }), /fetch failed/);
+  assert.equal(calls, 2);
+  assert.ok(sleeps.includes(3000), JSON.stringify(sleeps));
+});

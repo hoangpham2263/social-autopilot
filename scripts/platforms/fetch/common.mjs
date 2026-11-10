@@ -1,8 +1,8 @@
 // Direct fetch routes (no browser): shared parts. A route = scripts/platforms/fetch/<platform>.mjs with
 //   { platform, requestFor(task) -> { url, via: 'fetch'|'curl' }, parse(text, task) -> tiles[{ url, image_urls[], caption, author }], adapter }
 // Read only, polite: >= 5 s between two requests to the same host (kept in a small state file so separate commands obey it too),
-// HTTP 429/403 or a block page = STOP and mark the host blocked for a while (never retried in a loop), 5xx/network = at most
-// two retries with exponential backoff. No cookies, no tokens, no proxies.
+// HTTP 429/403 or a block page = STOP and mark the host blocked for a while (never retried in a loop), 5xx = at most
+// two retries with exponential backoff, a network error (no HTTP answer) fails fast: at most 1 retry after 3 s. No cookies, no tokens, no proxies.
 export const MIN_GAP_MS = 5000;
 export const BLOCK_MS = 30 * 60 * 1000;
 export const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -42,14 +42,14 @@ export function blockReason(status, text = '') {
 }
 
 // One polite GET: limiter.wait, then get(request) -> { status, text }. Blocked -> BlockedError (host marked, NO retry).
-// 5xx / network error -> retried at most `retries` times, waiting gap * 2^n (exponential), then an Error.
-export async function politeGet(req, get, { limiter, retries = 2, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+// 5xx -> retried at most `retries` times, waiting gap * 2^n (exponential); a network error -> at most 1 retry after netRetryMs (3 s); then an Error.
+export async function politeGet(req, get, { limiter, retries = 2, netRetryMs = 3000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const host = hostOf(req.url);
-  let lastErr = '';
+  let lastErr = '', netErrors = 0;
   for (let n = 0; n <= retries; n++) {
     await limiter.wait(host);
     let r = null;
-    try { r = await get(req); } catch (e) { lastErr = String(e.message || e).slice(0, 120); }
+    try { r = await get(req); } catch (e) { lastErr = String(e.message || e).slice(0, 120); netErrors++; }
     if (r) {
       const why = blockReason(r.status, r.text);
       if (why) { limiter.block(host); throw new BlockedError(`blocked, try later: ${host} answered ${why}`, { status: r.status, host }); }
@@ -57,6 +57,7 @@ export async function politeGet(req, get, { limiter, retries = 2, sleep = (ms) =
       lastErr = `HTTP ${r.status}`;
       if (r.status < 500) break; // other 4xx: retrying will not help
     }
+    if (!r) { if (netErrors > 1) break; await sleep(netRetryMs); continue; } // network error: one quick retry only
     if (n < retries) await sleep(limiter.gap * 2 ** n);
   }
   throw new Error(`${host}: ${lastErr || 'request failed'}`);
