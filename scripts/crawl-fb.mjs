@@ -113,7 +113,7 @@ async function loadPlaywright() {
   for (const name of ['playwright-core', 'playwright']) { try { return (await import(name)).chromium; } catch { /* next */ } }
   throw new Error('Thiếu thư viện Playwright: chạy "npm install" trong thư mục tool một lần.');
 }
-async function openBrowser(cfg) {
+export async function openBrowser(cfg) {
   const chromium = await loadPlaywright();
   if (cfg.user_data_dir) {
     const dir = path.resolve(toolRoot, cfg.user_data_dir);
@@ -131,16 +131,16 @@ async function openBrowser(cfg) {
   return { context, close: async () => {} }; // the user's Chrome stays open; only our tabs are closed
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const pause = (range, scale = 1) => sleep(Math.round(1000 * scale * (range[0] + Math.random() * (range[1] - range[0]))));
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const pause = (range, scale = 1) => sleep(Math.round(1000 * scale * (range[0] + Math.random() * (range[1] - range[0]))));
 const feedExpr = (opts) => `(${browserStep})(${extractFeed}, ${JSON.stringify(SELECTORS)}, ${JSON.stringify(opts)})`;
 const gridExpr = (scroll) => `(() => { const d = (${extractGrid})(document, ${JSON.stringify(SELECTORS)}); window.scrollBy(0, Math.round(innerHeight * ${scroll})); return d; })()`;
 const viewerExpr = () => `(${extractViewer})(document, ${JSON.stringify(SELECTORS)})`;
 
 const EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
-async function download(context, url, fileBase) {
+export async function download(context, url, fileBase, headers = {}) {
   try {
-    const r = await context.request.get(url, { timeout: 30000 });
+    const r = await context.request.get(url, { timeout: 30000, headers });
     if (!r.ok()) return '';
     const ext = EXT[String(r.headers()['content-type'] || '').split(';')[0].trim()];
     if (!ext) return '';
