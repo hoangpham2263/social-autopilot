@@ -227,7 +227,7 @@ node scripts/runlog.mjs add --mode publish --agent "<Claude Code|Codex>"
 
 ## Phụ lục: ảnh/video host
 
-`host-image.mjs` (gọi tự động khi Approve) chép ảnh sạch của bài đã duyệt vào clone của repo **công khai** `social-autopilot-sources` (`settings.imageHost.path`, mặc định `../social-autopilot-sources`), đường dẫn `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "<brand> <post-id>", push, chờ HTTP 200, ghi `media_url` dạng link raw GitHub:
+`host-image.mjs` (gọi tự động khi Approve) chép ảnh sạch của bài đã duyệt vào clone của repo **công khai** `social-autopilot-sources` (`settings.imageHost.path`, mặc định `workspace/image-host` trong thư mục tool: repo git riêng, `workspace/` không lên git của tool; máy chưa có thì `host-image.mjs` tự `git clone` từ `settings.imageHost.remote_url`), đường dẫn `<brand>/<yyyy>/<mm>/<post-id>.<ext>`, commit "<brand> <post-id>", push, chờ HTTP 200, ghi `media_url` dạng link raw GitHub:
 ```
 https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<brand>/<yyyy>/<mm>/<post-id>.png
 ```

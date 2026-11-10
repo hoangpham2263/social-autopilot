@@ -2,7 +2,7 @@
 // fetches media by URL; see docs/plan.md section 8) and records it in the brand's catalog entry: `media_url` for an image,
 // `video_url` (+ `video_thumbnail_url` when the post also has an image) for a video (project-skill-standard check-post
 // accepts these fields; scripts/metricool-csv.mjs reads them). Host = settings imageHost:
-//   { type: "github-repo", path: <local clone>, rawBase: <raw.githubusercontent.com URL of the branch>, pagesBase: "",
+//   { type: "github-repo", path: <local clone, default workspace/image-host; cloned from remote_url when missing>, remote_url: <git URL>, rawBase: <raw.githubusercontent.com URL of the branch>, pagesBase: "",
 //     branch: "main", remote: "origin" }
 //   Links are GitHub raw links (rawBase; user, 09/11/2026: no personal domain). raw.githubusercontent.com serves .mp4 as
 //   application/octet-stream: accepted for a video when pagesBase is empty, since Metricool's MCP copies the media to its
@@ -45,7 +45,7 @@ export function hostConfig(s = settings()) {
   if (!h.path || !h.rawBase) throw new Error('Thiếu imageHost.path hoặc imageHost.rawBase trong settings.');
   if (h.pagesBase && !/^https:\/\//.test(h.pagesBase)) throw new Error('imageHost.pagesBase phải là link https.');
   const repo = path.resolve(toolRoot, h.path);
-  if (!fs.existsSync(path.join(repo, '.git'))) throw new Error(`imageHost.path không phải repo git: ${repo}`);
+  if (!fs.existsSync(path.join(repo, '.git'))) cloneHostRepo(repo, h);
   return {
     type: h.type, repo, rawBase: trim(h.rawBase), pagesBase: trim(h.pagesBase), branch: h.branch || 'main', remote: h.remote || 'origin',
     push: h.push !== false, auto: h.auto_after_writeback !== false,
@@ -54,6 +54,18 @@ export function hostConfig(s = settings()) {
     checkBase: trim(process.env.SA_IMAGE_HOST_CHECK_BASE),
     rawCheckBase: trim(process.env.SA_IMAGE_HOST_RAW_CHECK_BASE),
   };
+}
+
+// The image repo lives inside the tool (default workspace/image-host, git-ignored by the tool repo; its own git repo).
+// Missing on this machine: clone imageHost.remote_url there (an empty folder is fine). A folder with files that is not a
+// git repo is never touched.
+function cloneHostRepo(repo, h) {
+  if (fs.existsSync(repo) && fs.readdirSync(repo).length) throw new Error(`imageHost.path không phải repo git: ${repo}`);
+  if (!h.remote_url) throw new Error(`Chưa có repo ảnh ở ${repo} và settings imageHost.remote_url trống (link git của repo ảnh công khai).`);
+  fs.mkdirSync(path.dirname(repo), { recursive: true });
+  const args = ['clone', ...(h.branch ? ['--branch', h.branch] : []), h.remote_url, repo];
+  const r = spawnSync('git', args, { encoding: 'utf8', windowsHide: true });
+  if (r.status !== 0) throw new Error(`git clone ${h.remote_url} lỗi: ${(r.stderr || r.stdout || r.error?.message || '').trim()}`);
 }
 
 function git(repo, ...args) {

@@ -338,3 +338,25 @@ test('back to review: archive entry + folder, hosted image removed, draft ready;
   assert.match((await run('finalize.mjs', 'unapprove', '--id', p.id)).error, /Posted/);
   assert.ok(entryOf('POST-97'));
 });
+
+test('image repo missing on this machine: cloned from imageHost.remote_url into imageHost.path; a non-git folder with files is refused', { skip: !haveReal && 'no brand skill to copy' }, async () => {
+  const file = path.join(ws, 'settings.json');
+  const keep = fs.readFileSync(file, 'utf8');
+  const cloned = path.join(tmp, 'tool-workspace', 'image-host');
+  const base = JSON.parse(keep).imageHost;
+  try {
+    fs.writeFileSync(file, JSON.stringify({ imageHost: { ...base, path: cloned, remote_url: bare } }));
+    const r = await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-404');
+    assert.equal(r.ok, false); // no such post, but the repo is there now
+    assert.ok(fs.existsSync(path.join(cloned, '.git')), JSON.stringify(r));
+    assert.equal(git(cloned, 'remote', 'get-url', 'origin'), bare);
+    const junk = path.join(tmp, 'not-a-repo');
+    write(path.join(junk, 'x.txt'), 'x');
+    fs.writeFileSync(file, JSON.stringify({ imageHost: { ...base, path: junk, remote_url: bare } }));
+    const r2 = await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-404');
+    assert.match(r2.error, /không phải repo git/);
+    assert.ok(!fs.existsSync(path.join(junk, '.git')));
+    fs.writeFileSync(file, JSON.stringify({ imageHost: { ...base, path: path.join(tmp, 'empty-host'), remote_url: '' } }));
+    assert.match((await run('host-image.mjs', 'publish', '--brand', 'dreamyvows', '--post', 'POST-404')).error, /remote_url trống/);
+  } finally { fs.writeFileSync(file, keep); }
+});

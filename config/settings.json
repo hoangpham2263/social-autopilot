@@ -31,7 +31,8 @@
   },
   "imageHost": {
     "type": "github-repo",
-    "path": "../social-autopilot-sources",
+    "path": "workspace/image-host",
+    "remote_url": "",
     "pagesBase": "",
     "rawBase": "https://raw.githubusercontent.com/<owner>/<image-repo>/main",
     "branch": "main",

@@ -157,6 +157,8 @@ export function saveSettings(input = {}) {
       if (!/^https:\/\//.test(rawBase)) throw new Error('imageHost.rawBase phải là link https.');
       const host = { path: str(ih.path ?? ch.path, 'imageHost.path'), rawBase, auto_after_writeback: bool(ih.auto_after_writeback ?? ch.auto_after_writeback ?? true, 'imageHost.auto_after_writeback') };
       for (const k of ['branch', 'remote']) if (ih[k] !== undefined || ch[k] !== undefined) host[k] = str(ih[k] ?? ch[k], `imageHost.${k}`);
+      // remote_url: git URL of the public image repo, cloned into path when missing (empty = no auto-clone).
+      if (ih.remote_url !== undefined || ch.remote_url !== undefined) { const u = String(ih.remote_url ?? ch.remote_url ?? '').trim(); host.remote_url = u ? str(u, 'imageHost.remote_url') : ''; }
       const v = obj(ih.verify, 'imageHost.verify'), cv = ch.verify || {};
       if (Object.keys(v).length || Object.keys(cv).length) host.verify = { ...cv, ...Object.fromEntries(Object.entries(v).map(([k, x]) => [k, int(x, `imageHost.verify.${k}`, k === 'attempts' ? 1 : 0)])) };
       changes.imageHost = host;

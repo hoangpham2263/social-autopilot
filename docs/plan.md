@@ -36,7 +36,7 @@ Trạng thái bản nháp: `needs_prompt` → `generating` → `needs_caption` /
 - Metadata: `settings.remove_watermark.script` (đường dẫn tương đối) chạy sau Codex, sau watermark, trước writeback; chỉ bỏ metadata, không EXIF giả.
 
 ## 5. Host ảnh
-- Repo **công khai** `social-autopilot-sources` (clone ở `imageHost.path`, vd `../social-autopilot-sources`). Link raw GitHub: `https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<brand>/<yyyy>/<mm>/<post-id>.<ext>` (`imageHost.rawBase`). Không dùng tên miền riêng/cá nhân.
+- Repo **công khai** `social-autopilot-sources` (clone trong tool ở `imageHost.path`, mặc định `workspace/image-host`; tự clone từ `imageHost.remote_url` khi chưa có). Link raw GitHub: `https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<brand>/<yyyy>/<mm>/<post-id>.<ext>` (`imageHost.rawBase`). Không dùng tên miền riêng/cá nhân.
 - Chỉ media của bài đã duyệt; không bao giờ bản nháp hay ảnh đối thủ. Commit, push, chờ HTTP 200, ghi `media_url`. Lỗi host không huỷ bài.
 - Raw trả `.mp4` là `application/octet-stream`. Qua MCP, Metricool chép media về kho của nó nên video nên vẫn được, nhưng **chưa test**.
 - Chỉ gỡ file khi bài đã đăng (`host-image.mjs remove`).

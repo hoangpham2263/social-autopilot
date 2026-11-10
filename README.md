@@ -56,7 +56,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill. Brand chưa nối s
 
 - Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay.
 - Không logo trên sản phẩm, không nhãn AI.
-- Ảnh được host ở repo công khai `social-autopilot-sources` (link raw GitHub).
+- Ảnh được host ở repo công khai `social-autopilot-sources` (link raw GitHub); bản clone nằm trong tool ở `workspace/image-host` (tự clone từ `imageHost.remote_url` khi chưa có).
 - Agent không bao giờ tự duyệt bài.
 
 ## Settings file
@@ -72,7 +72,7 @@ Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**.
 | `ffmpeg.command` | lệnh ffmpeg (watermark, đọc WebP khi dedupe) |
 | `skillsRoot` | thư mục chứa các skill thương hiệu |
 | `remove_watermark.script` | script xoá metadata ảnh |
-| `imageHost.path`, `imageHost.rawBase` | repo ảnh trên máy và link công khai (https) của ảnh |
+| `imageHost.path`, `imageHost.remote_url`, `imageHost.rawBase` | repo ảnh trong tool (mặc định `workspace/image-host`, repo git riêng, không lên git của tool), link git để tự clone khi máy chưa có, link công khai (https) của ảnh |
 
 Sửa xong bấm Reload (hoặc mở lại app).
 
