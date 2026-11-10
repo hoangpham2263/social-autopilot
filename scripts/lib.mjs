@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { trackCli } from './progress.mjs';
 
 export const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // SA_WORKSPACE lets tests run against a throw-away workspace; normal runs use <tool>/workspace.
@@ -29,8 +30,10 @@ function log(line) {
     fs.appendFileSync(path.join(workspace, 'logs', `${today()}.log`), `[${stamp()}] ${path.basename(process.argv[1] || '')} ${process.argv.slice(2).join(' ')} -> ${line}\n`);
   } catch {}
 }
-export function out(data) { log('ok'); process.stdout.write(JSON.stringify({ ok: true, ...data }, null, 2) + '\n'); }
-export function fail(error, extra = {}) { log('error: ' + error); process.stdout.write(JSON.stringify({ ok: false, error, ...extra }, null, 2) + '\n'); process.exit(1); }
+// Each result also moves the run progress of the app's Prompt tab (progress.mjs: script + command -> step).
+const progressOf = (ok, data) => { try { trackCli(process.argv[1], parseArgs(), ok, data); } catch {} };
+export function out(data) { log('ok'); progressOf(true, data); process.stdout.write(JSON.stringify({ ok: true, ...data }, null, 2) + '\n'); }
+export function fail(error, extra = {}) { log('error: ' + error); progressOf(false, { error, ...extra }); process.stdout.write(JSON.stringify({ ok: false, error, ...extra }, null, 2) + '\n'); process.exit(1); }
 // True when the file is the script being run (not imported by another script).
 export const isMain = (url) => process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(url);
 export function main(fn) {

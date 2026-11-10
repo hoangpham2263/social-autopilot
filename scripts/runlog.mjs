@@ -23,6 +23,7 @@ import { researchReport } from './research.mjs';
 import { writtenPost } from './queue.mjs';
 import { listItems } from './store.mjs';
 import { postsNeeded } from './ideas.mjs';
+import { finishRun } from './progress.mjs';
 
 export const runsDir = () => path.join(workspace, 'logs', 'runs');
 const MODES = ['research', 'create', 'publish']; // publish = Mode 3, Publish approved (reported like create)
@@ -162,7 +163,10 @@ if (isMain(import.meta.url)) main(() => {
     const file = str('file');
     const text = file ? fs.readFileSync(file, 'utf8') : !process.stdin.isTTY && args.stdin ? fs.readFileSync(0, 'utf8') : '';
     if (text.trim()) extra = JSON.parse(text);
-    return out({ log: addLog({ mode: need(args, 'mode'), agent: str('agent'), brands: str('brand').split(',').map((x) => x.trim()).filter(Boolean), started: str('started'), notes: str('notes'), reason: str('reason') || (args.stopped ? 'stopped' : ''), warning: str('warning'), extra }) });
+    const log = addLog({ mode: need(args, 'mode'), agent: str('agent'), brands: str('brand').split(',').map((x) => x.trim()).filter(Boolean), started: str('started'), notes: str('notes'), reason: str('reason') || (args.stopped ? 'stopped' : ''), warning: str('warning'), extra });
+    // The app's Run progress: the log is written, the run is finished (stopped with a reason).
+    finishRun(log.mode, { reason: log.stop_reason || '', logId: log.id });
+    return out({ log });
   }
   if (cmd === 'list') return out({ logs: listLogs({ brand: str('brand'), mode: str('mode'), limit: Number(str('limit')) || 0 }).map(({ id, mode, agent, ended, result, headline, brands }) => ({ id, mode, agent, ended, result, headline, brands: (brands || []).map((b) => b.brand) })) });
   if (cmd === 'show') return out({ log: showLog(need(args, 'id')) });

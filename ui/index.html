@@ -103,6 +103,17 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt .fields, #page-prompt .actions { flex: 0 0 auto; }
 #prText { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prText[readonly] { background: #fafafa; }
+/* Prompt, Run progress: the fixed steps of the mode (numbered like the prompt), one dot each; the current step framed. */
+#page-prompt .run-panel { flex: 0 0 auto; margin: 0 0 16px; display: grid; gap: 8px; }
+.run-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.run-steps li { display: flex; align-items: center; padding: 2px 8px; border: 1px solid transparent; font-size: 12.5px; white-space: nowrap; }
+.run-steps li .dot { margin-right: 6px; width: 8px; height: 8px; }
+.run-steps li.now { border-color: var(--accent); }
+.run-steps li.skipped, .run-steps li.pending { color: var(--muted); }
+.dot-run { background: var(--accent); }
+.run-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.run-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-detail:empty { display: none; }
 pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--font); margin: 4px 0 0; max-height: 220px; overflow: auto; }
 /* Library */
 /* One card template (tile()) for every card grid: square image; title row (1 line) with an optional status at its
@@ -271,6 +282,12 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
     </div>
+    <!-- Run progress of the selected mode (scripts/progress.mjs, GET /api/progress): steps, counter, time, last message. -->
+    <fieldset class="run-panel" id="prRun"><legend>Run progress</legend>
+      <div class="run-sum" id="prRunSum"><span class="meta">Loading…</span></div>
+      <ol class="run-steps" id="prRunSteps"></ol>
+      <div class="meta run-detail" id="prRunDetail"></div>
+    </fieldset>
     <textarea class="prompt" id="prText" spellcheck="false" readonly></textarea>
   </section>
 
@@ -738,6 +755,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     prBase = p ? p.text : "";
     $("#prText").value = buildPrompt();
     fitPrompt();
+    // The panel follows the selected mode (reloaded when the mode changes, or when nothing is polling).
+    if (modeKey(prMode) !== shownRunMode || !runTimer) loadProgress();
   }
   function srcLabel() {
     const on = $$("#prSrc input:checked").map((x) => x.value.split(":").pop());
@@ -768,6 +787,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // one background sub-agent so the chat stays free. Codex has no sub-agent tool (it runs in its own session); ChatGPT
   // runs nothing.
   const SUB_LINE = "Run this whole task in ONE background sub-agent (Agent tool, general-purpose) with the prompt below; keep this chat free; when it finishes, relay its 'Report' section to me.";
+  // Create & publish / Publish approved: brands may run in parallel, one sub-agent per brand (RUNBOOK "Rules for every run").
+  const SUB_LINE_BRANDS = "Run this task in background sub-agents (Agent tool, general-purpose) with the prompt below: steps 1-2 in one sub-agent, then ONE sub-agent PER BRAND in parallel for the per-brand steps (2.1 up to the step before the run log), then the run log and the report once all are done; keep this chat free; when they finish, relay the 'Report' section to me.";
   const subAllowed = () => /claude code/i.test($("#prAgent").value || "");
   function syncSub() {
     const agent = $("#prAgent").value || "";
@@ -777,7 +798,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   function buildPrompt() {
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
-    const lead = subAllowed() && $("#prSub").value === "sub" ? SUB_LINE + "\n" : "";
+    const lead = subAllowed() && $("#prSub").value === "sub" ? (isResearch(prMode) ? SUB_LINE : SUB_LINE_BRANDS) + "\n" : "";
     return lead + buildTask();
   }
   function buildTask() {
@@ -824,7 +845,58 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#prCopy").onclick = async () => {
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
     flash("Copied.");
+    // A new pending run of this mode: the panel starts over and waits for the agent (brands.mjs --run, Setup).
+    const brandSel = $("#prBrand").value;
+    const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
+    await postJson("/api/progress", { mode: modeKey(prMode), brands, agent: $("#prAgent").value || "" }).catch(() => {});
+    loadProgress();
   };
+
+  // ----- Run progress: the steps of the selected mode with their state; polls every 3 s while a run is active -----
+  const RUN_DOT = { pending: "dot-grey", running: "dot-run", done: "dot-green", failed: "dot-red", stopped: "dot-amber" };
+  const RUN_TEXT = { pending: "Not started", running: "Running", done: "Done", failed: "Failed", stopped: "Stopped" };
+  const clock = (t) => (t ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
+  const took = (a, b) => { const s = Math.max(0, Math.round(((b ? Date.parse(b) : Date.now()) - Date.parse(a)) / 1000)); return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`; };
+  let runTimer = 0, shownRunMode = "";
+  const loadProgress = safely("#prRunSum", async () => {
+    clearTimeout(runTimer); runTimer = 0;
+    if (!prMode) return;
+    const mode = modeKey(prMode);
+    shownRunMode = mode;
+    const r = await getJson(`/api/progress?mode=${encodeURIComponent(mode)}`).catch(() => offline);
+    if (r.error) { $("#prRunSum").innerHTML = errLine(r.error); return; }
+    if (!Array.isArray(r.steps)) throw new Error("progress missing");
+    const run = r.run && Array.isArray(r.run.steps) ? r.run : null;
+    const states = run ? run.steps : r.steps.map((x) => ({ ...x, state: "pending", detail: "" }));
+    const lastBegun = states.reduce((a, x, i) => (x.state !== "pending" ? i : a), -1);
+    $("#prRunSteps").innerHTML = states.map((x, i) => {
+      const skipped = x.state === "pending" && i < lastBegun;
+      const now = r.active && (x.state === "running" || (x.state === "failed" && i === lastBegun));
+      const tip = [skipped ? "Skipped" : RUN_TEXT[x.state] || x.state, x.detail, clock(x.at)].filter(Boolean).join(" · ");
+      return `<li class="${now ? "now" : skipped ? "skipped" : x.state}" title="${esc(tip)}"><span class="dot ${RUN_DOT[x.state] || "dot-grey"}"></span>${x.n}. ${esc(x.name)}</li>`;
+    }).join("");
+    const logLink = `<a href="#" data-goto-log>see Log</a>`;
+    const parts = [];
+    if (run && r.active) {
+      const begun = lastBegun >= 0;
+      const cur = states.find((x) => x.state === "running") || states[lastBegun];
+      parts.push(begun ? `<span>${esc(RUN_TEXT[cur?.state] || "Running")}${cur ? ` · step ${cur.n} ${esc(cur.name)}` : ""}</span>` : `<span>Waiting for the agent (prompt copied ${esc(clock(run.created))})</span>`);
+      if (run.items?.label) parts.push(`<span>${esc(run.items.label)} ${run.items.done}${run.items.total === null || run.items.total === undefined ? "" : "/" + run.items.total}</span>`);
+      if (begun) parts.push(`<span class="meta">${esc(took(run.started))}</span>`);
+    } else if (run && run.finished) {
+      parts.push(`<span>Last run ${run.result === "stopped" ? "stopped" : "finished"} ${esc(when(run.finished))}${run.started ? ` <span class="meta">(${esc(took(run.started, run.finished))})</span>` : ""} — ${logLink}</span>`);
+    } else if (run && r.stale) {
+      parts.push(`<span><span class="warn-text">Last run stopped updating ${esc(when(run.updated))} (no run log)</span> — ${logLink}</span>`);
+    } else if (r.last_log) {
+      parts.push(`<span>Last run finished ${esc(when(r.last_log.ended))} — ${logLink}</span>`);
+    } else parts.push(`<span class="meta">No run yet. Copy the prompt and paste it into the agent.</span>`);
+    $("#prRunSum").innerHTML = parts.join("");
+    $("#prRunDetail").textContent = r.active || run?.finished ? run?.detail || "" : "";
+    $("#prRunDetail").title = $("#prRunDetail").textContent;
+    for (const a of $$("#prRunSum [data-goto-log]")) a.onclick = (e) => { e.preventDefault(); lgMode = mode; store.set("lgMode", mode); show("log"); };
+    // Poll while the run is active and the Prompt tab is open.
+    if (r.active && !$("#page-prompt").hidden) runTimer = setTimeout(loadProgress, 3000);
+  });
 
   // ----- Log: every agent run (scripts/runlog.mjs), newest first; a click opens the per-brand / per-source detail -----
   const MODE_TEXT = { research: "Research", create: "Create & publish", publish: "Publish" };

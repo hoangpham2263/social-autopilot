@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -128,6 +128,39 @@ test('brand settings: a token is never written; a bad file is put back', { skip:
   const good = JSON.parse(JSON.stringify(social)); good.cadence = { ...good.cadence, posts_per_week: 4 };
   assert.equal((await post(good)).saved, true);
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).cadence.posts_per_week, 4);
+});
+
+// Prompt tab, Run progress: GET the steps + current run of a mode; Copy prompt (POST) makes a new pending run.
+test('/api/progress: fixed steps per mode, Copy prompt starts a pending run, the step scripts move it', async () => {
+  const get = async (mode) => (await fetch(`${base}/api/progress?mode=${mode}`)).json();
+  let r = await get('create');
+  assert.equal(r.steps.length, 8);
+  assert.deepEqual(r.steps.map((s) => s.n), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(r.run, null);
+  assert.equal(r.active, false);
+  assert.equal(r.last_log, null);
+  assert.equal((await get('publish')).steps.length, 6);
+  assert.match((await get('nope')).error, /mode must be/);
+  const copy = (b, h = hdr()) => fetch(`${base}/api/progress`, { method: 'POST', headers: h, body: JSON.stringify(b) });
+  assert.equal((await copy({ mode: 'create' }, { 'content-type': 'application/json' })).status, 403, 'a write needs the session token');
+  assert.equal((await copy({ mode: 'nope' })).status, 400);
+  const made = await (await copy({ mode: 'create', brands: ['grenheim', '../x'], agent: 'Claude Code' })).json();
+  assert.ok(!made.run.brands.includes('../x'), 'only discovered brands');
+  r = await get('create');
+  assert.equal(r.active, true);
+  assert.equal(r.run.run_id, made.run.run_id);
+  assert.ok(r.run.steps.every((s) => s.state === 'pending'));
+  // A step script of the agent (same workspace) moves it.
+  const q = spawnSync(process.execPath, [path.join(tool, 'scripts', 'queue.mjs')], { env: { ...process.env, SA_WORKSPACE: path.join(tmp, 'workspace'), SA_SKILLS_ROOT: path.join(tmp, 'skills'), SA_PROGRESS: '' }, encoding: 'utf8', windowsHide: true });
+  assert.equal(JSON.parse(q.stdout).ok, true);
+  r = await get('create');
+  assert.equal(r.run.steps[5].state, 'done');
+  assert.equal(r.run.detail, 'queue report');
+  // The panel is in the page: under the Copy row, polling every 3 s while a run is active.
+  const html = fs.readFileSync(path.join(tool, 'ui', 'index.html'), 'utf8');
+  assert.ok(html.indexOf('id="prRun"') > html.indexOf('id="prCopy"') && html.indexOf('id="prRun"') < html.indexOf('id="prText"'));
+  assert.match(html, /runTimer = setTimeout\(loadProgress, 3000\)/);
+  assert.match(html, /postJson\("\/api\/progress", \{ mode: modeKey\(prMode\)/);
 });
 
 test('projectField keeps the value only (no trailing note)', async () => {

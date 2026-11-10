@@ -14,7 +14,10 @@ Trạng thái người dùng thấy: **To review** (chờ duyệt) / **Queued** 
 - **Dừng (STOP) vẫn ghi nhật ký:** lượt nào dừng giữa chừng (bị chặn, Chrome không nối được, lỗi Metricool, hết lượt Codex...) **vẫn luôn** làm bước ghi nhật ký (`runlog.mjs add`, kèm lý do dừng: `--reason "<lý do>"`, vd `--reason "chrome unreachable"`; nhật ký ghi kết quả **stopped** và không lấy số liệu của lượt cũ) rồi báo cáo. `node scripts/runlog.mjs --help` in cách dùng. Bước ghi nhật ký không bao giờ bị bỏ.
 - Mỗi lượt (cả hai chế độ, mọi agent) theo đúng các bước đánh số của chế độ đó, không bỏ bước; **bước gần cuối luôn là ghi nhật ký** (`scripts/runlog.mjs`, 1.5 / 2.9), **bước cuối là báo cáo** với các mục cố định (1.6 / 2.10).
 
-- Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`), **lần lượt từng thương hiệu**, không song song. "all usable brands" = mọi thương hiệu usable.
+- Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`). "all usable brands" = mọi thương hiệu usable.
+  - **Mode 1 (Research):** lần lượt từng thương hiệu và từng nguồn, **không song song** (một Chrome = một lượt crawl).
+  - **Mode 2 / Mode 3:** các thương hiệu **có thể chạy song song** (Claude Code, Run in = Sub-agent: **một sub-agent cho mỗi thương hiệu**). Bước 1 (Setup) và 2.0 (đồng bộ brand + giờ đăng, ghi file chung) làm **một lần** trước; mỗi sub-agent làm các bước riêng của một thương hiệu (2.1 → 2.6 ở Mode 2, 2.1 → 2.2 ở Mode 3); 2.8 → báo cáo làm một lần khi mọi sub-agent xong. Codex (không có sub-agent): lần lượt từng thương hiệu. Ảnh luôn làm song song (2.4, `draft.mjs image-batch`); cả máy không bao giờ quá `codex.concurrency` lượt Codex cùng lúc, kể cả khi nhiều thương hiệu chạy song song.
+- **Run progress (tab Prompt của app):** bước Setup chạy `node scripts/brands.mjs --run <research|create|publish>`: lượt chạy hiện ở khung **Run progress** (nhận lượt "pending" do nút Copy prompt tạo, hoặc mở lượt mới). Các script của từng bước tự cập nhật `workspace/runs/current-<mode>.json` (`scripts/progress.mjs`); `runlog.mjs add` kết thúc lượt. Agent không phải làm gì thêm.
 - Skill không bao giờ được chép vào tool. Mỗi brand Metricool trỏ tới một thư mục skill (`skill_path` trong `workspace/metricool-brands.json`); tool đọc/ghi thẳng trong thư mục đó. Mọi dữ kiện riêng của thương hiệu đọc từ skill (`SKILL.md`, `project/project.md`, `project/social.json`). Không hard-code thương hiệu, không trộn nguồn hay kho giữa thương hiệu.
 - Brand chỉ được làm và gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill, hoặc `removed: true` (đã mất khỏi tài khoản) trong `workspace/metricool-brands.json`, thì **không bao giờ**. Không dùng blogId khác `args.blogId` của payload; không `createScheduledPostForReview`.
 - Tuỳ chọn của lượt (dòng `Options:` của prompt) ưu tiên hơn mặc định: Research → `--source a,b`, `--since YYYY-MM-DD`, `--max-posts N`, `--backfill` hoặc `--full` cho `research.mjs start`; Create → `--count N` cho `ideas.mjs init` (trống = đủ bài cho `planning.ahead_days` ngày tới); Publish approved → `--limit N` (tối đa N bài đã duyệt mỗi brand, bài duyệt sớm nhất trước) cho `metricool-mcp.mjs payload`; chỉ Publish approved → `--window morning|midday|afternoon|evening` (chỉ giờ trong khung đó của ngày, theo múi giờ Metricool của brand; tốt nhất trước, không có dữ liệu thì giữa khung) và `--start today` (cả hôm nay, cách bây giờ ít nhất 1 giờ) cho `payload`. Create & publish không có hai tuỳ chọn này: bài đã duyệt luôn hẹn ở giờ tốt nhất tự động, từ ngày mai.
@@ -38,7 +41,7 @@ Trạng thái người dùng thấy: **To review** (chờ duyệt) / **Queued** 
 ## Bước chung. Thương hiệu và nguồn
 
 ```
-node scripts/brands.mjs          # usable = thương hiệu chạy được; problems/skipped = lý do bỏ qua
+node scripts/brands.mjs [--run research|create|publish]   # usable = thương hiệu chạy được; problems/skipped = lý do bỏ qua; --run: bước Setup, lượt hiện ở Run progress
 node scripts/sources.mjs         # mỗi thương hiệu: các research.sources đang bật trong social.json của nó
 ```
 
@@ -175,14 +178,16 @@ Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.
 node scripts/draft.mjs new --brand <id> --idea I001 --product "<ảnh sản phẩm của thương hiệu>" --size "<cỡ thật>" [--sign-text "<chữ trên bảng>"] [--scene "<ảnh không khí>"]
 node scripts/draft.mjs new --brand <id> --idea I001 --ref-image "workspace/store/<id>/images/S0001-1-....jpg" --brand-can-produce --size ".." [--sign-text ".."]   # scene-swap, chỉ khi bật
 node scripts/draft.mjs reprompt --id <draft> [--size ..] [--sign-text ..] [--description ".."]   # dựng lại prompt.txt (giữ mô tả cũ), rồi image --force
-node scripts/draft.mjs image --id <draft> [--force]
+node scripts/draft.mjs image-batch --brand <id|all> [--concurrency N]   # MỌI bản nháp chờ ảnh, song song (mặc định settings codex.concurrency = 3)
+node scripts/draft.mjs image --id <draft> [--force]                      # một bản nháp (làm lại một ảnh)
 node scripts/draft.mjs watermark --id <draft>                    # chỉ khi product_images.watermark.enabled
 node scripts/draft.mjs confirm-clean --id <draft> --by "<tên>"   # chỉ scene-swap, sau khi xem kỹ
 ```
 - Ảnh sản phẩm (`brand-image`, mặc định): trong thư mục skill hoặc `product_images.sources`. Ảnh không khí không được là ảnh kho/đối thủ.
 - **Cỡ thật và chữ trên sản phẩm** (luật nằm trong skill: `references/image-guide.md` mục "Kích thước thật và chữ trên sản phẩm" và project.md mục 10): `--size` bắt buộc, lấy theo `product_images.size_source` trong social.json (cm và inch, vd "91 cm (36 in) wide"). `product_images.custom_text: true` (vd DreamyVows) thì bắt buộc `--sign-text`: chữ hợp cảnh (tên cặp đôi, tên quán...), không phải chữ mẫu "Your Names"/"Your Logo" (tool chặn). Có thể ghi sẵn trong ý (`product_size`, `sign_text` qua `ideas.mjs set`). Tool chỉ điền vào prompt; xem ảnh: sai cỡ so với đồ xung quanh, còn chữ mẫu hoặc sai chữ thì làm lại.
 - Trước `image`: mở `prompt.txt`, thay `{{PRODUCT_DESCRIPTION}}` bằng mô tả đúng sản phẩm (chữ từng ký tự, dấu, font, màu, vật liệu, tỉ lệ); **không xoá dòng NO LOGO**.
-- `image` chạy `codex exec --skip-git-repo-check -s workspace-write - -i <ảnh> < prompt.txt`, rồi tự làm sạch metadata (`settings.remove_watermark.script`): `image-generated.png` (gốc) → `image.png` (sạch) + `image-clean-report.json`. Xem ảnh: sai thì sửa prompt, `--force` (tối đa 2 lần). Sandbox chặn `codex exec` lồng nhau thì báo người dùng.
+- **Ảnh song song (cách mặc định):** điền `prompt.txt` cho mọi bản nháp trước, rồi chạy **một** lệnh `draft.mjs image-batch --brand <id|all>`: mỗi bản nháp chờ ảnh (có `prompt.txt` đã điền, chưa có `image.png`; bản `image_failed` được thử lại) chạy một tiến trình Codex riêng, tối đa `--concurrency N` cùng lúc (mặc định `codex.concurrency`, 3) và cả máy tối đa `codex.concurrency` lượt Codex (khe chung `workspace/tmp/codex-slots/`); mỗi bản nháp giữ `codex.log` riêng và được làm sạch metadata ngay khi xong. Bản còn `{{...}}` trong `prompt.txt` nằm ở `skipped`. Claude Code chạy lệnh này ở chế độ nền (run_in_background) và **viết caption trong lúc ảnh đang chạy** (2.5), rồi xem ảnh và `check`. Codex báo hết lượt / rate limit (`usage limit`, `rate limit`, `quota`, 429): chờ `codex.retry_wait_seconds` (60 s), thử lại **một** lần; vẫn lỗi → `image_failed` kèm lý do (JSON `failed[]`), các bản khác vẫn đi tiếp. Mọi bản đều hết lượt → dừng tạo ảnh, ghi lý do vào nhật ký và báo cáo.
+- `image` (một bản nháp) chạy `codex exec --skip-git-repo-check -s workspace-write - -i <ảnh> < prompt.txt`, rồi tự làm sạch metadata (`settings.remove_watermark.script`): `image-generated.png` (gốc) → `image.png` (sạch) + `image-clean-report.json`. Xem ảnh: sai thì sửa prompt, `--force` (tối đa 2 lần). Sandbox chặn `codex exec` lồng nhau thì báo người dùng.
 - Scene-swap (opt-in `product_images.reference_redraw.enabled`): ảnh kho của chính thương hiệu, chỉ đổi cảnh, xoá logo/watermark/nhãn size/số điện thoại của shop; bắt buộc `--brand-can-produce` và `confirm-clean`.
 
 2.5. Caption theo `brief.md` (SKILL.md mục A + project.md): `content-<lang>.txt` cho ngôn ngữ đăng (`channels[].lang`, vd `content-en.txt`) và ngôn ngữ chỉ để đọc (`language_policy.review_langs`, vd `content-vn.txt`; không bao giờ đăng). Không nhắc tên shop nguồn, không nhãn AI.
@@ -247,6 +252,8 @@ Chỉ bài đã duyệt có `media_url`/`video_url`; đúng 99 cột theo `docs/
 node scripts/store.mjs list|show|reject|restore|classify|verdict|known --brand <id> [...]   # kho (tab Library dùng cùng hàm)
 node scripts/store.mjs migrate [--brand <id>]                             # dữ liệu cũ workspace/runs/*/refs.json → kho
 node scripts/prompts.mjs list | show --mode "<mode>" --agent "<agent>" [--brand <id>]
+node scripts/progress.mjs show --mode research|create|publish            # Run progress (tab Prompt) của lượt đang chạy / lượt cuối
+node scripts/progress.mjs new --mode <mode> [--brand a,b]                 # lượt pending mới (như nút Copy prompt)
 node scripts/social.mjs show|set --brand <id> ...                          # social.json an toàn (chặn token, chạy check-skill)
 node scripts/research.mjs clean --in <file> [--out <file>]                 # lọc U+034F / zero-width / NBSP
 node scripts/image-clean.mjs --id <draft>                                  # làm sạch metadata lại

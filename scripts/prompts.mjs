@@ -7,7 +7,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, toolRoot, discoverBrands } from './lib.mjs';
 
-export const ALL_BRANDS = 'all usable brands (one at a time, not in parallel)';
+// One at a time or in parallel is said by each mode's STEPS line (Research: one at a time; Create / Publish: may run in
+// parallel).
+export const ALL_BRANDS = 'all usable brands';
 export function promptList(md = fs.readFileSync(path.join(toolRoot, 'docs', 'scheduled-prompt.md'), 'utf8')) {
   const list = [];
   const re = /^###\s+(.+?)\s+·\s+(.+?)\s*\r?\n[\s\S]*?```text\r?\n([\s\S]*?)```/gm;
