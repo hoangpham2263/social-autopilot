@@ -7,6 +7,7 @@ Viết caption bằng skill của thương hiệu, không bằng giọng riêng 
 3. Chữ trên sản phẩm trong caption phải đúng chữ nhìn thấy trong `image.png`. {{SIGN_TEXT_NOTE}}
 4. Không bịa dữ kiện ngoài project.md (giá, thời gian giao, review khách).
 5. Ảnh là ảnh dựng cảnh bằng AI: KHÔNG thêm nhãn AI hay chữ công bố AI vào caption hay bài đăng.
+6. Phong cách bài tham khảo = chỉ giọng/hook/ý; bố cục luôn theo cấu trúc mục 8 (Content Facebook) của skill (reference style = tone/hook only; layout always = the skill's §8 structure).
 
 ## Ý đã chọn
 
