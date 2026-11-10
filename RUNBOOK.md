@@ -3,7 +3,7 @@
 Scripts + RUNBOOK là nguồn duy nhất của quy trình. Prompt (tab **Prompt** của app, `docs/scheduled-prompt.md`) chỉ ngắn (tối đa 18 dòng, mẫu cố định `TASK`, `OPTIONS`, `TOOL`, `SKILL`, `STEPS`, `STOP IF`, `NEVER`; mỗi bước đánh số khớp 1:1 với số bước ở đây); mọi chi tiết nằm ở đây. Agent nào cũng chạy được (Claude Code, Codex; ChatGPT chỉ phần gửi Metricool): mọi bước là lệnh `node scripts/...` chạy trong thư mục tool (`<tool folder>`), in **một JSON** (`ok: true|false`); đọc JSON, không đoán. Chạy lại không sinh trùng. App chỉ để xem, duyệt và quản lý; việc do agent làm.
 
 Ba chế độ (đường chính của Mode 2 và Mode 3: `scripts/pipeline.mjs`):
-1. **Research only**: crawl các trang tham khảo của thương hiệu vào kho `workspace/store/<brand>/`, bỏ trùng. Không làm ý/bài, không gửi Metricool.
+1. **Research only**: agent (Playwright MCP, Chrome đã đăng nhập của người dùng) lấy bài mới của các trang tham khảo, rồi tìm thêm theo từ khoá/hashtag trên nhiều nền tảng, chỉ bài có sản phẩm đúng loại thương hiệu bán, vào kho `workspace/store/<brand>/`, bỏ trùng. Không làm ý/bài, không gửi Metricool.
 2. **Create & publish**: đồng bộ brand Metricool → gửi các bài **đã duyệt** mà chưa gửi thành bài **hẹn giờ thật** (không bao giờ nháp) đúng giờ slot của brand → làm bài mới → kiểm tra tự động → bài ở trạng thái **To review** và **dừng**. Người dùng duyệt trong app (Approve = ghi vào sổ bài của tool `workspace/posts/<brand>/` + host ảnh; skill chỉ đọc); lượt sau hẹn giờ các bài đó.
 3. **Publish approved**: chỉ hẹn giờ trên Metricool các bài **Approved** chưa gửi (không làm bài, không mở trình duyệt).
 
@@ -16,12 +16,12 @@ Trạng thái người dùng thấy (tab Posts, đúng thứ tự): **To review*
 - Mỗi lượt (mọi chế độ, mọi agent) theo đúng các bước đánh số của chế độ đó, không bỏ bước; **bước gần cuối luôn là ghi nhật ký** (`scripts/runlog.mjs`, 1.5 / 2.9 / 3.1), **bước cuối là báo cáo** với các mục cố định (1.6 / 2.10 / 3.2).
 
 - Thương hiệu: chỉ các thương hiệu usable (`node scripts/brands.mjs`). "all usable brands" = mọi thương hiệu usable.
-  - **Mode 1 (Research):** lần lượt từng thương hiệu và từng nguồn, **không song song** (một Chrome = một lượt crawl).
+  - **Mode 1 (Research):** lần lượt từng thương hiệu, từng trang tham khảo và từng truy vấn, **không song song** (một trình duyệt = một agent).
   - **Mode 2 / Mode 3:** đường nhanh `scripts/pipeline.mjs` (mục "Mode 2 fast path"): **một pipeline cho mọi thương hiệu**, không cần sub-agent theo thương hiệu; agent chỉ dừng ở chỗ cần phán đoán (chọn ý, xem ảnh, viết caption). Các bước 2.0 → 2.10 bên dưới vẫn là quy trình đầy đủ và là **đường dự phòng** khi pipeline lỗi (khi đó các thương hiệu có thể chạy song song, một sub-agent mỗi thương hiệu). Ảnh luôn làm song song (2.4, `draft.mjs image-batch`); cả máy không bao giờ quá `codex.concurrency` lượt Codex cùng lúc, kể cả khi nhiều thương hiệu chạy song song.
 - **Run progress (tab Prompt của app):** bước Setup chạy `node scripts/brands.mjs --run <research|create|publish>`: lượt chạy hiện ở khung **Run progress** (nhận lượt "pending" do nút Copy prompt tạo, hoặc mở lượt mới). Các script của từng bước tự cập nhật `workspace/runs/current-<mode>.json` (`scripts/progress.mjs`); `runlog.mjs add` kết thúc lượt. Agent không phải làm gì thêm.
 - Skill không bao giờ được chép vào tool. Mỗi brand Metricool trỏ tới một thư mục skill (`skill_path` trong `workspace/metricool-brands.json`); tool chỉ **đọc** thư mục đó; **không bao giờ ghi vào skill** (bài đã duyệt, Metricool id, ngày đăng nằm trong sổ bài của tool `workspace/posts/<brand>/`). Mọi dữ kiện riêng của thương hiệu đọc từ skill (`SKILL.md`, `project/project.md`, `project/social.json`). Không hard-code thương hiệu, không trộn nguồn hay kho giữa thương hiệu.
 - Brand chỉ được làm và gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill, hoặc `removed: true` (đã mất khỏi tài khoản) trong `workspace/metricool-brands.json`, thì **không bao giờ**. Không dùng blogId khác `args.blogId` của payload; không `createScheduledPostForReview`.
-- Tuỳ chọn của lượt (dòng `Options:` của prompt) ưu tiên hơn mặc định: Research → `--source a,b`, `--max-posts N`, `--backfill` hoặc `--full` cho `research.mjs start`; Create → `--count N` cho `ideas.mjs init` (trống = đủ bài cho `planning.ahead_days` ngày tới); Publish approved → `--limit N` (tối đa N bài đã duyệt mỗi brand, bài duyệt sớm nhất trước) cho `metricool-mcp.mjs payload`; chỉ Publish approved → `--window morning|midday|afternoon|evening` (chỉ giờ trong khung đó của ngày, theo múi giờ Metricool của brand; tốt nhất trước, không có dữ liệu thì giữa khung) và Start: **From today** = `--start today` (mặc định trong app) hoặc **From tomorrow** (không có cờ) (giờ tốt nhất kế tiếp sau bây giờ, chừa 15 phút an toàn; brand 1 bài/ngày chỉ dùng giờ chính, không bao giờ giờ dự phòng tối nay) cho `payload`. Giờ được tính lúc chạy `payload`, nên chạy `payload` ngay trước khi gửi; item đã quá `send_before` thì không gửi, chạy lại `payload` (giờ chuyển sang slot kế). Create & publish không có hai tuỳ chọn này: bài đã duyệt luôn hẹn ở giờ tốt nhất tự động, từ ngày mai.
+- Tuỳ chọn của lượt (dòng `Options:` của prompt) ưu tiên hơn mặc định: Research → `--source a,b` (trang tham khảo), `--platforms a,b|none` (nền tảng discovery), `--keywords "k1,k2"`, `--max-posts N` (mục tiêu mỗi thương hiệu), `--backfill` hoặc `--full` cho `research.mjs start`; Create → `--count N` cho `ideas.mjs init` (trống = đủ bài cho `planning.ahead_days` ngày tới); Publish approved → `--limit N` (tối đa N bài đã duyệt mỗi brand, bài duyệt sớm nhất trước) cho `metricool-mcp.mjs payload`; chỉ Publish approved → `--window morning|midday|afternoon|evening` (chỉ giờ trong khung đó của ngày, theo múi giờ Metricool của brand; tốt nhất trước, không có dữ liệu thì giữa khung) và Start: **From today** = `--start today` (mặc định trong app) hoặc **From tomorrow** (không có cờ) (giờ tốt nhất kế tiếp sau bây giờ, chừa 15 phút an toàn; brand 1 bài/ngày chỉ dùng giờ chính, không bao giờ giờ dự phòng tối nay) cho `payload`. Giờ được tính lúc chạy `payload`, nên chạy `payload` ngay trước khi gửi; item đã quá `send_before` thì không gửi, chạy lại `payload` (giờ chuyển sang slot kế). Create & publish không có hai tuỳ chọn này: bài đã duyệt luôn hẹn ở giờ tốt nhất tự động, từ ngày mai.
 - Trước khi làm bài cho thương hiệu: đọc `SKILL.md` và `project/project.md` của skill.
 - **Không bao giờ gắn nhãn AI** lên bài (caption, text, alt). **Không logo trên sản phẩm** (logo chỉ là watermark nhỏ ở góc, khi thương hiệu bật).
 - Không đăng thẳng lên mạng xã hội; mọi bài đi qua Metricool dạng hẹn giờ. Agent **không bao giờ tự duyệt** bài (`finalize.mjs approve` chỉ do người dùng, qua app).
@@ -30,8 +30,8 @@ Trạng thái người dùng thấy (tab Posts, đúng thứ tự): **To review*
 - Báo cáo bằng tiếng Việt (mục 1.6 / 2.10 / 3.2), nhắc người dùng mở app (tab Library / Posts).
 
 ### Công cụ theo agent
-- **Claude Code**: `node scripts/crawl-fb.mjs` (Playwright trong tool, gắn vào Chrome đã đăng nhập Facebook qua CDP) cho Mode 1, Playwright MCP chỉ là dự phòng; connector claude.ai "Metricool" cho Mode 2; Codex CLI để tạo ảnh.
-- **Codex** (CLI/app, đọc `AGENTS.md`): Mode 1 chạy `node scripts/crawl-fb.mjs` như Claude Code (không cần MCP trình duyệt). Chỉ khi phải crawl tay (dự phòng) mới cần MCP trình duyệt trong `~/.codex/config.toml` (`[mcp_servers.playwright]`, `command = "npx"`, `args = ["-y", "@playwright/mcp@latest", "--extension"]`). Mode 2 cần MCP Metricool:
+- **Claude Code**: Playwright MCP (`--extension`, gắn vào Chrome đã đăng nhập của người dùng) cho Mode 1 (trang tham khảo + discovery; `crawl-fb.mjs` chỉ là đường nhanh tuỳ chọn cho trang Facebook); connector claude.ai "Metricool" cho Mode 2; Codex CLI để tạo ảnh.
+- **Codex** (CLI/app, đọc `AGENTS.md`): Mode 1 cần MCP trình duyệt như Claude Code, trong `~/.codex/config.toml` (`[mcp_servers.playwright]`, `command = "npx"`, `args = ["-y", "@playwright/mcp@latest", "--extension"]`). Mode 2 cần MCP Metricool:
   ```
   codex mcp add metricool --url https://ai.metricool.com/mcp
   codex mcp login metricool
@@ -59,9 +59,43 @@ Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo khô
 
 ## Mode 1. Research only
 
-**Crawl hết nhanh bằng script, rồi lọc một lượt.** Agent không bấm từng bài: `scripts/crawl-fb.mjs` lái Chrome đã đăng nhập Facebook (Playwright, qua CDP) theo luật cố định, tải ảnh, ghi `raw.json` và ingest; agent chỉ can thiệp khi một nguồn **blocked** hoặc **error**, rồi lọc bài trong kho một lượt (1.3). Chi tiết: `docs/research.md`. Một Chrome = một lượt crawl.
+**Agent thu thập bằng Playwright MCP trên Chrome đã đăng nhập của người dùng, rồi lọc một lượt.** Thứ tự (người dùng, 10/11/2026): (1) **trang tham khảo** của thương hiệu (`research.sources[]`: bài mới chưa có trong kho); (2) hết trang tham khảo mà chưa đủ mục tiêu (`--max-posts N` mỗi thương hiệu, hoặc không đặt mục tiêu): **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` của skill trên các nền tảng bật (Instagram, Pinterest, TikTok, Facebook tìm bài + nhóm, Reddit, Etsy, YouTube/Shorts, Houzz cho nội thất), xoay vòng các nền tảng tới khi đủ mục tiêu hoặc hết truy vấn. **Chỉ lấy bài có sản phẩm đúng loại thương hiệu bán** (`research.discovery.product_fit`: `types`, `must_have`, `must_not`): bài sai loại không tải, không lưu (ghi `rejected[]`), và bị lọc lần nữa ở 1.3. Script `research.mjs next` nói việc tiếp theo; chi tiết từng nền tảng: `docs/research.md`. `scripts/crawl-fb.mjs` chỉ là **đường nhanh tuỳ chọn** cho trang tham khảo Facebook (mục "Chrome cho crawl"). Một trình duyệt = một agent, không song song.
 
-### Chrome cho crawl (một lần trên máy)
+1.0. Kiểm tra trình duyệt (**bước đầu tiên**, trước `research.mjs start`): công cụ Playwright MCP có và đang nối Chrome của người dùng (vd `browser_tabs` trả danh sách tab). Không đụng Chrome cổng 9222.
+```
+node scripts/research.mjs browser --brand <id> --state ok
+node scripts/research.mjs browser --brand <id> --state fail --note "<lý do>"   # không có MCP / không nối được: dừng, không start
+```
+Claude Code: `claude mcp add playwright -- npx -y @playwright/mcp@latest --extension` (extension "Playwright MCP Bridge" trong Chrome của người dùng). Codex: `~/.codex/config.toml` `[mcp_servers.playwright]` `command = "npx"`, `args = ["-y", "@playwright/mcp@latest", "--extension"]`. Không đăng nhập hộ: trang nào đòi đăng nhập thì truy vấn đó `blocked`.
+
+1.1. Mở lượt cho một thương hiệu:
+```
+node scripts/research.mjs start --brand <id> [--source a,b|none] [--platforms a,b|none] [--keywords "k1,k2"] [--hashtags "t1,t2"] [--max-posts N] [--since YYYY-MM-DD] [--full | --backfill]
+```
+- `--max-posts N` = **mục tiêu** N bài mới cho thương hiệu trong lượt: trang tham khảo trước (chia đều cho chúng), phần còn lại từ discovery. Trống = trang tham khảo theo luật dừng, rồi mọi truy vấn discovery (mỗi nền tảng tối đa `max_per_platform`). Brand = tất cả: mỗi thương hiệu được N.
+- `--platforms`: nền tảng discovery (mặc định mọi nền tảng bật trong skill; nền tảng không bật trong skill bị bỏ, JSON `platforms_ignored`; `none` = chỉ trang tham khảo). `--keywords` / `--hashtags`: thay danh sách của skill cho lượt này.
+- Trang tham khảo: lần đầu lấy hết bài (cuộn tới hết trang); lần sau chỉ bài mới ở đầu trang (dừng sau 3 bài liên tiếp đã có). `--backfill`: bài **cũ hơn** `oldest_seen` (trang đã `reached_end` bỏ qua, `run.skipped`); `--full`: cuộn hết dù đã có; `--since`: mốc ngày.
+- Mở lại cùng ngày: `run.json`, `raw.json`, `raw/`, `ingest.json` và thư mục `discovery/` cũ chuyển vào `archive/<giờ>/`, không bao giờ ingest lại.
+- Tiến độ từng trang: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen`, `reached_end`).
+
+1.2. Thu thập, lặp tới khi `next` trả `done`:
+```
+node scripts/store.mjs known --brand <id>            # một lần: link/mã bài đã có (không mở, không tải lại)
+node scripts/research.mjs next --brand <id>
+#  step "reference": lấy trang url theo stop_rule (docs/research.md "Trang tham khảo"), ghi raw_file + ảnh vào downloads, rồi
+node scripts/research.mjs ingest --brand <id> --source <sid>
+node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|blocked|partial [--note ..]
+#  step "discovery": mở url (trang tìm/hashtag) của platform, lấy tối đa share bài đúng product_fit (docs/research.md "<platform>"), rồi
+node scripts/research.mjs ingest --brand <id> --query <qid>
+node scripts/research.mjs result --brand <id> --query <qid> --state done|limit|empty|blocked|partial [--note ..]
+```
+- Luật chung (docs/research.md): chỉ xem (không like/lưu/theo dõi/bình luận/nhắn tin/tham gia nhóm/đăng); nghỉ **ngẫu nhiên 5-15 giây** giữa mọi lần mở, cuộn, bấm; mỗi bài đọc link bài, ảnh lớn nhất, caption, tác giả, ngày, lượt thích nếu thấy, `product_fit` { type, reason }; bài sai loại → `rejected[]` (không tải).
+- `ingest` bỏ trùng trên **mọi nền tảng** của thương hiệu (link/mã bài kể cả `alt_urls`, Instagram `/p/` = `/reel/`, YouTube `watch` = `shorts`; SHA-1 + dHash ảnh; caption), từ chối bài thiếu/sai `product_fit.type` (ghi `workspace/store/<brand>/rejected.json` kèm lý do), giữ `platform`, `source_url`, `author`, `found_by` (`reference page` | `keyword:<kw>` | `hashtag:<tag>`), `product_fit`.
+- Tường đăng nhập, captcha, checkpoint: dừng ngay nền tảng đó, `result --state blocked --note "<thấy gì>"`: truy vấn còn lại của nền tảng đó bị bỏ trong lượt, nền tảng khác vẫn tiếp. Trang tham khảo Facebook bị chặn: các trang Facebook còn lại `--state skipped`.
+- `next` trả `skip: true` (mục tiêu đã đủ khi còn trang tham khảo): chạy đúng lệnh `do` (`result --state skipped`).
+- Đường nhanh tuỳ chọn cho trang tham khảo **Facebook**: `node scripts/crawl-fb.mjs --check` rồi `node scripts/crawl-fb.mjs --brand <id>` (Chrome crawl riêng cổng 9222, mục dưới; tự ingest + result các trang Facebook), rồi tiếp `research.mjs next` cho discovery.
+
+### Chrome cho crawl (chỉ cho đường nhanh `crawl-fb.mjs`, tuỳ chọn)
 - `npm install` một lần trong thư mục tool (thư viện `playwright-core`; không tải trình duyệt).
 - Chrome mới không cho điều khiển profile mặc định, nên dùng **một profile riêng** cho crawl, đăng nhập Facebook tài khoản phụ (`research.fb_account`) trong profile đó **một lần, bằng tay**. Cookie nằm trong profile Chrome đó (ngoài repo), tool không bao giờ lưu cookie.
 - Lần đầu: chạy **`start-crawl-chrome.cmd`** (Windows) hoặc **`start-crawl-chrome.command`** (macOS) trong thư mục tool, hoặc nút **Start crawl Chrome** ở Settings → Requirements (dòng "Crawl Chrome" xanh khi Chrome đang chạy). Đăng nhập Facebook tài khoản phụ trong cửa sổ đó **một lần**. Các lần sau chỉ cần mở lại bằng launcher trước khi crawl.
@@ -72,60 +106,32 @@ Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo khô
   - Kiểm tra: mở `http://127.0.0.1:9222/json/version` thấy JSON là được.
 - Settings (`workspace/settings.json`, mặc định ở `config/settings.json`): `research.browser.cdp` (mặc định `http://127.0.0.1:9222`). Hoặc `research.browser.user_data_dir` = thư mục profile riêng (ngoài thư mục tool): tool tự mở Chrome với profile đó (Chrome của profile đó phải đang tắt). Khác: `fallback_tabs` (`posts`, `photos`, `reels`), `stall_posts` (5), `max_scroll_steps` (300).
 
-1.0. Kiểm tra Chrome cho crawl (**bước đầu tiên**, trước `research.mjs start`):
-```
-node scripts/crawl-fb.mjs --check
-```
-JSON `{ ok, reachable, logged_in }`. Không `ok` (Chrome chưa chạy hoặc chưa đăng nhập Facebook): dừng, **không** chạy `research.mjs start` (lượt trong ngày không bị mở lại hay chuyển vào archive), báo người dùng mở Chrome bằng launcher; vẫn ghi nhật ký (1.5) với lý do "chrome unreachable" và báo cáo (1.6).
-
-1.1. Mở lượt crawl cho một thương hiệu:
-```
-node scripts/research.mjs start --brand <id> [--source a,b] [--since YYYY-MM-DD] [--max-posts N] [--full | --backfill]
-```
-- Mặc định: lần đầu lấy **hết** bài (cuộn tới hết trang); lần sau chỉ lấy bài mới ở đầu trang (dừng sau 3 bài liên tiếp đã có trong kho).
-- `--since`: giới hạn khi người dùng chọn. `--max-posts N`: **tối đa N bài mới cho cả thương hiệu** (không phải mỗi nguồn), chia đều **xoay vòng** cho các nguồn: mỗi vòng mỗi nguồn còn bài được một phần đều của số còn lại; nguồn cạn để phần dư cho nguồn khác. Nguồn chưa được mở vì hết phần ghi `skipped` ("Skipped (quota)", không phải "Dried up"). Brand = tất cả: mỗi thương hiệu được N.
-- `--backfill`: lấy dần các bài **cũ hơn** bài cũ nhất đã có (`oldest_seen`); nguồn đã `reached_end` thì bỏ qua (`run.skipped`). `--full`: cuộn hết dù đã có (chậm).
-- Mở lại cùng ngày: `run.json` cũ được giữ ở `runs/<brand>/<ngày>/archive/<giờ>/run.json`, và `raw.json`, `raw/`, `ingest.json` cũ của từng nguồn được chuyển vào `<source>/archive/<giờ>/` (JSON `archived`), không bao giờ bị ingest lại. Vì vậy luôn chạy 1.0 trước: kiểm tra hỏng thì đừng `start`.
-- Tiến độ từng nguồn: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen` theo ngày đăng, không có ngày thì theo thứ tự trên trang; bài lấy bằng backfill không bao giờ là `newest_seen`).
-
-1.2. Crawl bằng script (mọi source của lượt, đúng thứ tự):
-```
-node scripts/crawl-fb.mjs --brand <id> [--source a,b] [--cdp http://127.0.0.1:9222] [--redo]
-```
-- Mỗi source: mở trang, cuộn; mỗi bước cuộn **một** `page.evaluate` mở "Xem thêm", đọc mọi bài mới (link + mã, caption, ngày, link ảnh, loại media), rồi nghỉ ngẫu nhiên `research.delay_seconds` (mỗi bước cuộn, không phải mỗi bài). Bài đã có trong `known.json` không tải. Sau mỗi vòng: tải ảnh vào `<source>/raw/`, ghi `<source>/raw.json` dạng `{ "page": {...}, "posts": [...] }`, chạy `research.mjs ingest` (bỏ trùng), cuối cùng `research.mjs result` cho từng source. Dòng tiến độ in ra stderr và `workspace/runs/<brand>/<date>/crawl-fb.log`.
-- Trang ngừng tải sau 1-3 bài: script chờ vòng tải, cuộn lên/xuống, bấm End; vẫn đứng thì thử tab `/posts`, rồi lưới `/photos_by` và `/reels` (mở từng ô mới một lần để lấy caption/ngày/ảnh lớn). Tab đã dùng ghi trong JSON (`tabs`).
-- JSON trả `sources.<sid>`: `state`, `note`, `collected`, `added`, `duplicates`, `tabs`; `blocked[]`, `errors[]`.
-- **Agent chỉ can thiệp khi:**
-  - `blocked` (checkpoint, captcha, yêu cầu đăng nhập, "tạm thời bị chặn"): script đã dừng ngay, không mở nguồn nào nữa. Không thử lại trong ngày, không đăng nhập hộ; báo người dùng.
-  - `error` (note bắt đầu `error:`): `error: selectors` = trang có bài nhưng không đọc được bài nào (Facebook đổi giao diện): sửa danh sách trong `scripts/fb-extract.mjs` (`SELECTORS`), hoặc crawl tay nguồn đó theo `docs/research.md` phần **Dự phòng** rồi `research.mjs ingest` + `result`. Lỗi khác: ghi vào nhật ký.
-  - Không nối được Chrome (lẽ ra 1.0 đã bắt): báo người dùng mở Chrome bằng launcher (mục "Chrome cho crawl").
-
 1.3. Lọc một lượt (agent tự quyết, không mở trình duyệt):
 ```
 node scripts/store.mjs classify --brand <id> [--limit 40]
 node scripts/store.mjs verdict  --brand <id> --file <verdicts.json>
 ```
-- `classify` in một lô gọn các bài `new` chưa lọc: `id`, `source`, đoạn đầu caption (`(no caption)` khi bài chỉ có ảnh), `media`, `thumb` (đường dẫn ảnh), kèm `what_to_take` của từng nguồn, đường dẫn `project.md` (phạm vi sản phẩm) và `rules_of_thumb`.
+- `classify` in một lô gọn các bài `new` chưa lọc: `id`, `source`, `platform`, `found_by`, `author`, `product_fit` (ghi lúc lấy), đoạn đầu caption (`(no caption)` khi bài chỉ có ảnh), `media`, `thumb` (đường dẫn ảnh), kèm `what_to_take` của từng nguồn, `product_fit` của skill (`types`, `must_have`, `must_not`), đường dẫn `project.md` (phạm vi sản phẩm) và `rules_of_thumb`.
 - Agent xem chữ + ảnh thumb (đọc file ảnh), đối chiếu `what_to_take` và phạm vi sản phẩm trong `project.md`, ghi `[{ "id": "S0001", "fit": true|false, "reason": "..." }]` (lý do ngắn, bắt buộc khi `fit:false`), rồi `verdict`. Lặp tới khi `total_unjudged` = 0.
 - `fit:false` → bài thành **Removed** (`rejected`), ghi chú `filter: <lý do>`; `fit:true` → giữ (Available). Người dùng vẫn Restore được ở tab Library (bài đó không bị lọc lại).
-- Luật nhanh: bỏ bài tuyển dụng; bỏ cuộc thi, minigame, giveaway; bỏ bài chỉ có chữ (hoặc ảnh chỉ là chữ, không thấy sản phẩm); bỏ bài chia sẻ lại mà không có ảnh sản phẩm; bỏ sản phẩm ngoài ngành hàng của thương hiệu. Giữ: ảnh sản phẩm thật đúng ngành hàng, có bối cảnh/góc chụp/khung caption học được.
+- Luật nhanh: bỏ sản phẩm không thuộc `product_fit.types` hoặc dính `must_not` (lý do `off-brand: ...`; lần kiểm thứ hai, kể cả bài crawl-fb lấy); bỏ bài tuyển dụng; bỏ cuộc thi, minigame, giveaway; bỏ bài chỉ có chữ (hoặc ảnh chỉ là chữ, không thấy sản phẩm); bỏ bài chia sẻ lại mà không có ảnh sản phẩm; bỏ sản phẩm ngoài ngành hàng của thương hiệu. Giữ: ảnh sản phẩm thật đúng ngành hàng, có bối cảnh/góc chụp/khung caption học được.
 
 1.4. Số liệu báo cáo:
 ```
 node scripts/research.mjs report --brand <id>
 ```
-Mỗi nguồn: bài mới, `kept` / `filtered`, `low_keep` (≥ 5 bài đã lọc và giữ < 30%), trạng thái, còn bài cũ không.
+Mỗi trang tham khảo: bài mới, `kept` / `filtered`, `rejected_off_brand`, `low_keep` (≥ 5 bài đã lọc và giữ < 30%), trạng thái, còn bài cũ không. `discovery`: mỗi nền tảng (truy vấn đã làm, giữ, bỏ vì sai loại, trùng, blocked, đủ max) và mỗi truy vấn (`found_by`, trạng thái, giữ / sai loại / trùng); `target`, `new_total` (trang tham khảo + discovery).
 
 1.5. Ghi nhật ký lượt chạy (bước gần cuối của mọi lượt):
 ```
 node scripts/runlog.mjs add --mode research --agent "<Claude Code|Codex>" [--started <giờ bắt đầu ISO>] [--file <ghi chú.json>]
 ```
-Tool tự lấy số liệu (từng nguồn: bài mới, **kept / filtered**, trạng thái New posts / Dried up / Skipped (quota) / Blocked / Error, cờ keep rate thấp) và ghi `workspace/logs/runs/<thời điểm>-research.json`; tab **Log** hiện "N kept · M filtered". Agent chỉ thêm ghi chú/lỗi bằng file JSON `{ "notes": "...", "errors": ["..."], "brands": { "<id>": { "notes": "...", "errors": ["..."] } } }`.
+Tool tự lấy số liệu (từng nguồn: bài mới, **kept / filtered**, discovery theo nền tảng/truy vấn: giữ / sai loại / trùng, trạng thái New posts / Dried up / Skipped (quota) / Blocked / Error, cờ keep rate thấp) và ghi `workspace/logs/runs/<thời điểm>-research.json`; tab **Log** hiện "N kept · M filtered". Agent chỉ thêm ghi chú/lỗi bằng file JSON `{ "notes": "...", "errors": ["..."], "brands": { "<id>": { "notes": "...", "errors": ["..."] } } }`.
 
 1.6. Báo cáo cho người dùng, tiếng Việt, **luôn đúng các mục sau** (giống tab Log):
-- **Kết quả chung:** +N bài mới · N giữ · M lọc bỏ, số nguồn cạn (Dried up), số nguồn bị chặn.
-- **Theo thương hiệu:** từng nguồn: bài mới · giữ / lọc bỏ · trạng thái (New posts / Dried up / Skipped (quota) / Blocked / Error).
-- **Cần làm:** nguồn bị chặn (lý do), nguồn lỗi (vd `error: selectors`), nguồn keep rate thấp (xem lại `what_to_take` hoặc thay nguồn), nguồn cạn nhiều lượt liền (gợi ý thêm nguồn mới), còn bài cũ thì nhắc `--backfill`.
+- **Kết quả chung:** +N bài mới (trang tham khảo + tìm thêm, so với mục tiêu) · N giữ · M lọc bỏ · K bỏ vì sai loại sản phẩm, số nguồn cạn (Dried up), số nguồn/nền tảng bị chặn.
+- **Theo thương hiệu:** từng trang tham khảo: bài mới · giữ / lọc bỏ · trạng thái (New posts / Dried up / Skipped (quota) / Blocked / Error); tìm thêm: từng nền tảng và truy vấn (từ khoá/hashtag): giữ · sai loại · trùng · trạng thái.
+- **Cần làm:** nguồn/nền tảng bị chặn (lý do: đăng nhập, captcha), nguồn lỗi (vd `error: selectors`), nguồn keep rate thấp (xem lại `what_to_take` hoặc thay nguồn), nguồn cạn nhiều lượt liền (gợi ý thêm nguồn mới), còn bài cũ thì nhắc `--backfill`.
 - **Kho:** tổng (Available / Removed; Available = còn dùng được, thẻ ghi "new" hoặc "used N×"); xem ở tab **Library** (bài bị lọc nằm ở Removed, có lý do).
 
 Không làm ý, không tạo bài, không gửi Metricool trong chế độ này. Không bao giờ like, bình luận, theo dõi, chia sẻ hay nhắn tin.
@@ -194,7 +200,7 @@ node scripts/ideas.mjs set  --brand <id> --id I001 --json "{\"product_type\":\".
 node scripts/ideas.mjs pick --brand <id> --id I001
 node scripts/ideas.mjs reject --brand <id> --id I001 --note "<lý do>" [--item rejected]
 ```
-Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.ahead_days` ngày tới (mặc định 7) với `cadence.posts_per_day` bài/ngày (trừ bài đã duyệt chưa đăng và bản nháp đang làm/chờ duyệt; đủ rồi thì không làm thêm). Thứ tự chọn: bài Available chưa dùng lần nào trước (mới nhất trước, xen kẽ các nguồn), rồi bài đã dùng ít lượt nhất đã qua cooldown (`settings.ideas.reuse_cooldown_days`, mặc định 7 ngày); không bao giờ bài Removed hay bài đang có ý mở. `--items S0008` = đúng các bài đó (bài trong cooldown vẫn được, có ghi chú; Removed → lỗi rõ ràng). Bài dùng lại: kết quả `init` có `previous_uses` + `reuse_rule`: phải khác **cảnh** VÀ khác (**sản phẩm** hoặc **sign_text**) so với mọi lượt trước; `set`/`pick` chặn cảnh lặp, `draft.mjs new` chặn cảnh lặp hoặc cùng sản phẩm + cùng chữ. `settings.ideas.suggest_remove_after` (mặc định 0 = tắt): từ N lượt thì Library chỉ **gợi ý** Remove, không tự áp. Remove/Restore: `node scripts/store.mjs remove --brand <id> --id S0001 [--note "used enough"]` / `restore`. Dữ liệu cũ (`status: used`) tự đọc thành `new` + `uses` từ các bản nháp trong `used_by`; ghi hẳn: `node scripts/store.mjs migrate-uses`. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
+Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.ahead_days` ngày tới (mặc định 7) với `cadence.posts_per_day` bài/ngày (trừ bài đã duyệt chưa đăng và bản nháp đang làm/chờ duyệt; đủ rồi thì không làm thêm). Thứ tự chọn: bài Available chưa dùng lần nào trước (mới nhất trước, xen kẽ các nguồn), rồi bài đã dùng ít lượt nhất đã qua cooldown (`settings.ideas.reuse_cooldown_days`, mặc định 7 ngày); không bao giờ bài Removed hay bài đang có ý mở. `--items S0008` = đúng các bài đó (bài trong cooldown vẫn được, có ghi chú; Removed → lỗi rõ ràng). Bài dùng lại: kết quả `init` có `previous_uses` + `reuse_rule`: phải khác **cảnh** HOẶC khác **sign_text** so với mọi lượt trước (keep-scene: giữ cảnh, đổi chữ; new-scene: đổi cảnh, giữ chữ); cùng cảnh + cùng chữ + cùng sản phẩm thì `set`/`pick`/`draft.mjs new` chặn (lúc `set` chưa có chữ thì chưa chặn). `settings.ideas.suggest_remove_after` (mặc định 0 = tắt): từ N lượt thì Library chỉ **gợi ý** Remove, không tự áp. Remove/Restore: `node scripts/store.mjs remove --brand <id> --id S0001 [--note "used enough"]` / `restore`. Dữ liệu cũ (`status: used`) tự đọc thành `new` + `uses` từ các bản nháp trong `used_by`; ghi hẳn: `node scripts/store.mjs migrate-uses`. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
 
 2.4. Bản nháp và ảnh:
 ```

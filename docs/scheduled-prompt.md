@@ -2,7 +2,7 @@
 
 The only source of the prompts: the app (**Prompt** tab) and `node scripts/prompts.mjs show --mode "<mode>" --agent "<agent>" [--brand <id>]` read this file. Each prompt is a `### <mode> · <agent>` heading with a `text` block. Placeholders: `{{TOOL}}` = this tool's folder on the machine, `{{BRAND}}` = a brand id (example: `dreamyvows`) or "all usable brands", `{{OPTIONS}}` = this run's options (or "defaults"), `{{SKILLS}}` = one line per brand in scope, A-Z: `SKILL: <brand id> → <absolute skill folder> (read its SKILL.md + project/project.md + project/social.json)` (from the brand → skill links, `workspace/metricool-brands.json` `skill_path`).
 
-Every prompt follows ONE fixed template, so every run is the same: `TASK`, `OPTIONS`, `TOOL`, `SKILL` (one per brand), `STEPS` (numbered, one line each, mapping 1:1 to the RUNBOOK.md step numbers of the mode), `STOP IF`, `NEVER`. At most 18 lines (one SKILL line counted). The detail of each step, the rules and the report format live in `RUNBOOK.md`; change a step there and keep the line here in sync. The last two steps of every run are always: write the run log (`scripts/runlog.mjs`), then the report to the user with the fixed headings. Setup runs `node scripts/brands.mjs --run <research|create|publish>` so the run shows in the app's **Run progress** panel (Prompt tab, `scripts/progress.mjs`). Research: one brand and one source at a time. Create & publish / Publish approved use the fast path `scripts/pipeline.mjs` (one pipeline for all brands; it stops only for the agent's judgement: ideas, looking at the images, captions); images always run in parallel (`draft.mjs image-batch`, at most `codex.concurrency` Codex runs on the machine). The step-by-step commands stay in RUNBOOK as the fallback.
+Every prompt follows ONE fixed template, so every run is the same: `TASK`, `OPTIONS`, `TOOL`, `SKILL` (one per brand), `STEPS` (numbered, one line each, mapping 1:1 to the RUNBOOK.md step numbers of the mode), `STOP IF`, `NEVER`. At most 18 lines (one SKILL line counted). The detail of each step, the rules and the report format live in `RUNBOOK.md`; change a step there and keep the line here in sync. The last two steps of every run are always: write the run log (`scripts/runlog.mjs`), then the report to the user with the fixed headings. Setup runs `node scripts/brands.mjs --run <research|create|publish>` so the run shows in the app's **Run progress** panel (Prompt tab, `scripts/progress.mjs`). Research: one brand and one reference page / discovery query at a time (research.mjs next). Create & publish / Publish approved use the fast path `scripts/pipeline.mjs` (one pipeline for all brands; it stops only for the agent's judgement: ideas, looking at the images, captions); images always run in parallel (`draft.mjs image-batch`, at most `codex.concurrency` Codex runs on the machine). The step-by-step commands stay in RUNBOOK as the fallback.
 
 ### Research only · Claude Code
 
@@ -11,17 +11,17 @@ TASK: Research only — brand: {{BRAND}} — agent: Claude Code
 OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
-STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip; one brand and one source at a time, never in parallel):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md + project/project.md; node scripts/brands.mjs --run research.
-2. 1.0 Check the crawl Chrome FIRST: node scripts/crawl-fb.mjs --check (not ok → stop, do not start the crawl).
-3. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
-4. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id>; step in only on blocked / error.
-5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
+STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one brand and one source/query at a time, never in parallel):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run" + docs/research.md; for each SKILL line read that skill's SKILL.md + project/project.md + project/social.json (research.sources, research.discovery: keywords, hashtags, product_fit); node scripts/brands.mjs --run research.
+2. 1.0 Check the browser FIRST: Playwright MCP connected to my signed-in Chrome (browser_tabs) → node scripts/research.mjs browser --brand <id> --state ok|fail (fail → stop, do not start).
+3. 1.1 Open the run: node scripts/research.mjs start --brand <id> (with the OPTIONS flags); node scripts/store.mjs known --brand <id>.
+4. 1.2 Loop node scripts/research.mjs next: reference pages first, then discovery queries round-robin across platforms; collect with Playwright MCP (random 5-15 s pauses); keep ONLY posts whose product is one of product_fit.types (others: raw.json rejected[], never downloaded) → ingest --source|--query → result; until next says done.
+5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails against product_fit, store.mjs verdict --file; repeat until 0 left.
 6. 1.4 Report data: node scripts/research.mjs report.
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: --check not ok (Chrome not running or not signed in: tell me how to start it); checkpoint, captcha or login prompt (crawl-fb records "blocked"). Then still do the run log (with the reason) and the report.
-NEVER: like, comment, follow or message; make ideas or posts; send anything to Metricool; sign in for me; store cookies.
+STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
+NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; touch the Chrome on port 9222; make ideas or posts; send anything to Metricool.
 ```
 
 ### Research only · Codex
@@ -31,24 +31,24 @@ TASK: Research only — brand: {{BRAND}} — agent: Codex
 OPTIONS: {{OPTIONS}}
 TOOL: {{TOOL}}
 {{SKILLS}}
-STEPS (follow RUNBOOK.md Mode 1; do them in order, do not skip; one brand and one source at a time, never in parallel):
-1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read that skill's SKILL.md + project/project.md; node scripts/brands.mjs --run research.
-2. 1.0 Check the crawl Chrome FIRST: node scripts/crawl-fb.mjs --check (not ok → stop, do not start the crawl).
-3. 1.1 Open the crawl: node scripts/research.mjs start (with the OPTIONS flags).
-4. 1.2 Crawl by script: node scripts/crawl-fb.mjs --brand <id>; step in only on blocked / error.
-5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails, store.mjs verdict --file; repeat until 0 left.
+STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one brand and one source/query at a time, never in parallel):
+1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run" + docs/research.md; for each SKILL line read that skill's SKILL.md + project/project.md + project/social.json (research.sources, research.discovery: keywords, hashtags, product_fit); node scripts/brands.mjs --run research.
+2. 1.0 Check the browser FIRST: Playwright MCP connected to my signed-in Chrome (browser_tabs) → node scripts/research.mjs browser --brand <id> --state ok|fail (fail → stop, do not start).
+3. 1.1 Open the run: node scripts/research.mjs start --brand <id> (with the OPTIONS flags); node scripts/store.mjs known --brand <id>.
+4. 1.2 Loop node scripts/research.mjs next: reference pages first, then discovery queries round-robin across platforms; collect with Playwright MCP (random 5-15 s pauses); keep ONLY posts whose product is one of product_fit.types (others: raw.json rejected[], never downloaded) → ingest --source|--query → result; until next says done.
+5. 1.3 Filter in one pass: node scripts/store.mjs classify, judge text + thumbnails against product_fit, store.mjs verdict --file; repeat until 0 left.
 6. 1.4 Report data: node scripts/research.mjs report.
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: --check not ok (Chrome not running or not signed in: tell me how to start it); checkpoint, captcha or login prompt (crawl-fb records "blocked"). Then still do the run log (with the reason) and the report.
-NEVER: like, comment, follow or message; make ideas or posts; send anything to Metricool; sign in for me; store cookies.
+STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
+NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; touch the Chrome on port 9222; make ideas or posts; send anything to Metricool.
 ```
 
 ### Research only · ChatGPT
 
 ```text
 TASK: Research only — brand: {{BRAND}} — agent: ChatGPT
-This mode runs node commands in {{TOOL}} and drives the Chrome signed into Facebook. If you cannot run commands on this machine, do nothing and reply only: "Research only needs Claude Code or Codex in the social-autopilot folder (it runs node scripts/crawl-fb.mjs against Chrome). Open the social-autopilot folder in one of them and paste the matching prompt from the app's Prompt tab."
+This mode runs node commands in {{TOOL}} and drives my signed-in Chrome with Playwright MCP. If you cannot run commands on this machine, do nothing and reply only: "Research only needs Claude Code or Codex in the social-autopilot folder (it runs node scripts/research.mjs and browses with Playwright MCP in your Chrome). Open the social-autopilot folder in one of them and paste the matching prompt from the app's Prompt tab."
 ```
 
 ### Create & publish · Claude Code
