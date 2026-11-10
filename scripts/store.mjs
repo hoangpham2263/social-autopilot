@@ -3,7 +3,8 @@
 // "Tạo bài từ kho" reads it (ideas.mjs init). Items are NOT used up (user, 10/11/2026): every post changes the scene and
 // the content, so one item may inspire several posts; each draft adds a use ({ draft, idea, scene, product, sign_text, at })
 // and the next idea from that item must take a new angle (reuseProblems: a different scene AND a different product or
-// sign_text). Fresh items (no use) are picked first, then the least used after a cooldown (settings ideas.reuse_cooldown_days).
+// sign_text). Never-used items are picked first, then the least used after a cooldown (settings ideas.reuse_cooldown_days).
+// Library states (UI and docs): Unused (new: available, also when used before, "used N×") · Retired · Dropped.
 // The user may RETIRE an item that feels overused (status retired: fine, but used enough; never picked again until
 // restored); "rejected" (Dropped) = filtered / not suitable.
 //   workspace/store/<brand>/items.json      { brand, updated, next, items: [ item ] }
@@ -18,8 +19,8 @@
 //         last_used, used_by: [draft ids] (history), note, run }   (old status "used" is read as new + uses: migrateUses)
 //   workspace/store/<brand>/duplicates.json  every post not stored because it matched an item (rule + item id)
 // Brands never mix: each brand has its own folder; a source id belongs to that brand's social.json only.
-//   node scripts/store.mjs list    --brand <id> [--status new|fresh|used|retired|rejected] [--source <sid>] [--limit n]
-//                                            new = available (fresh + used before), fresh = never used, used = used before
+//   node scripts/store.mjs list    --brand <id> [--status new|retired|rejected] [--source <sid>] [--limit n]
+//                                            new = Unused (available, used before included; each item has used = N)
 //   node scripts/store.mjs show    --brand <id> --id S0001
 //   node scripts/store.mjs reject  --brand <id> --id S0001 [--note "..."]      "bỏ": never picked for ideas
 //   node scripts/store.mjs retire  --brand <id> --id S0001 [--note "..."]      "retired": used enough, never picked again
@@ -38,8 +39,7 @@ import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writ
 import { imageHashes, hamming } from './phash.mjs';
 
 export const STATUSES = ['new', 'retired', 'rejected'];
-// list filters: new = available (fresh + used before), fresh = never used, used = used before (still available).
-export const LIST_FILTERS = ['new', 'fresh', 'used', 'retired', 'rejected'];
+export const LIST_FILTERS = STATUSES;
 export const MEDIA_TYPES = ['photo', 'album', 'video', 'text'];
 const validBrand = (b) => { if (!/^[a-z0-9][a-z0-9-]*$/.test(String(b || ''))) throw new Error('Mã thương hiệu không hợp lệ.'); return String(b); };
 export const storeDir = (brand) => path.join(workspace, 'store', validBrand(brand));
@@ -298,7 +298,7 @@ export function knownPosts(brand, sourceId) {
     brand_post_urls: all.flatMap((i) => [i.post_url, ...(i.alt_urls || [])]).filter(Boolean), brand_post_ids: [...new Set(all.flatMap((i) => i.post_ids || []))] };
 }
 
-// new = available (fresh + used before); fresh = never used; used = used before (available); ready = fresh + reusable
+// new = Unused (available, used before included); fresh = never used; used = used before (available); ready = fresh + reusable
 // now (cooldown over: what the next idea batch can take); cooling = used within the cooldown; retired = used enough
 // (user); rejected = dropped; uses = posts made from the library; retire_suggested = available items with at least
 // ideas.auto_retire_after uses (only a suggestion; off by default).
@@ -309,7 +309,7 @@ export function counts(items, opts) {
     ready: a.fresh.length + a.reusable.length, cooling: a.cooling.length, uses: items.reduce((n, i) => n + usesOf(i).length, 0), cooldown_days: a.cooldown_days,
     ...(after ? { retire_suggested: items.filter((i) => i.status === 'new' && usesOf(i).length >= after).map((i) => i.id) } : {}) };
 }
-const inFilter = (i, status) => !status || (status === 'fresh' ? i.status === 'new' && !usesOf(i).length : status === 'used' ? i.status === 'new' && usesOf(i).length > 0 : i.status === status);
+const inFilter = (i, status) => !status || i.status === status;
 export function listItems(brand, { status = '', source = '' } = {}) {
   if (status && !LIST_FILTERS.includes(status)) throw new Error(`Trạng thái phải là ${LIST_FILTERS.join(', ')}.`);
   const all = readStore(brand).items;

@@ -222,9 +222,9 @@ async function handle(req, res) {
     return { brands: Object.fromEntries(discovered().brands.map((b) => {
       const qb = q.brands.find((x) => x.brand === b.id) || {};
       return [b.id, {
-        // Research: FRESH library items (never used); available = fresh + used before (reusable from a new angle),
-        // ready = fresh + reusable now (cooldown over) — shown in the tooltip.
-        research: listItems(b.id).counts.fresh || 0, library: (({ new: available, ready, cooling, cooldown_days }) => ({ available, ready, cooling, cooldown_days }))(listItems(b.id).counts),
+        // Research: Unused library items (available, used before included); used / ready (never used or cooldown over)
+        // for the tooltip.
+        research: listItems(b.id).counts.new || 0, library: (({ used, ready, cooling, cooldown_days }) => ({ used, ready, cooling, cooldown_days }))(listItems(b.id).counts),
         create: listDrafts(b.id).filter((d) => !d.status.brand_post && ["ready", "check_failed", "image_failed"].includes(d.status.status)).length,
         // The same posts metricool-mcp.mjs payload sends: the tool's own approved posts with a hosted image, not sent yet
         // on the brand's channels (skill-owned catalog posts never count); a paused brand sends nothing.
@@ -232,7 +232,7 @@ async function handle(req, res) {
         // Already scheduled on Metricool: payload never sends these again (shown under Publish approved).
         on_metricool: (qb.on_metricool || []).length,
         // Unused library items per source (Prompt Sources list).
-        sources: listItems(b.id, { status: "fresh" }).items.reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
+        sources: listItems(b.id, { status: "new" }).items.reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
       }];
     })) };
   });

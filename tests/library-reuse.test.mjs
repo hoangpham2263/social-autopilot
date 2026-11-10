@@ -75,11 +75,14 @@ test('pure: fresh first, then least used after the cooldown; a repeat of scene o
 });
 
 test('migration: old "used" items are available again, uses filled from their drafts; saved by migrate-uses', () => {
-  const l = run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'used');
-  assert.deepEqual(l.items.map((x) => x.id), ['S0005']);
-  assert.equal(l.items[0].status, 'new');
-  assert.deepEqual(l.items[0].uses.map((u) => [u.draft, u.scene]), [['fakebrand-20261101-01', 'barn wedding at golden hour']]);
-  assert.equal(l.counts.fresh, 4);
+  const l = run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'new');
+  assert.equal(l.items.length, 5, 'Unused includes the item used before');
+  const s = l.items.find((x) => x.id === 'S0005');
+  assert.equal(s.status, 'new');
+  assert.equal(s.used, 1);
+  assert.deepEqual(s.uses.map((u) => [u.draft, u.scene]), [['fakebrand-20261101-01', 'barn wedding at golden hour']]);
+  assert.deepEqual([l.counts.new, l.counts.fresh, l.counts.used], [5, 4, 1]);
+  assert.match(run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'used').error, /new, retired, rejected/, 'no separate Used state');
   assert.equal(run('store.mjs', 'migrate-uses', '--brand', 'fakebrand').brands[0].migrated, 5);
   const s5 = items().find((x) => x.id === 'S0005');
   assert.equal(s5.status, 'new');
@@ -135,7 +138,7 @@ test('auto pick: fresh first, then reusable after the cooldown; open ideas and c
   assert.deepEqual(r.items, ['S0004', 'S0003', 'S0005']);
   assert.deepEqual(Object.keys(r.previous_uses), ['S0005']);
   assert.equal(r.store_ready_left, 0);
-  assert.match(r.warning, /Library low: 0 posts ready/);
+  assert.match(r.warning, /Library low: 0 unused posts ready/);
 });
 
 test('retire: never picked, --items errors, restore brings it back', () => {

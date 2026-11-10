@@ -468,7 +468,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
       const parts = (list) => list.filter(Boolean).join(" · ");
       const none = `<span class="muted">No posts yet</span>`;
-      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.fresh && `${st.fresh} fresh`, st.used && `${st.used} used before`, st.retired && `${st.retired} retired`, st.rejected && `${st.rejected} dropped`]) : none;
+      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.new && `${st.new} unused`, st.retired && `${st.retired} retired`, st.rejected && `${st.rejected} dropped`]) : none;
       const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} new`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} duplicates skipped`, arr(r.pending).length && `unfinished: ${esc(arr(r.pending).join(", "))}`]) : "";
       const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
       const written = arr(x?.written).length;
@@ -606,16 +606,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   };
 
   // ----- Library: the research store of each brand, kept apart per brand; "Drop" = never used for posts -----
-  // Items are not used up (one reference may inspire several posts, each from a new angle): new = available (Fresh when
-  // never used, else "Used before"), retired = used enough (the user's call), rejected = Dropped (filtered / not suitable).
-  const ITEM_TEXT = { new: "Fresh", used: "Used before", retired: "Retired", rejected: "Dropped" };
-  const ITEM_COLOR = { new: "c-green", used: "", retired: "c-amber", rejected: "c-red" };
+  // Items are not used up (one reference may inspire several posts, each from a new angle): Unused = available (also
+  // when used before: "used N×"), Retired = used enough (the user's call), Dropped = filtered / not suitable.
+  const ITEM_TEXT = { new: "Unused", retired: "Retired", rejected: "Dropped" };
+  const ITEM_COLOR = { new: "c-green", retired: "c-amber", rejected: "c-red" };
   const usesN = (it) => arr(it.uses).length;
-  const itemState = (it) => (it.status === "new" && usesN(it) ? "used" : it.status);
+  const itemState = (it) => it.status;
   const usedTimes = (it) => (usesN(it) ? `used ${usesN(it)}×` : "");
   const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway", skipped: "skipped (quota)" };
-  let resShown = 60, resStatus = store.get("resStatus") ?? "fresh", resAvatars = {}, resRetireSuggest = [];
-  if (!["fresh", "used", "retired", "rejected", ""].includes(resStatus)) resStatus = "fresh";
+  let resShown = 60, resStatus = store.get("resStatus") ?? "new", resAvatars = {}, resRetireSuggest = [];
+  if (!["new", "retired", "rejected", ""].includes(resStatus)) resStatus = "new";
   // The one card template: { id, img, title, status (html), sub (one meta line, e.g. the Metricool time), who (brand/page name), actions (html), hint }.
   const tile = (x) => `<div class="tile" data-id="${esc(x.id)}" tabindex="0">
     ${x.img ? `<img class="tile-img" loading="lazy" src="${img(x.img)}" alt="">` : `<div class="tile-img none">No image</div>`}
@@ -647,7 +647,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     setDisabled($("#resSource"), arr(c.sources).length < 2, "This brand has only one source");
     const k = c.counts || {};
     resRetireSuggest = arr(k.retire_suggested);
-    const SHOW = [["", "All", k.total, ""], ["fresh", "Fresh", k.fresh, "Never used for a post"], ["used", "Used before", k.used, `Used for ${k.uses || 0} posts in all; can inspire another post from a new angle (after a ${k.cooldown_days ?? 7}-day cooldown)`], ["retired", "Retired", k.retired, "Fine, but used enough: never picked again until restored"], ["rejected", "Dropped", k.rejected, "Filtered out or not suitable: never used for posts"]];
+    const SHOW = [["new", "Unused", k.new, `Available for posts (${k.used || 0} of them used before: each can inspire another post from a new angle, after a ${k.cooldown_days ?? 7}-day cooldown)`], ["retired", "Retired", k.retired, "Fine, but used enough: never picked again until restored"], ["rejected", "Dropped", k.rejected, "Filtered out or not suitable: never used for posts"], ["", "All", k.total, ""]];
     $("#resStatus").innerHTML = SHOW.map(([v, t, n, tip]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(withCount(t, n))}</button>`).join("");
     for (const b of $$("#resStatus button")) b.onclick = () => { resStatus = b.dataset.show; store.set("resStatus", resStatus); resShown = 60; loadResearch(); };
     const items = arr(c.items);
@@ -879,16 +879,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // Mode button counts (selected brand, or all brands), each = items in that state now: Research = unused library items;
   // Create = posts to review; Publish = approved posts not sent yet. Posts still needed for Plan ahead: Overview card.
   const modeKey = (m) => (/research/i.test(m) ? "research" : /publish approved/i.test(m) ? "publish" : "create");
-  const MODE_TIP = { research: "Fresh library items (never used)", create: "Posts to review now (made, waiting for Approve)", publish: "Approved posts not sent to Metricool yet" };
+  const MODE_TIP = { research: "Unused library items (available, used before included)", create: "Posts to review now (made, waiting for Approve)", publish: "Approved posts not sent to Metricool yet" };
   let modeCounts = {};
   function showModeCounts() {
     const brand = $("#prBrand").value;
     const sum = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c[k] || 0), 0);
     for (const b of $$("#prMode button")) b.textContent = Object.keys(modeCounts).length ? withCount(b.dataset.mode, sum(modeKey(b.dataset.mode))) : b.dataset.mode;
-    // Research: the count is Fresh items; the tooltip adds every available item (used before ones can inspire a new angle).
+    // Research: the count is Unused (available) items; the tooltip adds how many are ready now (cooldown over).
     const lib = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c.library?.[k] || 0), 0);
     const rb = $$("#prMode button").find((x) => modeKey(x.dataset.mode) === "research");
-    if (rb && Object.keys(modeCounts).length) rb.title = `${sum("research")} fresh library items (never used); ${lib("available")} available in total (fresh + used before), ${lib("ready")} ready now (cooldown over)`;
+    if (rb && Object.keys(modeCounts).length) rb.title = `${sum("research")} unused library items (available; ${lib("used")} used before); ${lib("ready")} ready now (never used or cooldown over)`;
     // Under Publish approved: posts already scheduled on Metricool (payload never sends them again).
     const note = $("#prMcNote"), pub = /publish approved/i.test(prMode) && Object.keys(modeCounts).length;
     note.hidden = !pub;

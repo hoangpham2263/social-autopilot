@@ -52,7 +52,7 @@ export function copyProblems(idea, item) {
   return problems;
 }
 
-// Fresh (never used) store items in a fair order: newest first within each source, sources taken in turn.
+// Never-used store items in a fair order: newest first within each source, sources taken in turn.
 export const pickNew = (items, n, source = '') => fairOrder(items.filter((x) => x.status === 'new' && !usesOf(x).length && (!source || x.source_id === source)), n);
 
 if (isMain(import.meta.url)) main(() => {
@@ -109,8 +109,8 @@ function run(args, cmd, brand, file) {
     const prev = Object.fromEntries(chosen.filter((x) => usesOf(x).length).map((x) => [x.id, previousUses(x)]));
     return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: a.fresh.length, store_ready_left: left,
       ...(Object.keys(prev).length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(notes.length ? { notes } : {}),
-      ...(low ? { warning: `Library low: ${left} posts ready (${a.fresh.length} fresh, ${a.reusable.length} reusable after the ${cooldown}-day cooldown); run Research.` } : {}),
-      next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài dùng được (fresh hoặc hết cooldown): chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
+      ...(low ? { warning: `Library low: ${left} unused posts ready (${a.fresh.length} never used, ${a.reusable.length} reusable after the ${cooldown}-day cooldown); run Research.` } : {}),
+      next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài Unused dùng được (chưa dùng hoặc hết cooldown): chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
   }
   if (cmd === 'set') {
     const idea = find();
