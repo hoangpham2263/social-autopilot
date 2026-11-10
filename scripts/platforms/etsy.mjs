@@ -2,7 +2,7 @@
 // Search (/search?q=) lists listings; each card links to /listing/<id>/<slug> and holds an image
 // (https://i.etsystatic.com/<shop>/r/il/<hash>/<n>/il_340x270.<n>_xxxx.jpg). Sponsored cards ("Ad by") are not skipped here:
 // the product-fit look at the images drops them if off type.
-import { pageWall, gridExtract, makePost, enc } from './common.mjs';
+import { pageWall, gridExtract, makePost, buildPageScript, enc } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -29,8 +29,14 @@ export const canonicalUrl = (url) => { const id = postId(url); return id ? `http
 // il_340x270.123_ab.jpg -> il_794xN.123_ab.jpg
 export const upgradeImage = (u) => String(u || '').replace(/il_\d+x(?:\d+|N)\./, 'il_794xN.');
 export const searchUrl = (query) => `https://www.etsy.com/search?q=${enc(String(query).replace(/^#/, '').trim())}`;
-export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls.map(upgradeImage), caption: t.caption, author: t.author, found_by: ctx.found_by || '' });
+// Card alt text starts with "May include: " (Etsy's generated description); author text is "By <shop> From shop <shop>" / "Ad・By <shop> Ad from shop <shop>".
+export const stripCaption = (c) => String(c || '').replace(/^\s*May include:\s*/i, '').trim();
+export const shopOf = (a) => (String(a || '').match(/\bBy\s+([\w-]+)/i) || [])[1] || String(a || '').trim();
+export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls.map(upgradeImage), caption: stripCaption(t.caption), author: shopOf(t.author), found_by: ctx.found_by || '' });
 
 // ---- adapter contract ----
 export const isLoginWall = (page) => pageWall(page, SELECTORS);
 export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
+
+// in-page mode (no CDP Chrome): script for Playwright MCP browser_run_code_unsafe
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'etsy', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /\/listing\/(\d{5,})/.source });

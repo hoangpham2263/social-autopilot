@@ -1,15 +1,15 @@
 // Houzz adapter (status in scripts/platforms/index.mjs; written from knowledge of the site, NOT yet run on a live page).
 // Photo search (/photos/query/<kw-with-dashes>) is a grid of room photos; each card links to a photo page
 // (/photos/<title>-phvw-vp~<id>) and holds a thumbnail on st.hzcdn.com. Only meaningful for furniture/home brands.
-import { pageWall, gridExtract, makePost, enc } from './common.mjs';
+import { pageWall, gridExtract, makePost, buildPageScript, enc } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
   link: ['a[href*="/photos/"]'],
   url_pattern: '^https?://(www\\.)?houzz\\.com/photos/[^?#]*?(phvw-vp)?~\\d{5,}',
-  container: 'div[class*="hz-photo-card"], div[class*="PhotoCard"], [data-testid*="photo-card"], li',
-  img: ['img[src*="hzcdn.com"]', 'img'],
-  img_skip: ['/avatar', 'profile', 'logo'],
+  container: 'div[class*="space-card"], div[class*="hz-photo-card"], div[class*="PhotoCard"], [data-testid*="photo-card"], li',
+  img: ['img[src*="hzcdn.com/fimgs/"]'], // /fimgs/ = the photo; /simgs/ = the professional's avatar
+  img_skip: ['/avatar', 'profile', 'logo', '/simgs/'],
   caption: ['[class*="hz-photo-card__title"]', 'h3', 'a[title]'],
   author: ['[class*="hz-photo-card__author"]', 'a[href*="/professionals/"]'],
   wall: {
@@ -33,3 +33,6 @@ export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canoni
 // ---- adapter contract ----
 export const isLoginWall = (page) => pageWall(page, SELECTORS);
 export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
+
+// in-page mode (no CDP Chrome): script for Playwright MCP browser_run_code_unsafe
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'houzz', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /~(\d{5,})/.source });

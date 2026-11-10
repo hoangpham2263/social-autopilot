@@ -1,7 +1,7 @@
 // YouTube adapter (status in scripts/platforms/index.mjs; written from knowledge of the site, NOT yet run on a live page).
 // Hashtag pages (/hashtag/<tag>/shorts) and search results (/results?search_query=, Shorts filter) list video/short cards;
 // each links to /shorts/<id> or /watch?v=<id>. The image is built from the id (i.ytimg.com), so lazy thumbnails never matter.
-import { pageWall, gridExtract, makePost, enc, isHashtag, tagOf } from './common.mjs';
+import { pageWall, gridExtract, makePost, buildPageScript, enc, isHashtag, tagOf } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -36,3 +36,6 @@ export const toPost = (t, ctx = {}) => { const id = postId(t.url); return makePo
 // ---- adapter contract ----
 export const isLoginWall = (page) => pageWall(page, SELECTORS);
 export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
+
+// in-page mode (no CDP Chrome): script for Playwright MCP browser_run_code_unsafe
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'youtube', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /(?:[?&]v=|\/shorts\/)([\w-]{6,})/.source });

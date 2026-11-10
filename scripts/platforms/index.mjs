@@ -18,10 +18,10 @@ export const REGISTRY = {
   pinterest: { adapter: pinterest, status: 'ok', checked: '2026-11-10', note: 'in-page mode verified live (live edge dining table: 12 pins, 12 images in one MCP call, ~10 s); author is not in the search grid DOM (empty); caption prefixes stripped' },
   tiktok: { adapter: tiktok, status: 'untested', checked: '', note: '' },
   facebook: { adapter: facebook, status: 'untested', checked: '', note: '' },
-  reddit: { adapter: reddit, status: 'untested', checked: '', note: '' },
-  etsy: { adapter: etsy, status: 'untested', checked: '', note: '' },
-  youtube: { adapter: youtube, status: 'untested', checked: '', note: '' },
-  houzz: { adapter: houzz, status: 'untested', checked: '', note: '' },
+  reddit: { adapter: reddit, status: 'broken', checked: '2026-11-10', note: 'BLOCKED: signed-in Chrome via Playwright gets HTTP 403 "You have been blocked by network security" (js_challenge) on /search. pageScript is written but never ran; retry from a normal browser session' },
+  etsy: { adapter: etsy, status: 'ok', checked: '2026-11-10', note: 'in-page mode verified live (neon wedding sign: 12 listings in one MCP call, images 765px via card img, spot-check 3/3 id+image+shop). Card alt = "May include: ..." (stripped); sponsored cards appear (author starts with "Ad"); the MCP result is too large to read back by hand, so use browser_evaluate/run_code with a compact return' },
+  youtube: { adapter: youtube, status: 'broken', checked: '2026-11-10', note: 'BLOCKED: net::ERR_SSL_PROTOCOL_ERROR on every youtube.com URL in this Playwright browser (network/proxy level), nothing could be inspected. pageScript is written but never ran' },
+  houzz: { adapter: houzz, status: 'ok', checked: '2026-11-10', note: 'in-page mode verified live (live edge dining table: 12 photos with author, 1100px images, spot-check 3/3 id+image+author). Photo = img /fimgs/, /simgs/ is the pro avatar; search results are only loosely on topic (rooms), the product-fit look must filter' },
 };
 
 export const platformIds = () => Object.keys(REGISTRY);

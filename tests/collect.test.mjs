@@ -47,8 +47,8 @@ test('registry: every platform has an adapter with the full contract; status is 
   for (const id of platformIds()) {
     const e = REGISTRY[id], a = getAdapter(id);
     assert.ok(STATUSES.includes(e.status), id);
-    if (e.status === 'ok') assert.match(e.checked, /^\d{4}-\d{2}-\d{2}$/, `${id}: ok needs the date it was checked`);
-    else assert.equal(e.checked, '', id);
+    if (e.status !== 'untested') assert.match(e.checked, /^\d{4}-\d{2}-\d{2}$/, `${id}: ok needs the date it was checked`);
+    else assert.equal(e.checked, '', id); // ok and broken both carry the date of the live check
     for (const f of ['searchUrl', 'isLoginWall', 'extract', 'postId']) assert.equal(typeof a[f], 'function', `${id}.${f}`);
     assert.ok(a.SELECTORS && typeof a.SELECTORS === 'object', `${id}: selectors in one block`);
   }
@@ -129,7 +129,11 @@ test('tiles on saved pages become adapter posts: id, canonical url, images, capt
   const hz = tilesOf('houzz', 'houzz-grid', 'https://www.houzz.com/photos/query/live-edge');
   assert.equal(hz.length, 1);
   assert.equal(hz[0].id, '12345678');
-  assert.match(hz[0].image_urls[0], /-w1000-h1000-b0-p0/);
+  assert.match(hz[0].image_urls[0], /[/]fimgs[/].*-w1000-h1000-b0-p0/);
+  assert.equal(hz[0].image_urls.length, 1, 'the professional avatar (/simgs/) is not an image of the post');
+  assert.equal(etsy.stripCaption('May include: A neon sign.'), 'A neon sign.');
+  assert.equal(etsy.shopOf('Ad・By AncientArt Ad from shop AncientArt'), 'AncientArt');
+  assert.equal(etsy.shopOf('By VibeyDesignCo From shop VibeyDesignCo'), 'VibeyDesignCo');
 });
 
 test('facebook adapter reads posts through fb-extract (reused, not copied)', () => {
@@ -276,7 +280,7 @@ test('CLI: collector raw.json (query and reference page) is accepted by research
     assert.deepEqual([i2.added, i2.rejected_off_brand], [2, 1], JSON.stringify(i2));
     const items = JSON.parse(fs.readFileSync(path.join(ws, 'store', 'dv', 'items.json'), 'utf8')).items.filter((x) => x.platform === 'etsy');
     assert.deepEqual(items.map((x) => x.found_by), [n2.found_by, n2.found_by]);
-    assert.equal(run('collect.mjs', 'status').adapters.etsy.status, 'untested');
+    assert.equal(run('collect.mjs', 'status').adapters.etsy.status, 'ok');
     assert.equal(run('collect.mjs', '--platform', 'myspace', '--query', 'x').ok, false);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });

@@ -1,7 +1,7 @@
 // TikTok adapter (status in scripts/platforms/index.mjs; written from knowledge of the site, NOT yet run on a live page).
 // Tag pages (/tag/<tag>) and search (/search?q=) list video cards; each card links to /@<user>/video/<id> (or /photo/<id>)
 // and holds a cover image. No video is downloaded, only the cover.
-import { pageWall, gridExtract, makePost, enc, isHashtag, tagOf } from './common.mjs';
+import { pageWall, gridExtract, makePost, buildPageScript, enc, isHashtag, tagOf } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -32,3 +32,6 @@ export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canoni
 // ---- adapter contract ----
 export const isLoginWall = (page) => pageWall(page, SELECTORS);
 export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
+
+// in-page mode (no CDP Chrome): script for Playwright MCP browser_run_code_unsafe
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'tiktok', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /\/(?:video|photo)\/(\d{8,})/.source });
