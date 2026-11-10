@@ -4,9 +4,9 @@
 // the content, so one item may inspire several posts; each draft adds a use ({ draft, idea, scene, product, sign_text, at })
 // and the next idea from that item must take a new angle (reuseProblems: a different scene AND a different product or
 // sign_text). Never-used items are picked first, then the least used after a cooldown (settings ideas.reuse_cooldown_days).
-// Library states (UI and docs): Unused (new: available, also when used before, "used N×") · Retired · Dropped.
-// The user may RETIRE an item that feels overused (status retired: fine, but used enough; never picked again until
-// restored); "rejected" (Dropped) = filtered / not suitable.
+// Library states (UI and docs): Available (status new: can still be used; "new" or "used N×") · Removed (status
+// rejected: not used anymore, with its reason: the filter's, "used enough" or the user's note; Restore brings it back).
+// The old separate "retired" state migrates to rejected (reason kept).
 //   workspace/store/<brand>/items.json      { brand, updated, next, items: [ item ] }
 //   workspace/store/<brand>/images/          <item-id>-<n>-<sha8>.<ext> (copies of the downloaded post images)
 //   workspace/store/<brand>/progress.json    per source: newest_seen / oldest_seen ({ date, post_id, post_url, item }),
@@ -15,16 +15,16 @@
 //   workspace/store/<brand>/ideas.json       the brand's ideas (ideas.mjs), each tied to one store item
 // item: { id: "S0001", source_id, source_url, store, post_url, alt_urls?, post_key(s), post_ids, captured, posted_date,
 //         caption, caption_norm, caption_hash, main_product, price_seen, images: ["images/S0001-1-ab12cd34.jpg"],
-//         image_sha1: [..], image_phash: [..], status: new|retired|rejected, uses: [{ draft, idea, scene, product, sign_text, at }],
+//         image_sha1: [..], image_phash: [..], status: new|rejected (Removed), uses: [{ draft, idea, scene, product, sign_text, at }],
 //         last_used, used_by: [draft ids] (history), note, run }   (old status "used" is read as new + uses: migrateUses)
 //   workspace/store/<brand>/duplicates.json  every post not stored because it matched an item (rule + item id)
 // Brands never mix: each brand has its own folder; a source id belongs to that brand's social.json only.
-//   node scripts/store.mjs list    --brand <id> [--status new|retired|rejected] [--source <sid>] [--limit n]
-//                                            new = Unused (available, used before included; each item has used = N)
+//   node scripts/store.mjs list    --brand <id> [--status new|rejected] [--source <sid>] [--limit n]
+//                                            new = Available (can still be used, used before included; each item has used = N)
 //   node scripts/store.mjs show    --brand <id> --id S0001
 //   node scripts/store.mjs reject  --brand <id> --id S0001 [--note "..."]      "bỏ": never picked for ideas
-//   node scripts/store.mjs retire  --brand <id> --id S0001 [--note "..."]      "retired": used enough, never picked again
-//   node scripts/store.mjs restore --brand <id> --id S0001                     rejected|retired -> new
+//   node scripts/store.mjs remove  --brand <id> --id S0001 [--note "used enough"]   = reject: Removed, never picked again
+//   node scripts/store.mjs restore --brand <id> --id S0001                     Removed -> Available
 //   node scripts/store.mjs migrate-uses [--brand <id>]                        old "used" items -> available, uses filled (saved)
 //   node scripts/store.mjs known   --brand <id> [--source <sid>]               post links already in the store
 //   node scripts/store.mjs classify --brand <id> [--limit 40] [--source <sid>]   the batch filter (RUNBOOK 1.3): unjudged
@@ -38,7 +38,7 @@ import path from 'node:path';
 import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText, loadBrand, draftsRoot } from './lib.mjs';
 import { imageHashes, hamming } from './phash.mjs';
 
-export const STATUSES = ['new', 'retired', 'rejected'];
+export const STATUSES = ['new', 'rejected'];
 export const LIST_FILTERS = STATUSES;
 export const MEDIA_TYPES = ['photo', 'album', 'video', 'text'];
 const validBrand = (b) => { if (!/^[a-z0-9][a-z0-9-]*$/.test(String(b || ''))) throw new Error('Mã thương hiệu không hợp lệ.'); return String(b); };
@@ -69,23 +69,27 @@ const lastOf = (uses) => uses.map((u) => u.at || '').filter(Boolean).sort().at(-
 // Migration (in memory on every read, saved with the next write or by migrate-uses): status "used" -> "new", uses from
 // the draft ids in used_by (idea ids are only history: an idea alone is not a post).
 function withUses(brand, it) {
+  if (it.status === 'retired') { // the old separate Retired state: Removed with its reason
+    const { retired_note, retired_by, retired_at, ...rest } = it;
+    it = { ...rest, status: 'rejected', note: retired_note || 'used enough', rejected_by: retired_by || 'user', rejected_at: retired_at || stamp() };
+  }
   if (Array.isArray(it.uses) && it.status !== 'used') return it;
   const uses = Array.isArray(it.uses) ? it.uses : [...new Set(it.used_by || [])].filter((x) => DRAFT_ID.test(x)).map((x) => useFromDraft(brand, x, it.used_at));
   return { ...it, status: it.status === 'used' ? 'new' : it.status, uses, last_used: lastOf(uses) };
 }
 export function migrateUses(brand) {
   const raw = readJson(itemsFile(brand), { items: [] }).items || [];
-  const todo = raw.filter((i) => !Array.isArray(i.uses) || i.status === 'used').map((i) => i.id);
+  const todo = raw.filter((i) => !Array.isArray(i.uses) || ['used', 'retired'].includes(i.status)).map((i) => i.id);
   if (todo.length) withStore(brand, () => null); // readStore already migrated them in memory; saving writes them
   return { brand, migrated: todo.length, items: todo };
 }
 export const reuseCooldownDays = (s = settings()) => { const d = Number(s.ideas?.reuse_cooldown_days); return Number.isFinite(d) && d >= 0 ? d : 7; };
-// settings ideas.auto_retire_after (default 0 = off): from this many uses an item is only SUGGESTED for Retire.
-export const autoRetireAfter = (s = settings()) => { const n = Number(s.ideas?.auto_retire_after); return Number.isInteger(n) && n > 0 ? n : 0; };
+// settings ideas.suggest_remove_after (default 0 = off): from this many uses an item is only SUGGESTED for Remove.
+export const suggestRemoveAfter = (s = settings()) => { const n = Number(s.ideas?.suggest_remove_after); return Number.isInteger(n) && n > 0 ? n : 0; };
 export const usesOf = (i) => (Array.isArray(i?.uses) ? i.uses : []);
 const lastMs = (i) => { const t = Date.parse(i.last_used || lastOf(usesOf(i))); return Number.isFinite(t) ? t : 0; };
 // Available items by kind: fresh (never used), reusable (used before, cooldown over), cooling (used within the cooldown).
-// Retired and rejected items are never available.
+// Removed (rejected) items are never available.
 export function availability(items, { cooldownDays = reuseCooldownDays(), now = Date.now() } = {}) {
   const cutoff = now - cooldownDays * 86400000;
   const ok = items.filter((i) => i.status === 'new');
@@ -298,16 +302,16 @@ export function knownPosts(brand, sourceId) {
     brand_post_urls: all.flatMap((i) => [i.post_url, ...(i.alt_urls || [])]).filter(Boolean), brand_post_ids: [...new Set(all.flatMap((i) => i.post_ids || []))] };
 }
 
-// new = Unused (available, used before included); fresh = never used; used = used before (available); ready = fresh + reusable
-// now (cooldown over: what the next idea batch can take); cooling = used within the cooldown; retired = used enough
-// (user); rejected = dropped; uses = posts made from the library; retire_suggested = available items with at least
-// ideas.auto_retire_after uses (only a suggestion; off by default).
+// new = Available (can still be used, used before included); fresh = never used; used = used before (available); ready = fresh + reusable
+// now (cooldown over: what the next idea batch can take); cooling = used within the cooldown; removed (= rejected) = not
+// used anymore; uses = posts made from the library; remove_suggested = available items with at least
+// ideas.suggest_remove_after uses (only a suggestion; off by default).
 export function counts(items, opts) {
-  const a = availability(items, opts), after = autoRetireAfter();
+  const a = availability(items, opts), after = suggestRemoveAfter();
   return { total: items.length, new: a.fresh.length + a.reusable.length + a.cooling.length, fresh: a.fresh.length, used: a.reusable.length + a.cooling.length,
-    retired: items.filter((i) => i.status === 'retired').length, rejected: items.filter((i) => i.status === 'rejected').length,
+    removed: items.filter((i) => i.status === 'rejected').length, rejected: items.filter((i) => i.status === 'rejected').length,
     ready: a.fresh.length + a.reusable.length, cooling: a.cooling.length, uses: items.reduce((n, i) => n + usesOf(i).length, 0), cooldown_days: a.cooldown_days,
-    ...(after ? { retire_suggested: items.filter((i) => i.status === 'new' && usesOf(i).length >= after).map((i) => i.id) } : {}) };
+    ...(after ? { remove_suggested: items.filter((i) => i.status === 'new' && usesOf(i).length >= after).map((i) => i.id) } : {}) };
 }
 const inFilter = (i, status) => !status || i.status === status;
 export function listItems(brand, { status = '', source = '' } = {}) {
@@ -319,23 +323,16 @@ export function listItems(brand, { status = '', source = '' } = {}) {
 }
 export const findItem = (brand, id) => { const i = readStore(brand).items.find((x) => x.id === id); if (!i) throw new Error(`Kho ${brand} không có ${id}.`); return i; };
 
-// "Bỏ" (rejected: not suitable, never picked), "Retire" (retired: fine but used enough, never picked) and "khôi phục"
-// (back to new). An item keeps its uses either way.
+// "Remove" (rejected: not used anymore, with an optional reason) and "Restore" (back to Available). An item keeps its
+// uses either way.
 export function setItemStatus(brand, id, status, { note = '', by = 'user' } = {}) {
-  if (!['rejected', 'retired', 'new'].includes(status)) throw new Error('Chỉ đổi được sang rejected (bỏ), retired (retire) hoặc new (khôi phục).');
-  if (status === 'retired') return withStore(brand, (s) => {
-    const it = s.items.find((x) => x.id === id);
-    if (!it) throw new Error(`Kho ${brand} không có ${id}.`);
-    if (it.status !== 'new') throw new Error(`Only an available item can be retired (${id} is "${it.status}").`);
-    Object.assign(it, { status: 'retired', retired_note: String(note || '').trim(), retired_by: String(by || 'user').trim() || 'user', retired_at: stamp() });
-    return { ...it };
-  });
+  if (status === 'removed') status = 'rejected';
+  if (!['rejected', 'new'].includes(status)) throw new Error('Chỉ đổi được sang rejected (Remove) hoặc new (Restore).');
   return withStore(brand, (s) => {
     const it = s.items.find((x) => x.id === id);
     if (!it) throw new Error(`Kho ${brand} không có ${id}.`);
-    if (status === 'rejected' && it.status === 'rejected') throw new Error(`${id} đã bỏ rồi.`);
-    if (status === 'new' && !['rejected', 'retired'].includes(it.status)) throw new Error(`Chỉ khôi phục được bài đã bỏ hoặc đã retire (${id} đang "${it.status}").`);
-    if (status === 'new' && it.status === 'retired') { it.status = 'new'; delete it.retired_note; delete it.retired_by; delete it.retired_at; return { ...it }; }
+    if (status === 'rejected' && it.status === 'rejected') throw new Error(`${id} is already removed.`);
+    if (status === 'new' && it.status !== 'rejected') throw new Error(`Only a removed item can be restored (${id} is "${it.status}").`);
     it.status = status;
     if (status === 'rejected') Object.assign(it, { note: String(note || '').trim(), rejected_by: String(by || 'user').trim() || 'user', rejected_at: stamp() });
     else { delete it.note; delete it.rejected_by; delete it.rejected_at; if (it.filter) it.filter = { ...it.filter, restored_at: stamp() }; } // a restored filtered post is not judged again
@@ -476,11 +473,10 @@ if (isMain(import.meta.url)) main(() => {
     return out({ ...r, items: (limit ? r.items.slice(-limit) : r.items).map(({ id, source_id, status, posted_date, post_url, main_product, images, uses, last_used }) => ({ id, source_id, status, posted_date, post_url, main_product, images: images.map((f) => path.join(storeDir(brand), f)), used: (uses || []).length, last_used: last_used || '', uses: previousUses({ uses }) })) });
   }
   if (cmd === 'show') { const it = findItem(brand, need(args, 'id')); return out({ item: { ...it, image_paths: it.images.map((f) => path.join(storeDir(brand), f)) } }); }
-  if (cmd === 'reject') return out({ item: setItemStatus(brand, need(args, 'id'), 'rejected', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });
-  if (cmd === 'retire') return out({ item: setItemStatus(brand, need(args, 'id'), 'retired', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });
+  if (cmd === 'reject' || cmd === 'remove') return out({ item: setItemStatus(brand, need(args, 'id'), 'rejected', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });
   if (cmd === 'restore') return out({ item: setItemStatus(brand, need(args, 'id'), 'new') });
   if (cmd === 'classify') return out(classifyBatch(brand, { limit: args.limit === undefined ? 40 : Number(args.limit) || 0, source: args.source && args.source !== true ? String(args.source) : '' }));
   if (cmd === 'verdict') { const r = applyVerdicts(brand, readJson(path.resolve(need(args, 'file')))); return out({ ...r, left: classifyBatch(brand, { limit: 0 }).total_unjudged }); }
   if (cmd === 'known') { const k = knownPosts(brand, args.source ? String(args.source) : ''); return out(k); }
-  throw new Error('Lệnh: list | show | reject | retire | restore | classify | verdict | known | migrate | migrate-uses');
+  throw new Error('Lệnh: list | show | remove (reject) | restore | classify | verdict | known | migrate | migrate-uses');
 });

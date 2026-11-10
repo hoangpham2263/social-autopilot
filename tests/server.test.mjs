@@ -80,7 +80,7 @@ test('serves the page, the shell assets and the data APIs', async () => {
   const page = await (await fetch(base + '/')).text();
   assert.match(page, /Run this whole task in ONE background sub-agent \(Agent tool, general-purpose\) with the prompt below; keep this chat free; when it finishes, relay its 'Report' section to me\./);
   assert.match(page, /Codex runs it in its own session/);
-  // Mode button counts per brand: research (unused library items), create (posts still needed), publish (approved, not sent).
+  // Mode button counts per brand: research (available library items), create (posts still needed), publish (approved, not sent).
   const pc = await (await fetch(base + '/api/prompt-counts')).json();
   assert.ok(pc.brands && Object.values(pc.brands).every((c) => ['research', 'create', 'publish', 'on_metricool'].every((k) => Number.isInteger(c[k]))), JSON.stringify(pc));
   assert.ok(Array.isArray((await (await fetch(`${base}/api/queue`)).json()).brands));

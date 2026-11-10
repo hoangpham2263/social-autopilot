@@ -185,7 +185,7 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   // ----- Mode 2 "Làm bài & đưa lên": store -> ideas -> draft -> automatic checks -> brand -> host -----
   // Store "Bỏ": a rejected item is never picked for an idea; restore puts it back.
   assert.equal(run('store.mjs', 'reject', '--brand', 'dreamyvows', '--id', 'S0002', '--note', 'không hợp').item.status, 'rejected');
-  assert.match(run('store.mjs', 'reject', '--brand', 'dreamyvows', '--id', 'S0002').error, /đã bỏ/);
+  assert.match(run('store.mjs', 'reject', '--brand', 'dreamyvows', '--id', 'S0002').error, /already removed/);
   const init = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--count', '2');
   assert.equal(init.ok, true, JSON.stringify(init));
   assert.equal(init.added.length, 2);
@@ -193,11 +193,11 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   items = readItems('dreamyvows');
   // Items are not used up: an idea alone is no use (status stays new, no uses until a draft is made).
   for (const id of init.items) { const it = items.find((x) => x.id === id); assert.equal(it.status, 'new'); assert.deepEqual(it.uses || [], []); }
-  // An item with an open idea gets no second idea (--items says so); a dropped item is an error.
+  // An item with an open idea gets no second idea (--items says so); a removed item is an error.
   const twice = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', init.items[0]);
   assert.deepEqual(twice.added, []);
   assert.match(twice.notes.join(' '), /already has open idea/);
-  assert.match(run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', 'S0002').error, /dropped/);
+  assert.match(run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', 'S0002').error, /removed .không hợp.: restore it/);
   assert.equal(run('store.mjs', 'restore', '--brand', 'dreamyvows', '--id', 'S0002').item.status, 'new');
   const rest = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--count', '10');
   assert.equal(rest.added.length, 3);

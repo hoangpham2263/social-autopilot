@@ -205,13 +205,13 @@ async function handle(req, res) {
     if (source && !/^[a-z0-9][a-z0-9-]*$/.test(source)) throw new Error("Invalid source.");
     return { brands: brands.map((b) => ({ id: b.id, name: b.brand, counts: listItems(b.id).counts })), current: brand ? storeData(brand, status, source) : null };
   });
-  // "Bỏ" a store item (rejected: never picked for ideas) or "Khôi phục" (back to new): same as store.mjs reject/restore.
+  // "Remove" a library item (rejected: never picked for ideas, optional reason) or "Restore": store.mjs remove/restore.
   if (path === "/api/store-item" && req.method === "POST") return api(res, async () => {
     const b = await body(req);
     const brand = String(b.brand ?? ""), id = String(b.id ?? "");
     if (!discovered().brands.some((x) => x.id === brand)) throw new Error(`Unknown brand "${brand}".`);
     if (!/^S\d{4,}$/.test(id)) throw new Error("Invalid library item id (like S0001).");
-    return { item: setItemStatus(brand, id, b.status === "new" ? "new" : b.status === "retired" ? "retired" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
+    return { item: setItemStatus(brand, id, b.status === "new" ? "new" : "rejected", { note: String(b.note ?? ""), by: String(b.by ?? "").trim() || "user" }) };
   });
   // Prompt tab: the ready-to-paste prompts of docs/scheduled-prompt.md (mode x agent) and the brands to fill in.
   // Prompt tab, the counts on the Mode buttons per brand, each the number of items IN that state now: research = library
@@ -222,7 +222,7 @@ async function handle(req, res) {
     return { brands: Object.fromEntries(discovered().brands.map((b) => {
       const qb = q.brands.find((x) => x.brand === b.id) || {};
       return [b.id, {
-        // Research: Unused library items (available, used before included); used / ready (never used or cooldown over)
+        // Research: Available library items (can still be used, used before included); used / ready (never used or cooldown over)
         // for the tooltip.
         research: listItems(b.id).counts.new || 0, library: (({ used, ready, cooling, cooldown_days }) => ({ used, ready, cooling, cooldown_days }))(listItems(b.id).counts),
         create: listDrafts(b.id).filter((d) => !d.status.brand_post && ["ready", "check_failed", "image_failed"].includes(d.status.status)).length,
@@ -231,7 +231,7 @@ async function handle(req, res) {
         publish: b.enabled ? (qb.unsent_approved || []).length : 0,
         // Already scheduled on Metricool: payload never sends these again (shown under Publish approved).
         on_metricool: (qb.on_metricool || []).length,
-        // Unused library items per source (Prompt Sources list).
+        // Available library items per source (Prompt Sources list).
         sources: listItems(b.id, { status: "new" }).items.reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
       }];
     })) };

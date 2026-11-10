@@ -1,7 +1,7 @@
 // Mode "Tạo bài từ kho", step 1: ideas. Ideas come only from the brand's STORE (workspace/store/<brand>/, filled by
 // mode "Chỉ nghiên cứu"); no browsing. Library items are not used up (user, 10/11/2026): init takes fresh items (never
 // used) first, then the least-used items whose cooldown is over (settings ideas.reuse_cooldown_days, default 7); never a
-// retired or dropped item, never an item that already has an open idea. A reused item must get a NEW angle: the idea
+// removed item, never an item that already has an open idea. A reused item must get a NEW angle: the idea
 // batch lists its previous uses, and set/pick (scene) and draft.mjs new (scene + product + sign_text) reject a repeat
 // (store.mjs reuseProblems: a different scene AND a different product or sign_text). Each idea is ABSTRACT (product type, scene, angle, caption structure)
 // for the brand's own product; never the competitor's image, words, logo or shop name (prompts/idea-abstract.md).
@@ -11,7 +11,7 @@
 //                                 planning.ahead_days x cadence.posts_per_day, minus posts already approved and not yet
 //                                 published and drafts still in work; fresh first, newest first, sources mixed; then reuse)
 //                                 --items: exactly these items (a used item is allowed even within the cooldown, with a
-//                                 note; a retired or dropped item is an error)
+//                                 note; a removed item is an error)
 //   node scripts/ideas.mjs set    --brand <id> --id I001 --json '{...}' | --file f   fill an idea; checked for copying
 //   node scripts/ideas.mjs pick   --brand <id> --id I001              mark for drafting
 //   node scripts/ideas.mjs reject --brand <id> --id I001 [--note ..] [--item rejected]   idea dropped; the store item
@@ -80,8 +80,7 @@ function run(args, cmd, brand, file) {
       for (const id of [...new Set(String(args.items).split(',').map((x) => x.trim()).filter(Boolean))]) {
         const it = store.items.find((x) => x.id === id);
         if (!it) throw new Error(`Kho ${brand.id} không có ${id}.`);
-        if (it.status === 'retired') throw new Error(`${id} is retired (used enough${it.retired_note ? ': ' + it.retired_note : ''}): restore it in the Library first (store.mjs restore) or pick another item.`);
-        if (it.status !== 'new') throw new Error(`${id} is dropped ("${it.status}"${it.note ? ': ' + it.note : ''}): it is never used for posts.`);
+        if (it.status !== 'new') throw new Error(`${id} is removed${it.note ? ' (' + it.note + ')' : ''}: restore it in the Library first (store.mjs restore) or pick another item.`);
         const open = openIdea(id);
         if (open) { notes.push(`${id} already has open idea ${open.id} (${open.status}): fill that one (no second idea made).`); continue; }
         if (usesOf(it).length && availability([it], { cooldownDays: cooldown }).cooling.length) notes.push(`${id} was used ${usesOf(it).length}x, last ${String(it.last_used).slice(0, 10)} (within the ${cooldown}-day cooldown): allowed because you picked it; take a new angle.`);
@@ -109,8 +108,8 @@ function run(args, cmd, brand, file) {
     const prev = Object.fromEntries(chosen.filter((x) => usesOf(x).length).map((x) => [x.id, previousUses(x)]));
     return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: a.fresh.length, store_ready_left: left,
       ...(Object.keys(prev).length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(notes.length ? { notes } : {}),
-      ...(low ? { warning: `Library low: ${left} unused posts ready (${a.fresh.length} never used, ${a.reusable.length} reusable after the ${cooldown}-day cooldown); run Research.` } : {}),
-      next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài Unused dùng được (chưa dùng hoặc hết cooldown): chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
+      ...(low ? { warning: `Library low: ${left} available posts ready (${a.fresh.length} never used, ${a.reusable.length} reusable after the ${cooldown}-day cooldown); run Research.` } : {}),
+      next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài Available dùng được (chưa dùng hoặc hết cooldown): chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
   }
   if (cmd === 'set') {
     const idea = find();

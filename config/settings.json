@@ -57,6 +57,6 @@
   },
   "ideas": {
     "reuse_cooldown_days": 7,
-    "auto_retire_after": 0
+    "suggest_remove_after": 0
   }
 }

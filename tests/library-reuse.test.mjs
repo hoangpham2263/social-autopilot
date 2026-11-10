@@ -1,6 +1,6 @@
 // Library items are not used up (user, 10/11/2026): the same reference may inspire several posts, each from a new
 // angle (a different scene AND a different product or sign_text). Fresh items first, then the least used after a
-// cooldown; Retired (used enough) and Dropped items are never picked; old "used" items migrate back to available with
+// cooldown; Removed items (filtered, not suitable or used enough) are never picked; old "used" items migrate back to available with
 // their uses; --items picks exact items (ideas.mjs init and pipeline.mjs create pass it through).
 // node --test tests/library-reuse.test.mjs
 import test from 'node:test';
@@ -58,14 +58,14 @@ test('pure: fresh first, then least used after the cooldown; a repeat of scene o
     { id: 'B', source_id: 's', status: 'new', uses: [use('2026-10-20')] },
     { id: 'C', source_id: 's', status: 'new', uses: [use('2026-11-08')] }, // within the 7-day cooldown
     { id: 'D', source_id: 's', status: 'new', uses: [], posted_date: '2026-11-01' },
-    { id: 'E', source_id: 's', status: 'retired', uses: [] },
+    { id: 'E', source_id: 's', status: 'rejected', note: 'used enough', uses: [] },
     { id: 'F', source_id: 's', status: 'rejected', uses: [] },
   ];
-  assert.deepEqual(pickItems(list, 10, { cooldownDays: 7, now }).map((x) => x.id), ['D', 'B', 'A'], 'fresh, then fewest uses; cooling/retired/dropped never');
+  assert.deepEqual(pickItems(list, 10, { cooldownDays: 7, now }).map((x) => x.id), ['D', 'B', 'A'], 'never used, then fewest uses; cooling/removed never');
   assert.deepEqual(pickItems(list, 10, { cooldownDays: 0, now }).map((x) => x.id), ['D', 'B', 'C', 'A']);
   assert.deepEqual(pickItems(list, 10, { cooldownDays: 7, now, busy: new Set(['D']) }).map((x) => x.id), ['B', 'A']);
   const c = counts(list, { cooldownDays: 7, now });
-  assert.deepEqual([c.fresh, c.used, c.ready, c.cooling, c.retired, c.rejected, c.uses], [1, 3, 3, 1, 1, 1, 4]);
+  assert.deepEqual([c.new, c.fresh, c.used, c.ready, c.cooling, c.removed, c.uses], [4, 1, 3, 3, 1, 2, 4]);
   const b = list[1];
   assert.equal(reuseProblems(b, { scene: 'Porch!', product: product2 }).length, 1, 'same scene (normalized) = repeat');
   assert.equal(reuseProblems(b, { scene: 'rooftop bar at night', product, sign_text: '' }).length, 1, 'same product + same sign = repeat');
@@ -76,13 +76,13 @@ test('pure: fresh first, then least used after the cooldown; a repeat of scene o
 
 test('migration: old "used" items are available again, uses filled from their drafts; saved by migrate-uses', () => {
   const l = run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'new');
-  assert.equal(l.items.length, 5, 'Unused includes the item used before');
+  assert.equal(l.items.length, 5, 'Available includes the item used before');
   const s = l.items.find((x) => x.id === 'S0005');
   assert.equal(s.status, 'new');
   assert.equal(s.used, 1);
   assert.deepEqual(s.uses.map((u) => [u.draft, u.scene]), [['fakebrand-20261101-01', 'barn wedding at golden hour']]);
   assert.deepEqual([l.counts.new, l.counts.fresh, l.counts.used], [5, 4, 1]);
-  assert.match(run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'used').error, /new, retired, rejected/, 'no separate Used state');
+  assert.match(run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'used').error, /new, rejected/, 'only Available / Removed');
   assert.equal(run('store.mjs', 'migrate-uses', '--brand', 'fakebrand').brands[0].migrated, 5);
   const s5 = items().find((x) => x.id === 'S0005');
   assert.equal(s5.status, 'new');
@@ -138,16 +138,24 @@ test('auto pick: fresh first, then reusable after the cooldown; open ideas and c
   assert.deepEqual(r.items, ['S0004', 'S0003', 'S0005']);
   assert.deepEqual(Object.keys(r.previous_uses), ['S0005']);
   assert.equal(r.store_ready_left, 0);
-  assert.match(r.warning, /Library low: 0 unused posts ready/);
+  assert.match(r.warning, /Library low: 0 available posts ready/);
 });
 
-test('retire: never picked, --items errors, restore brings it back', () => {
-  assert.equal(run('store.mjs', 'retire', '--brand', 'fakebrand', '--id', 'S0001', '--note', 'used enough').item.status, 'retired');
-  assert.match(run('ideas.mjs', 'init', '--brand', 'fakebrand', '--items', 'S0001').error, /retired \(used enough: used enough\)/);
-  const l = run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'retired');
+test('remove: never picked, --items errors with the reason, restore brings it back; old "retired" migrates to Removed', () => {
+  assert.equal(run('store.mjs', 'remove', '--brand', 'fakebrand', '--id', 'S0001', '--note', 'used enough').item.status, 'rejected');
+  const rm = run('ideas.mjs', 'init', '--brand', 'fakebrand', '--items', 'S0001'); assert.match(rm.error || JSON.stringify(rm), /S0001 is removed .used enough.: restore it/);
+  const l = run('store.mjs', 'list', '--brand', 'fakebrand', '--status', 'rejected');
   assert.deepEqual(l.items.map((x) => [x.id, x.used]), [['S0001', 2]]);
-  assert.equal(l.counts.retired, 1);
-  assert.match(run('store.mjs', 'retire', '--brand', 'fakebrand', '--id', 'S0001').error, /Only an available item/);
+  assert.equal(l.counts.removed, 1);
+  assert.match(run('store.mjs', 'remove', '--brand', 'fakebrand', '--id', 'S0001').error, /already removed/);
   assert.equal(run('store.mjs', 'restore', '--brand', 'fakebrand', '--id', 'S0001').item.status, 'new');
   assert.equal(items().find((x) => x.id === 'S0001').uses.length, 2, 'uses kept');
+  // A store written with the old separate Retired state: read (and saved by migrate-uses) as Removed, reason kept.
+  const file = path.join(ws, 'store', 'fakebrand', 'items.json');
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  Object.assign(raw.items.find((x) => x.id === 'S0004'), { status: 'retired', retired_note: 'too similar to our feed', retired_by: 'user', retired_at: '2026-11-09T00:00:00.000Z' });
+  fs.writeFileSync(file, JSON.stringify(raw));
+  assert.equal(run('store.mjs', 'migrate-uses', '--brand', 'fakebrand').brands[0].migrated, 1);
+  const s4 = items().find((x) => x.id === 'S0004');
+  assert.deepEqual([s4.status, s4.note, s4.retired_note], ['rejected', 'too similar to our feed', undefined]);
 });

@@ -45,7 +45,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 | Tab | Dùng để |
 |---|---|
 | Overview | Brand, skill, trạng thái, số bài |
-| Library | Bài tham khảo đã crawl: Unused (kể cả bài đã dùng, ghi "used N×") / Retired / Dropped; một bài có thể gợi ý nhiều bài (mỗi lần góc mới); Preview: **Make a post from this** (sang Prompt: Create & publish, 1 bài, `--items`, tuỳ chọn Scene-swap), Retire, Drop |
+| Library | Bài tham khảo đã crawl: Available (còn dùng được, thẻ ghi "new" hoặc "used N×") / Removed (không dùng nữa, kèm lý do); một bài có thể gợi ý nhiều bài (mỗi lần góc mới); Preview: **Make a post from this** (sang Prompt: Create & publish, 1 bài, `--items`, tuỳ chọn Scene-swap), Remove (lý do tuỳ chọn), Restore |
 | Posts | Bài của mình: To review · Approved (chờ gửi) · Scheduled (trên Metricool) · Posted |
 | Prompt | Lấy prompt để chạy |
 | Settings | Tài khoản, yêu cầu, cài đặt tool |

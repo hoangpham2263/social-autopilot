@@ -107,7 +107,7 @@ node scripts/store.mjs verdict  --brand <id> --file <verdicts.json>
 ```
 - `classify` in một lô gọn các bài `new` chưa lọc: `id`, `source`, đoạn đầu caption (`(no caption)` khi bài chỉ có ảnh), `media`, `thumb` (đường dẫn ảnh), kèm `what_to_take` của từng nguồn, đường dẫn `project.md` (phạm vi sản phẩm) và `rules_of_thumb`.
 - Agent xem chữ + ảnh thumb (đọc file ảnh), đối chiếu `what_to_take` và phạm vi sản phẩm trong `project.md`, ghi `[{ "id": "S0001", "fit": true|false, "reason": "..." }]` (lý do ngắn, bắt buộc khi `fit:false`), rồi `verdict`. Lặp tới khi `total_unjudged` = 0.
-- `fit:false` → bài thành **Dropped** (`rejected`), ghi chú `filter: <lý do>`; `fit:true` → giữ (Unused). Người dùng vẫn Restore được ở tab Library (bài đó không bị lọc lại).
+- `fit:false` → bài thành **Removed** (`rejected`), ghi chú `filter: <lý do>`; `fit:true` → giữ (Available). Người dùng vẫn Restore được ở tab Library (bài đó không bị lọc lại).
 - Luật nhanh: bỏ bài tuyển dụng; bỏ cuộc thi, minigame, giveaway; bỏ bài chỉ có chữ (hoặc ảnh chỉ là chữ, không thấy sản phẩm); bỏ bài chia sẻ lại mà không có ảnh sản phẩm; bỏ sản phẩm ngoài ngành hàng của thương hiệu. Giữ: ảnh sản phẩm thật đúng ngành hàng, có bối cảnh/góc chụp/khung caption học được.
 
 1.4. Số liệu báo cáo:
@@ -126,7 +126,7 @@ Tool tự lấy số liệu (từng nguồn: bài mới, **kept / filtered**, tr
 - **Kết quả chung:** +N bài mới · N giữ · M lọc bỏ, số nguồn cạn (Dried up), số nguồn bị chặn.
 - **Theo thương hiệu:** từng nguồn: bài mới · giữ / lọc bỏ · trạng thái (New posts / Dried up / Skipped (quota) / Blocked / Error).
 - **Cần làm:** nguồn bị chặn (lý do), nguồn lỗi (vd `error: selectors`), nguồn keep rate thấp (xem lại `what_to_take` hoặc thay nguồn), nguồn cạn nhiều lượt liền (gợi ý thêm nguồn mới), còn bài cũ thì nhắc `--backfill`.
-- **Kho:** tổng (Unused / Retired / Dropped; Unused gồm cả bài đã dùng, ghi "used N×"); xem ở tab **Library** (bài bị lọc nằm ở Dropped, có lý do).
+- **Kho:** tổng (Available / Removed; Available = còn dùng được, thẻ ghi "new" hoặc "used N×"); xem ở tab **Library** (bài bị lọc nằm ở Removed, có lý do).
 
 Không làm ý, không tạo bài, không gửi Metricool trong chế độ này. Không bao giờ like, bình luận, theo dõi, chia sẻ hay nhắn tin.
 
@@ -187,14 +187,14 @@ node scripts/metricool-mcp.mjs status --brand <id>
 ```
 `query` là `null` (chưa có bài nào đã gửi đang chờ) thì **bỏ qua** `getScheduledPosts`. Có `query` thì gọi `getScheduledPosts` đúng tham số, khớp theo `id`: PENDING → để yên; **ERROR** → báo cáo (id, plannerUrl, lý do; app hiện dấu đỏ); **PUBLISHED** → `node scripts/posts.mjs mark-published --brand <id> --post <POST-xx> --date <yyyy-mm-dd> [--url <link>] --lang <ngôn ngữ đăng>` (Posted; ghi vào sổ bài của tool, không bao giờ vào skill). Sau khi đã đăng mới được gỡ file host: `node scripts/host-image.mjs remove --brand <id> --post POST-xx`. Id nằm trong `ignore_ids` (bài người dùng đã đưa về To review, đã xoá trong Metricool): **bỏ qua**, không `record`, không `mark-published`, không làm sống lại.
 
-2.3. Ý từ kho. Bài kho **không bị dùng hết** (người dùng, 10/11/2026): mỗi bài đổi cảnh và nội dung, nên một bài tham khảo có thể gợi ý nhiều bài, mỗi lần một góc mới. Mỗi bản nháp ghi một lượt vào `uses[]` của bài kho (`draft, idea, scene, product, sign_text, at`); bài vẫn `new`. Trạng thái: **Unused** (`new`: dùng được, kể cả bài đã dùng N lần, thẻ ghi "used N×") · **Retired** (người dùng thấy đã dùng đủ: không bao giờ chọn lại tới khi Restore) · **Dropped** (`rejected`: bị lọc / không hợp).
+2.3. Ý từ kho. Bài kho **không bị dùng hết** (người dùng, 10/11/2026): mỗi bài đổi cảnh và nội dung, nên một bài tham khảo có thể gợi ý nhiều bài, mỗi lần một góc mới. Mỗi bản nháp ghi một lượt vào `uses[]` của bài kho (`draft, idea, scene, product, sign_text, at`); bài vẫn `new`. Trạng thái: **Available** (`new`: còn dùng được, thẻ ghi "new" hoặc "used N×") · **Removed** (`rejected`: không dùng nữa, kèm lý do: bộ lọc, "used enough" hoặc ghi chú người dùng; Restore đưa về Available). Trạng thái "retired" cũ tự chuyển thành Removed (giữ lý do).
 ```
 node scripts/ideas.mjs init --brand <id> [--count N] [--items S0001,S0002] [--source <sid>]
 node scripts/ideas.mjs set  --brand <id> --id I001 --json "{\"product_type\":\"...\",\"scene\":\"...\",\"angle\":\"...\",\"props\":\"...\",\"caption_structure\":\"...\",\"hook\":\"...\",\"why\":\"...\"}"
 node scripts/ideas.mjs pick --brand <id> --id I001
 node scripts/ideas.mjs reject --brand <id> --id I001 --note "<lý do>" [--item rejected]
 ```
-Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.ahead_days` ngày tới (mặc định 7) với `cadence.posts_per_day` bài/ngày (trừ bài đã duyệt chưa đăng và bản nháp đang làm/chờ duyệt; đủ rồi thì không làm thêm). Thứ tự chọn: bài Unused chưa dùng lần nào trước (mới nhất trước, xen kẽ các nguồn), rồi bài đã dùng ít lượt nhất đã qua cooldown (`settings.ideas.reuse_cooldown_days`, mặc định 7 ngày); không bao giờ bài Retired/Dropped hay bài đang có ý mở. `--items S0008` = đúng các bài đó (bài trong cooldown vẫn được, có ghi chú; Retired/Dropped → lỗi rõ ràng). Bài dùng lại: kết quả `init` có `previous_uses` + `reuse_rule`: phải khác **cảnh** VÀ khác (**sản phẩm** hoặc **sign_text**) so với mọi lượt trước; `set`/`pick` chặn cảnh lặp, `draft.mjs new` chặn cảnh lặp hoặc cùng sản phẩm + cùng chữ. `settings.ideas.auto_retire_after` (mặc định 0 = tắt): từ N lượt thì Library chỉ **gợi ý** Retire, không tự áp. Retire/Restore: `node scripts/store.mjs retire --brand <id> --id S0001 [--note ".."]` / `restore`. Dữ liệu cũ (`status: used`) tự đọc thành `new` + `uses` từ các bản nháp trong `used_by`; ghi hẳn: `node scripts/store.mjs migrate-uses`. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
+Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.ahead_days` ngày tới (mặc định 7) với `cadence.posts_per_day` bài/ngày (trừ bài đã duyệt chưa đăng và bản nháp đang làm/chờ duyệt; đủ rồi thì không làm thêm). Thứ tự chọn: bài Available chưa dùng lần nào trước (mới nhất trước, xen kẽ các nguồn), rồi bài đã dùng ít lượt nhất đã qua cooldown (`settings.ideas.reuse_cooldown_days`, mặc định 7 ngày); không bao giờ bài Removed hay bài đang có ý mở. `--items S0008` = đúng các bài đó (bài trong cooldown vẫn được, có ghi chú; Removed → lỗi rõ ràng). Bài dùng lại: kết quả `init` có `previous_uses` + `reuse_rule`: phải khác **cảnh** VÀ khác (**sản phẩm** hoặc **sign_text**) so với mọi lượt trước; `set`/`pick` chặn cảnh lặp, `draft.mjs new` chặn cảnh lặp hoặc cùng sản phẩm + cùng chữ. `settings.ideas.suggest_remove_after` (mặc định 0 = tắt): từ N lượt thì Library chỉ **gợi ý** Remove, không tự áp. Remove/Restore: `node scripts/store.mjs remove --brand <id> --id S0001 [--note "used enough"]` / `restore`. Dữ liệu cũ (`status: used`) tự đọc thành `new` + `uses` từ các bản nháp trong `used_by`; ghi hẳn: `node scripts/store.mjs migrate-uses`. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
 
 2.4. Bản nháp và ảnh:
 ```
@@ -239,7 +239,7 @@ Tool tự lấy số liệu (bài đã hẹn giờ ở lượt này, bài mới 
 - **Đã hẹn giờ:** POST-xx · giờ đăng (múi giờ brand) · plannerUrl.
 - **Chờ duyệt (To review):** từng bài: caption EN nguyên văn, bản VN ghi rõ "chỉ để đọc, không đăng". Nhắc mở tab **Posts** để Approve/Drop.
 - **Lỗi:** bài lỗi Metricool, bài bị chặn, bài không qua kiểm tra, kèm lý do.
-- **Khác:** brand Metricool mới/mất (2.0), bài đã đăng, kho còn bao nhiêu bài Unused / sẵn sàng (chưa dùng + qua cooldown). Cảnh báo "Library low" đếm bài chưa dùng + bài dùng lại được sau cooldown.
+- **Khác:** brand Metricool mới/mất (2.0), bài đã đăng, kho còn bao nhiêu bài Available / sẵn sàng (chưa dùng + qua cooldown). Cảnh báo "Library low" đếm bài chưa dùng + bài dùng lại được sau cooldown.
 
 ## Mode 3. Publish approved
 
