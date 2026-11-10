@@ -57,8 +57,8 @@ test('page result -> posts: dedupe by id, known posts dropped before download, l
   assert.throws(() => parsePageResult('nothing'), /JSON/);
 });
 
-test('pageScript: self-contained, carries the adapter selectors and the polite pauses; only Pinterest/Instagram have one', () => {
-  for (const a of [pinterest, instagram]) {
+test('pageScript: self-contained, carries the adapter selectors and the polite pauses; only some platforms have one', () => {
+  for (const a of [pinterest, instagram, getAdapter('facebook')]) {
     const s = a.pageScript({ url: 'https://example.com/', found_by: 'keyword:x', max: 3, steps: 2, delay: [5, 15] });
     assert.match(s, /^async \(page\) => \{/);
     assert.doesNotThrow(() => new Function(`return (${s});`), 'valid JS');
@@ -140,4 +140,32 @@ test('b64 single-line result: round trip, exact mismatch position, 4-char tag; d
 test('a result without total/checksum is unverified (from-page then suggests partial with a warning)', async () => {
   const { mergePageResults } = await import('../scripts/collect-pagemode.mjs');
   assert.equal(mergePageResults([{ platform: 'etsy', tiles: [] }]).verified, false);
+});
+
+test('facebook pageScript: timeline then photos_by/reels fallback, reason codes, tile -> post', async () => {
+  const fb = getAdapter('facebook');
+  const s = fb.pageScript({ url: 'https://www.facebook.com/Hineon.net.neon', found_by: 'reference page', max: 8, steps: 2, delay: [5, 15] });
+  assert.ok(s.includes('"photos":"https://www.facebook.com/Hineon.net.neon/photos_by"'));
+  assert.ok(s.includes('"reels":"https://www.facebook.com/Hineon.net.neon/reels"'));
+  assert.ok(s.includes('/\\d/.test(p.date_text)'), 'date filter keeps its backslash');
+  assert.equal(fb.fbReason({ url: 'https://www.facebook.com/checkpoint/123' }, 0), 'checkpoint');
+  assert.equal(fb.fbReason({ url: 'https://www.facebook.com/login/?next=x' }, 5), 'login_wall');
+  assert.equal(fb.fbReason({ url: 'https://www.facebook.com/x', login_form: true }, 0), 'login_wall');
+  assert.equal(fb.fbReason({ url: 'https://www.facebook.com/x', captcha: true }, 0), 'captcha');
+  assert.equal(fb.fbReason({ url: 'https://www.facebook.com/x', text: "This content isn't available right now" }, 0), 'unavailable');
+  assert.equal(fb.fbReason({ url: 'https://www.facebook.com/x', text: 'Hineon posts' }, 0), 'no_posts');
+  assert.equal(fb.fbReason({ url: 'https://www.facebook.com/x', text: 'Hineon posts' }, 3), '');
+  assert.equal(fb.isClosedPage('Urban Hardwoods · Permanently closed'), true);
+  assert.equal(fb.isClosedPage('Open now'), false);
+  const p = fb.toPost({ url: 'https://www.facebook.com/photo/?fbid=1333219135645308&set=pcb.1333219525645269', image_urls: ['https://scontent.x.fbcdn.net/a.jpg'], caption: 'Neon', author: 'Hineon' }, { found_by: 'reference page' });
+  assert.deepEqual([p.id, p.image_urls.length, p.caption, p.author], ['1333219135645308', 1, 'Neon', 'Hineon']);
+  // the in-page reader on the saved feed fixture (fb-extract, unchanged) still yields ids the page script keys on
+  const { parseHTML } = await import('linkedom');
+  const { extractFeed, SELECTORS } = await import('../scripts/fb-extract.mjs');
+  const { document } = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-feed.html'), 'utf8'));
+  const ids = extractFeed(document, SELECTORS).posts.map((x) => fb.postIds(x.post_url)[0] || fb.postIds(x.alt_urls[0])[0]).filter(Boolean);
+  assert.ok(ids.length >= 1, 'feed fixture gives ids');
+  const { document: login } = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-login.html'), 'utf8'));
+  const { wallSignals } = await import('../scripts/platforms/common.mjs');
+  assert.equal(fb.fbReason(wallSignals(login, fb.SELECTORS.wall), 0), 'login_wall');
 });
