@@ -203,7 +203,7 @@ export function buildPageScript(S, opts) {
     }
     if (o.caption_strip) for (const t of list) t.caption = String(t.caption || '').replace(new RegExp(o.caption_strip, 'i'), '').trim();
     // COMPACT result (short enough to read back and paste as is): fixed caption/author length, shortest url, first images only.
-    const cut = (x, n) => String(x || '').replace(/s+/g, ' ').trim().slice(0, n);
+    const cut = (x, n) => String(x || '').replace(/\\s+/g, ' ').trim().slice(0, n);
     const shortUrl = (u) => { try { const x = new URL(u); x.hash = ''; if (!/[?&]v=/.test(x.search)) x.search = ''; return x.href; } catch (e) { return String(u || ''); } };
     const C = o.compact;
     const total = list.length, checksum = checksumOf(list.map((t) => t.id || t.url));
