@@ -870,7 +870,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const pub = /publish approved/i.test(prMode);
       const count = parseInt($("#prCount").value, 10), win = pub ? $("#prWindow").value : "", start = pub ? $("#prStart").value : "";
       if (prItem && !pub) lines.push(`from library item ${prItem.id} (--items ${prItem.id})`);
-      else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts (ideas.mjs init --count ${count})`);
+      else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts per brand (pipeline.mjs create --count ${count})`);
       if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");

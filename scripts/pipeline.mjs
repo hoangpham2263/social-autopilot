@@ -135,7 +135,7 @@ function stageA(args) {
   const scope = brandArg === 'all' ? br.usable : br.usable.filter((x) => x === brandArg);
   if (!scope.length) throw new Error(brandArg === 'all' ? 'No usable brand.' : `Brand "${brandArg}" is not usable: ${(br.brands.find((b) => b.id === brandArg)?.problems || ['unknown brand']).join('; ')}`);
   lap('brands', t);
-  const notes = [], errors = [];
+  const notes = [], errors = [], needsResearch = [];
   t = Date.now();
   const { sync, publish } = syncAndPayload(args, scope, notes, errors);
   lap('sync_payload_status', t);
@@ -143,10 +143,11 @@ function stageA(args) {
   t = Date.now();
   const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), compare (the comparison object in the scene with ITS real size, e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"; the product stays at most 60% of it unless the brand sets other size_limits), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder), description (the exact product: every letter and accent of its text, font, colours, material, proportions). A reused library item (_context.previous_uses): a NEW angle, a different scene (new-scene) OR a different sign_text (keep-scene) than every previous use; the same scene + sign_text + product is rejected. Reference-based post / scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the PRODUCT always comes from the reference photo; every foreign logo, shop name, watermark, phone, price is removed); LOOK at _context.ref_image and set "ref_has_face" (true when any human face / identifiable person shows) and "ref_mode": no face -> "keep-scene" (the scene/background/framing stay; sign_text = NEW text in the SAME language/script as the original, fitting the scene, no placeholder, no third-party brand, no real customer name; "ref_text" = what the reference reads exactly; compare not needed), face -> "new-scene" (a new real-life scene, every person removed; the product text stays as is: sign_text empty or only what it already reads; compare + proportion rules apply). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
   for (const id of scope) {
-    const r = step('ideas.mjs', ['init', '--brand', id, ...(pickIds.length ? ['--items', pickIds.join(',')] : args.count && args.count !== true ? ['--count', String(args.count)] : [])]);
+    const r = step('ideas.mjs', ['init', '--brand', id, ...(args.restart ? ['--reset'] : []), ...(pickIds.length ? ['--items', pickIds.join(',')] : args.count && args.count !== true ? ['--count', String(args.count)] : [])]);
     for (const n of r.notes || []) notes.push(`${id}: ${n}`);
-    if (r.ok === false) { errors.push(`${id} ideas: ${r.error}`); continue; }
+    if (r.ok === false) { if (/trống/.test(r.error || '')) { needsResearch.push(id); errors.push(`${id}: stop: needs research (Library is empty): run Research for ${id} first, then Create again.`); } else errors.push(`${id} ideas: ${r.error}`); continue; }
     if (r.warning) notes.push(`${id}: ${r.warning}`);
+    if (!pickIds.length && !(r.items || []).length && r.store_ready_left === 0 && !readJson(path.join(workspace, 'store', id, 'ideas.json'), { ideas: [] }).ideas.some((i) => ['todo', 'ready'].includes(i.status))) { needsResearch.push(id); errors.push(`${id}: stop: needs research (Library has 0 available items): run Research for ${id} first (RUNBOOK 1.x), then Create again.`); continue; }
     const b = loadBrand(id);
     const ideas = readJson(path.join(workspace, 'store', id, 'ideas.json'), { ideas: [] }).ideas.filter((i) => ['todo', 'ready'].includes(i.status) && (!pickIds.length || pickIds.includes(i.item)));
     const items = readJson(path.join(workspace, 'store', id, 'items.json'), { items: [] }).items;
@@ -164,7 +165,7 @@ function stageA(args) {
   const st = saveState({ run_started: started, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
   const items = Object.values(publish.brands).reduce((n, b) => n + b.items.length, 0);
   return {
-    stage: 'A done', stop: todo.ideas.length ? 'ideas' : 'captions', brands: scope, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items,
+    stage: 'A done', stop: todo.ideas.length ? 'ideas' : needsResearch.length ? 'needs research' : 'captions', ...(needsResearch.length ? { needs_research: needsResearch } : {}), brands: scope, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items,
     status_queries: Object.fromEntries(Object.entries(publish.brands).filter(([, b]) => b.status_query).map(([id, b]) => [id, b.status_query])),
     ideas_file: ideasFile, ideas: todo.ideas.length, notes, errors, timing_ms: st.timing,
     next: [

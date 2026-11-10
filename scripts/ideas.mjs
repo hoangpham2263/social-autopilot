@@ -12,6 +12,7 @@
 //                                 published and drafts still in work; fresh first, newest first, sources mixed; then reuse)
 //                                 --items: exactly these items (a used item is allowed even within the cooldown, with a
 //                                 note; a removed item is an error)
+//   node scripts/ideas.mjs clean  --brand <id> [--all]               drop unfilled ideas (--all: every open idea without a draft); releases their library items
 //   node scripts/ideas.mjs set    --brand <id> --id I001 --json '{...}' | --file f   fill an idea; checked for copying
 //   node scripts/ideas.mjs pick   --brand <id> --id I001              mark for drafting
 //   node scripts/ideas.mjs reject --brand <id> --id I001 [--note ..] [--item rejected]   idea dropped; the store item
@@ -81,6 +82,10 @@ function run(args, cmd, brand, file) {
   const find = () => { const id = need(args, 'id'); const i = data.ideas.find((x) => x.id === id); if (!i) throw new Error(`Không có ý ${id}.`); return i; };
 
   if (cmd === 'init') {
+    // An idea that never got filled (or, with --reset, any open idea without a draft) only reserves a library item: drop it.
+    const before = data.ideas.length;
+    data.ideas = data.ideas.filter((i) => !(OPEN.includes(i.status) && !(i.drafts || []).length && (args.reset ? true : i.status === 'todo' && !CORE.some((f) => i[f]))));
+    const dropped = before - data.ideas.length;
     if (!store.items.length) throw new Error(`Kho ${brand.id} trống: chạy chế độ "Chỉ nghiên cứu" (research.mjs) trước.`);
     let chosen;
     const notes = [];
@@ -117,10 +122,16 @@ function run(args, cmd, brand, file) {
     // Library low: fewer fresh + reusable posts than twice what this run took -> run Research soon (also in the run log).
     const low = left < Math.max(1, chosen.length) * 2;
     const prev = Object.fromEntries(chosen.filter((x) => usesOf(x).length).map((x) => [x.id, previousUses(x)]));
-    return out({ file, added, items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: a.fresh.length, store_ready_left: left,
+    return out({ file, added, ...(dropped ? { dropped_unfilled: dropped } : {}), items: chosen.map((x) => x.id), total: data.ideas.length, store_new_left: a.fresh.length, store_ready_left: left,
       ...(Object.keys(prev).length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(notes.length ? { notes } : {}),
       ...(low ? { warning: `Library low: ${left} available posts ready (${a.fresh.length} never used, ${a.reusable.length} reusable after the ${cooldown}-day cooldown); run Research.` } : {}),
       next: added.length ? 'Điền từng ý theo prompts/idea-abstract.md bằng ideas.mjs set.' : 'Kho không còn bài Available dùng được (chưa dùng hoặc hết cooldown): chạy chế độ "Chỉ nghiên cứu" để lấy thêm.' });
+  }
+  if (cmd === 'clean') { // drop every open idea without a draft (releases the library items they reserve)
+    const before = data.ideas.length;
+    data.ideas = data.ideas.filter((i) => !(OPEN.includes(i.status) && !(i.drafts || []).length && (args.all || i.status === 'todo' && !CORE.some((f) => i[f]))));
+    save();
+    return out({ file, dropped: before - data.ideas.length, left: data.ideas.length });
   }
   if (cmd === 'set') {
     const idea = find();
@@ -153,5 +164,5 @@ function run(args, cmd, brand, file) {
     const list = data.ideas.filter((i) => !args.status || i.status === args.status);
     return out({ file, ideas: list.map(({ id, item, status, product_type, scene, angle, caption_structure, drafts }) => ({ id, item, status, product_type, scene, angle, caption_structure, drafts: drafts || [] })) });
   }
-  throw new Error('Lệnh: init | set | pick | reject | list');
+  throw new Error('Lệnh: init | clean | set | pick | reject | list');
 }

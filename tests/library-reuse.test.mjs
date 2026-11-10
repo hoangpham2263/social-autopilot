@@ -135,8 +135,9 @@ test('--items passes through pipeline.mjs create (one brand; only those ideas in
 });
 
 test('auto pick: fresh first, then reusable after the cooldown; open ideas and cooling items skipped', () => {
+  run('ideas.mjs', 'set', '--brand', 'fakebrand', '--id', run('ideas.mjs', 'list', '--brand', 'fakebrand').ideas.find((i) => i.item === 'S0002').id, '--json', JSON.stringify({ product_type: 'wooden sign', scene: 'porch', angle: 'eye level', caption_structure: 'hook' })); // an unfilled idea would be dropped by init
   const r = run('ideas.mjs', 'init', '--brand', 'fakebrand', '--count', '10');
-  // S0002 has an open idea (pipeline), S0001 was used today (cooldown); S0005 was used 9 days ago (reusable).
+  // S0002 has an open (filled) idea (pipeline), S0001 was used today (cooldown); S0005 was used 9 days ago (reusable).
   assert.deepEqual(r.items, ['S0004', 'S0003', 'S0005']);
   assert.deepEqual(Object.keys(r.previous_uses), ['S0005']);
   assert.equal(r.store_ready_left, 0);
