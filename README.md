@@ -54,7 +54,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 ## Quy tắc
 
-- Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay. Publish approved có Start: From tomorrow (mặc định) / From today (giờ tốt nhất kế tiếp, chừa 15 phút; 1 bài/ngày chỉ giờ chính).
+- Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay. Publish approved có Start: From today (mặc định trong app: giờ tốt nhất kế tiếp, chừa 15 phút; 1 bài/ngày chỉ giờ chính) / From tomorrow.
 - Không logo trên sản phẩm, không nhãn AI.
 - Ảnh được host ở repo công khai `social-autopilot-sources` (link raw GitHub); bản clone nằm trong tool ở `workspace/image-host` (tự clone từ `imageHost.remote_url` khi chưa có).
 - Agent không bao giờ tự duyệt bài.
