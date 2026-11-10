@@ -4,7 +4,9 @@
 //   node scripts/metricool-mcp.mjs payload --brand <id> [--posts POST-01,POST-02] [--lang en]
 //          [--date YYYY-MM-DD --time HH:MM] [--allow-today] [--limit N] [--window morning|midday|afternoon|evening] [--start today|tomorrow]
 //        --limit N: at most N approved posts of the brand (oldest approved first); --window: only times in that window of
-//        the day (best first; no data = its midpoint hour); --start today: today too, at least 1 hour ahead.
+//        the day (best first; no data = its midpoint hour); --start today: the next best time from now (15 min safety margin).
+//        Times are computed when payload runs: run it right before sending; an item past its send_before is not sent,
+//        run payload again (it moves to the next slot).
 //   node scripts/metricool-mcp.mjs record --brand <id> --post POST-xx --id <id> --uuid <uuid> --planner-url <url>
 //          --publication <YYYY-MM-DDTHH:MM[:SS]> --tz <timezone> [--networks facebook] [--force]
 //   node scripts/metricool-mcp.mjs status --brand <id>
@@ -105,6 +107,8 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
       post: p.id, lang: it.texts[0].lang, networks: plan.networkKeys, draft, time_source: it.when.source, planned: it.planned,
       tool: 'createScheduledPost',
       args: { blogId, date: isoWithOffset(date, time, tz), info: JSON.stringify(info) },
+      // Send before this moment (the slot itself); later, run payload again for the next slot.
+      send_before: isoWithOffset(date, time, tz),
       record: rec,
     });
   }
@@ -119,7 +123,7 @@ function runPayload(args) {
     brand: x.brand.id, blog_id: x.blogId, metricool_brand: x.brand.brand_name, audience_timezone: x.brand.audience_timezone, draft: x.draft,
     languages: x.plan.langs, networks: x.plan.networkKeys, items: x.items, blocked: x.blocked, skipped: x.plan.skipped, warnings: x.plan.warnings,
     next: x.items.length
-      ? 'Với từng item: gọi tool MCP Metricool createScheduledPost với đúng args (blogId, date, info; không sửa info), rồi chạy lệnh record với id, uuid, plannerUrl, publicationDate.dateTime, publicationDate.timezone Metricool trả về. Không bao giờ dùng blogId khác args.blogId.'
+      ? 'Gửi ngay (giờ tính lúc chạy payload). Với từng item: nếu bây giờ đã quá send_before thì KHÔNG gửi item đó, chạy lại payload (giờ chuyển sang slot kế); còn lại gọi tool MCP Metricool createScheduledPost với đúng args (blogId, date, info; không sửa info), rồi chạy lệnh record với id, uuid, plannerUrl, publicationDate.dateTime, publicationDate.timezone Metricool trả về. Không bao giờ dùng blogId khác args.blogId.'
       : 'Không có bài nào cần gửi.',
   });
 }

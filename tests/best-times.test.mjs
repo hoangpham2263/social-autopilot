@@ -3,7 +3,7 @@
 // npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { timePicker, postsPerDay, dayTimes, researchTimes } from '../scripts/metricool-csv.mjs';
+import { timePicker, postsPerDay, dayTimes, researchTimes, START_TODAY_LEAD_MINUTES } from '../scripts/metricool-csv.mjs';
 import { parseBestTimes } from '../scripts/metricool-mcp.mjs';
 
 const NOW = new Date('2026-11-09T12:00:00Z'); // Monday 07:00 in New York
@@ -55,7 +55,7 @@ test('Metricool best times win when there is enough data; parsed from any shape'
   assert.deepEqual(parseBestTimes({ monday: { 9: 5, 18: 7 } }).map((x) => `${x.day} ${x.time}`), ['mon 18:00', 'mon 09:00']);
 });
 
-test('--window: the best time inside the window, else its midpoint hour; --start today: at least 1 hour ahead', () => {
+test('--window: the best time inside the window, else its midpoint hour; --start today: the next best time 15 min ahead', () => {
   const research = researchTimes();
   const pick = timePicker({ brandId: 'x', network: 'Facebook', perDay: 1, audienceTz: TZ, taken: new Set(), now: NOW, best: null, research, window: 'evening' });
   const a = pick();
@@ -67,8 +67,9 @@ test('--window: the best time inside the window, else its midpoint hour; --start
   const morning = timePicker({ brandId: 'x', network: 'Facebook', perDay: 1, audienceTz: TZ, taken: new Set(), now: NOW, best: null, research: { networks: { facebook: { timezone: TZ, days: { tue: ['19:00'], wed: ['19:00'], thu: ['19:00'], fri: ['19:00'], sat: ['19:00'], sun: ['19:00'], mon: ['19:00'] } } } }, window: 'morning' });
   assert.equal(morning().time, '10:00:00');
   assert.throws(() => timePicker({ brandId: 'x', audienceTz: TZ, taken: new Set(), now: NOW, best: null, research, window: 'night' }), /--window/);
-  // today, now 07:00 in New York: Monday's 09:00 is >= 1 h ahead
-  const today = timePicker({ brandId: 'x', network: 'Facebook', perDay: 1, audienceTz: TZ, taken: new Set(), now: NOW, best: null, research, allowToday: true, leadMinutes: 60 });
+  // today, now 07:00 in New York: the next best time today at least START_TODAY_LEAD_MINUTES (15) ahead
+  assert.equal(START_TODAY_LEAD_MINUTES, 15);
+  const today = timePicker({ brandId: 'x', network: 'Facebook', perDay: 1, audienceTz: TZ, taken: new Set(), now: NOW, best: null, research, allowToday: true, leadMinutes: START_TODAY_LEAD_MINUTES });
   const t = today();
   assert.equal(t.date, '2026-11-09');
   assert.ok(Number(t.time.slice(0, 2)) * 60 >= 8 * 60, t.time);

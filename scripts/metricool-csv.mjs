@@ -351,10 +351,12 @@ export function dayTimes(day, { best, research, network }) {
 }
 
 // Time windows a run may ask for (--window), in the timezone of the times (Metricool's brand timezone / the table's).
+// --start today: the next best slot after now plus this safety margin (user, 10/11/2026: no 1-hour rule).
+export const START_TODAY_LEAD_MINUTES = 15;
 export const WINDOWS = { morning: [8, 11], midday: [11, 14], afternoon: [14, 17], evening: [18, 21] };
 // Next free posting time (date, time in the audience timezone, and which source chose it). window: only times inside
 // [from, to) hours, best first; a day without data in the window takes the window's midpoint hour (rounded).
-// leadMinutes: today's times must be at least this far ahead (--start today: 60).
+// leadMinutes: today's times must be at least this far ahead (--start today: START_TODAY_LEAD_MINUTES).
 export function timePicker({ brandId, network, perDay, audienceTz, taken, allowToday, now, window = '', leadMinutes = 0, best = bestTimes(brandId), research = researchTimes() }) {
   const n = Math.max(1, perDay || 1);
   const win = window ? WINDOWS[window] : null;
@@ -537,10 +539,11 @@ export function planPosts(args, { now = new Date(), root = settings().skillsRoot
     if (t && validDate(t.date) && validTime(t.time)) taken.add(`${t.date} ${t.time}`);
   }
   // Posting times: Metricool's best times, else the research table; posts_per_day a day. cadence.slots is ignored.
-  // --window morning|midday|afternoon|evening and --start today|tomorrow (today: times at least 1 hour ahead).
+  // --window morning|midday|afternoon|evening and --start today|tomorrow (today: the next best time at least
+  // START_TODAY_LEAD_MINUTES ahead, a small safety margin so the slot is not past when createScheduledPost is called).
   const start = args.start && args.start !== true ? String(args.start) : 'tomorrow';
   if (!['today', 'tomorrow'].includes(start)) throw new Error('--start must be today or tomorrow.');
-  const nextSlot = timePicker({ brandId: brand.id, network: networks[0], perDay: postsPerDay(social.cadence), audienceTz: brand.audience_timezone, taken, allowToday: !!args['allow-today'] || start === 'today', leadMinutes: start === 'today' ? 60 : 0, window: args.window && args.window !== true ? String(args.window) : '', now });
+  const nextSlot = timePicker({ brandId: brand.id, network: networks[0], perDay: postsPerDay(social.cadence), audienceTz: brand.audience_timezone, taken, allowToday: !!args['allow-today'] || start === 'today', leadMinutes: start === 'today' ? START_TODAY_LEAD_MINUTES : 0, window: args.window && args.window !== true ? String(args.window) : '', now });
   const override = args.date && args.date !== true ? { date: String(args.date), time: normTime(args.time === true ? '' : args.time || '') } : null;
 
   const items = [];
