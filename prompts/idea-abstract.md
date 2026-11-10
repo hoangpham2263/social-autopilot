@@ -23,4 +23,6 @@ Không bao giờ:
 - mô tả để vẽ lại ảnh, logo, thiết kế hay chữ trên sản phẩm của đối thủ;
 - dùng ảnh tham khảo làm ảnh đưa vào Codex (`draft.mjs new` chặn).
 
+Bài kho đã dùng trước (`previous_uses` trong kết quả `init` / file ý): chỉ giữ cảm hứng, chọn **góc mới**: cảnh khác VÀ sản phẩm hoặc chữ (`sign_text`) khác mọi lượt trước; lặp lại bị chặn.
+
 Ý không hợp thương hiệu thì `ideas.mjs reject --note "<lý do>"` (thêm `--item rejected` nếu bài kho cũng không nên dùng lại).

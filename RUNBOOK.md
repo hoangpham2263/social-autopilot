@@ -107,7 +107,7 @@ node scripts/store.mjs verdict  --brand <id> --file <verdicts.json>
 ```
 - `classify` in một lô gọn các bài `new` chưa lọc: `id`, `source`, đoạn đầu caption (`(no caption)` khi bài chỉ có ảnh), `media`, `thumb` (đường dẫn ảnh), kèm `what_to_take` của từng nguồn, đường dẫn `project.md` (phạm vi sản phẩm) và `rules_of_thumb`.
 - Agent xem chữ + ảnh thumb (đọc file ảnh), đối chiếu `what_to_take` và phạm vi sản phẩm trong `project.md`, ghi `[{ "id": "S0001", "fit": true|false, "reason": "..." }]` (lý do ngắn, bắt buộc khi `fit:false`), rồi `verdict`. Lặp tới khi `total_unjudged` = 0.
-- `fit:false` → bài thành **Dropped** (`rejected`), ghi chú `filter: <lý do>`; `fit:true` → giữ (Unused). Người dùng vẫn Restore được ở tab Library (bài đó không bị lọc lại).
+- `fit:false` → bài thành **Dropped** (`rejected`), ghi chú `filter: <lý do>`; `fit:true` → giữ (Fresh). Người dùng vẫn Restore được ở tab Library (bài đó không bị lọc lại).
 - Luật nhanh: bỏ bài tuyển dụng; bỏ cuộc thi, minigame, giveaway; bỏ bài chỉ có chữ (hoặc ảnh chỉ là chữ, không thấy sản phẩm); bỏ bài chia sẻ lại mà không có ảnh sản phẩm; bỏ sản phẩm ngoài ngành hàng của thương hiệu. Giữ: ảnh sản phẩm thật đúng ngành hàng, có bối cảnh/góc chụp/khung caption học được.
 
 1.4. Số liệu báo cáo:
@@ -126,7 +126,7 @@ Tool tự lấy số liệu (từng nguồn: bài mới, **kept / filtered**, tr
 - **Kết quả chung:** +N bài mới · N giữ · M lọc bỏ, số nguồn cạn (Dried up), số nguồn bị chặn.
 - **Theo thương hiệu:** từng nguồn: bài mới · giữ / lọc bỏ · trạng thái (New posts / Dried up / Skipped (quota) / Blocked / Error).
 - **Cần làm:** nguồn bị chặn (lý do), nguồn lỗi (vd `error: selectors`), nguồn keep rate thấp (xem lại `what_to_take` hoặc thay nguồn), nguồn cạn nhiều lượt liền (gợi ý thêm nguồn mới), còn bài cũ thì nhắc `--backfill`.
-- **Kho:** tổng (Unused / Used / Dropped); xem ở tab **Library** (bài bị lọc nằm ở Dropped, có lý do).
+- **Kho:** tổng (Fresh / Used before / Retired / Dropped); xem ở tab **Library** (bài bị lọc nằm ở Dropped, có lý do).
 
 Không làm ý, không tạo bài, không gửi Metricool trong chế độ này. Không bao giờ like, bình luận, theo dõi, chia sẻ hay nhắn tin.
 
@@ -139,7 +139,7 @@ Không mở Facebook. Cần `node`, Codex CLI (tạo ảnh) và MCP Metricool c�
 Cùng các bước và cùng các kiểm tra như 2.0 → 2.10 (pipeline gọi đúng các script đó), chỉ ít lượt qua lại của agent hơn: mọi ý trong **một** file, mọi caption trong **một** file, mọi ảnh mới trên **một** contact sheet. Pipeline dừng đúng 2 chỗ cần phán đoán và in chính xác việc phải làm (`next`). Gọi MCP Metricool vẫn do agent làm.
 ```
 node scripts/pipeline.mjs mcp-plan --brand <id|all>        # 2.0: các lệnh MCP cần gọi (getBrandSettings, getBestTimeToPostByNetwork, đúng tham số) và file lưu
-node scripts/pipeline.mjs create --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp [--count N]
+node scripts/pipeline.mjs create --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp [--count N | --items S0008]   # --items: đúng bài kho đó (một brand); scene-swap trong file ý: "scene_swap": true + "brand_can_produce": true
    # A: brands --run, sync-brands/sync-times, payload + status từng brand (workspace/pipeline/publish.json), ideas init → workspace/pipeline/ideas-todo.json
    # agent: gửi từng item của publish.json (createScheduledPost đúng args → lệnh record), đối chiếu status_queries (2.1-2.2)
    # STOP (i): điền ideas-todo.json cho mọi thương hiệu một lượt (ý trừu tượng theo prompts/idea-abstract.md, ảnh sản phẩm của thương hiệu, cỡ thật, sign_text khi custom_text, mô tả sản phẩm từng chữ) hoặc "reject"
@@ -187,14 +187,14 @@ node scripts/metricool-mcp.mjs status --brand <id>
 ```
 `query` là `null` (chưa có bài nào đã gửi đang chờ) thì **bỏ qua** `getScheduledPosts`. Có `query` thì gọi `getScheduledPosts` đúng tham số, khớp theo `id`: PENDING → để yên; **ERROR** → báo cáo (id, plannerUrl, lý do; app hiện dấu đỏ); **PUBLISHED** → `node scripts/posts.mjs mark-published --brand <id> --post <POST-xx> --date <yyyy-mm-dd> [--url <link>] --lang <ngôn ngữ đăng>` (Posted; ghi vào sổ bài của tool, không bao giờ vào skill). Sau khi đã đăng mới được gỡ file host: `node scripts/host-image.mjs remove --brand <id> --post POST-xx`. Id nằm trong `ignore_ids` (bài người dùng đã đưa về To review, đã xoá trong Metricool): **bỏ qua**, không `record`, không `mark-published`, không làm sống lại.
 
-2.3. Ý từ kho (chỉ bài `new`; bài được đánh dấu `used`, `used_by` = mã ý, không dùng lại):
+2.3. Ý từ kho. Bài kho **không bị dùng hết** (người dùng, 10/11/2026): mỗi bài đổi cảnh và nội dung, nên một bài tham khảo có thể gợi ý nhiều bài, mỗi lần một góc mới. Mỗi bản nháp ghi một lượt vào `uses[]` của bài kho (`draft, idea, scene, product, sign_text, at`); bài vẫn `new`. Trạng thái: **Fresh** (chưa dùng) · **Used before** (đã dùng N lần, vẫn dùng được) · **Retired** (người dùng thấy đã dùng đủ: không bao giờ chọn lại tới khi Restore) · **Dropped** (`rejected`: bị lọc / không hợp).
 ```
 node scripts/ideas.mjs init --brand <id> [--count N] [--items S0001,S0002] [--source <sid>]
 node scripts/ideas.mjs set  --brand <id> --id I001 --json "{\"product_type\":\"...\",\"scene\":\"...\",\"angle\":\"...\",\"props\":\"...\",\"caption_structure\":\"...\",\"hook\":\"...\",\"why\":\"...\"}"
 node scripts/ideas.mjs pick --brand <id> --id I001
 node scripts/ideas.mjs reject --brand <id> --id I001 --note "<lý do>" [--item rejected]
 ```
-Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.ahead_days` ngày tới (mặc định 7) với `cadence.posts_per_day` bài/ngày (trừ bài đã duyệt chưa đăng và bản nháp đang làm/chờ duyệt; đủ rồi thì không làm thêm), bài mới nhất trước, xen kẽ các nguồn. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
+Mặc định `--count` = số bài còn thiếu để phủ `settings.planning.ahead_days` ngày tới (mặc định 7) với `cadence.posts_per_day` bài/ngày (trừ bài đã duyệt chưa đăng và bản nháp đang làm/chờ duyệt; đủ rồi thì không làm thêm). Thứ tự chọn: bài Fresh trước (mới nhất trước, xen kẽ các nguồn), rồi bài Used before ít lượt nhất đã qua cooldown (`settings.ideas.reuse_cooldown_days`, mặc định 7 ngày); không bao giờ bài Retired/Dropped hay bài đang có ý mở. `--items S0008` = đúng các bài đó (bài trong cooldown vẫn được, có ghi chú; Retired/Dropped → lỗi rõ ràng). Bài dùng lại: kết quả `init` có `previous_uses` + `reuse_rule`: phải khác **cảnh** VÀ khác (**sản phẩm** hoặc **sign_text**) so với mọi lượt trước; `set`/`pick` chặn cảnh lặp, `draft.mjs new` chặn cảnh lặp hoặc cùng sản phẩm + cùng chữ. `settings.ideas.auto_retire_after` (mặc định 0 = tắt): từ N lượt thì Library chỉ **gợi ý** Retire, không tự áp. Retire/Restore: `node scripts/store.mjs retire --brand <id> --id S0001 [--note ".."]` / `restore`. Dữ liệu cũ (`status: used`) tự đọc thành `new` + `uses` từ các bản nháp trong `used_by`; ghi hẳn: `node scripts/store.mjs migrate-uses`. Điền ý theo `prompts/idea-abstract.md` (ý trừu tượng, không chép chữ/số điện thoại/link/tên shop: `set` chặn).
 
 2.4. Bản nháp và ảnh:
 ```
@@ -221,7 +221,7 @@ node scripts/draft.mjs check --id <draft>        # qua hết → "ready" (To rev
 ```
 Kiểm: ảnh sạch metadata (điểm ảnh không đổi), đủ caption từng ngôn ngữ, caption nhắc đúng `sign_text` (nếu có) và không còn chữ mẫu "Your Names"/"Your Logo" (khi `custom_text`), dòng Website và hashtag cố định, không Markdown/ký tự ẩn, không chép caption tham khảo, không nhãn AI, prompt có NO LOGO, watermark nếu bật, scene-swap đã `confirm-clean` và caption không có tên shop. Sửa rồi chạy lại tới khi `ready`.
 
-2.7. **Dừng ở To review.** Agent không duyệt, không bao giờ ghi vào skill, không host ảnh, không gửi bài mới này. Người dùng xem trong app (tab **Posts** → Preview): **Approve** chạy `node scripts/finalize.mjs approve --id <draft>` (kiểm lại lần nữa, ghi sổ bài của tool `workspace/posts/<brand>/` (`catalog.json` + `<POST-xx>/`, `scripts/posts.mjs`): mục `approved`, ảnh sạch + caption, kiểm bài, host ảnh → `media_url`; skill không bị đụng); không qua → `check_failed` + lý do. **Drop** = `node scripts/finalize.mjs cancel --id <draft> [--note ".."]`. Host lỗi không huỷ bài: chạy lại `node scripts/host-image.mjs publish --brand <id> --post POST-xx` (có trong `image_host.next`). Lượt Create & publish sau gửi bài đã duyệt ở bước 2.1. **Back to review** (tab Posts, bài Approved hoặc Scheduled, không bao giờ bài Posted) = `node scripts/finalize.mjs unapprove --id <draft> [--metricool-deleted]`: mục sổ bài + thư mục bài chuyển vào `workspace/posts/<brand>/archive/<POST-xx>-<giờ>/`, ảnh host bị gỡ khỏi repo ảnh (git rm + push), bản nháp về To review, mục kho vẫn "used"; số POST đó không dùng lại. Bài đã hẹn giờ trên Metricool: người dùng xoá trong Metricool trước rồi xác nhận (`--metricool-deleted`); id Metricool cũ giữ trong `status.json` `reverted[]` của bản nháp. Agent không tự chạy lệnh này.
+2.7. **Dừng ở To review.** Agent không duyệt, không bao giờ ghi vào skill, không host ảnh, không gửi bài mới này. Người dùng xem trong app (tab **Posts** → Preview): **Approve** chạy `node scripts/finalize.mjs approve --id <draft>` (kiểm lại lần nữa, ghi sổ bài của tool `workspace/posts/<brand>/` (`catalog.json` + `<POST-xx>/`, `scripts/posts.mjs`): mục `approved`, ảnh sạch + caption, kiểm bài, host ảnh → `media_url`; skill không bị đụng); không qua → `check_failed` + lý do. **Drop** = `node scripts/finalize.mjs cancel --id <draft> [--note ".."]`. Host lỗi không huỷ bài: chạy lại `node scripts/host-image.mjs publish --brand <id> --post POST-xx` (có trong `image_host.next`). Lượt Create & publish sau gửi bài đã duyệt ở bước 2.1. **Back to review** (tab Posts, bài Approved hoặc Scheduled, không bao giờ bài Posted) = `node scripts/finalize.mjs unapprove --id <draft> [--metricool-deleted]`: mục sổ bài + thư mục bài chuyển vào `workspace/posts/<brand>/archive/<POST-xx>-<giờ>/`, ảnh host bị gỡ khỏi repo ảnh (git rm + push), bản nháp về To review, lượt dùng của mục kho vẫn giữ; số POST đó không dùng lại. Bài đã hẹn giờ trên Metricool: người dùng xoá trong Metricool trước rồi xác nhận (`--metricool-deleted`); id Metricool cũ giữ trong `status.json` `reverted[]` của bản nháp. Agent không tự chạy lệnh này.
 
 2.8. Số liệu báo cáo:
 ```
@@ -239,7 +239,7 @@ Tool tự lấy số liệu (bài đã hẹn giờ ở lượt này, bài mới 
 - **Đã hẹn giờ:** POST-xx · giờ đăng (múi giờ brand) · plannerUrl.
 - **Chờ duyệt (To review):** từng bài: caption EN nguyên văn, bản VN ghi rõ "chỉ để đọc, không đăng". Nhắc mở tab **Posts** để Approve/Drop.
 - **Lỗi:** bài lỗi Metricool, bài bị chặn, bài không qua kiểm tra, kèm lý do.
-- **Khác:** brand Metricool mới/mất (2.0), bài đã đăng, kho còn bao nhiêu bài Unused.
+- **Khác:** brand Metricool mới/mất (2.0), bài đã đăng, kho còn bao nhiêu bài Fresh / sẵn sàng (Fresh + qua cooldown). Cảnh báo "Library low" đếm Fresh + bài dùng lại được sau cooldown.
 
 ## Mode 3. Publish approved
 

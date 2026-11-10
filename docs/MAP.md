@@ -15,7 +15,7 @@ Read this first when working ON the tool (code, tests, UI). Running the tool (re
 ## Data flow
 1. Brand = Metricool brand linked to a skill folder (`workspace/metricool-brands.json` `skill_path`). The skill is READ-ONLY: rules, product photos, `project/social.json`. Tool-side overrides: `workspace/brands/<id>.json` (Brand Edit), merged by `brandSocial()`.
 2. Research (Mode 1): `research.mjs start` → `crawl-fb.mjs` (Playwright over CDP to the crawl Chrome :9222) → `store.mjs` ingest (dedupe) → `workspace/store/<brand>/items.json` → `store.mjs classify/verdict`.
-3. Create (Mode 2): `ideas.mjs` (store items → abstract ideas) → `draft.mjs new` (draft folder, prompt.txt) → `draft.mjs image-batch` (Codex, parallel, global slots) → `image-clean.mjs` (metadata) → captions → `draft.mjs check` → **To review**.
+3. Create (Mode 2): `ideas.mjs` (store items → abstract ideas; items are reusable: fresh first, then least used after `ideas.reuse_cooldown_days`; each draft adds `uses[]` to its item; a reuse needs a different scene AND a different product or sign_text, `store.mjs reuseProblems`; Retired/Dropped never picked; `--items` picks exact items, also through `pipeline.mjs create --items`) → `draft.mjs new` (draft folder, prompt.txt) → `draft.mjs image-batch` (Codex, parallel, global slots) → `image-clean.mjs` (metadata) → captions → `draft.mjs check` → **To review**.
 4. Approve (user, app only): `finalize.mjs approve` → `writeback.mjs` → register `workspace/posts/<brand>/` (catalog.json + POST-xx folder, `media_alt`) → `host-image.mjs` (public repo clone `workspace/image-host`).
 5. Publish (Mode 2/3): `metricool-mcp.mjs payload` (exact `createScheduledPost` args; agent calls MCP) → `record` → `status` (agent `getScheduledPosts`) → `posts.mjs mark-published` / `unsend`. Never twice: payload only takes `approved` posts with no live Metricool id (`sentNetworks`); `record` refuses a second id for a post unless it was `unsend`-ed.
 
@@ -35,7 +35,7 @@ User-visible states (Posts tab, in order): **To review** (draft `ready`) · **Ap
 | `settings.json` | machine settings (relative paths; never secrets) |
 | `metricool-brands.json` | synced Metricool brands + skill links |
 | `brands/<id>.json` | Brand Edit overrides (posts_per_day, paused, sources_add, sources_disabled) |
-| `store/<brand>/` | research store: items.json, images/, ideas.json, progress.json, duplicates.json |
+| `store/<brand>/` | research store: items.json (status new\|retired\|rejected, `uses[]`, `last_used`; old "used" migrates in memory, `store.mjs migrate-uses` saves), images/, ideas.json, progress.json, duplicates.json |
 | `runs/<brand>/<date>/` | crawl logs; `runs/current-<mode>.json` Run progress |
 | `drafts/<brand>/<draft>/` | draft.json, status.json, prompt.txt, image*.png, content-<lang>.txt, codex.log |
 | `posts/<brand>/` | the tool's post register (catalog.json, POST-xx/, archive/) |
@@ -55,7 +55,7 @@ User-visible states (Posts tab, in order): **To review** (draft `ready`) · **Ap
 - Commits: user identity only, no co-author lines. Every `child_process` has `windowsHide: true`. Shared files only via `withLock` + atomic write.
 
 ## Tests
-- All: `npm test` (~80 s). Focused: `node --test tests/<file>.test.mjs` (e.g. `tests/pipeline.test.mjs`, `tests/metricool-mcp.test.mjs`).
+- All: `npm test` (~80 s). Focused: `node --test tests/<file>.test.mjs` (e.g. `tests/pipeline.test.mjs`, `tests/metricool-mcp.test.mjs`, `tests/library-reuse.test.mjs`).
 - Tests set `SA_WORKSPACE`, `SA_SKILLS_ROOT`, `SA_CODEX` (fake Codex) to temp folders; some copy real skills from `../vaniecom-workspace/skills` and skip without them.
 - Pure helpers import the module after setting env (`process.env.SA_WORKSPACE = …; await import('../scripts/lib.mjs')`): the workspace path is read at load time.
 - `SA_PROGRESS=off` silences Run progress writes when running scripts by hand.
