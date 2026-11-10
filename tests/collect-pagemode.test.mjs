@@ -119,3 +119,25 @@ test('CLI: from-page downloads images and writes a raw.json that research.mjs in
     assert.equal(again.skipped_known, 2, JSON.stringify(again));
   } finally { server.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('b64 single-line result: round trip, exact mismatch position, 4-char tag; deadline option in the script', async () => {
+  const { packB64, unpackB64, buildPageScript, checksumOf } = await import('../scripts/platforms/common.mjs');
+  const { loadPageResults } = await import('../scripts/collect-pagemode.mjs');
+  const obj = { platform: 'etsy', total: 1, checksum: checksumOf(['1']), tiles: [{ id: '1', url: 'https://e/1', image_urls: ['https://i/a.jpg'], caption: 'Café ' + 'long '.repeat(80) }] };
+  const p = packB64(obj);
+  assert.equal(p.tag.length, 4);
+  assert.deepEqual(unpackB64(p.line).obj, obj);
+  assert.deepEqual(loadPageResults({ _: [], b64: p.line }).result.tiles[0].id, '1');
+  const bad = p.line.slice(0, 150) + (p.line[150] === 'A' ? 'B' : 'A') + p.line.slice(151);
+  assert.throws(() => unpackB64(bad), /characters 101-200/);
+  assert.throws(() => unpackB64(p.line.slice(0, 120) + p.line.slice(121)), /characters 101-/);
+  const s = buildPageScript({ link: 'a', url_pattern: '', container: '', img: '', img_skip: '', author: '', caption: '', wall: { login_form: [], captcha: [], dialog: [] } }, { platform: 'x', url: 'https://x', found_by: 'f', max: 8, steps: 2, delay: [5, 15], id_re: '(\d+)' });
+  assert.match(s, /"deadline":120/);
+  assert.match(s, /partial/);
+  assert.doesNotThrow(() => new Function(`return (${s});`));
+});
+
+test('a result without total/checksum is unverified (from-page then suggests partial with a warning)', async () => {
+  const { mergePageResults } = await import('../scripts/collect-pagemode.mjs');
+  assert.equal(mergePageResults([{ platform: 'etsy', tiles: [] }]).verified, false);
+});

@@ -141,6 +141,31 @@ export function checksumOf(ids) {
 }
 export const COMPACT = { caption: 100, author: 40, images: 2, chunk_size: 6 };
 
+// Single-line transport of a page result: base64url(JSON) ~ one 2-char tag per 100-char segment ~ 4-char tag of the whole.
+// SELF-CONTAINED (embedded in the page script): the agent pastes the one line, from-page checks every segment, so a paste
+// either matches exactly or fails with the position of the first wrong character range; the agent reads the 4-char tag back.
+export function packB64(obj) {
+  const fnv = (str) => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36).padStart(7, '0'); };
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let bin = ''; for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  const b64 = btoa(bin).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=+$/, '');
+  let seg = ''; for (let i = 0; i < b64.length; i += 100) seg += fnv(b64.slice(i, i + 100)).slice(-2);
+  const tag = fnv(b64).slice(-4);
+  return { line: b64 + '~' + seg + '~' + tag, tag, length: b64.length };
+}
+export function unpackB64(text) {
+  const fnv = (str) => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36).padStart(7, '0'); };
+  const m = String(text || '').trim().replace(/^["']|["']$/g, '').match(/^([A-Za-z0-9_-]+)~([a-z0-9]*)~([a-z0-9]{4})$/);
+  if (!m) throw new Error('--b64: not a valid single line (expected <base64url>~<segment tags>~<4-char tag>): paste the whole "b64" value of the result, nothing else.');
+  const [, b64, seg, tag] = m;
+  for (let i = 0, k = 0; i < b64.length; i += 100, k++) {
+    if (fnv(b64.slice(i, i + 100)).slice(-2) !== seg.slice(k * 2, k * 2 + 2)) throw new Error(`--b64 does not match the script's output: the first mismatch is in characters ${i + 1}-${Math.min(i + 100, b64.length)} of ${b64.length} (segment ${k + 1}): paste that part again exactly, or save the result to a file (--file).`);
+  }
+  if (seg.length !== Math.ceil(b64.length / 100) * 2) throw new Error(`--b64 is cut off or has extra characters: ${b64.length} characters, the script's segment tags cover ${seg.length / 2 * 100}.`);
+  if (fnv(b64).slice(-4) !== tag) throw new Error('--b64 verification tag does not match: paste the whole value again exactly.');
+  return { obj: JSON.parse(Buffer.from(b64, 'base64url').toString('utf8')), tag };
+}
+
 // ---- in-page mode. The agent pastes this into Playwright MCP browser_run_code_unsafe (one call per keyword/page).
 // A string `async (page) => {...}`: goes to the URL, scrolls with random pauses (delay [lo,hi] s, from collect.mjs: never below 5-15 s),
 // reads the tiles after every pause (lazy images get time to load), and, when the adapter says post_fallback and a tile still has
@@ -150,8 +175,9 @@ export const COMPACT = { caption: 100, author: 40, images: 2, chunk_size: 6 };
 export function buildPageScript(S, opts) {
   const cfg = { link: S.link, url_pattern: S.url_pattern, container: S.container, img: S.img, img_skip: S.img_skip, author: S.author, caption: S.caption };
   const wall = { login_form: S.wall.login_form, captcha: S.wall.captcha, dialog: S.wall.dialog, url: S.wall.url };
-  const o = { compact: COMPACT, ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
+  const o = { compact: COMPACT, deadline: 120, b64: true, ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
   return `async (page) => {
+  const packB64 = ${packB64};
   const o = ${JSON.stringify(o)};
   await page.goto(o.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   const r = await page.evaluate(async (o) => {
@@ -167,9 +193,11 @@ export function buildPageScript(S, opts) {
     };
     const id = (u) => ((String(u).match(new RegExp(o.id_re, 'i')) || [])[1]) || '';
     const tiles = new Map();
-    let steps = 0, idle = 0, loginWall = false, signals = null, note = '';
+    const t0 = Date.now(), over = () => Date.now() - t0 > o.deadline * 1000;
+    let steps = 0, idle = 0, loginWall = false, signals = null, note = '', partial = false;
     await pause();
     for (; steps < o.steps; steps++) {
+      if (over()) { partial = true; note = 'deadline ' + o.deadline + ' s reached'; break; }
       const w = wallNow();
       signals = { url: w.sig.url, title: w.sig.title, captcha: w.sig.captcha, login_form: w.sig.login_form, dialog: w.sig.dialog, text: w.sig.text.slice(0, 300) };
       if (w.loginWall) { loginWall = true; break; }
@@ -190,6 +218,7 @@ export function buildPageScript(S, opts) {
     let list = [...tiles.values()].slice(0, o.max);
     if (o.post_fallback && !loginWall) {
       for (const t of list.filter((x) => !x.image_urls.length)) {
+        if (over()) { partial = true; note = note || 'deadline ' + o.deadline + ' s reached'; break; }
         await pause();
         try {
           const res = await fetch(t.url, { credentials: 'include', headers: { Accept: 'text/html' } });
@@ -206,13 +235,16 @@ export function buildPageScript(S, opts) {
     // COMPACT result (short enough to read back and paste as is): fixed caption/author length, shortest url, first images only.
     const cut = (x, n) => String(x || '').replace(/\\s+/g, ' ').trim().slice(0, n);
     const shortUrl = (u) => { try { const x = new URL(u); x.hash = ''; if (!/[?&]v=/.test(x.search)) x.search = ''; return x.href; } catch (e) { return String(u || ''); } };
+    // Image url: only what the downloader needs. Signed urls (oh/oe/sig/token ...) keep their query, every other one loses it.
+    const imgUrl = (u) => { try { const x = new URL(u); x.hash = ''; if (!/[?&](oh|oe|sig|signature|token|expires|x-expires|hmac|key)=/i.test(x.search)) x.search = ''; return x.href; } catch (e) { return String(u || ''); } };
     const C = o.compact;
     const total = list.length, checksum = checksumOf(list.map((t) => t.id || t.url));
     let part = list, chunk = null;
     if (o.chunk !== undefined && o.chunk !== null) { part = list.slice(o.chunk * C.chunk_size, (o.chunk + 1) * C.chunk_size); chunk = { i: o.chunk, size: C.chunk_size, of: Math.max(1, Math.ceil(total / C.chunk_size)) }; }
-    return { platform: o.platform, url: shortUrl(location.href), loginWall, signals: loginWall ? signals : null, steps, note: cut(note, 80), total, checksum, ...(chunk ? { chunk } : {}),
-      tiles: part.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images), caption: cut(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
+    return { platform: o.platform, url: shortUrl(location.href), loginWall, signals: loginWall ? signals : null, steps, note: cut(note, 80), ...(partial ? { partial: true } : {}), total, checksum, ...(chunk ? { chunk } : {}),
+      tiles: part.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images).map(imgUrl), caption: cut(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
   }, o);
+  if (o.b64) { const p = packB64(r); return r.loginWall ? { platform: r.platform, loginWall: true, signals: r.signals, tag: p.tag, b64: p.line } : { platform: r.platform, total: r.total, partial: !!r.partial, tag: p.tag, b64: p.line }; }
   return r;
 }`;
 }

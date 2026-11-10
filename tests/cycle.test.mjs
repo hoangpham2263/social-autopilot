@@ -200,11 +200,15 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.match(run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--items', 'S0002').error, /removed .không hợp.: restore it/);
   assert.equal(run('store.mjs', 'restore', '--brand', 'dreamyvows', '--id', 'S0002').item.status, 'new');
   const rest = run('ideas.mjs', 'init', '--brand', 'dreamyvows', '--count', '10');
-  assert.equal(rest.added.length, 3);
+  assert.equal(rest.added.length, 5, "the 2 unfilled ideas are dropped and their items picked again with the rest");
   assert.equal(rest.store_new_left, 0);
-  assert.equal(run('ideas.mjs', 'init', '--brand', 'dreamyvows').added.length, 0);
+  // A plain re-run replaces the unfilled ideas (drops then picks the same items again): nothing piles up.
+  const replay = run('ideas.mjs', 'init', '--brand', 'dreamyvows');
+  assert.equal(replay.dropped_unfilled, 5);
+  assert.equal(replay.added.length, 5);
+  assert.equal(replay.total, 5);
 
-  const I = init.added[0], itemId = init.items[0];
+  const I = replay.added[0], itemId = replay.items[0]; // the re-run replaced the earlier unfilled ideas
   const refItem = items.find((x) => x.id === itemId);
   const copied = run('ideas.mjs', 'set', '--brand', 'dreamyvows', '--id', I, '--json', JSON.stringify({ product_type: refItem.caption.split(' ').slice(0, 7).join(' '), scene: 'x', angle: 'y', caption_structure: 'z' }));
   assert.ok(copied.problems.length >= 1, JSON.stringify(copied));

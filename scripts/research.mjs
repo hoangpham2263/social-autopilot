@@ -30,7 +30,7 @@
 //   node scripts/research.mjs ingest --brand <id> [--source <sid>] [--date d] [--csv file]
 //        <source>/raw.json + downloaded images -> store (U+034F/zero-width cleaned, duplicates across crawls dropped)
 //   node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|blocked|partial [--note ..]
-//        how the crawl of a source ended (blocked/partial need --note)
+//        how the crawl of a source ended (blocked needs --note; partial: --note optional)
 //   node scripts/research.mjs report --brand <id> [--date d]   per source: new on top, backfilled older, reached_end,
 //        whether older posts remain; sources done, sources blocked
 //   node scripts/research.mjs clean  --in <file> [--out <file>]   strip U+034F / zero-width / NBSP from CSV or text
@@ -415,7 +415,7 @@ function queryResult(args, brand, runFile, run) {
   const state = need(args, 'state');
   if (!QUERY_STATES[state]) throw new Error(`--state (truy vấn) phải là: ${Object.keys(QUERY_STATES).join(', ')}.`);
   const note = args.note && args.note !== true ? cleanText(args.note).text : '';
-  if (['blocked', 'partial'].includes(state) && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
+  if (state === 'blocked' && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
   Object.assign(q, { state, label: QUERY_STATES[state], note, at: stamp() });
   // A login wall / captcha on a platform: its other queries are skipped this run (other platforms go on).
   const skipped = [];

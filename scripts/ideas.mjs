@@ -84,7 +84,7 @@ function run(args, cmd, brand, file) {
   if (cmd === 'init') {
     // An idea that never got filled (or, with --reset, any open idea without a draft) only reserves a library item: drop it.
     const before = data.ideas.length;
-    data.ideas = data.ideas.filter((i) => !(OPEN.includes(i.status) && !(i.drafts || []).length && (args.reset ? true : i.status === 'todo' && !CORE.some((f) => i[f]))));
+    data.ideas = data.ideas.filter((i) => !(OPEN.includes(i.status) && !(i.drafts || []).length && (args.reset || (!args.items && i.status === 'todo' && !CORE.some((f) => i[f])))));
     const dropped = before - data.ideas.length;
     if (!store.items.length) throw new Error(`Kho ${brand.id} trống: chạy chế độ "Chỉ nghiên cứu" (research.mjs) trước.`);
     let chosen;
@@ -129,7 +129,7 @@ function run(args, cmd, brand, file) {
   }
   if (cmd === 'clean') { // drop every open idea without a draft (releases the library items they reserve)
     const before = data.ideas.length;
-    data.ideas = data.ideas.filter((i) => !(OPEN.includes(i.status) && !(i.drafts || []).length && (args.all || i.status === 'todo' && !CORE.some((f) => i[f]))));
+    data.ideas = data.ideas.filter((i) => !(OPEN.includes(i.status) && !(i.drafts || []).length && (args.all || (i.status === 'todo' && !CORE.some((f) => i[f])))));
     save();
     return out({ file, dropped: before - data.ideas.length, left: data.ideas.length });
   }

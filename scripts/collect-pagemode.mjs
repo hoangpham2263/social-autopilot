@@ -10,13 +10,15 @@ import { openRun } from './research.mjs';
 import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
-import { checksumOf } from './platforms/common.mjs';
+import { checksumOf, unpackB64 } from './platforms/common.mjs';
 import { resolveTask, delayRange, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
 
 // ---------- pure parts (tests/collect.test.mjs) ----------
 // Result of the in-page script (maybe wrapped in MCP text: first { .. last }) -> object.
 export function parsePageResult(text) {
   const t = String(text || '');
+  const bm = t.match(/"b64"\s*:\s*"([^"]+)"/);
+  if (bm && /~[a-z0-9]{4}$/.test(bm[1])) return unpackB64(bm[1]).obj;
   try { return JSON.parse(t); } catch { /* wrapped in MCP output, or cut off */ }
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
   if (a < 0 || b <= a) throw new Error('Không đọc được JSON kết quả của script trong trang (không có { ... }): dán nguyên văn kết quả, không gõ lại.');
@@ -61,8 +63,11 @@ export function loadPageResults(args, readStdin = () => fs.readFileSync(0, 'utf8
   for (const f of files) texts.push(fs.readFileSync(path.resolve(String(f)), 'utf8'));
   if (args.stdin) texts.push(readStdin());
   if (args.json && args.json !== true) texts.push(String(args.json));
-  if (!texts.length) throw new Error("Thiếu kết quả: --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>'.");
-  return mergePageResults(texts.map(parsePageResult));
+  const objs = texts.map(parsePageResult);
+  let tag = '';
+  if (args.b64 && args.b64 !== true) { const u = unpackB64(String(args.b64)); objs.push(u.obj); tag = u.tag; }
+  if (!objs.length) throw new Error("Thiếu kết quả: --b64 <chuỗi b64 một dòng> | --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>'.");
+  return { ...mergePageResults(objs), ...(tag ? { tag } : {}) };
 }
 
 // Page result tiles -> adapter posts (id from the URL, caption/image cleaning), deduped; posts the store already has are dropped.
@@ -105,12 +110,13 @@ export function script(args) {
   const adapter = getAdapter(task.platform);
   if (!adapter?.pageScript) throw new Error(`Nền tảng "${task.platform}" chưa có pageScript (in-page): lái tay bằng Playwright MCP (docs/research.md).`);
   const [lo, hi] = delayRange(settings().research?.delay_seconds);
-  const max = task.max || 12;
+  const max = Number(args.max) > 0 ? Number(args.max) : Math.min(task.max || 8, 8);
+  const deadline = Number(args.deadline) > 0 ? Number(args.deadline) : 120;
   const chunk = args.chunk !== undefined && args.chunk !== true && Number.isFinite(Number(args.chunk)) ? Number(args.chunk) : undefined;
   const steps = Number(args['max-steps']) || (task.kind === 'source' ? Math.min(Number(settings().research?.browser?.max_scroll_steps) || 40, 40) : 4);
-  process.stdout.write(adapter.pageScript({ url: task.url, found_by: task.found_by, max, steps, delay: [lo, hi], ...(chunk !== undefined ? { chunk } : {}) }) + '\n');
+  process.stdout.write(adapter.pageScript({ url: task.url, found_by: task.found_by, max, steps, delay: [lo, hi], deadline, ...(chunk !== undefined ? { chunk } : {}) }) + '\n');
   const forArg = task.kind === 'query' ? `--for-query ${task.id}` : task.kind === 'source' ? `--for-source ${task.id}` : `--platform ${task.platform}`;
-  process.stderr.write(`# ${task.platform} ${task.url} max ${max}, up to ${steps} steps, pauses ${lo}-${hi}s. Paste into browser_run_code_unsafe${chunk !== undefined ? ` (CHUNK ${chunk}: tiles ${chunk * 6}.., run again with --chunk ${chunk + 1} until the result's chunk.of is reached)` : ''}; the result is compact: save/paste it AS IS (never retype), then: node scripts/collect.mjs from-page ${brand ? `--brand ${brand.id} ` : ''}${forArg} --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>'\n`);
+  process.stderr.write(`# ${task.platform} ${task.url} max ${max}, up to ${steps} steps, deadline ${deadline} s, pauses ${lo}-${hi}s. Paste into browser_run_code_unsafe${chunk !== undefined ? ` (CHUNK ${chunk}: tiles ${chunk * 6}.., run again with --chunk ${chunk + 1} until the result's chunk.of is reached)` : ''}; the result is ONE line {b64, tag}: paste the whole b64 value with --b64 (or save the result to a file, --file), never retype JSON; read back its 4-character tag, then: node scripts/collect.mjs from-page ${brand ? `--brand ${brand.id} ` : ''}${forArg} --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>'\n`);
 }
 
 export async function fromPage(args) {
@@ -144,7 +150,9 @@ export async function fromPage(args) {
   const suspect = !blocked && !r.read;
   const note = blocked ? `login wall / block page: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : suspect ? 'error: 0 posts in the page result (page empty or selectors no longer fit)' : noImage && !posts.length ? 'error: posts read but no image could be downloaded' : '';
   writeJson(task.raw_file, rawShape(task, posts, { rejected: [] }));
-  const state = suggestedState(task.kind, { blocked, error: /^error/.test(note), limit: !!task.max && r.posts.length >= task.max, read: r.read, stop: '' });
+  const partialRun = !blocked && (result?.partial === true || !merged.verified);
+  const warning = partialRun ? (result?.partial ? `partial: the page script stopped at its time limit (${result?.note || 'deadline'}); only what was gathered is here` : 'result has no total/checksum (old script or hand-made): cannot tell if it is complete') : '';
+  const state = suggestedState(task.kind, { blocked, error: /^error/.test(note) || partialRun, limit: !!task.max && r.posts.length >= task.max, read: r.read, stop: '' });
   const idArg = task.kind === 'query' ? `--query ${task.id}` : task.kind === 'source' ? `--source ${task.id}` : '';
   const forArg = task.kind === 'query' ? `--for-query ${task.id}` : `--for-source ${task.id}`;
   const b = brand?.id || '<id>';
@@ -155,7 +163,7 @@ export async function fromPage(args) {
         : `node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`;
   if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: from-page ${posts.length} (${state})` });
   out({ brand: brand?.id || '', platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, adapter: st, trusted: trust,
-    verified: merged.verified, chunks: merged.chunks, read: r.read, collected: posts.length, skipped_known: r.skippedKnown, dropped_no_image: noImage, via_post_page: (result?.tiles || []).filter((t) => t.via_post_page).length,
+    verified: merged.verified, ...(merged.tag ? { tag: merged.tag } : {}), ...(warning ? { warning } : {}), chunks: merged.chunks, read: r.read, collected: posts.length, skipped_known: r.skippedKnown, dropped_no_image: noImage, via_post_page: (result?.tiles || []).filter((t) => t.via_post_page).length,
     seconds: Math.round((Date.now() - t0) / 1000), suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
     review: posts.map((p, i) => ({ n: i + 1, id: p.collector_id, url: p.post_url, author: p.author, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
 }
