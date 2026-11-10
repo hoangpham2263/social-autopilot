@@ -6,15 +6,19 @@
 //   node scripts/draft.mjs new   --brand <id> --idea I001 --ref-image <workspace/store/<brand>/images/S0001-1-….jpg>
 //                                [--brand-can-produce]   scene-swap: opt-in per brand (product_images.reference_redraw)
 //        --size "<real size, e.g. 91 cm (36 in) wide>" (required; from the skill: social.json product_images.size_source)
+//        --compare "<comparison object + its real size, e.g. the 4-seat table below, 120 cm (47 in) wide>" (named in the
+//        prompt with the proportion limits; tool defaults or social.json product_images.size_limits) [--frame-max N] [--close-up]
 //        --sign-text "<text on the product>" (required when product_images.custom_text: a context text, never the template
 //        placeholder; rules in the skill's references/image-guide.md and project.md section 10)
 //   node scripts/draft.mjs image-batch --brand <id|all> [--concurrency 3] [--force]
 //        the image step for every draft waiting for an image, several Codex processes at once (settings
 //        codex.concurrency, default 3; each draft keeps its own codex.log), each cleaned right after; captions can be
 //        written meanwhile. A Codex rate-limit/quota error: wait codex.retry_wait_seconds, retry once, then image_failed.
-//   node scripts/draft.mjs reprompt --id <draft> [--size ..] [--sign-text ..] [--description "<product description>"]
+//   node scripts/draft.mjs reprompt --id <draft> [--size ..] [--compare ..] [--smaller N] [--sign-text .. | --clear-sign-text] [--description "<product description>"]
 //        rebuilds prompt.txt from the template (the old description is kept when none is given); then image --force
 //   node scripts/draft.mjs confirm-clean --id <draft> --by <name>   scene-swap: looked at image.png, no shop name/logo left
+//   node scripts/draft.mjs size-check --id <draft> --product-pct N --object-pct N [--wall-pct N] [--accept "<reason>"]
+//        measured proportions of the new image (logged in status.json size_check, shown in the app); over a limit: retry once with reprompt --smaller N
 //   node scripts/draft.mjs image --id <draft> [--force]     runs Codex (prompt.txt must be finished: no {{...}} left)
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
 //                                                           product_images.watermark.enabled (default off; needs ffmpeg)
@@ -100,7 +104,8 @@ export function newDraft(args) {
 
   const mode = brand.social.language_policy?.mode || 'single';
   const networks = (brand.social.channels || []).filter((x) => x.enabled).map((x) => ({ network: x.network, account: x.account || '', url: x.url || '', lang: [].concat(x.lang || []) }));
-  const { size: productSize, signText, customText } = sizeAndText(brand, args, idea);
+  const { size: productSize, signText, customText } = sizeAndText(brand, args, idea, imageMode);
+  const so = sizeOpts(args, idea);
   // The same library item again only from a new angle: a different scene AND a different product or sign_text.
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) {
     const item = store.items.find((x) => x.id === it);
@@ -108,7 +113,7 @@ export function newDraft(args) {
     if (rp.length) { fs.rmSync(dir, { recursive: true, force: true }); throw new Error(`Repeat of an earlier post from the same library item: ${rp.join('; ')}`); }
   }
   const draft = {
-    id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(), product_size: productSize, ...(signText ? { sign_text: signText } : {}), custom_text: customText,
+    id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(), product_size: productSize, ...(so.compare ? { size_compare: so.compare } : {}), ...(so.frameMax ? { frame_pct_max: so.frameMax } : {}), ...(so.closeUp ? { close_up: true } : {}), ...(signText ? { sign_text: signText } : {}), custom_text: customText,
     idea: { run: 'store', id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'].map((f) => [f, idea[f] || ''])) },
     inspiration: { run: refUsed.run || 'store', ref: refUsed.id || idea.item, store_item: refUsed.id || idea.item, source: refUsed.source_id || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
     image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false } : {}),
@@ -124,11 +129,12 @@ export function newDraft(args) {
     SOURCE_SHOP: refUsed.store || refUsed.source_id || 'the source shop',
     SCENE: idea.scene, ANGLE: idea.angle, PROPS: idea.props || 'at most one or two props that fit the scene',
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
-    ...sizeTextFill(brand, productSize, signText),
+    ...sizeTextFill(brand, productSize, signText, so, imageMode),
   }), 'utf8');
   fs.writeFileSync(path.join(dir, 'brief.md'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'caption-brief.md'), 'utf8'), {
     BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
-    SIGN_TEXT_NOTE: signText ? 'Chữ trên bảng là "' + signText + '": caption (mọi ngôn ngữ) nhắc đúng chữ này, không viết chữ mẫu kiểu "Your Names".' : '',
+    SIGN_TEXT_NOTE: [imageMode === 'scene-swap' ? 'Scene-swap: sản phẩm và chữ trên sản phẩm giữ nguyên như ảnh tham khảo, chỉ đổi nền và nội dung caption. Không bịa nghĩa hay bản dịch của chữ khi không chắc: khi đó gọi là "the characters/lettering on the sign" và tập trung vào thiết kế, cách đặt làm bảng riêng.' : '',
+      signText ? 'Chữ trên bảng là "' + signText + '": caption (mọi ngôn ngữ) nhắc đúng chữ này, không viết chữ mẫu kiểu "Your Names".' : ''].filter(Boolean).join(' '),
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
     SECTIONS: [].concat(brand.social.caption_rules?.project_md_sections || []).join('; ') || '1, 3, 7, 8, 10, 11',
     FILES: [...brand.languages.map((l) => `- content-${l}.txt`), ...(brand.review_languages || []).map((l) => `- content-${l}.txt (chỉ để người dùng đọc, KHÔNG đăng; cùng giọng thương hiệu, cùng quy tắc)`)].join('\n'),
@@ -143,26 +149,74 @@ export function newDraft(args) {
   // The store item(s) behind this draft get one more use (scene, product, sign text); they stay available.
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) markUsed(brand.id, it, id);
   const status = setStatus(dir, 'needs_prompt', { image_mode: imageMode, ...(imageMode === 'scene-swap' ? { source_shop: draft.inspiration.source_shop, source_url: draft.inspiration.source_url } : {}) });
-  return ({ id, dir, status: status.status, next: `Mở ${path.join(dir, 'prompt.txt')}, thay {{PRODUCT_DESCRIPTION}} bằng mô tả đúng sản phẩm trong ảnh, rồi chạy draft.mjs image --id ${id}. Viết caption theo brief.md.` });
+  return ({ id, dir, status: status.status, ...(so.compare ? {} : { warnings: ['No --compare: name the comparison object and its real size (e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"); the prompt falls back to a generic furniture line.'] }), next: `Mở ${path.join(dir, 'prompt.txt')}, thay {{PRODUCT_DESCRIPTION}} bằng mô tả đúng sản phẩm trong ảnh, rồi chạy draft.mjs image --id ${id}. Viết caption theo brief.md.` });
 }
 
 // The real size (required) and, for custom-text products (social.json product_images.custom_text), the context text
 // shown on the product. The rules live in the brand's skill (references/image-guide.md, project.md section 10).
-function sizeAndText(brand, args, from = {}) {
+// Scene-swap (user 10/11/2026): the reference product is kept ENTIRELY, its text too; only the background changes. No new
+// text is required there; --sign-text only records what the reference already reads (for the caption check), and
+// --clear-sign-text drops it (text not readable for sure).
+function sizeAndText(brand, args, from = {}, mode = 'brand-image') {
   const str = (k) => (args[k] && args[k] !== true ? String(args[k]).trim() : '');
   const size = str('size') || String(from.product_size || '').trim();
   if (!size) throw new Error(`Missing --size: the product's real size (where: ${brand.social.product_images?.size_source || 'project.md mục 5/10'}).`);
   const customText = brand.social.product_images?.custom_text === true;
-  const signText = str('sign-text') || String(from.sign_text || '').trim();
-  if (customText && !signText) throw new Error('This brand has custom-text products (product_images.custom_text): give --sign-text, a text that fits the scene (never the template placeholder).');
+  const signText = args['clear-sign-text'] ? '' : str('sign-text') || String(from.sign_text || '').trim();
+  if (customText && !signText && mode !== 'scene-swap') throw new Error('This brand has custom-text products (product_images.custom_text): give --sign-text, a text that fits the scene (never the template placeholder).');
   if (signText && PLACEHOLDER.test(signText)) throw new Error(`--sign-text "${signText}" is a template placeholder: choose a text that fits the scene.`);
   return { size, signText, customText };
 }
 export const PLACEHOLDER = /\byour\s+(names?|logo|bar(\s+name)?|business(\s+name)?|name\s+here|text|brand|shop(\s+name)?|company)\b/i;
-function sizeTextFill(brand, size, signText) {
+
+// Proportions (user 10/11/2026: signs kept coming out too big although the real size was in the prompt). Tool defaults;
+// a brand changes or switches off (null) any of them in social.json product_images.size_limits. Percentages of width:
+// object = product ÷ the comparison furniture below/next to it, wall = product ÷ visible wall, frame = product ÷ image,
+// margin_top = clear wall above the product ÷ product height. A close-up post (--close-up) has no frame limits.
+export const SIZE_LIMITS = { object_pct_max: 60, wall_pct_max: 40, frame_pct_max: 35, frame_pct_min: 20, margin_top_pct: 20 };
+export function sizeLimits(social = {}, draft = {}) {
+  const b = social.product_images?.size_limits || {};
+  const l = { ...SIZE_LIMITS };
+  for (const k of Object.keys(SIZE_LIMITS)) if (k in b) l[k] = b[k] === null || b[k] === '' ? null : Number(b[k]);
+  if (Number(draft.frame_pct_max) > 0) l.frame_pct_max = Number(draft.frame_pct_max);
+  if (draft.close_up) { l.frame_pct_max = null; l.frame_pct_min = null; }
+  return l;
+}
+// --compare / --frame-max / --close-up (new, reprompt) or what the idea/draft already has; --smaller N only on reprompt.
+function sizeOpts(args, from = {}) {
+  const str = (k) => (args[k] && args[k] !== true ? String(args[k]).trim() : '');
+  const compare = str('compare') || String(from.size_compare || '').trim();
+  const frameMax = Number(str('frame-max')) || Number(from.frame_pct_max) || 0;
+  const closeUp = args['close-up'] === true || args['close-up'] === 'true' || (args['close-up'] === undefined && from.close_up === true);
+  const smaller = Math.max(0, Math.min(80, Number(str('smaller')) || 0));
+  return { compare, frameMax, closeUp, smaller };
+}
+const DEFAULT_COMPARE = 'the main piece of furniture below or next to it (table, sofa, bed, counter, cabinet), drawn at its real size';
+function proportionFill(brand, o = {}, mode = 'brand-image') {
+  const l = sizeLimits(brand.social, { frame_pct_max: o.frameMax, close_up: o.closeUp });
+  const lim = [
+    l.object_pct_max != null && `the product is at most ${l.object_pct_max}% as wide as the comparison object below or next to it (clearly narrower than the table, sofa, bed or counter)`,
+    l.wall_pct_max != null && `at most ${l.wall_pct_max}% of the visible wall width`,
+    l.margin_top_pct != null && `clear wall above it of at least ${l.margin_top_pct}% of its own height, and clear wall on both sides; it never runs from floor to ceiling or edge to edge`,
+  ].filter(Boolean);
+  const range = l.frame_pct_max != null ? `${l.frame_pct_min != null ? `about ${l.frame_pct_min}-${l.frame_pct_max}%` : `at most ${l.frame_pct_max}%`} of the image width, never more than ${l.frame_pct_max}%` : '';
+  const framing = o.closeUp
+    ? 'a close-up post: the product may fill most of the frame, but anything shown next to it keeps its real proportions.'
+    : `a room / wide shot that shows the surroundings: the product takes ${range || 'a modest part of the image width'}.${mode === 'scene-swap' ? ' The reference photo is a close-up: do NOT keep its frame-filling scale or crop; pull the camera back and show the product at its real size in the room.' : ''}`;
+  return {
+    COMPARE: o.compare || DEFAULT_COMPARE,
+    SIZE_LIMITS: lim.length ? lim.join('; ') + '.' : 'keep the real size against the comparison object.',
+    FRAMING: framing,
+    SMALLER: o.smaller ? `\n- The previous image drew it too big: make the product about ${o.smaller}% smaller than in that attempt (it was drawn bigger than its real size), well inside the limits above; the room stays the same.` : '',
+  };
+}
+function sizeTextFill(brand, size, signText, o = {}, mode = 'brand-image') {
   return {
     SIZE: size,
-    SIGN_TEXT_RULE: signText ? `The customer's own text on the product (where the photo shows template/placeholder text such as "Your Names", "Your Logo", "Your Bar Name") must read exactly: "${signText}". No placeholder text may remain; fixed words of the design stay as they are; keep the product's font style, colours, layout and number of lines.` : 'Keep the product\'s own text exactly as in the photo.',
+    ...proportionFill(brand, o, mode),
+    SIGN_TEXT_RULE: mode === 'scene-swap'
+      ? `Keep the product's text EXACTLY as in the reference photo: the same characters/letters, script, orientation, layout, font, colours and number of lines${signText ? ` (it reads: "${signText}")` : ''}. Do not change, translate, correct (not even a character that looks mirrored) or add any text on the product.`
+      : signText ? `The customer's own text on the product (where the photo shows template/placeholder text such as "Your Names", "Your Logo", "Your Bar Name") must read exactly: "${signText}". No placeholder text may remain; fixed words of the design stay as they are; keep the product's font style, colours, layout and number of lines.` : 'Keep the product\'s own text exactly as in the photo.',
     IMAGE_GUIDE: path.join(brand.dir, 'references', 'image-guide.md'),
   };
 }
@@ -170,7 +224,8 @@ function sizeTextFill(brand, size, signText) {
 function reprompt(args) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const brand = loadBrand(draft.brand, { allowDisabled: true });
-  const { size, signText, customText } = sizeAndText(brand, args, { product_size: draft.product_size, sign_text: draft.sign_text });
+  const { size, signText, customText } = sizeAndText(brand, args, { product_size: draft.product_size, sign_text: draft.sign_text }, draft.image_mode);
+  const so = sizeOpts(args, draft);
   const old = fs.existsSync(path.join(dir, 'prompt.txt')) ? fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8') : '';
   const kept = (old.match(/THE PRODUCT[^\n]*\n([\s\S]*?)\n(?:Keep |Real size)/) || [])[1] || '';
   const description = args.description && args.description !== true ? String(args.description).trim() : kept.trim();
@@ -180,12 +235,13 @@ function reprompt(args) {
     PRODUCT_DESCRIPTION: description || '{{PRODUCT_DESCRIPTION}}', SOURCE_SHOP: draft.inspiration?.source_shop || 'the source shop',
     SCENE: draft.idea.scene, ANGLE: draft.idea.angle, PROPS: draft.idea.props || 'at most one or two props that fit the scene',
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
-    ...sizeTextFill(brand, size, signText),
+    ...sizeTextFill(brand, size, signText, so, draft.image_mode),
   }), 'utf8');
   const next = { ...draft, product_size: size, custom_text: customText };
+  for (const [k, v] of [['size_compare', so.compare], ['frame_pct_max', so.frameMax], ['close_up', so.closeUp || undefined], ['size_smaller', so.smaller || undefined]]) if (v) next[k] = v; else delete next[k];
   if (signText) next.sign_text = signText; else delete next.sign_text;
   writeJson(path.join(dir, 'draft.json'), next);
-  return { id: draft.id, product_size: size, sign_text: signText || null, prompt: path.join(dir, 'prompt.txt'), next: description ? `node scripts/draft.mjs image --id ${draft.id} --force` : 'Fill {{PRODUCT_DESCRIPTION}} in prompt.txt, then draft.mjs image --force.' };
+  return { id: draft.id, product_size: size, size_compare: so.compare || null, ...(so.smaller ? { smaller: so.smaller } : {}), sign_text: signText || null, prompt: path.join(dir, 'prompt.txt'), next: description ? `node scripts/draft.mjs image --id ${draft.id} --force` : 'Fill {{PRODUCT_DESCRIPTION}} in prompt.txt, then draft.mjs image --force.' };
 }
 
 function codexCommand(s) {
@@ -373,6 +429,45 @@ export function confirmClean(args) {
   return { id: draft.id, status: st.status, logo_check: st.logo_check, next: `node scripts/draft.mjs check --id ${draft.id}` };
 }
 
+// After every new image the agent MEASURES the product (user 10/11/2026: AI images oversize it) and records it here:
+//   --product-pct  product width ÷ image width × 100
+//   --object-pct   product width ÷ width of the comparison object (table, sofa, bed, counter) × 100
+//   --wall-pct     product width ÷ visible wall width × 100 (optional)
+// Over a limit (sizeLimits: tool defaults or social.json product_images.size_limits): regenerate ONCE with
+// reprompt --smaller N (suggested below) + image --force, then measure again. Still over: --accept "<reason>" or report it.
+// Logged in status.json size_check (+ history); draft check: over the limit for the current image = problem.
+export function sizeCheck(args) {
+  const { dir, draft, status } = findDraft(need(args, 'id'));
+  const file = path.join(dir, 'image.png');
+  if (!fs.existsSync(file)) throw new Error('Chưa có image.png.');
+  const num = (k) => (args[k] === undefined || args[k] === true ? null : Number(String(args[k]).replace('%', '')));
+  const product = num('product-pct'), object = num('object-pct'), wall = num('wall-pct');
+  if (product == null || !(product > 0 && product <= 100)) throw new Error('--product-pct N: product width as % of the image width (1-100).');
+  for (const [k, v] of [['object-pct', object], ['wall-pct', wall]]) if (v != null && !(v > 0 && v <= 300)) throw new Error(`--${k} must be a positive percentage.`);
+  let social = {}; try { social = loadBrand(draft.brand, { allowDisabled: true }).social; } catch {}
+  const limits = sizeLimits(social, draft);
+  if (object == null && limits.object_pct_max != null) throw new Error(`--object-pct N: product width as % of the comparison object (${draft.size_compare || 'the furniture below/next to it'}).`);
+  const over = [];
+  if (limits.frame_pct_max != null && product > limits.frame_pct_max) over.push({ what: 'frame', value: product, max: limits.frame_pct_max });
+  if (limits.object_pct_max != null && object != null && object > limits.object_pct_max) over.push({ what: 'object', value: object, max: limits.object_pct_max });
+  if (limits.wall_pct_max != null && wall != null && wall > limits.wall_pct_max) over.push({ what: 'wall', value: wall, max: limits.wall_pct_max });
+  // Aim at 85% of the limit: a retry lands near the target, not just under the line (AI images drift bigger).
+  const ratio = Math.max(1, ...over.map((o) => o.value / (o.max * 0.85)));
+  const smaller = over.length ? Math.min(60, Math.max(10, Math.ceil((1 - 1 / ratio) * 100 / 5) * 5)) : 0;
+  const accepted = args.accept && args.accept !== true ? String(args.accept) : '';
+  const entry = { at: stamp(), by: args.by && args.by !== true ? String(args.by) : 'agent', image_sha1: sha1(fs.readFileSync(file)), product_pct: product, ...(object != null ? { object_pct: object } : {}), ...(wall != null ? { wall_pct: wall } : {}), object: draft.size_compare || '', limits, over, ok: !over.length, ...(accepted ? { accepted } : {}), ...(args.note && args.note !== true ? { note: String(args.note) } : {}) };
+  const prev = status.size_check ? (({ history, ...x }) => x)(status.size_check) : null;
+  // One entry per image: measuring the same image again replaces its earlier entry.
+  const history = [...(status.size_check?.history || []), ...(prev ? [prev] : [])].filter((h) => h.image_sha1 !== entry.image_sha1).slice(-5);
+  const st = setStatus(dir, status.status, { size_check: { ...entry, history } });
+  const retried = history.some((h) => h.over?.length);  // an earlier image was already too big
+  const { history: _h, ...shown } = st.size_check;
+  return { id: draft.id, within_limits: entry.ok, over, limits, ...(smaller ? { smaller } : {}), size_check: shown,
+    next: entry.ok || accepted ? `node scripts/draft.mjs check --id ${draft.id}`
+      : retried ? 'Still too big after a retry: report it (or --accept "<reason>" only for a real close-up); draft check blocks it.'
+        : `Regenerate once: node scripts/draft.mjs reprompt --id ${draft.id} --smaller ${smaller}, then draft.mjs image --id ${draft.id} --force; LOOK and size-check again.` };
+}
+
 // Contact sheet(s) of draft images: at most perSheet per PNG (3 columns, 512 px tiles), labelled #n + draft id.
 export function contactSheets(args, s = settings()) {
   const ids = args.ids && args.ids !== true ? String(args.ids).split(',').map((x) => x.trim()).filter(Boolean) : null;
@@ -394,7 +489,7 @@ export function contactSheets(args, s = settings()) {
   // Older sheets of an earlier, longer run would mislead: drop the extra numbered files.
   for (const f of fs.readdirSync(outDir)) { const m = f.match(/^contact-sheet-(d+).png$/); if (m && Number(m[1]) > sheets.length) fs.unlinkSync(path.join(outDir, f)); }
   return { sheets, count: items.length, without_image: drafts.length - items.length,
-    next: items.length ? 'LOOK at every sheet (Read the PNG): product↔setting fit, real size vs surroundings, sign text exact, no logo on the product, no placeholder text. Unsure about one: open its image file.' : 'No draft image to show.' };
+    next: items.length ? 'LOOK at every sheet (Read the PNG): product↔setting fit, real size vs surroundings (measure each image: draft.mjs size-check), sign text exact, no logo on the product, no placeholder text. Unsure about one: open its image file.' : 'No draft image to show.' };
 }
 
 export function check(args) {
@@ -417,8 +512,9 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'check') return out(check(args));
   if (cmd === 'watermark') return out(watermark(args, s));
   if (cmd === 'confirm-clean') return out(confirmClean(args));
+  if (cmd === 'size-check') return out(sizeCheck(args));
   if (cmd === 'contact-sheet') return out(contactSheets(args, s));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
-  throw new Error('Lệnh: new | reprompt | image | image-batch | watermark | confirm-clean | check | show | list');
+  throw new Error('Lệnh: new | reprompt | image | image-batch | watermark | confirm-clean | size-check | check | show | list');
 });

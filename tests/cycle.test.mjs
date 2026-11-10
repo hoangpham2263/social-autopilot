@@ -233,7 +233,16 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(made.sign_text, 'Love');
   assert.equal(made.custom_text, true);
   const firstPrompt = fs.readFileSync(path.join(draft.dir, 'prompt.txt'), 'utf8');
-  assert.match(firstPrompt, /REAL SIZE: 76 cm \(30 in\) wide/);
+  assert.match(firstPrompt, /Real size: 76 cm \(30 in\) wide/);
+  // Proportions always in the prompt (user 10/11/2026): comparison object, limits, framing share of the image width.
+  assert.match(firstPrompt, /Comparison object: the main piece of furniture/);
+  assert.match(firstPrompt, /at most 60% as wide as the comparison object/);
+  assert.match(firstPrompt, /at most 40% of the visible wall width/);
+  assert.match(firstPrompt, /about 20-35% of the image width, never more than 35%/);
+  assert.ok(!/frame-filling/.test(firstPrompt), 'the close-up line is only for scene-swap');
+  assert.match(firstPrompt, /PHOTOREALISM \(a candid real-life photo/); // user 10/11/2026: real-life look, not a render
+  assert.match(firstPrompt, /no glossy CGI \/ 3D-render look/);
+  assert.ok(draft.warnings.some((w) => /--compare/.test(w)));
   assert.match(firstPrompt, /must read exactly: "Love"/);
   assert.ok(firstPrompt.includes(path.join(brandDir, 'references', 'image-guide.md')), 'points to the skill image guide');
   assert.ok(!/\{\{(SIZE|SIGN_TEXT_RULE|IMAGE_GUIDE)\}\}/.test(firstPrompt));
@@ -272,11 +281,31 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   const re = run('draft.mjs', 'reprompt', '--id', draft.id, '--size', '91 cm (36 in) wide', '--sign-text', 'Emma & Liam');
   assert.equal(re.ok, true, JSON.stringify(re));
   const rePrompt = fs.readFileSync(path.join(draft.dir, 'prompt.txt'), 'utf8');
-  assert.match(rePrompt, /REAL SIZE: 91 cm \(36 in\)/);
+  assert.match(rePrompt, /Real size: 91 cm \(36 in\)/);
   assert.match(rePrompt, /must read exactly: "Emma & Liam"/);
   assert.match(rePrompt, /A warm white neon sign reading "Love"\./); // description kept
   assert.ok(run('draft.mjs', 'check', '--id', draft.id).problems.some((p) => /"Emma & Liam"/.test(p)), 'captions must follow the new sign text');
-  assert.equal(run('draft.mjs', 'reprompt', '--id', draft.id, '--size', '76 cm (30 in) wide, about half the table', '--sign-text', 'Love').ok, true);
+  assert.equal(run('draft.mjs', 'reprompt', '--id', draft.id, '--size', '76 cm (30 in) wide, about half the table', '--sign-text', 'Love', '--compare', 'the dining table below, 150 cm (59 in) wide').ok, true);
+  assert.match(fs.readFileSync(promptFile, 'utf8'), /Comparison object: the dining table below, 150 cm \(59 in\) wide\./);
+  // Size check: measured proportions logged; over a limit blocks the draft and suggests one smaller retry.
+  assert.match(run('draft.mjs', 'size-check', '--id', draft.id, '--product-pct', '50').error, /--object-pct/);
+  const big = run('draft.mjs', 'size-check', '--id', draft.id, '--product-pct', '51', '--object-pct', '71');
+  assert.equal(big.within_limits, false, JSON.stringify(big));
+  assert.deepEqual(big.over.map((o) => o.what), ['frame', 'object']);
+  assert.equal(big.smaller, 45);
+  assert.match(big.next, /reprompt --id .* --smaller 45/);
+  assert.ok(run('draft.mjs', 'check', '--id', draft.id).problems.some((p) => /too big/.test(p)));
+  assert.equal(run('draft.mjs', 'reprompt', '--id', draft.id, '--smaller', '35').ok, true);
+  assert.match(fs.readFileSync(promptFile, 'utf8'), /make the product about 35% smaller/);
+  assert.match(fs.readFileSync(promptFile, 'utf8'), /the dining table below, 150 cm/); // compare kept
+  const fine = run('draft.mjs', 'size-check', '--id', draft.id, '--product-pct', '30', '--object-pct', '45');
+  assert.equal(fine.within_limits, true);
+  assert.equal(fine.size_check.over.length, 0);
+  const st = JSON.parse(fs.readFileSync(path.join(draft.dir, 'status.json'), 'utf8'));
+  assert.equal(st.size_check.history.length, 0); // same image measured again: one entry per image
+  const shownSize = run('draft.mjs', 'show', '--id', draft.id).size_check;
+  assert.equal(shownSize.current, true);
+  assert.equal(shownSize.tries, 1);
   const checked = run('draft.mjs', 'check', '--id', draft.id);
   assert.equal(checked.status, 'ready', JSON.stringify(checked.problems));
   const waiting = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').ready;
@@ -366,6 +395,11 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(swap.ok, true, JSON.stringify(swap));
   const swapPrompt = path.join(swap.dir, 'prompt.txt');
   assert.match(fs.readFileSync(swapPrompt, 'utf8'), /Shop A/);
+  // Scene-swap keeps the reference product entirely, its text too, and pulls back from the close-up reference.
+  assert.match(fs.readFileSync(swapPrompt, 'utf8'), /Keep the product's text EXACTLY as in the reference photo/);
+  assert.ok(!/must read exactly/.test(fs.readFileSync(swapPrompt, 'utf8')));
+  assert.match(fs.readFileSync(swapPrompt, 'utf8'), /do NOT keep its frame-filling scale/);
+  assert.match(fs.readFileSync(path.join(swap.dir, 'brief.md'), 'utf8'), /Scene-swap: sản phẩm và chữ trên sản phẩm giữ nguyên/);
   fs.writeFileSync(swapPrompt, fs.readFileSync(swapPrompt, 'utf8').replace('{{PRODUCT_DESCRIPTION}}', 'A neon sign reading "Love".'));
   assert.equal(run('draft.mjs', 'image', '--id', swap.id).ok, true);
   for (const l of ['vn', 'en']) write(path.join(swap.dir, `content-${l}.txt`), `Bảng neon "Love" giống mẫu của Shop A (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);

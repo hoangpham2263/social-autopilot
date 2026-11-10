@@ -1118,7 +1118,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   }
   const stepTag = (d) => { const [t, c] = stepOf(d); return `<span class="status-tag ${c}">${esc(t)}</span>`; };
   // All steps (preview panel): checks, hosted image and Metricool once the post is written into the brand.
-  function draftTags(d) {
+  // Size check of the draft image (draft.mjs size-check): measured proportions vs the limits.
+function sizeLine(d) {
+  const sc = d.size_check;
+  const real = d.product_size ? `Size ${esc(d.product_size)}` : "Size";
+  if (!sc) return `${real} · <span class="warn-text">not measured</span>`;
+  const parts = [`${sc.product_pct}% of frame`, sc.object_pct != null ? `${sc.object_pct}% of ${esc(sc.object || "object")}` : "", sc.wall_pct != null ? `${sc.wall_pct}% of wall` : ""].filter(Boolean).join(" · ");
+  const verdict = !sc.current ? `<span class="warn-text">measured on an older image</span>` : sc.ok ? `<span class="ok-text">within limits</span>` : sc.accepted ? `<span class="warn-text">over, accepted: ${esc(sc.accepted)}</span>` : `<span class="bad-text">too big (${sc.over.map((o) => `${o.what} > ${o.max}%`).join(", ")})</span>`;
+  return `${real} · ${parts} · ${verdict}${sc.tries > 1 ? ` · try ${sc.tries}` : ""}`;
+}
+function draftTags(d) {
     const bp = d.brand_post, tag = (t, c = "") => `<span class="status-tag ${c}">${esc(t)}</span>`;
     return tag(STATUS_TEXT[d.status] || d.status, STATUS_COLOR[d.status]) + (arr(d.problems).length ? tag(`${d.problems.length} check problems`, "c-red") : "")
       + (bp ? tag(bp.media_url ? "Image hosted" : "Image not hosted", bp.media_url ? "c-green" : "c-amber") + tag(MC_TEXT[bp.metricool] || bp.metricool || "-", MC_COLOR[bp.metricool]) : "")
@@ -1243,6 +1252,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       ${d.error ? `<div>${errLine(d.error)}</div>` : ""}
       ${d.status === "rejected" ? `<div class="bad-text">Dropped${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
       <div class="meta">${d.inspiration_url ? `<a href="${esc(d.inspiration_url)}" target="_blank" rel="noopener">Reference post</a> · ` : ""}${d.metadata_clean ? `metadata removed${d.metadata_clean.pixels_identical ? "" : " (pixels CHANGED)"}` : "metadata not cleaned"}${d.watermark ? ` · watermark ${esc(d.watermark.position)}` : ""}${swap ? ` · ${d.logo_check ? "logo-free confirmed" : "logo-free not confirmed"}` : ""}</div>
+      <div class="meta">${sizeLine(d)}</div>
       ${swap && d.reference_image ? `<div class="row-actions"><button class="btn" type="button" data-orig>Shop's original</button></div>` : ""}
       ${canCancel ? `<div class="row-actions">${d.status === "ready" ? `<button class="btn primary" type="button" data-act="approve" title="Save to the brand and host the image; the next Create &amp; publish run schedules it in Metricool">Approve</button>` : ""}<button class="btn" type="button" data-act="cancel" title="Only before the post is approved">Drop</button></div>
         <div class="reject-box" hidden><input class="note" placeholder="Reason (optional)"><button class="btn" type="button" data-act="cancel-go">Confirm drop</button></div>` : ""}

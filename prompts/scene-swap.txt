@@ -1,15 +1,20 @@
 Use your built-in image generation / image editing tool to EDIT the first attached image (a reference product photo). Do NOT write code, scripts, or use PIL/canvas to draw anything.
 
-THE PRODUCT (keep its design; this is a product type the brand makes to order):
+THE PRODUCT (keep it ENTIRELY as in the reference photo, its text included; only the background changes; this is a product type the brand makes to order):
 {{PRODUCT_DESCRIPTION}}
-Keep the product's design: same shape, lettering style, colors, materials and proportions. Do not add stands, feet, brackets, cables or any part not visible in the original.
+Keep the product exactly: same shape, the same text character for character, lettering style, colors, materials and proportions. Do not add stands, feet, brackets, cables or any part not visible in the original.
 
 REMOVE EVERYTHING THAT BELONGS TO THE SOURCE SHOP:
 - Remove every shop logo, watermark, badge, sticker, size label, price tag, phone number, website, QR code, frame/border and any text overlay from the photo (the source shop is "{{SOURCE_SHOP}}"; its name must not appear anywhere).
 - NO LOGO: no logo of any shop or brand anywhere, and the brand's logo must never appear on the product. No text except the product's own lettering/design.
 - Do not add any logo or watermark yourself; if the brand wants one, it is added later as a small separate overlay in a corner.
 
-REAL SIZE: {{SIZE}}. Place it at exactly this size relative to the furniture in the scene (name it: bed, table, counter, door, sofa...), with correct perspective on the wall or floor and natural shadows/glow. Do not enlarge it to make it more visible.
+REAL SIZE AND PROPORTIONS (image models tend to draw the product too big; these rules win over making it "visible"):
+- Real size: {{SIZE}}.
+- Comparison object: {{COMPARE}}. Show it at its real size; the product must look exactly its real size next to it.
+- Limits: {{SIZE_LIMITS}}
+- Framing: {{FRAMING}}
+- Correct perspective on the wall or floor, natural shadows/glow. Do not enlarge it to make it more visible; when unsure, make it smaller.{{SMALLER}}
 TEXT ON THE PRODUCT: {{SIGN_TEXT_RULE}}
 Follow the brand's image guide ({{IMAGE_GUIDE}}): real size, context text, no logo.
 
@@ -19,14 +24,20 @@ BRAND RULES FOR THIS PRODUCT (from the brand's project.md, section 10):
 NEW SCENE (replace everything except the product):
 {{SCENE}}
 Camera: {{ANGLE}}.
-Props: {{PROPS}}. Keep it simple: one or two props that fit how the product is really used.
+Props: {{PROPS}}, plus the small lived-in details below; the product stays the clear subject.
 
-LOOK:
-Looks like a real photo taken with a good phone or camera, natural and believable, not a glossy advertisement. Natural light for the scene; the product is sharp and in focus. Natural grain and ordinary imperfections are fine.
+PHOTOREALISM (a candid real-life photo, never a staged render):
+- Shot on a smartphone or DSLR at eye level by someone standing in the room; slightly off-centre composition, a little tilt or crop is fine; no perfect symmetry.
+- Natural mixed lighting: practical lamps plus window or ambient light; realistic exposure, not HDR, not over-saturated; subtle grain/noise and a little lens softness at the edges.
+- Real materials with wear: scuffs, fingerprints, uneven paint, worn edges, slightly creased fabric. Not showroom-clean, no glossy CGI / 3D-render look.
+- Lived-in details that fit the place (for example napkins, menus, condiment bottles, a jacket on a chair, a half-full glass), a little everyday mess.
+- People are optional: at most someone partly in frame or softly out of focus in the background; never a face in focus, never an identifiable person.
+- A lit product (neon, lamp) glows realistically: soft halo, slight bloom and colour cast on the nearby wall, faint reflections on glossy surfaces; the lettering stays crisp.
+- The product itself is sharp and in focus.
 
 RULES:
 - Square 1:1 format.
-- No people, no faces.
+- No identifiable people, no face in focus.
 
 {{SECOND_IMAGE}}
 

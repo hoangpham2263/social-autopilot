@@ -81,9 +81,26 @@ export function checkDraft(dir, draft, status = {}) {
     }
     warnings.push('scene-swap: agent phải xem kỹ ảnh mới cạnh ảnh gốc của shop (reference_image; app hiện cả hai).');
   }
+  // Size (user 10/11/2026): the agent measures every new image (draft.mjs size-check). Over a limit for the current image
+  // and not accepted = problem; not measured (or measured on an older image) = warning.
+  const image = path.join(dir, 'image.png');
+  if (fs.existsSync(image)) {
+    const sc = status.size_check;
+    const hash = crypto.createHash('sha1').update(fs.readFileSync(image)).digest('hex');
+    if (!sc || sc.image_sha1 !== hash) warnings.push(`size not measured for this image: draft.mjs size-check --id ${draft.id} --product-pct N --object-pct N`);
+    else if (!sc.ok && !sc.accepted) problems.push(`product too big: ${sc.over.map((o) => `${o.what} ${o.value}% > ${o.max}%`).join(', ')} (reprompt --smaller N + image --force, then size-check again)`);
+  }
   return { problems, warnings, captions };
 }
 
+// The last size check for the app, with current = measured on the image.png there now.
+function sizeShown(dir, sc) {
+  if (!sc) return null;
+  const { history, ...x } = sc;
+  let current = false;
+  try { current = crypto.createHash('sha1').update(fs.readFileSync(path.join(dir, 'image.png'))).digest('hex') === sc.image_sha1; } catch {}
+  return { ...x, current, tries: (history || []).length + 1 };
+}
 export function summary({ dir, draft, status }) {
   // captions = what is posted; review_captions = reviewer-only languages (read when approving, never posted).
   const langs = draftLangs(draft);
@@ -91,6 +108,7 @@ export function summary({ dir, draft, status }) {
   const captions = read(langs.posted), review_captions = read(langs.review);
   return { id: draft.id, brand: draft.brand, status: status.status, dir, image: path.join(dir, 'image.png'), idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}`, inspiration: draft.inspiration.post_url || draft.inspiration.source_url, networks: draft.networks.map((n) => n.network), problems: status.problems || [], note: status.note || '', captions,
     posted_languages: langs.posted, review_languages: langs.review, review_captions,
+    product_size: draft.product_size || '', size_compare: draft.size_compare || '', size_check: sizeShown(dir, status.size_check),
     image_mode: draft.image_mode || 'brand-image',
     // Scene-swap: the approver sees the shop's original photo next to the result.
     ...(draft.image_mode === 'scene-swap' ? { reference_image: draft.reference_image, source_shop: draft.inspiration.source_shop || '', source_url: draft.inspiration.source_url || '', logo_check: status.logo_check || null } : {}) };

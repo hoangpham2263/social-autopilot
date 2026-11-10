@@ -1,5 +1,6 @@
 # MAP: social-autopilot in one page
 
+Making posts (ideas, images, captions): read `docs/LESSONS.md` first (lessons learned, read before making posts).
 Read this first when working ON the tool (code, tests, UI). Running the tool (research, posts) follows `RUNBOOK.md`; rules for every agent are in `AGENTS.md`.
 
 ## Folders
@@ -8,14 +9,14 @@ Read this first when working ON the tool (code, tests, UI). Running the tool (re
 - `src/server.mjs` local app server (127.0.0.1, port from the folder hash, `SA_PORT` overrides) + `ui/index.html` (one file: HTML, CSS, JS). The app only calls functions of `scripts/`.
 - `core/` launcher shell (Windows WebView2 / macOS), setup page, update.
 - `config/` defaults (`settings.json`, `best-times.json`, examples). `prompts/` Codex image prompts, caption brief, idea rules.
-- `docs/` `scheduled-prompt.md` (the ONLY source of the Prompt tab texts), `research.md`, `metricool.md`, this map.
+- `docs/` `scheduled-prompt.md` (the ONLY source of the Prompt tab texts), `research.md`, `metricool.md`, `LESSONS.md` (lessons for making posts), this map.
 - `tests/` `node:test`, one file per area; `fake-codex.mjs` stands in for Codex (`SA_CODEX`).
 - `workspace/` (git-ignored, all state; see below).
 
 ## Data flow
 1. Brand = Metricool brand linked to a skill folder (`workspace/metricool-brands.json` `skill_path`). The skill is READ-ONLY: rules, product photos, `project/social.json`. Tool-side overrides: `workspace/brands/<id>.json` (Brand Edit), merged by `brandSocial()`.
 2. Research (Mode 1): `research.mjs start` → `crawl-fb.mjs` (Playwright over CDP to the crawl Chrome :9222) → `store.mjs` ingest (dedupe) → `workspace/store/<brand>/items.json` → `store.mjs classify/verdict`.
-3. Create (Mode 2): `ideas.mjs` (store items → abstract ideas; items are reusable (Library states Available · Removed; Available shows "new" or "used N×", Removed keeps its reason): never-used first, then least used after `ideas.reuse_cooldown_days`; each draft adds `uses[]` to its item; a reuse needs a different scene AND a different product or sign_text, `store.mjs reuseProblems`; Removed never picked; `--items` picks exact items, also through `pipeline.mjs create --items`) → `draft.mjs new` (draft folder, prompt.txt) → `draft.mjs image-batch` (Codex, parallel, global slots) → `image-clean.mjs` (metadata) → captions → `draft.mjs check` → **To review**.
+3. Create (Mode 2): `ideas.mjs` (store items → abstract ideas; items are reusable (Library states Available · Removed; Available shows "new" or "used N×", Removed keeps its reason): never-used first, then least used after `ideas.reuse_cooldown_days`; each draft adds `uses[]` to its item; a reuse needs a different scene AND a different product or sign_text, `store.mjs reuseProblems`; Removed never picked; `--items` picks exact items, also through `pipeline.mjs create --items`) → `draft.mjs new` (draft folder, prompt.txt) → `draft.mjs image-batch` (Codex, parallel, global slots) → `image-clean.mjs` (metadata) → LOOK + `draft.mjs size-check` (measured proportions; over the limit: one `reprompt --smaller N` retry) → captions → `draft.mjs check` → **To review**. The prompt always carries real size + comparison object (`--compare`) + limits (`sizeLimits`: defaults, `product_images.size_limits`); scene-swap keeps the reference product and its text entirely.
 4. Approve (user, app only): `finalize.mjs approve` → `writeback.mjs` → register `workspace/posts/<brand>/` (catalog.json + POST-xx folder, `media_alt`) → `host-image.mjs` (public repo clone `workspace/image-host`).
 5. Publish (Mode 2/3): `metricool-mcp.mjs payload` (exact `createScheduledPost` args; agent calls MCP) → `record` → `status` (agent `getScheduledPosts`) → `posts.mjs mark-published` / `unsend`. Never twice: payload only takes `approved` posts with no live Metricool id (`sentNetworks`); `record` refuses a second id for a post unless it was `unsend`-ed.
 

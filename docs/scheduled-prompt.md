@@ -63,7 +63,7 @@ STEPS (follow RUNBOOK.md Mode 2, fast path "pipeline.mjs"; in order, do not skip
 2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> → make its Metricool MCP calls in parallel, save each answer to its save_to file.
 3. 2.1 node scripts/pipeline.mjs create --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (OPTIONS: --count N) → send each workspace/pipeline/publish.json item now (createScheduledPost exactly, then its record command).
 4. 2.2 Reconcile: each status_queries entry → getScheduledPosts; PUBLISHED → posts.mjs mark-published; ERROR → report.
-5. 2.3-2.6 STOP (i) fill workspace/pipeline/ideas-todo.json (all brands, one pass) → pipeline.mjs create --resume --ideas <file> → pipeline.mjs create --resume → LOOK at every contact sheet → STOP (ii) all captions (or "redo") in captions-todo.json → pipeline.mjs create --resume --captions <file> until all ready.
+5. 2.3-2.6 STOP (i) fill workspace/pipeline/ideas-todo.json (all brands, one pass) → pipeline.mjs create --resume --ideas <file> → pipeline.mjs create --resume → LOOK at every contact sheet (rules: docs/LESSONS.md) → STOP (ii) all captions + size_check per draft (or "redo", "smaller": N when too big) in captions-todo.json → pipeline.mjs create --resume --captions <file> until all ready.
 6. 2.7 Stop at "To review" (never approve); 2.8 report data: printed by the last resume (queue.mjs).
 7. 2.9 Run log: the last resume writes it (runlog.mjs add --mode create); a run that stops early: node scripts/runlog.mjs add --mode create --agent "Claude Code" --reason "<why>".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.
@@ -83,7 +83,7 @@ STEPS (follow RUNBOOK.md Mode 2, fast path "pipeline.mjs"; in order, do not skip
 2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> → make its Metricool MCP calls, save each answer to its save_to file.
 3. 2.1 node scripts/pipeline.mjs create --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (OPTIONS: --count N) → send each workspace/pipeline/publish.json item now (createScheduledPost exactly, then its record command).
 4. 2.2 Reconcile: each status_queries entry → getScheduledPosts; PUBLISHED → posts.mjs mark-published; ERROR → report.
-5. 2.3-2.6 STOP (i) fill workspace/pipeline/ideas-todo.json (all brands, one pass) → pipeline.mjs create --resume --ideas <file> → pipeline.mjs create --resume → LOOK at every contact sheet → STOP (ii) all captions (or "redo") in captions-todo.json → pipeline.mjs create --resume --captions <file> until all ready.
+5. 2.3-2.6 STOP (i) fill workspace/pipeline/ideas-todo.json (all brands, one pass) → pipeline.mjs create --resume --ideas <file> → pipeline.mjs create --resume → LOOK at every contact sheet (rules: docs/LESSONS.md) → STOP (ii) all captions + size_check per draft (or "redo", "smaller": N when too big) in captions-todo.json → pipeline.mjs create --resume --captions <file> until all ready.
 6. 2.7 Stop at "To review" (never approve); 2.8 report data: printed by the last resume (queue.mjs).
 7. 2.9 Run log: the last resume writes it (runlog.mjs add --mode create); a run that stops early: node scripts/runlog.mjs add --mode create --agent "Codex" --reason "<why>".
 8. 2.10 Report to me in Vietnamese with the fixed headings of RUNBOOK 2.10.

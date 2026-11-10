@@ -13,7 +13,8 @@ Dùng cho từng ý trong `workspace/store/<brand>/ideas.json` (Mode 2 "Create &
 | caption_structure | khung bài, không câu chữ | mở bằng dịp dùng, 2 ý về cách đặt làm, CTA tự thiết kế trên web |
 | hook | góc kể chuyện | quà kỷ niệm để bàn, mang đi được |
 | why | vì sao ý này hợp khách của thương hiệu | khách cưới/kỷ niệm ở Mỹ |
-| product_size | cỡ thật theo bối cảnh (social.json product_images.size_source; image-guide của skill) | 60 cm (24 in) ngang, khoảng 2/3 tủ bên dưới |
+| product_size | cỡ thật theo bối cảnh (social.json product_images.size_source; image-guide của skill) | 60 cm (24 in) ngang |
+| size_compare | vật so sánh trong cảnh + cỡ thật của nó (sản phẩm ≤ 60% vật đó, ≤ 40% tường, chiếm 20-35% ngang ảnh trừ bài cận cảnh) | tủ gỗ bên dưới, 120 cm (47 in) ngang |
 | sign_text | chỉ khi product_images.custom_text: chữ hợp cảnh, không phải chữ mẫu | Emma & Liam |
 
 Trước khi chọn ý: **kiểm sản phẩm hợp bối cảnh** theo image-guide của skill (mục "Sản phẩm hợp bối cảnh") và bảng trong project.md mục 10 (vd biển quán bar/logo cửa hàng chỉ ở địa điểm kinh doanh thật, nhà ở chỉ bảng cá nhân). Sai cặp thì đổi scene cho đúng hoặc reject.

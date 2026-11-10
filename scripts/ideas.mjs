@@ -35,9 +35,10 @@ import { readStore, storeDir, storeIdeasFile, setItemStatus, pickItems, fairOrde
 export const REUSE_RULE = 'This library item was used before (previous_uses): keep only the inspiration and take a NEW angle: a different scene AND a different product or sign_text than every previous use. A repeat is rejected.';
 const OPEN = ['todo', 'ready', 'picked'];
 
-// product_size (real size, from the skill's size_source) and sign_text (custom-text products) are optional here and
-// can be given to draft.mjs new as --size / --sign-text.
-const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why', 'product_size', 'sign_text'];
+// product_size (real size, from the skill's size_source), size_compare (the object it is measured against, with its real
+// size) and sign_text (custom-text products) are optional here and
+// can be given to draft.mjs new as --size / --compare / --sign-text.
+const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why', 'product_size', 'size_compare', 'sign_text'];
 const CORE = ['product_type', 'scene', 'angle', 'caption_structure'];
 
 // Words or marks taken from the reference: 6 words in a row, phone numbers, links, the shop's name.
