@@ -190,13 +190,13 @@ test('next: every step carries the collect command and the adapter status (colle
   const run = { brand: 'dv', mode: { max_posts: 5 }, sources: [{ id: 'shop', platform: 'instagram', url: 'https://www.instagram.com/shop/', result: null, new: 0 }],
     discovery: { max_per_platform: 3, platforms: [{ id: 'etsy' }], queries: [{ id: 'etsy-k-neon', platform: 'etsy', found_by: 'keyword:neon', state: 'pending', kept: 0 }] } };
   const a = nextTask(run);
-  assert.match(a.collect, /^node scripts\/collect\.mjs --brand dv --for-source shop( --max \d+)?$/);
+  assert.match(a.script, /^node scripts\/collect\.mjs script --brand dv --for-source shop( --max \d+)?$/);
   assert.equal(a.adapter.platform, 'instagram');
   assert.match(a.do, /FIRST run the collector/);
   assert.match(a.do, /only when adapter\.status is not ok/);
   const b = nextTask({ ...run, sources: [{ ...run.sources[0], result: { state: 'end' } }] });
   assert.equal(b.step, 'discovery');
-  assert.match(b.collect, /--for-query etsy-k-neon --max \d+$/);
+  assert.match(b.script, /--for-query etsy-k-neon --max \d+$/);
   assert.equal(b.adapter.platform, 'etsy');
   assert.equal(collectInfo('dv', 'query', 'q1', 'myspace').adapter.status, 'missing');
 });
@@ -255,7 +255,7 @@ test('CLI: collector raw.json (query and reference page) is accepted by research
     // Reference page: collector raw shape { page, posts } (no product_fit needed).
     const n1 = run('research.mjs', 'next', '--brand', 'dv');
     assert.equal(n1.step, 'reference');
-    assert.match(n1.collect, /collect\.mjs --brand dv --for-source shop/);
+    assert.match(n1.script, /collect\.mjs script --brand dv --for-source shop/);
     assert.equal(n1.adapter.platform, 'instagram');
     write(path.join(n1.downloads, 'AbCdE12345-1.png'), pattern([1, 2, 3]));
     const t1 = { kind: 'source', id: 'shop', platform: 'instagram', name: 'Shop' };
@@ -267,7 +267,7 @@ test('CLI: collector raw.json (query and reference page) is accepted by research
     // Discovery query: the agent's product-fit decisions are applied before ingest.
     const n2 = run('research.mjs', 'next', '--brand', 'dv');
     assert.deepEqual([n2.step, n2.platform], ['discovery', 'etsy']);
-    assert.match(n2.collect, new RegExp(`--for-query ${n2.query}`));
+    assert.match(n2.script, new RegExp(`--for-query ${n2.query}`));
     for (const [k, seed] of [[1, [5, 5, 5]], [2, [6, 6, 6]], [3, [7, 7, 7]]]) write(path.join(n2.downloads, `E${k}-1.png`), pattern(seed));
     const t2 = { kind: 'query', id: n2.query, platform: 'etsy' };
     const mk = (k, caption) => toRawPost({ id: `E${k}`, url: `https://www.etsy.com/listing/${1000000 + k}`, caption, author: 'NeonShop', found_by: n2.found_by }, [`raw/E${k}-1.png`], 'etsy');
@@ -280,7 +280,7 @@ test('CLI: collector raw.json (query and reference page) is accepted by research
     assert.deepEqual([i2.added, i2.rejected_off_brand], [2, 1], JSON.stringify(i2));
     const items = JSON.parse(fs.readFileSync(path.join(ws, 'store', 'dv', 'items.json'), 'utf8')).items.filter((x) => x.platform === 'etsy');
     assert.deepEqual(items.map((x) => x.found_by), [n2.found_by, n2.found_by]);
-    assert.equal(run('collect.mjs', 'status').adapters.etsy.status, 'ok');
+    assert.equal(run('collect.mjs', 'status').adapters.etsy.status, 'untested');
     assert.equal(run('collect.mjs', '--platform', 'myspace', '--query', 'x').ok, false);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });

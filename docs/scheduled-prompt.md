@@ -21,7 +21,7 @@ STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one b
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
 STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint (collect says blocked) → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
-NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; touch the Chrome on port 9222; make ideas or posts; send anything to Metricool.
+NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; make ideas or posts; send anything to Metricool.
 ```
 
 ### Research only · Codex
@@ -41,7 +41,7 @@ STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one b
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
 STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint (collect says blocked) → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
-NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; touch the Chrome on port 9222; make ideas or posts; send anything to Metricool.
+NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; make ideas or posts; send anything to Metricool.
 ```
 
 ### Research only · ChatGPT

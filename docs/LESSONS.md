@@ -42,4 +42,4 @@ Bài học đã đúc kết của dự án, ngắn gọn. Luật chi tiết củ
 - Skill chỉ đọc: tool không ghi vào thư mục skill. Tool chỉ đụng bài của chính nó (`workspace/posts/<brand>/`).
 - Agent không bao giờ Approve; dừng ở To review.
 - Metricool: không bao giờ nháp; luôn bài hẹn giờ thật vào giờ chính tốt nhất; không bao giờ gửi một bài hai lần.
-- Một trình duyệt = một agent; không đụng Chrome crawl (:9222) từ test/UI.
+- Một trình duyệt = một agent: Chrome đã đăng nhập (Playwright MCP) chỉ một agent dùng một lúc; test/UI không mở trình duyệt đó.

@@ -12,7 +12,7 @@ import { out, fail, need, loadBrand, readJson, writeJson, workspace } from './li
 import { track } from './progress.mjs';
 import { openRun } from './research.mjs';
 import { knownPosts } from './store.mjs';
-import { makeCursor } from './crawl-fb.mjs';
+import { makeCursor } from './cursor.mjs';
 import { adapterStatus } from './platforms/index.mjs';
 import { getFetchRoute, hasFetchRoute, FETCH_ROUTES } from './platforms/fetch/index.mjs';
 import { makeLimiter, politeGet, BlockedError, UA, hostOf } from './platforms/fetch/common.mjs';

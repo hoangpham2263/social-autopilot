@@ -1,5 +1,5 @@
 // Facebook adapter (status in scripts/platforms/index.mjs). Reuses scripts/fb-extract.mjs (the post selectors, the pure
-// feed reader the optional crawl-fb.mjs already runs on saved fixtures); only the page-level glue is new, and
+// feed reader, tested on saved fixtures); only the page-level glue is new, and
 // search/hashtag pages (not just a page's own feed) have NOT been run on a live page.
 // The one click is the existing "See more" inside a post's own text (browserStep, expand); nothing is liked, followed, shared.
 import { SELECTORS as FB, extractFeed, browserStep, parseFbDate } from '../fb-extract.mjs';

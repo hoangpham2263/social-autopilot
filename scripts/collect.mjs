@@ -1,19 +1,14 @@
 // Generic collector (Mode 1 step 1.2): a SCRIPT reads the raw data of a page, the AI only writes/fixes the platform adapters
-// (scripts/platforms/<platform>.mjs) and judges the images. Attaches to the Chrome the user already signed in to
-// (settings research.browser: cdp or user_data_dir, same as crawl-fb.mjs), opens ONE tab, scrolls with random pauses
-// (research.delay_seconds, never below 5-15 s), asks the adapter for the posts on screen after every scroll, downloads the
-// images and writes the raw.json that `research.mjs ingest --source|--query` already reads. Nothing else changes downstream.
-//   node scripts/collect.mjs --brand <id> --for-query <qid> [--max N]    a discovery query of the open run (research.mjs next)
-//   node scripts/collect.mjs --brand <id> --for-source <sid> [--max N]   a reference page of the open run (non-Facebook)
-//   node scripts/collect.mjs --platform <id> (--url <page> | --query <keyword|#hashtag>) [--brand <id>] [--max N] [--out <dir>]
-//        standalone (testing an adapter): writes <out>/raw.json (default workspace/tmp/collect/...), --brand = skip posts it has
+// (scripts/platforms/<platform>.mjs) and judges the images. Three routes, all writing the raw.json that `research.mjs ingest
+// --source|--query` reads: `fetch` (no browser), `script` + `from-page` (in-page script run through Playwright MCP in the user's
+// signed-in Chrome), or hand-driven Playwright MCP (fallback; Facebook has no in-page script yet). Nothing else changes downstream.
 //   node scripts/collect.mjs fit --brand <id> (--for-query <qid> | --for-source <sid>) --file decisions.json
 //        decisions [{ id, fit: true, type, reason } | { id, fit: false, reason }] (the agent LOOKED at the images): fit posts get
 //        product_fit, the others move to rejected[] (what ingest needs for a discovery query)
 //   FETCH MODE (no browser, first choice where a route exists: reddit, houzz, pinterest user/board; scripts/collect-fetch.mjs)
 //   node scripts/collect.mjs fetch (--brand <id> --for-query <qid> | --for-source <sid> | --platform <id> (--query <kw> | --url <page>)) [--max N] [--images N] [--from-file <saved response>]
 //        ONE polite request (>= 5 s per host, 429/403 = state blocked, no retry), same raw.json, then `fit` + ingest as below
-//   IN-PAGE MODE (default, no CDP Chrome; scripts/collect-pagemode.mjs): ONE Playwright MCP call per keyword/page
+//   IN-PAGE MODE (scripts/collect-pagemode.mjs): ONE Playwright MCP call per keyword/page
 //   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--max N] [--max-steps N]
 //        [--chunk N] prints the script for browser_run_code_unsafe (scrolls with 5-15 s pauses, reads tiles, returns COMPACT JSON with total + checksum);
 //        --chunk N returns only tiles N*6.. (run --chunk 0,1,.. when the full result is too long to read back)
@@ -21,18 +16,13 @@
 //        paste the result AS IS (never retype): from-page checks tiles.length === total and the checksum of the ids and fails loudly if it was cut off or edited
 //        (or --platform <id> --file ...) drops posts already in the store, downloads images into the run folder, writes raw.json
 //   node scripts/collect.mjs status      every adapter with its status (untested | ok | broken)
-// Options: --max-steps N (scroll steps, default 10 for a query, research.browser.max_scroll_steps for a page), --images N (per post,
-// default 4), --cdp <url>, --date YYYY-MM-DD (run of --for-*).
+// Options: --max-steps N (scroll steps), --images N (per post, default 4), --date YYYY-MM-DD (run of --for-*).
 // Read only: it never likes, saves, follows, comments, messages, joins, posts or signs in. A login wall / captcha / block
 // page stops it at once (state blocked, nothing more opened). Cookies stay in Chrome; nothing secret is written.
-import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, fail, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
-import { track } from './progress.mjs';
+import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
 import { openRun, nextTask } from './research.mjs';
-import { knownPosts } from './store.mjs';
-import { openBrowser, download, pause, makeCursor } from './crawl-fb.mjs';
-import { REGISTRY, STATUSES, getAdapter, adapterStatus, isTrusted, platformIds } from './platforms/index.mjs';
+import { REGISTRY, STATUSES, getAdapter, adapterStatus, platformIds } from './platforms/index.mjs';
 
 // ---------- pure parts (tests/collect.test.mjs) ----------
 export const DEFAULT_DELAY = [5, 15];
@@ -109,97 +99,6 @@ export function suggestedState(kind, { blocked, error, limit, read, stop }) {
   return limit ? 'limit' : read ? 'done' : 'empty';
 }
 
-// ---------- browser ----------
-async function collectPage({ context, task, adapter, delay, maxSteps, cursor, log }) {
-  const page = await context.newPage();
-  const found = [], seen = new Set();
-  let state = '', note = '', read = 0, skippedKnown = 0, steps = 0, idle = 0, stop = '';
-  try {
-    await page.goto(task.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await pause(delay);
-    for (let step = 0; step < maxSteps && !state; step++) {
-      steps++;
-      const wall = await adapter.isLoginWall(page);
-      if (wall) { state = 'blocked'; note = wall; break; }
-      let posts;
-      try { posts = await adapter.extract(page, { found_by: task.found_by }); } catch (e) { state = 'partial'; note = `error: extract failed (${String(e.message || e).split('\n')[0].slice(0, 160)})`; break; }
-      let fresh = 0;
-      for (const p of posts) {
-        if (!p?.id || seen.has(p.id)) continue;
-        seen.add(p.id); fresh++; read++;
-        const v = cursor.take({ post_url: p.url, alt_urls: p.alt_urls || [] });
-        if (v === 'known') skippedKnown++;
-        if (v === 'collect') { found.push(p); if (task.max && found.length >= task.max) { state = 'limit'; break; } }
-        if (cursor.stop) { stop = cursor.stop; state = cursor.stop; break; }
-      }
-      log(`step ${step + 1}: ${posts.length} on screen, ${fresh} new, ${found.length} kept`);
-      if (state) break;
-      idle = fresh ? 0 : idle + 1;
-      if (idle >= 3) { state = 'end'; break; }
-      await page.evaluate('window.scrollBy(0, Math.round(innerHeight * 0.9))'); // the only action besides reading
-      await pause(delay);
-      if (step === maxSteps - 1) { state = task.kind === 'source' ? 'partial' : 'end'; if (task.kind === 'source') note = `stopped after ${maxSteps} scroll steps (--max-steps)`; }
-    }
-  } finally { await page.close().catch(() => {}); }
-  return { found, state, note, read, skippedKnown, steps, stop };
-}
-
-async function runCollect(args) {
-  const cfg = { ...(settings().research?.browser || {}) };
-  if (args.cdp && args.cdp !== true) cfg.cdp = String(args.cdp);
-  const brandId = args.brand && args.brand !== true ? String(args.brand) : '';
-  const brand = brandId ? loadBrand(brandId) : null;
-  const run = args['for-query'] || args['for-source'] ? openRun(args, brand || loadBrand(need(args, 'brand'))).run : null;
-  const task = resolveTask(args, run);
-  const adapter = getAdapter(task.platform);
-  if (!adapter) return fail(`Chưa có adapter cho nền tảng "${task.platform}": viết scripts/platforms/${task.platform || '<platform>'}.mjs rồi đăng ký trong scripts/platforms/index.mjs (docs/research.md "Adapter workflow"); trong lúc đó lấy bằng Playwright MCP.`, { platform: task.platform, adapter: adapterStatus(task.platform) });
-  const delay = delayRange(settings().research?.delay_seconds);
-  const maxSteps = Number(args['max-steps']) || (task.kind === 'source' ? Number(cfg.max_scroll_steps) || 300 : 10);
-  const known = task.known_file ? readJson(task.known_file, { count: 0 }) : brand ? knownPosts(brand.id) : { count: 0 };
-  const cursor = makeCursor({ mode: task.mode, known });
-  const lines = [];
-  const log = (m) => { lines.push(`${stamp()} ${m}`); process.stderr.write(m + '\n'); };
-  const { context, close } = await openBrowser(cfg);
-  let res;
-  try { res = await collectPage({ context, task, adapter, delay, maxSteps, cursor, log }); } catch (e) { res = { found: [], state: 'partial', note: `error: ${String(e.message || e).split('\n')[0].slice(0, 200)}`, read: 0, skippedKnown: 0, steps: 0, stop: '' }; }
-  // Images of the posts kept (this session's cookies are used for the request and never written).
-  const rawDir = path.join(task.dir, 'raw');
-  fs.mkdirSync(rawDir, { recursive: true });
-  const perPost = Math.max(1, Number(args.images) || 4);
-  const posts = [];
-  let noImage = 0;
-  try {
-    for (const p of res.found) {
-      const images = [];
-      for (const [k, u] of (p.image_urls || []).slice(0, perPost).entries()) {
-        const f = await download(context, u, path.join(rawDir, `${fileId(p.id)}-${k + 1}`), { Referer: p.url });
-        if (f) images.push(`raw/${path.basename(f)}`);
-      }
-      if (!images.length) { noImage++; continue; }
-      posts.push(toRawPost(p, images, task.platform));
-    }
-  } finally { await close(); }
-  const suspect = !res.read && res.state !== 'blocked' && !/^error/.test(res.note);
-  const note = res.note || (suspect ? 'error: 0 posts read (page empty, or the adapter selectors no longer fit) - verify with Playwright MCP, fix scripts/platforms/' + task.platform + '.mjs' : noImage && !posts.length ? 'error: posts read but no image could be downloaded (adapter image selectors / host?)' : '');
-  writeJson(task.raw_file, rawShape(task, posts, { rejected: [] }));
-  fs.appendFileSync(path.join(task.dir, 'collect.log'), lines.join('\n') + '\n');
-  const st = adapterStatus(task.platform);
-  const state = suggestedState(task.kind, { blocked: res.state === 'blocked', error: /^error/.test(note), limit: res.state === 'limit', read: res.read, stop: res.stop });
-  const idArg = task.kind === 'query' ? `--query ${task.id}` : task.kind === 'source' ? `--source ${task.id}` : '';
-  const forArg = task.kind === 'query' ? `--for-query ${task.id}` : `--for-source ${task.id}`;
-  const b = brandId || '<id>';
-  const trust = isTrusted(task.platform) && !suspect && !/^error/.test(note);
-  const next = res.state === 'blocked' ? `Bị chặn: node scripts/research.mjs result --brand ${b} ${idArg} --state blocked --note "${note.replace(/"/g, "'")}" (dừng nền tảng này, không thử lại trong lượt).`
-    : !trust ? `Chưa tin được kết quả (adapter ${st.status}${suspect || /^error/.test(note) ? `, ${note.slice(0, 80)}` : ''}): mở cùng trang bằng Playwright MCP, so với review[]; đúng thì set status "ok" + ngày trong scripts/platforms/index.mjs, sai thì sửa adapter rồi chạy lại collect.mjs; chưa sửa được thì lấy tay (docs/research.md).`
-      : task.kind === 'query' ? `Nhìn ảnh review[].image (đúng loại sản phẩm?), ghi decisions rồi: node scripts/collect.mjs fit --brand ${b} ${forArg} --file <decisions.json>; node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`
-        : `node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state} (đúng loại sản phẩm: lọc ở 1.3, hoặc collect.mjs fit trước ingest)`;
-  if (task.kind !== 'standalone') track('crawl', { brand: brandId, detail: `${task.id}: collected ${posts.length} (${state})` });
-  out({ brand: brandId, platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, found_by: task.found_by, adapter: st, trusted: trust,
-    steps: res.steps, read: res.read, collected: posts.length, skipped_known: res.skippedKnown, dropped_no_image: noImage, max: task.max || null, state: res.state || 'end', suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
-    review: posts.map((p, i) => ({ n: i + 1, id: p.collector_id, url: p.post_url, author: p.author, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
-  process.exit(0); // the CDP connection would keep the process alive
-}
-
 function fit(args) {
   const brand = loadBrand(need(args, 'brand'));
   const task = resolveTask(args, openRun(args, brand).run);
@@ -219,6 +118,5 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'fetch') return (await import('./collect-fetch.mjs')).runFetch(args);
   if (cmd === 'script') return (await import('./collect-pagemode.mjs')).script(args);
   if (cmd === 'from-page') return (await import('./collect-pagemode.mjs')).fromPage(args);
-  if (cmd) throw new Error('Lệnh: fetch | script | from-page | fit | status | (không lệnh = đường CDP tuỳ chọn)');
-  await runCollect(args);
+  throw new Error('Lệnh: fetch | script | from-page | fit | status');
 });

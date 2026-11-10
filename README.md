@@ -19,9 +19,7 @@ Agent (Claude Code hoặc Codex) làm việc; app chỉ để xem, duyệt và q
 2. Kết nối **Metricool MCP** cho agent:
    - Claude Code: thêm connector Metricool trong claude.ai.
    - Codex: `codex mcp add metricool --url https://ai.metricool.com/mcp` rồi `codex mcp login metricool`.
-3. Research: chạy `npm install` một lần trong thư mục tool, rồi mở Chrome cho crawl bằng **`start-crawl-chrome.cmd`** (Windows) hoặc **`start-crawl-chrome.command`** (macOS), hoặc nút **Start crawl Chrome** ở Settings. Chrome mở với một profile riêng (`%LOCALAPPDATA%\social-autopilot-chrome` / `~/Library/Application Support/social-autopilot-chrome`) và cổng điều khiển 9222.
-
-   Lần đầu đăng nhập Facebook (tài khoản phụ) trong cửa sổ đó bằng tay; cookie nằm trong profile Chrome, không vào repo. Kiểm tra: `node scripts/crawl-fb.mjs --check`. Chi tiết: `RUNBOOK.md` mục "Chrome cho crawl".
+3. **Playwright MCP** gắn vào Chrome đã đăng nhập của bạn (`--extension`): Research chạy qua Chrome đó, không cần Chrome riêng hay `npm install`.
 4. Mở app: nhấp đúp `start-app.cmd` (Windows) hoặc `start-app.command` (macOS).
    Thiếu gì thì app tự mở tab **Settings** để báo.
 
@@ -50,7 +48,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 | Prompt | Lấy prompt để chạy |
 | Settings | Tài khoản, yêu cầu, cài đặt tool |
 
-**Crawl** (Research): *New posts* lấy bài mới (mặc định) · *Backfill older* lấy dần bài cũ · *Full rescan* đọc lại toàn bộ. Script `crawl-fb.mjs` crawl hết nhanh (agent không bấm từng bài), rồi agent lọc cả lô (`store.mjs classify` / `verdict`): bài bị lọc nằm ở Library → Dropped kèm lý do; tab Log hiện "N kept · M filtered".
+**Crawl** (Research): *New posts* lấy bài mới (mặc định) · *Backfill older* lấy dần bài cũ · *Full rescan* đọc lại toàn bộ. Script `collect.mjs` lấy dữ liệu (fetch hoặc script in-page chạy qua Playwright MCP trong Chrome đã đăng nhập; Facebook chưa có script in-page nên lấy tay bằng Playwright MCP), rồi agent lọc cả lô (`store.mjs classify` / `verdict`): bài bị lọc nằm ở Library → Dropped kèm lý do; tab Log hiện "N kept · M filtered".
 
 ## Quy tắc
 
@@ -67,7 +65,6 @@ Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**.
 |---|---|
 | `research.delay_seconds` | `[min, max]` giây nghỉ ngẫu nhiên giữa các thao tác khi crawl |
 | `research.dedupe` | ngưỡng trùng: `image_distance` (/256), `caption_similarity` (0–1) |
-| `research.browser` | Chrome cho crawl: `cdp`, `channel`, `fallback_tabs`, `stall_posts`, `max_scroll_steps` |
 | `codex.command`, `codex.timeout_minutes` | lệnh chạy Codex, thời gian chờ tối đa |
 | `codex.concurrency`, `codex.retry_wait_seconds` | số ảnh Codex làm cùng lúc trên cả máy (3), giây chờ trước khi thử lại khi Codex báo hết lượt (60) |
 | `ffmpeg.command` | lệnh ffmpeg (watermark, đọc WebP khi dedupe) |

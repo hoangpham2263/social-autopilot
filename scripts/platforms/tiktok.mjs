@@ -33,5 +33,5 @@ export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canoni
 export const isLoginWall = (page) => pageWall(page, SELECTORS);
 export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
 
-// in-page mode (no CDP Chrome): script for Playwright MCP browser_run_code_unsafe
+// in-page mode: script for Playwright MCP browser_run_code_unsafe
 export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'tiktok', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /\/(?:video|photo)\/(\d{8,})/.source });

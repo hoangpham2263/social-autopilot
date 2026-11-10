@@ -141,7 +141,7 @@ export function checksumOf(ids) {
 }
 export const COMPACT = { caption: 100, author: 40, images: 2, chunk_size: 6 };
 
-// ---- in-page mode: no CDP Chrome. The agent pastes this into Playwright MCP browser_run_code_unsafe (one call per keyword/page).
+// ---- in-page mode. The agent pastes this into Playwright MCP browser_run_code_unsafe (one call per keyword/page).
 // A string `async (page) => {...}`: goes to the URL, scrolls with random pauses (delay [lo,hi] s, from collect.mjs: never below 5-15 s),
 // reads the tiles after every pause (lazy images get time to load), and, when the adapter says post_fallback and a tile still has
 // no image, reads that post's own page (GET only, same site) for og:image / og:description. Returns JSON

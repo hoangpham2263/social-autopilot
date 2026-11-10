@@ -28,16 +28,9 @@ export function codexIdentity(file = join(process.env.CODEX_HOME || join(homedir
 
 export const ghLogin = (text) => String(text).match(/Logged in to (\S+) account (\S+)/)?.slice(1, 3) || null;
 
-// The crawl Chrome (Mode 1): its CDP port answers (RUNBOOK "Chrome cho crawl").
-async function crawlChrome(cdp) {
-  // Running only when a real Chrome answers /json/version (Browser and webSocketDebuggerUrl), never because the
-  // launcher was started.
-  try { const r = await fetch(`${cdp.replace(/\/$/, '')}/json/version`, { signal: AbortSignal.timeout(2500), cache: 'no-store' }); if (!r.ok) return false; const j = await r.json(); return !!(j && j.Browser && j.webSocketDebuggerUrl); } catch { return false; }
-}
-
-export async function accounts({ metricool = {}, cdp = 'http://127.0.0.1:9222' } = {}) {
+export async function accounts({ metricool = {} } = {}) {
   const codex = findTool("codex"), gh = findTool("gh");
-  const [codexVersion, codexStatus, ghStatus, chromeUp] = await Promise.all([run(codex, ["--version"]), run(codex, ["login", "status"]), run(gh, ["auth", "status"]), crawlChrome(cdp)]);
+  const [codexVersion, codexStatus, ghStatus] = await Promise.all([run(codex, ["--version"]), run(codex, ["login", "status"]), run(gh, ["auth", "status"])]);
   const signedIn = codexStatus.ok && /logged in/i.test(codexStatus.text);
   const who = signedIn ? codexIdentity() : { email: "", name: "", plan: "", mode: "" };
   const gl = ghStatus.text ? ghLogin(ghStatus.text) : null;
@@ -47,7 +40,6 @@ export async function accounts({ metricool = {}, cdp = 'http://127.0.0.1:9222' }
     metricool: { user_id: String(metricool.account?.user_id || ""), brands: (metricool.brands || []).map((b) => b.name) },
     requirements: [
       { id: "node", name: "Node.js", ok: true, version: process.version.replace(/^v/, "") },
-      { id: "crawl_chrome", name: "Crawl Chrome", ok: chromeUp, version: "", note: chromeUp ? `running (${cdp})` : "not running", action: chromeUp ? "" : "start_chrome" },
       { id: "codex", name: "Codex CLI", ok: !!codex, version: codex ? (codexVersion.text.match(/\d+\.\d+\.\d+\S*/)?.[0] || "") : "", action: codex ? "" : "install" },
     ],
   };

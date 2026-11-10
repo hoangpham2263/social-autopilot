@@ -1,6 +1,6 @@
-// In-page mode of the collector (no CDP Chrome): `collect.mjs script` prints a script the agent runs with ONE Playwright MCP call
-// (browser_run_code_unsafe) in the user's signed-in Chrome; `collect.mjs from-page` turns its JSON result into the same raw.json
-// the CDP path writes (drops posts the store already has BEFORE downloading, downloads the images with the platform's referer).
+// In-page mode of the collector: `collect.mjs script` prints a script the agent runs with ONE Playwright MCP call
+// (browser_run_code_unsafe) in the user's signed-in Chrome; `collect.mjs from-page` turns its JSON result into the raw.json
+// that ingest reads (drops posts the store already has BEFORE downloading, downloads the images with the platform's referer).
 // Read only. No cookies or tokens are written; images are fetched without cookies.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,7 +8,7 @@ import { out, fail, need, settings, loadBrand, readJson, writeJson } from './lib
 import { track } from './progress.mjs';
 import { openRun } from './research.mjs';
 import { knownPosts } from './store.mjs';
-import { makeCursor } from './crawl-fb.mjs';
+import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
 import { checksumOf } from './platforms/common.mjs';
 import { resolveTask, delayRange, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
