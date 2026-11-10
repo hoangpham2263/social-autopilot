@@ -69,8 +69,9 @@ export function extractTiles(root, cfg) {
 // cfg: { login_form[], captcha[], dialog[] } (selectors). -> { url, title, text, login_form, captcha, dialog }
 export function wallSignals(root, cfg) {
   const doc = root.ownerDocument || root;
-  const has = (list) => {
-    for (const s of [].concat(list || [])) { try { if (doc.querySelector(s)) return true; } catch { /* skip */ } }
+  // big: ignore tiny/hidden elements (the invisible reCAPTCHA badge iframe, 256x60, sits on normal pages); no layout (tests) = count it.
+  const has = (list, big) => {
+    for (const s of [].concat(list || [])) { try { for (const el of doc.querySelectorAll(s)) { if (big && typeof el.offsetWidth === 'number' && (el.offsetWidth < 200 || el.offsetHeight < 100)) continue; return true; } } catch { /* skip */ } }
     return false;
   };
   const body = doc.body || doc.documentElement;
@@ -78,7 +79,7 @@ export function wallSignals(root, cfg) {
     url: (doc.location && doc.location.href) || cfg.url || '',
     title: String(doc.title || ''),
     text: String((body && body.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 3000),
-    login_form: has(cfg.login_form), captcha: has(cfg.captcha), dialog: has(cfg.dialog),
+    login_form: has(cfg.login_form), captcha: has(cfg.captcha, true), dialog: has(cfg.dialog),
   };
 }
 
