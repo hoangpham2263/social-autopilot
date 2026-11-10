@@ -29,6 +29,7 @@ import { checkDraft, summary, logoWarnings } from './draft-lib.mjs';
 import { cleanDraftImage } from './image-clean.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
 import { readStore, storeDir, storeIdeasFile, markUsed } from './store.mjs';
+import { track } from './progress.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 // The brand's own photo: inside its skill folder, or inside a local folder its social.json lists in
@@ -193,18 +194,44 @@ function codexCommand(s) {
 const QUOTA = /usage limit|rate[ -]?limit|quota|too many requests|\b429\b/i;
 
 // Drafts waiting for an image: prompt filled, no image.png yet (or every draft with --force), not dropped/approved.
-export function waitingForImage(brand, force = false) {
+// A draft left "generating" by a run that died (no update for longer than the Codex timeout) is waiting again.
+const deadAfter = (s) => ((Number(s.codex?.timeout_minutes) || 15) * 2 + 5) * 60000;
+const busy = (st, s) => st.status === 'generating' && Date.now() - Date.parse(st.updated || 0) < deadAfter(s);
+export function waitingForImage(brand, force = false, s = settings()) {
   return listDrafts(brand === 'all' ? undefined : brand).filter((d) => {
-    if (d.status.brand_post || ['rejected', 'approved', 'generating'].includes(d.status.status)) return false;
+    if (d.status.brand_post || ['rejected', 'approved'].includes(d.status.status)) return false;
+    if (busy(d.status, s)) return false;
     if (!force && fs.existsSync(path.join(d.dir, 'image.png'))) return false;
     return fs.existsSync(path.join(d.dir, 'prompt.txt'));
   });
 }
-// image-batch: one child process per draft (draft.mjs image), at most <concurrency> at once.
+// Codex slots shared by every process on this machine (workspace/tmp/codex-slots/slot-<i>, a folder made atomically):
+// at most settings codex.concurrency Codex image runs at once, also when several brands run image-batch in parallel.
+// A slot whose process is gone is taken over.
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+export function takeCodexSlot(s = settings(), { waitMs = ((Number(s.codex?.timeout_minutes) || 15) * 2 + 5) * 60000 } = {}) {
+  const n = Math.max(1, Number(s.codex?.concurrency) || 3), dir = path.join(workspace, 'tmp', 'codex-slots'), until = Date.now() + waitMs;
+  fs.mkdirSync(dir, { recursive: true });
+  for (;;) {
+    for (let i = 0; i < n; i++) {
+      const slot = path.join(dir, `slot-${i}`), pidFile = path.join(slot, 'pid');
+      try { fs.mkdirSync(slot); fs.writeFileSync(pidFile, String(process.pid)); return () => fs.rmSync(slot, { recursive: true, force: true }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+      let pid = 0; try { pid = Number(fs.readFileSync(pidFile, 'utf8')) || 0; } catch {}
+      let young = false; try { young = Date.now() - fs.statSync(slot).mtimeMs < 60000; } catch {}
+      if (pid ? !alive(pid) : !young) { try { if ((Number(fs.readFileSync(pidFile, 'utf8')) || 0) === pid) fs.rmSync(slot, { recursive: true, force: true }); } catch { fs.rmSync(slot, { recursive: true, force: true }); } }
+    }
+    if (Date.now() > until) throw new Error(`Codex bận: cả ${n} lượt (codex.concurrency) đang chạy quá lâu.`);
+    sleepMs(300);
+  }
+}
+
+// image-batch: one child process per draft (draft.mjs image), at most <concurrency> at once (and never more Codex runs
+// on the machine than codex.concurrency: the slots above). Each finished image moves the app's Run progress.
 export async function imageBatch(args, s = settings()) {
   const brand = need(args, 'brand');
   const limit = Math.max(1, Number(args.concurrency && args.concurrency !== true ? args.concurrency : s.codex.concurrency || 3));
-  const all = waitingForImage(brand, !!args.force);
+  const all = waitingForImage(brand, !!args.force, s);
   const todo = [], skipped = [];
   for (const d of all) {
     const left = fs.readFileSync(path.join(d.dir, 'prompt.txt'), 'utf8').match(/\{\{\w+\}\}/g);
@@ -213,12 +240,16 @@ export async function imageBatch(args, s = settings()) {
   const results = [];
   let next = 0;
   const one = (d) => new Promise((done) => {
-    const p = spawn(process.execPath, [fileURLToPath(import.meta.url), 'image', '--id', d.id, ...(args.force ? ['--force'] : [])], { env: process.env, windowsHide: true });
+    // The children leave the Run progress to the batch (SA_PROGRESS=off).
+    const p = spawn(process.execPath, [fileURLToPath(import.meta.url), 'image', '--id', d.id, ...(args.force ? ['--force'] : [])], { env: { ...process.env, SA_PROGRESS: 'off' }, windowsHide: true });
     let o = '', e = '';
     p.stdout.on('data', (x) => { o += x; }); p.stderr.on('data', (x) => { e += x; });
     p.on('close', () => { let r; try { r = JSON.parse(o); } catch { r = { ok: false, error: (o + e).trim().slice(0, 500) }; } done({ id: d.id, ...r }); });
   });
-  const worker = async () => { while (next < todo.length) { const d = todo[next++]; results.push(await one(d)); } };
+  const who = brand === 'all' ? '' : brand;
+  const tell = (detail) => track('make', { brand: who, detail, items: { label: 'Images', done: results.filter((r) => r.ok !== false).length, total: todo.length } });
+  if (todo.length) tell(`images: ${todo.length} to make, ${Math.min(limit, todo.length)} at once`);
+  const worker = async () => { while (next < todo.length) { const d = todo[next++]; const r = await one(d); results.push(r); tell(`image ${d.id} ${r.ok === false ? 'failed' : 'done'} (${results.length}/${todo.length})`); } };
   await Promise.all(Array.from({ length: Math.min(limit, todo.length) }, worker));
   return { brand, concurrency: limit, done: results.filter((r) => r.ok !== false).map((r) => r.id), failed: results.filter((r) => r.ok === false).map((r) => ({ id: r.id, error: r.error })), skipped, results,
     next: 'Xem từng ảnh; ảnh đạt thì viết caption (có thể viết trong lúc ảnh khác đang chạy) rồi draft.mjs check.' };
@@ -237,6 +268,14 @@ export function image(args, s = settings()) {
     if (brandNow.social.product_images?.reference_redraw?.enabled !== true) throw new Error('Thương hiệu đã tắt reference_redraw: bản nháp scene-swap không tạo ảnh được.');
   } else if (!ownImage(brandNow, draft.product_image)) throw new Error('Ảnh sản phẩm không còn là ảnh của thương hiệu.');
   if (brandNow.social.product_images?.ai_scenes_allowed === false) throw new Error('social.json product_images.ai_scenes_allowed = false: không dựng cảnh AI.');
+  // Claimed for this process ("generating", under the status lock): two batches (brands in parallel, --brand all
+  // twice) never make the same image; a claim older than the Codex timeout is a dead run's and is taken over.
+  const statusFile = path.join(dir, 'status.json');
+  withLock(statusFile, () => {
+    const st = readJson(statusFile, {});
+    if (busy(st, s)) throw new Error(`${draft.id} đang được tạo ảnh ở một tiến trình khác.`);
+    writeJson(statusFile, { ...st, status: 'generating', tool_status: 'generating', updated: stamp() });
+  });
   // An earlier image is kept aside (image-old-<time>.png); the new Codex output becomes image-generated.png.
   if (args.force) for (const f of ['image-generated.png', 'image.png']) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(dir, `image-old-${Date.now()}-${f}`));
   for (const f of ['image-watermarked.png', 'image-clean-report.json']) fs.rmSync(path.join(dir, f), { force: true });
@@ -245,23 +284,25 @@ export function image(args, s = settings()) {
   const c = codexCommand(s);
   const q = (a) => (c.shell ? `"${a}"` : a);
   const before = new Set(fs.readdirSync(dir));
-  setStatus(dir, 'generating');
-  const runCodex = () => c.shell
-  // A .cmd shim needs the shell; it gets one command string (no args array with shell: true, Node DEP0190).
-    ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
-    : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
-  // A rate-limit/quota answer: wait (codex.retry_wait_seconds), try once more, then image_failed.
-  const wait = Number(process.env.SA_CODEX_RETRY_WAIT_SECONDS ?? s.codex.retry_wait_seconds ?? 60);
-  let r, log = '', retried = false;
-  for (let attempt = 1; ; attempt++) {
-    r = runCodex();
-    log += `$ codex ${codexArgs.join(' ')} < prompt.txt   (attempt ${attempt})\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}\n`;
-    fs.writeFileSync(path.join(dir, 'codex.log'), log, 'utf8');
-    if (fs.existsSync(target) || attempt > 1 || !QUOTA.test(`${r.stdout}${r.stderr}`)) break;
-    retried = true;
-    log += `\n-- rate limit / quota: waiting ${wait}s, then one retry --\n\n`;
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait * 1000);
-  }
+  let r, log = '', retried = false, release;
+  try { release = takeCodexSlot(s); } catch (e) { setStatus(dir, 'image_failed', { error: e.message }); throw e; }
+  try {
+    const runCodex = () => c.shell
+    // A .cmd shim needs the shell; it gets one command string (no args array with shell: true, Node DEP0190).
+      ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+      : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+    // A rate-limit/quota answer: wait (codex.retry_wait_seconds), try once more, then image_failed.
+    const wait = Number(process.env.SA_CODEX_RETRY_WAIT_SECONDS ?? s.codex.retry_wait_seconds ?? 60);
+    for (let attempt = 1; ; attempt++) {
+      r = runCodex();
+      log += `$ codex ${codexArgs.join(' ')} < prompt.txt   (attempt ${attempt})\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}\n`;
+      fs.writeFileSync(path.join(dir, 'codex.log'), log, 'utf8');
+      if (fs.existsSync(target) || attempt > 1 || !QUOTA.test(`${r.stdout}${r.stderr}`)) break;
+      retried = true;
+      log += `\n-- rate limit / quota: waiting ${wait}s, then one retry --\n\n`;
+      sleepMs(wait * 1000);
+    }
+  } finally { release(); }
   if (!fs.existsSync(target)) {
     // Codex sometimes names the file differently: take the one new PNG it saved.
     const fresh = fs.readdirSync(dir).filter((f) => !before.has(f) && /\.png$/i.test(f));

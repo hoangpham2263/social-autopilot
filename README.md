@@ -38,7 +38,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 ## Dùng hằng ngày
 
 1. Tab **Prompt** → chọn **Mode** (Research only / Create & publish), Agent, Brand → **Copy prompt**.
-2. Dán vào Claude Code hoặc Codex mở trong thư mục tool.
+2. Dán vào Claude Code hoặc Codex mở trong thư mục tool. Khung **Run progress** dưới nút Copy hiện bước đang chạy, số ảnh/bài, thời gian và dòng cuối của lượt (tự cập nhật 3 giây một lần).
 3. Tab **Posts** → **To review** → xem trước → **Approve** hoặc **Drop**.
 4. Lần chạy Create & publish sau sẽ hẹn giờ các bài đã duyệt.
 
@@ -69,6 +69,7 @@ Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**.
 | `research.dedupe` | ngưỡng trùng: `image_distance` (/256), `caption_similarity` (0–1) |
 | `research.browser` | Chrome cho crawl: `cdp`, `channel`, `fallback_tabs`, `stall_posts`, `max_scroll_steps` |
 | `codex.command`, `codex.timeout_minutes` | lệnh chạy Codex, thời gian chờ tối đa |
+| `codex.concurrency`, `codex.retry_wait_seconds` | số ảnh Codex làm cùng lúc trên cả máy (3), giây chờ trước khi thử lại khi Codex báo hết lượt (60) |
 | `ffmpeg.command` | lệnh ffmpeg (watermark, đọc WebP khi dedupe) |
 | `skillsRoot` | thư mục chứa các skill thương hiệu |
 | `remove_watermark.script` | script xoá metadata ảnh |

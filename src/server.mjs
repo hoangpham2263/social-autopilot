@@ -21,6 +21,7 @@ import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
+import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -233,6 +234,19 @@ async function handle(req, res) {
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));
+  // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
+  // current-<mode>.json) and the last run log of the mode. POST = Copy prompt: a new pending run (resets the panel).
+  if (path === "/api/progress" && req.method === "GET") return api(res, () => {
+    const view = progressView(get("mode"));
+    const last = listLogs({ mode: view.mode, limit: 1 })[0];
+    return { ...view, last_log: last ? { id: last.id, ended: last.ended, result: last.result, headline: last.headline } : null };
+  });
+  if (path === "/api/progress" && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    const known = new Set(discovered().brands.map((x) => x.id));
+    const brands = (Array.isArray(b.brands) ? b.brands : []).map(String).filter((x) => known.has(x));
+    return { run: newRun(String(b.mode ?? ""), { brands, agent: typeof b.agent === "string" ? b.agent.slice(0, 40) : "" }) };
+  });
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
   // Optional "Bỏ" of a generated post before it is written into the brand (finalize.mjs cancel). Nothing waits for it.

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -551,4 +551,52 @@ test('image-batch: concurrent Codex runs, prompt not filled is skipped, rate lim
   const again = JSON.parse(spawnSync(process.execPath, [path.join(tool, 'scripts', 'draft.mjs'), 'image-batch', '--brand', 'all'], { env: { ...env, SA_CODEX_RETRY_WAIT_SECONDS: '0' }, encoding: 'utf8', windowsHide: true }).stdout);
   assert.deepEqual(again.done, []);
   assert.deepEqual(again.failed.map((x) => x.id), [always.id]); // an image_failed draft is tried again
+});
+
+// Brands in parallel (Mode 2/3): two image-batch processes at once never run more Codex than codex.concurrency on the
+// machine (shared slots), never take the same draft, and the Run progress counts the images.
+test('image-batch: parallel batches share the codex.concurrency slots; Run progress counts the images', { skip: !haveReal && 'no brand skills to copy' }, async () => {
+  const settingsFile = path.join(ws, 'settings.json');
+  const saved = fs.readFileSync(settingsFile, 'utf8');
+  fs.writeFileSync(settingsFile, JSON.stringify({ ...JSON.parse(saved), codex: { concurrency: 2 } }));
+  const find = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory() && !/^(\.git|node_modules|workspace)$/.test(e.name)) { const f = find(p); if (f) return f; } else if (/\.(png|jpe?g)$/i.test(e.name)) return p; } return ''; };
+  const products = { dreamyvows: path.join(brandDir, 'project', 'sources', 'inputs', 'test-product', 'product.png'), grenheim: find(path.join(skills, 'grenheim-skills')) };
+  assert.ok(products.grenheim, 'a grenheim image');
+  const mk = (brand, n) => {
+    const id = `${brand}-20261202-${n}`, dir = path.join(ws, 'drafts', brand, id);
+    write(path.join(dir, 'draft.json'), JSON.stringify({ id, brand, brand_dir: path.join(skills, `${brand}-skills`), created: new Date().toISOString(), image_mode: 'brand-image', product_image: products[brand], idea: { product_type: 'x', scene: 'y' }, inspiration: {}, captions: { en: 'content-en.txt' } }));
+    write(path.join(dir, 'status.json'), JSON.stringify({ status: 'needs_prompt' }));
+    write(path.join(dir, 'prompt.txt'), 'Edit the image.\nSave the result in the current working directory as image.png.');
+    return { id, dir };
+  };
+  // The earlier batch test left an image_failed draft (QUOTA-ALWAYS): it is out of this test.
+  fs.rmSync(path.join(ws, 'drafts', 'dreamyvows', 'dreamyvows-20261201-06'), { recursive: true, force: true });
+  const drafts = [...['01', '02', '03'].map((n) => mk('dreamyvows', n)), ...['01', '02', '03'].map((n) => mk('grenheim', n))];
+  const pe = { ...env, SA_PROGRESS: '' };
+  assert.equal(JSON.parse(spawnSync(process.execPath, [path.join(tool, 'scripts', 'progress.mjs'), 'new', '--mode', 'create'], { env: pe, encoding: 'utf8', windowsHide: true }).stdout).ok, true);
+  const log = path.join(tmp, 'codex-times-2.log');
+  const batch = (brand) => new Promise((done) => {
+    const p = spawn(process.execPath, [path.join(tool, 'scripts', 'draft.mjs'), 'image-batch', '--brand', brand, '--concurrency', '2'], { env: { ...pe, FAKE_CODEX_LOG: log, FAKE_CODEX_DELAY_MS: '500', SA_CODEX_RETRY_WAIT_SECONDS: '0' }, windowsHide: true });
+    let o = ''; p.stdout.on('data', (x) => { o += x; }); p.on('close', () => done(JSON.parse(o)));
+  });
+  const [a, b] = await Promise.all([batch('dreamyvows'), batch('grenheim')]);
+  fs.writeFileSync(settingsFile, saved);
+  assert.equal(a.ok && b.ok, true, JSON.stringify([a, b]));
+  assert.deepEqual([...a.done, ...b.done].sort(), drafts.map((d) => d.id).sort(), JSON.stringify([a, b]));
+  for (const d of drafts) assert.ok(fs.existsSync(path.join(d.dir, 'image.png')), d.id);
+  let busy = 0, peak = 0;
+  for (const [kind] of fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => l.split(' ')).sort((x, y) => Number(x[1]) - Number(y[1]) || (x[0] === 'end' ? -1 : 1))) { busy += kind === 'start' ? 1 : -1; peak = Math.max(peak, busy); }
+  assert.ok(peak >= 1 && peak <= 2, `peak ${peak} > codex.concurrency 2`);
+  assert.equal(fs.readdirSync(path.join(ws, 'tmp', 'codex-slots')).length, 0, 'every slot given back');
+  // Run progress: step 5 (Make posts) running, Images 6/6 summed over the two brands.
+  const pr = JSON.parse(fs.readFileSync(path.join(ws, 'runs', 'current-create.json'), 'utf8'));
+  assert.equal(pr.steps[4].state, 'running');
+  assert.deepEqual(pr.items, { label: 'Images', done: 6, total: 6 });
+  // A draft another process is making is not taken twice.
+  const claimed = mk('dreamyvows', '04');
+  write(path.join(claimed.dir, 'status.json'), JSON.stringify({ status: 'generating', updated: new Date().toISOString() }));
+  const r = run('draft.mjs', 'image', '--id', claimed.id);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /tiến trình khác/);
+  assert.equal(run('draft.mjs', 'image-batch', '--brand', 'dreamyvows').done.length, 0, 'a fresh claim is skipped by a batch');
 });

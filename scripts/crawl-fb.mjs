@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { main, out, fail, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, toolRoot, stamp } from './lib.mjs';
+import { track } from './progress.mjs';
 import { openRun } from './research.mjs';
 import { postKey, postIds } from './store.mjs';
 import { SELECTORS, extractFeed, extractGrid, extractViewer, browserStep, parseFbDate, detectBlock, tabUrl, TAB_MODE } from './fb-extract.mjs';
@@ -302,6 +303,8 @@ async function crawlBrand(args) {
       const saved = res.collected.length ? await savePass({ context, brand, src, res, n0: st.n }) : { n: st.n, added: 0, duplicates: 0, dropped: 0 };
       Object.assign(st, { n: saved.n, collected: st.collected + res.collected.length, added: st.added + saved.added, duplicates: st.duplicates + saved.duplicates, dropped: st.dropped + saved.dropped, passes: st.passes + 1, tabs: res.tabs });
       log(`${src.id}: pass ${st.passes} share ${share || '∞'} -> ${res.collected.length} read, ${saved.added} added, state ${res.state}${res.note ? ` (${res.note})` : ''}`);
+      // The app's Run progress: new posts so far for this brand, the last source line.
+      track('crawl', { brand: brand.id, detail: `${src.id}: pass ${st.passes}, +${saved.added} (${res.state})`, items: { label: 'New posts', done: [...stats.values()].reduce((a, x) => a + x.added, 0), total: null } });
       return { added: saved.added, state: saved.error ? 'partial' : res.state, note: saved.error ? `error: ingest ${saved.error}` : res.note };
     });
     for (const src of sources) {
