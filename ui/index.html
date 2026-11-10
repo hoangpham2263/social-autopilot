@@ -467,13 +467,11 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const card = (m) => {
       const id = m.skill_id || "", s = skills[id], x = s ? queue[id] : null, miss = missingOf(m);
       const msg = pendingMsg?.key === m.name ? pendingMsg.html : "";
-      const r = x?.research, st = x?.store, d = x?.drafts || {}, mc = x?.metricool || {};
+      const st = x?.store, d = x?.drafts || {}, mc = x?.metricool || {};
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
       const parts = (list) => list.filter(Boolean).join(" · ");
       const none = `<span class="muted">No posts yet</span>`;
       const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.new && `${st.new} available`, st.rejected && `${st.rejected} removed`]) : none;
-      const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} new`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} duplicates skipped`, arr(r.pending).length && `unfinished: ${esc(arr(r.pending).join(", "))}`]) : "";
-      const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
       const written = arr(x?.written).length;
       const posted = mc.published || 0, review = num(d, "ready"), scheduled = num(mc, "scheduled");
       const onMc = arr(x?.written).filter((w) => w.metricool !== "published" && liveIds(w).length).length, waiting = Math.max(0, written - posted - onMc);
@@ -486,7 +484,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           <dt>Metricool</dt><dd>${esc(arr(m.networks).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}</dd>
           ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}${sug}
           ${x ? `<dt>Library</dt><dd>${kho}</dd>
-          ${research || blocked ? `<dt>Last research</dt><dd>${research}${blocked}</dd>` : ""}
           <dt>Posts</dt><dd>${posts}</dd>
           ${x.plan ? `<dt>Plan</dt><dd title="Plan ahead: days × posts per day; only the tool's own posts count">${esc(x.plan.days)} days · ${esc(scheduled)} scheduled${x.plan.covered - scheduled > 0 ? ` · ${esc(x.plan.covered - scheduled)} in work` : ""} · ${esc(x.plan.need)} to make</dd>` : ""}` : ""}
           ${(() => { const next = arr(x?.written).flatMap((w) => arr(w.metricool_sent)).filter((m) => !m.draft && m.publication && w_future(m.publication, m.timezone)).map((m) => m.publication).sort()[0]; return next ? `<dt>Next post</dt><dd>${esc(String(next).replace("T", " ").slice(0, 16))} <span class="meta">${esc(m.timezone || "")}</span></dd>` : ""; })()}
