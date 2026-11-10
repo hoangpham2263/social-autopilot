@@ -95,6 +95,6 @@ workspace/                 dữ liệu riêng của máy (không lên git)
 
 - `RUNBOOK.md` — từng bước của agent
 - `AGENTS.md` — luật cho agent
-- `docs/research.md` — crawl bằng script, lọc, crawl tay dự phòng
+- `docs/research.md` — thu thập bằng `collect.mjs` + adapter nền tảng, lọc, lái tay dự phòng
 - `docs/metricool.md` — Metricool
 - `docs/scheduled-prompt.md` — prompt mẫu

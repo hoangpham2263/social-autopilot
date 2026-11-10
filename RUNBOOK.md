@@ -59,7 +59,7 @@ Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo khô
 
 ## Mode 1. Research only
 
-**Agent thu thập bằng Playwright MCP trên Chrome đã đăng nhập của người dùng, rồi lọc một lượt.** Thứ tự (người dùng, 10/11/2026): (1) **trang tham khảo** của thương hiệu (`research.sources[]`: bài mới chưa có trong kho); (2) hết trang tham khảo mà chưa đủ mục tiêu (`--max-posts N` mỗi thương hiệu, hoặc không đặt mục tiêu): **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` của skill trên các nền tảng bật (Instagram, Pinterest, TikTok, Facebook tìm bài + nhóm, Reddit, Etsy, YouTube/Shorts, Houzz cho nội thất), xoay vòng các nền tảng tới khi đủ mục tiêu hoặc hết truy vấn. **Chỉ lấy bài có sản phẩm đúng loại thương hiệu bán** (`research.discovery.product_fit`: `types`, `must_have`, `must_not`): bài sai loại không tải, không lưu (ghi `rejected[]`), và bị lọc lần nữa ở 1.3. Script `research.mjs next` nói việc tiếp theo; chi tiết từng nền tảng: `docs/research.md`. `scripts/crawl-fb.mjs` chỉ là **đường nhanh tuỳ chọn** cho trang tham khảo Facebook (mục "Chrome cho crawl"). Một trình duyệt = một agent, không song song.
+**Script `collect.mjs` thu thập trên Chrome đã đăng nhập của người dùng, agent nhìn ảnh để lọc (và viết/sửa adapter), rồi lọc một lượt.** Thứ tự (người dùng, 10/11/2026): (1) **trang tham khảo** của thương hiệu (`research.sources[]`: bài mới chưa có trong kho); (2) hết trang tham khảo mà chưa đủ mục tiêu (`--max-posts N` mỗi thương hiệu, hoặc không đặt mục tiêu): **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` của skill trên các nền tảng bật (Instagram, Pinterest, TikTok, Facebook tìm bài + nhóm, Reddit, Etsy, YouTube/Shorts, Houzz cho nội thất), xoay vòng các nền tảng tới khi đủ mục tiêu hoặc hết truy vấn. **Chỉ lấy bài có sản phẩm đúng loại thương hiệu bán** (`research.discovery.product_fit`: `types`, `must_have`, `must_not`): bài sai loại không tải, không lưu (ghi `rejected[]`), và bị lọc lần nữa ở 1.3. Script `research.mjs next` nói việc tiếp theo **và in sẵn lệnh `collect` + `adapter.status`**; chi tiết từng nền tảng và quy trình adapter: `docs/research.md`. `scripts/crawl-fb.mjs` chỉ là **đường nhanh tuỳ chọn** cho trang tham khảo Facebook (mục "Chrome cho crawl"). Một trình duyệt = một agent, không song song.
 
 1.0. Kiểm tra trình duyệt (**bước đầu tiên**, trước `research.mjs start`): công cụ Playwright MCP có và đang nối Chrome của người dùng (vd `browser_tabs` trả danh sách tab). Không đụng Chrome cổng 9222.
 ```
@@ -78,7 +78,16 @@ node scripts/research.mjs start --brand <id> [--source a,b|none] [--platforms a,
 - Mở lại cùng ngày: `run.json`, `raw.json`, `raw/`, `ingest.json` và thư mục `discovery/` cũ chuyển vào `archive/<giờ>/`, không bao giờ ingest lại.
 - Tiến độ từng trang: `workspace/store/<brand>/progress.json` (`newest_seen`, `oldest_seen`, `reached_end`).
 
-1.2. Thu thập, lặp tới khi `next` trả `done`:
+1.2. Thu thập, lặp tới khi `next` trả `done`. **Mỗi bước chạy `collect.mjs` trước** (lệnh nằm trong `collect` của `next`); chỉ lái tay bằng Playwright MCP khi `adapter.status` là `untested`/`broken`/`missing` hoặc collector hỏng (0 bài, `error`, tường đăng nhập):
+```
+node scripts/collect.mjs --brand <id> --for-query <qid> [--max N]    # discovery: cuộn nghỉ 5-15 s, đọc hàng loạt, tải ảnh, ghi raw_file; JSON: read/collected/review[]/suggested_state/next
+node scripts/collect.mjs --brand <id> --for-source <sid> [--max N]   # trang tham khảo (không phải Facebook; Facebook: crawl-fb.mjs tuỳ chọn hoặc collect)
+node scripts/collect.mjs fit --brand <id> --for-query <qid> --file <decisions.json>   # agent NHÌN ảnh review[].image: [{id, fit:true, type, reason}|{id, fit:false, reason}]
+node scripts/collect.mjs status                                       # trạng thái từng adapter
+```
+- Adapter `untested` (viết khi chưa có trình duyệt): chạy `collect.mjs` thử, rồi mở cùng trang bằng Playwright MCP, so vài bài đầu với `review[]`; đúng thì đặt `status: "ok"` + `checked: "<ngày>"` trong `scripts/platforms/index.mjs`, sai/thiếu thì sửa adapter (selector chỉ ở khối `SELECTORS` đầu file), chạy lại, `npm test`. Chưa sửa được thì lấy tay như dưới. Quy trình đầy đủ: `docs/research.md` "Adapter workflow".
+- `collect.mjs` chỉ xem, không đăng nhập, dừng ngay khi gặp tường đăng nhập/captcha (`state: blocked` → `result --state blocked`).
+Các bước dưới là việc `collect` đã làm (hoặc agent làm tay khi fallback):
 ```
 node scripts/store.mjs known --brand <id>            # một lần: link/mã bài đã có (không mở, không tải lại)
 node scripts/research.mjs next --brand <id>
@@ -89,7 +98,7 @@ node scripts/research.mjs result --brand <id> --source <sid> --state end|known|s
 node scripts/research.mjs ingest --brand <id> --query <qid>
 node scripts/research.mjs result --brand <id> --query <qid> --state done|limit|empty|blocked|partial [--note ..]
 ```
-- Luật chung (docs/research.md): chỉ xem (không like/lưu/theo dõi/bình luận/nhắn tin/tham gia nhóm/đăng); nghỉ **ngẫu nhiên 5-15 giây** giữa mọi lần mở, cuộn, bấm; mỗi bài đọc link bài, ảnh lớn nhất, caption, tác giả, ngày, lượt thích nếu thấy, `product_fit` { type, reason }; bài sai loại → `rejected[]` (không tải).
+- Luật chung (docs/research.md, cả collector lẫn lái tay): chỉ xem (không like/lưu/theo dõi/bình luận/nhắn tin/tham gia nhóm/đăng); nghỉ **ngẫu nhiên 5-15 giây** giữa mọi lần mở, cuộn, bấm; mỗi bài đọc link bài, ảnh lớn nhất, caption, tác giả, ngày, lượt thích nếu thấy, `product_fit` { type, reason }; bài sai loại → `rejected[]` (không tải).
 - `ingest` bỏ trùng trên **mọi nền tảng** của thương hiệu (link/mã bài kể cả `alt_urls`, Instagram `/p/` = `/reel/`, YouTube `watch` = `shorts`; SHA-1 + dHash ảnh; caption), từ chối bài thiếu/sai `product_fit.type` (ghi `workspace/store/<brand>/rejected.json` kèm lý do), giữ `platform`, `source_url`, `author`, `found_by` (`reference page` | `keyword:<kw>` | `hashtag:<tag>`), `product_fit`.
 - Tường đăng nhập, captcha, checkpoint: dừng ngay nền tảng đó, `result --state blocked --note "<thấy gì>"`: truy vấn còn lại của nền tảng đó bị bỏ trong lượt, nền tảng khác vẫn tiếp. Trang tham khảo Facebook bị chặn: các trang Facebook còn lại `--state skipped`.
 - `next` trả `skip: true` (mục tiêu đã đủ khi còn trang tham khảo): chạy đúng lệnh `do` (`result --state skipped`).
