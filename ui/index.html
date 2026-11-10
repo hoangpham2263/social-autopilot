@@ -279,6 +279,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div class="field" data-opt="research" hidden><label for="prMax" title="At most this many new posts for each brand in this run, shared evenly by its sources">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="research" hidden><label for="prKind">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
+      <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
     </div>
@@ -467,7 +468,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
       const parts = (list) => list.filter(Boolean).join(" · ");
       const none = `<span class="muted">No posts yet</span>`;
-      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.new && `${st.new} unused`, st.used && `${st.used} used`, st.rejected && `${st.rejected} dropped`]) : none;
+      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.fresh && `${st.fresh} fresh`, st.used && `${st.used} used before`, st.retired && `${st.retired} retired`, st.rejected && `${st.rejected} dropped`]) : none;
       const research = r?.latest ? parts([esc(r.latest), r.new_last_crawl && `${r.new_last_crawl} new`, r.duplicates_last_crawl && `${r.duplicates_last_crawl} duplicates skipped`, arr(r.pending).length && `unfinished: ${esc(arr(r.pending).join(", "))}`]) : "";
       const blocked = arr(r?.blocked).length ? `<div class="bad-text">Blocked: ${esc(arr(r.blocked).join("; "))}</div>` : "";
       const written = arr(x?.written).length;
@@ -605,11 +606,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   };
 
   // ----- Library: the research store of each brand, kept apart per brand; "Drop" = never used for posts -----
-  const ITEM_TEXT = { new: "Unused", used: "Used", rejected: "Dropped" };
-  const ITEM_COLOR = { new: "c-green", used: "", rejected: "c-red" };
+  // Items are not used up (one reference may inspire several posts, each from a new angle): new = available (Fresh when
+  // never used, else "Used before"), retired = used enough (the user's call), rejected = Dropped (filtered / not suitable).
+  const ITEM_TEXT = { new: "Fresh", used: "Used before", retired: "Retired", rejected: "Dropped" };
+  const ITEM_COLOR = { new: "c-green", used: "", retired: "c-amber", rejected: "c-red" };
+  const usesN = (it) => arr(it.uses).length;
+  const itemState = (it) => (it.status === "new" && usesN(it) ? "used" : it.status);
+  const usedTimes = (it) => (usesN(it) ? `used ${usesN(it)}×` : "");
   const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway", skipped: "skipped (quota)" };
-  let resShown = 60, resStatus = store.get("resStatus") || "new", resAvatars = {};
-  if (!["new", "used", "rejected", ""].includes(resStatus)) resStatus = "new";
+  let resShown = 60, resStatus = store.get("resStatus") ?? "fresh", resAvatars = {}, resRetireSuggest = [];
+  if (!["fresh", "used", "retired", "rejected", ""].includes(resStatus)) resStatus = "fresh";
   // The one card template: { id, img, title, status (html), sub (one meta line, e.g. the Metricool time), who (brand/page name), actions (html), hint }.
   const tile = (x) => `<div class="tile" data-id="${esc(x.id)}" tabindex="0">
     ${x.img ? `<img class="tile-img" loading="lazy" src="${img(x.img)}" alt="">` : `<div class="tile-img none">No image</div>`}
@@ -633,15 +639,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     const brand = $("#resBrand").value || store.get("resBrand"), status = resStatus, source = $("#resSource").value;
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
-    $("#resBrand").innerHTML = `<option value="">Pick…</option>` + az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}</option>`).join("");
+    $("#resBrand").innerHTML = az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}</option>`).join("");
     const c = r.current;
     if (!c && !brand && r.brands?.length) { const first = az(r.brands, (x) => x.name || x.id)[0]; $("#resBrand").value = first.id; store.set("resBrand", first.id); return loadResearch(); } // no brand chosen yet: open the first (A–Z)
     if (!c) { $("#resSource").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
     $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option value="${esc(s)}"${s === source ? " selected" : ""}>${esc(withCount(s, c.source_counts?.[s]))}</option>`).join("");
     setDisabled($("#resSource"), arr(c.sources).length < 2, "This brand has only one source");
     const k = c.counts || {};
-    const SHOW = [["new", "Unused", k.new], ["used", "Used", k.used], ["rejected", "Dropped", k.rejected], ["", "All", k.total]];
-    $("#resStatus").innerHTML = SHOW.map(([v, t, n]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}">${esc(withCount(t, n))}</button>`).join("");
+    resRetireSuggest = arr(k.retire_suggested);
+    const SHOW = [["", "All", k.total, ""], ["fresh", "Fresh", k.fresh, "Never used for a post"], ["used", "Used before", k.used, `Used for ${k.uses || 0} posts in all; can inspire another post from a new angle (after a ${k.cooldown_days ?? 7}-day cooldown)`], ["retired", "Retired", k.retired, "Fine, but used enough: never picked again until restored"], ["rejected", "Dropped", k.rejected, "Filtered out or not suitable: never used for posts"]];
+    $("#resStatus").innerHTML = SHOW.map(([v, t, n, tip]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(withCount(t, n))}</button>`).join("");
     for (const b of $$("#resStatus button")) b.onclick = () => { resStatus = b.dataset.show; store.set("resStatus", resStatus); resShown = 60; loadResearch(); };
     const items = arr(c.items);
     const prog = Object.entries(c.progress || {});
@@ -651,9 +658,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#resBody").innerHTML = `${progress}
       <div class="tiles spaced">${list.map((it) => tile({ id: it.id, img: arr(it.image_paths)[0] || "",
         title: String(it.caption || "").split(/\r?\n/).find((l) => l.trim()) || it.id,
-        status: it.status === "rejected" && it.filter?.fit === false ? `<span class="meta" title="${esc(it.filter.reason || "")}">filtered</span>` : "",
+        status: it.status === "rejected" && it.filter?.fit === false ? `<span class="meta" title="${esc(it.filter.reason || "")}">filtered</span>` : it.status === "retired" ? `<span class="meta" title="${esc(it.retired_note || "")}">Retired</span>` : "",
+        sub: usedTimes(it),
         who: pageOf(it), whoTip: `${pageOf(it)} · ${it.id}${it.posted_date ? ` · ${it.posted_date}` : ""}${it.status === "rejected" && it.note ? ` · ${it.note}` : ""}`,
-        actions: it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : "" })).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
+        actions: it.status === "rejected" || it.status === "retired" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : "" })).join("") || `<div class="meta">Nothing matches this filter.</div>`}</div>
       ${items.length > resShown ? `<div class="actions"><button class="btn" type="button" id="resMore">Show more (${items.length - resShown})</button></div>` : ""}`;
     if ($("#resMore")) $("#resMore").onclick = () => { resShown += 60; loadResearch(); };
     resAvatars = c.avatars || {};
@@ -691,7 +699,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       const merged = arr(it.post_keys).length;
       const link = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>`;
       const side = `<dl class="kv">
-          <dt>Status</dt><dd><span class="status-tag ${ITEM_COLOR[it.status] || ""}">${ITEM_TEXT[it.status] || esc(it.status)}</span> ${it.note && !(it.status === "rejected" && it.filter?.fit === false) ? `<span class="meta">Reason: ${esc(it.note)}</span>` : ""}</dd>
+          <dt>Status</dt><dd><span class="status-tag ${ITEM_COLOR[itemState(it)] || ""}">${ITEM_TEXT[itemState(it)] || esc(it.status)}</span> ${usedTimes(it) ? `<span class="meta">${usedTimes(it)}</span>` : ""} ${it.note && !(it.status === "rejected" && it.filter?.fit === false) ? `<span class="meta">Reason: ${esc(it.note)}</span>` : ""}${it.status === "retired" && it.retired_note ? `<span class="meta">Reason: ${esc(it.retired_note)}</span>` : ""}${it.status === "new" && resRetireSuggest.includes(it.id) ? `<span class="meta">Used a lot: consider Retire</span>` : ""}</dd>
           ${it.filter ? `<dt>Filter</dt><dd>${it.filter.fit ? "Kept" : "<span class=\"bad-text\">Filtered out</span>"}${it.filter.reason ? `: ${esc(it.filter.reason)}` : ""}${it.filter.restored_at ? ` <span class="meta">(restored by you)</span>` : ""}</dd>` : ""}
           <dt>Source</dt><dd>${it.source_url ? link(it.source_url, it.store || it.source_id) : esc(it.store || it.source_id)}</dd>
           <dt>Original</dt><dd>${it.post_url ? link(it.post_url, "Open original ↗") : "-"}</dd>
@@ -699,11 +707,12 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
           <dt>Captured</dt><dd>${esc(String(it.captured || "-").slice(0, 16).replace("T", " "))}</dd>
           <dt>Images</dt><dd>${imgs.length}${it.media_type ? ` · ${esc(it.media_type)}` : ""}${it.caption_empty ? ` · no caption` : ""}</dd>
           ${it.main_product ? `<dt>Product</dt><dd>${esc(it.main_product)}</dd>` : ""}${it.price_seen ? `<dt>Price seen</dt><dd>${esc(it.price_seen)}</dd>` : ""}
-          ${arr(it.used_by).length ? `<dt>Used for</dt><dd>${esc(it.used_by.join(", "))}</dd>` : ""}
+          ${usesN(it) ? `<dt>Used for</dt><dd><ul class="sp-dups">${arr(it.uses).map((u) => `<li>${esc(u.draft || u.idea || "?")}${u.scene ? ` · ${esc(u.scene)}` : ""}${u.sign_text ? ` · "${esc(u.sign_text)}"` : ""}${u.image_mode === "scene-swap" ? " · scene-swap" : ""} · ${esc(String(u.at || "").slice(0, 10))}</li>`).join("")}</ul></dd>` : ""}
         </dl>
         <div><div class="meta">Duplicates</div>${dups.length || merged > 1 ? `<ul class="sp-dups">${merged > 1 ? `<li>One post, ${merged} links (merged when captured)</li>` : ""}${dups.map((x) => `<li>${esc(x.reason)}${x.detail ? ` (${esc(x.detail)})` : ""} · ${esc(x.source)} · ${esc(String(x.at).slice(0, 10))}${x.post_url ? ` · ${link(x.post_url, "duplicate")}` : ""}</li>`).join("")}</ul>` : `<div class="meta">No duplicates.</div>`}</div>
-        <div class="row-actions">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn" type="button" data-reject>Drop</button>` : `<span class="meta">Used for a post; cannot be dropped.</span>`}</div>
-        <div class="reject-box" hidden><input type="text" placeholder="Reason (optional)"><button class="btn" type="button" data-confirm>Confirm drop</button></div>
+        <div class="row-actions">${it.status === "rejected" || it.status === "retired" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn primary" type="button" data-make title="Prompt tab: Create & publish, this brand, 1 post from this item (--items ${esc(it.id)})">Make a post from this</button>${usesN(it) ? `<button class="btn" type="button" data-retire title="Fine, but used enough: never picked again until restored">Retire</button>` : ""}<button class="btn" type="button" data-reject title="Not suitable: never used for posts">Drop</button>` : ""}</div>
+        <div class="reject-box" data-box="rejected" hidden><input type="text" placeholder="Reason (optional)"><button class="btn" type="button" data-confirm>Confirm drop</button></div>
+        <div class="reject-box" data-box="retired" hidden><input type="text" placeholder="Reason (optional)"><button class="btn" type="button" data-confirm>Confirm retire</button></div>
         <div class="msg">${msg}</div>`;
       openOverlay(`Library ${esc(brand)} · ${esc(it.id)}`, `<div class="pv-layout sp-layout">${stage}<div class="pv-side">${side}</div></div>`,
         imgs.length > 1 ? (s) => { k = (k + s + imgs.length) % imgs.length; $(".car img", overlay).src = img(imgs[k]); $(".car-count", overlay).textContent = `${k + 1}/${imgs.length}`; } : null, nav, go);
@@ -722,9 +731,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         draw();
         loadResearch();
       };
-      if ($("[data-reject]", box)) $("[data-reject]", box).onclick = () => { const r = $(".reject-box", box); r.hidden = !r.hidden; if (!r.hidden) $("input", r).focus(); };
-      if ($("[data-confirm]", box)) $("[data-confirm]", box).onclick = () => setStatus("rejected", $(".reject-box input", box).value);
-      if ($(".reject-box input", box)) $(".reject-box input", box).onkeydown = (e) => { if (e.key === "Enter") setStatus("rejected", e.target.value); };
+      // Drop and Retire each open their own reason box (one at a time).
+      for (const [btn, st] of [["[data-reject]", "rejected"], ["[data-retire]", "retired"]]) if ($(btn, box)) $(btn, box).onclick = () => {
+        for (const r of $$(".reject-box", box)) if (r.dataset.box !== st) r.hidden = true;
+        const r = $(`.reject-box[data-box="${st}"]`, box); r.hidden = !r.hidden; if (!r.hidden) $("input", r).focus();
+      };
+      for (const r of $$(".reject-box", box)) {
+        $("[data-confirm]", r).onclick = () => setStatus(r.dataset.box, $("input", r).value);
+        $("input", r).onkeydown = (e) => { if (e.key === "Enter") setStatus(r.dataset.box, e.target.value); };
+      }
+      if ($("[data-make]", box)) $("[data-make]", box).onclick = () => { closeOverlay(); makeFromItem(brand, it.id); };
       if ($("[data-restore]", box)) $("[data-restore]", box).onclick = () => setStatus("new");
     };
     draw();
@@ -736,6 +752,24 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // The prompt is read-only: rebuilt from the template and the options whenever one changes. -----
   let promptData = { prompts: [], brands: [] };
   let prMode = "", prBase = "";
+  // "Make a post from this" (Library preview): one post from exactly this library item (--items), optional scene-swap.
+  let prItem = null; // { brand, id }
+  const SWAP_LINE = (id) => `scene-swap from ${id}: keep the reference photo's product/sign exactly, only replace the background with a fitting real scene; remove every foreign logo, shop name, watermark, phone number and price (ideas file: "scene_swap": true, "brand_can_produce": true)`;
+  function makeFromItem(brand, id) {
+    prItem = { brand, id };
+    $("#prSwap").checked = false;
+    show("prompt");
+    const apply = () => {
+      const create = arr(promptData.prompts).map((p) => p.mode).find((m) => modeKey(m) === "create");
+      if (create) { prMode = create; store.set("prMode", prMode); }
+      $("#prBrand").value = brand;
+      drawPrompt();
+      $("#prBrand").value = brand;
+      $("#prCount").value = "1";
+      drawPrompt();
+    };
+    if (arr(promptData.prompts).length) apply(); else setTimeout(function wait() { arr(promptData.prompts).length ? apply() : setTimeout(wait, 150); }, 150);
+  }
   const isResearch = (m) => /research/i.test(m);
   function drawPrompt() {
     const prompts = arr(promptData.prompts), brands = arr(promptData.brands);
@@ -755,6 +789,15 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     // The options of the chosen mode, in the same row as Agent and Brand: Research = Sources, Max posts, Crawl;
     // Create & publish = Posts; Publish approved = Posts, Time, Start.
     for (const el of $$("#page-prompt [data-opt]")) el.hidden = el.dataset.opt === "research" ? !research : el.dataset.opt === "make" ? research : !publishOnly;
+    // The picked library item belongs to Create & publish for its brand; another mode or brand drops it.
+    if (prItem && (modeKey(prMode) !== "create" || brand !== prItem.brand)) prItem = null;
+    $("#prItemField").hidden = !prItem;
+    if (prItem) {
+      $("#prItemName").textContent = prItem.id;
+      const swapOk = !!arr(promptData.brands).find((x) => x.id === prItem.brand)?.reference_redraw;
+      $("#prSwapLabel").hidden = !swapOk;
+      if (!swapOk) $("#prSwap").checked = false;
+    }
     // Time and Start belong to Publish approved only: Create & publish always schedules at Auto (best time), from tomorrow.
     // Sources: enabled research sources (social.json) of the chosen brand, or of every brand grouped by brand when
     // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
@@ -799,7 +842,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     } else {
       const pub = /publish approved/i.test(prMode);
       const count = parseInt($("#prCount").value, 10), win = pub ? $("#prWindow").value : "", start = pub ? $("#prStart").value : "";
-      if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts (ideas.mjs init --count ${count})`);
+      if (prItem && !pub) lines.push(`from library item ${prItem.id} (--items ${prItem.id})`);
+      else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts (ideas.mjs init --count ${count})`);
+      if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");
     }
@@ -834,12 +879,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // Mode button counts (selected brand, or all brands), each = items in that state now: Research = unused library items;
   // Create = posts to review; Publish = approved posts not sent yet. Posts still needed for Plan ahead: Overview card.
   const modeKey = (m) => (/research/i.test(m) ? "research" : /publish approved/i.test(m) ? "publish" : "create");
-  const MODE_TIP = { research: "Unused posts in the library", create: "Posts to review now (made, waiting for Approve)", publish: "Approved posts not sent to Metricool yet" };
+  const MODE_TIP = { research: "Fresh library items (never used)", create: "Posts to review now (made, waiting for Approve)", publish: "Approved posts not sent to Metricool yet" };
   let modeCounts = {};
   function showModeCounts() {
     const brand = $("#prBrand").value;
     const sum = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c[k] || 0), 0);
     for (const b of $$("#prMode button")) b.textContent = Object.keys(modeCounts).length ? withCount(b.dataset.mode, sum(modeKey(b.dataset.mode))) : b.dataset.mode;
+    // Research: the count is Fresh items; the tooltip adds every available item (used before ones can inspire a new angle).
+    const lib = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c.library?.[k] || 0), 0);
+    const rb = $$("#prMode button").find((x) => modeKey(x.dataset.mode) === "research");
+    if (rb && Object.keys(modeCounts).length) rb.title = `${sum("research")} fresh library items (never used); ${lib("available")} available in total (fresh + used before), ${lib("ready")} ready now (cooldown over)`;
     // Under Publish approved: posts already scheduled on Metricool (payload never sends them again).
     const note = $("#prMcNote"), pub = /publish approved/i.test(prMode) && Object.keys(modeCounts).length;
     note.hidden = !pub;
@@ -861,7 +910,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
   $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").value === "sub" ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
-  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart"]) $(id).onchange = regenerate;
+  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
+  $("#prItemClear").onclick = () => { prItem = null; $("#prCount").value = ""; drawPrompt(); };
   document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcBox")) $("#prSrcBox").open = false; });
   const baseHint = $("#prMsg").textContent;
   let hint = baseHint;
