@@ -106,8 +106,9 @@ export function script(args) {
   if (!adapter?.pageScript) throw new Error(`Nền tảng "${task.platform}" chưa có pageScript (in-page): lái tay bằng Playwright MCP (docs/research.md).`);
   const [lo, hi] = delayRange(settings().research?.delay_seconds);
   const max = task.max || 12;
+  const chunk = args.chunk !== undefined && args.chunk !== true && Number.isFinite(Number(args.chunk)) ? Number(args.chunk) : undefined;
   const steps = Number(args['max-steps']) || (task.kind === 'source' ? Math.min(Number(settings().research?.browser?.max_scroll_steps) || 40, 40) : 4);
-  process.stdout.write(adapter.pageScript({ url: task.url, found_by: task.found_by, max, steps, delay: [lo, hi] }) + '\n');
+  process.stdout.write(adapter.pageScript({ url: task.url, found_by: task.found_by, max, steps, delay: [lo, hi], ...(chunk !== undefined ? { chunk } : {}) }) + '\n');
   const forArg = task.kind === 'query' ? `--for-query ${task.id}` : task.kind === 'source' ? `--for-source ${task.id}` : `--platform ${task.platform}`;
   process.stderr.write(`# ${task.platform} ${task.url} max ${max}, up to ${steps} steps, pauses ${lo}-${hi}s. Paste into browser_run_code_unsafe${chunk !== undefined ? ` (CHUNK ${chunk}: tiles ${chunk * 6}.., run again with --chunk ${chunk + 1} until the result's chunk.of is reached)` : ''}; the result is compact: save/paste it AS IS (never retype), then: node scripts/collect.mjs from-page ${brand ? `--brand ${brand.id} ` : ''}${forArg} --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>'\n`);
 }
