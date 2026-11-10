@@ -23,7 +23,7 @@ import { researchReport } from './research.mjs';
 import { writtenPost } from './queue.mjs';
 import { listItems } from './store.mjs';
 import { postsNeeded } from './ideas.mjs';
-import { finishRun } from './progress.mjs';
+import { finishRun, readRun } from './progress.mjs';
 
 export const runsDir = () => path.join(workspace, 'logs', 'runs');
 const MODES = ['research', 'create', 'publish']; // publish = Mode 3, Publish approved (reported like create)
@@ -85,6 +85,18 @@ const resultOf = (mode, b) => {
   return 'ok';
 };
 
+// Where this run started when the agent gives no (full ISO) --started: the open Run progress of the mode
+// (brands.mjs --run; its first step's time, else its start), else where the previous run of the mode ended.
+const fullIso = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(s || '')) && !Number.isNaN(Date.parse(s));
+export function runStarted(mode, now = Date.now()) {
+  let run = null; try { run = readRun(mode); } catch {}
+  if (!run || run.finished || now - Date.parse(run.updated || run.created || 0) > 6 * 3600 * 1000) return '';
+  const at = (run.steps || []).map((s) => s.at).filter(fullIso).sort()[0];
+  return at || (fullIso(run.started) ? run.started : '');
+}
+// Labelled wall-clock times: the tool's ET (brands' Metricool timezone by default) and Vietnam (the user's clock).
+const wall = (iso, tz) => new Intl.DateTimeFormat('sv-SE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+export const labelled = (iso) => ({ et: `${wall(iso, 'America/New_York')} ET`, vn: `${wall(iso, 'Asia/Ho_Chi_Minh')} VN` });
 // The previous run of the same mode ends where this one may start (when the agent gives no --started).
 function lastEnded(mode) {
   const last = listLogs({ mode, limit: 1 })[0];
@@ -96,7 +108,10 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
   if (!MODES.includes(mode)) throw new Error('--mode must be research, create or publish.');
   const all = discoverBrands().brands.filter((b) => b.usable || brands.includes(b.id));
   const pick = brands.length ? all.filter((b) => brands.includes(b.id)) : all;
-  const since = started || lastEnded(mode);
+  // Research keeps the earlier of the two (its numbers count crawls since the start; a crawl may begin before the panel's
+  // first step); create/publish take the Run progress start, never "24 h back".
+  const rs = runStarted(mode, now.getTime());
+  const since = (fullIso(started) ? new Date(started).toISOString() : '') || (mode === 'research' ? [rs, lastEnded(mode)].filter(Boolean).sort()[0] : rs || lastEnded(mode));
   const ended = now.toISOString();
   const per = pick.map((b) => {
     const x = extra.brands?.[b.id] || {};
@@ -124,7 +139,7 @@ export function addLog({ mode, agent = '', brands = [], started = '', notes = ''
   const cleanHead = mode === 'publish' ? headline.replace(/ · \d+ to review/, '') : headline;
   // Stopped: the reason given, or a research run where no brand's crawl was started in this run.
   const stopReason = String(reason || '').trim() || (mode === 'research' && per.length && per.every((b) => b.research?.not_run) ? 'no crawl started' : '');
-  const log = { id, mode, agent: String(agent || ''), started: since, ended, duration_s: Math.max(0, Math.round((Date.parse(ended) - Date.parse(since)) / 1000)), result: stopReason ? 'stopped' : result, headline: stopReason ? `Stopped: ${stopReason}` : cleanHead, ...(stopReason ? { stop_reason: stopReason } : {}), notes: String(notes || extra.notes || ''), errors, warnings, resolved, brands: per };
+  const log = { id, mode, agent: String(agent || ''), started: since, ended, times: { started: labelled(since), ended: labelled(ended) }, duration_s: Math.max(0, Math.round((Date.parse(ended) - Date.parse(since)) / 1000)), result: stopReason ? 'stopped' : result, headline: stopReason ? `Stopped: ${stopReason}` : cleanHead, ...(stopReason ? { stop_reason: stopReason } : {}), notes: String(notes || extra.notes || ''), errors, warnings, resolved, brands: per };
   writeJson(path.join(runsDir(), `${id}.json`), log);
   return log;
 }

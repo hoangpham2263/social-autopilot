@@ -381,7 +381,11 @@ export function timePicker({ brandId, network, perDay, audienceTz, taken, allowT
       // Strict order, each list best first: primary, backup, acceptable hours 3 h apart; then backup and acceptable
       // hours 2 h apart; only then the next day.
       const primary = times.map((time) => ({ time, source }));
-      for (const [list, gap] of [[primary, 180], [backup, 180], [acceptable, 180], [backup, 120], [acceptable, 120]]) for (const x of list) {
+      // One post a day: ONLY the primary best times (Metricool's top slots / the research primary hours); backup and
+      // acceptable hours are only for days that need more than one post (user, 10/11/2026). --start today: the next
+      // primary slot at least leadMinutes away, else tomorrow's primary.
+      const tiers = n === 1 && primary.length ? [[primary, 180]] : [[primary, 180], [backup, 180], [acceptable, 180], [backup, 120], [acceptable, 120]];
+      for (const [list, gap] of tiers) for (const x of list) {
         const t = x.time;
         if (d === 0 && minutes(t) < minutes(cur.time) + leadMinutes + (leadMinutes ? 0 : 1)) continue;
         const local = tz === audienceTz ? { date, time: t } : convertZoned(date, t, tz, audienceTz);

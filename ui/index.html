@@ -917,7 +917,16 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const MODE_TEXT = { research: "Research", create: "Create & publish", publish: "Publish" };
   const SRC_STATE = { "skipped (quota)": "", "new posts": "", "dried up": "dry", "reached end": "", blocked: "bad-text", error: "bad-text", unfinished: "warn-text" };
   let lgMode = store.get("lgMode") || "", dryRuns = 3;
-  const when = (t) => (t ? new Date(t).toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-");
+  // Local (the user's clock, VN); the ET time is added when the ET date differs (Metricool times are in ET).
+  const when = (t) => {
+    if (!t) return "-";
+    const d = new Date(t), loc = d.toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    try {
+      const day = (tz) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+      if (day("America/New_York") === day(Intl.DateTimeFormat().resolvedOptions().timeZone)) return loc;
+      return `${loc} (ET ${new Intl.DateTimeFormat([], { timeZone: "America/New_York", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(d)})`;
+    } catch { return loc; }
+  };
   const loadLogs = safely("#lgList", async () => {
     const brand = store.get("lgBrand");
     const r = await getJson("/api/runlogs").catch(() => offline);

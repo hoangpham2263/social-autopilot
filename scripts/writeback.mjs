@@ -10,7 +10,24 @@ import { spawnSync } from 'node:child_process';
 import { cleanDraftImage } from './image-clean.mjs';
 import { hostAfterWriteback } from './host-image.mjs';
 import { postsDir, postsCatalogFile, nextPostId, checkPost } from './posts.mjs';
-import { main, out, parseArgs, need, isMain, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus } from './lib.mjs';
+import { main, out, parseArgs, need, isMain, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus, cleanText, aiLabelHits } from './lib.mjs';
+
+// Alt text for the post image, made at Approve from the idea (product, scene, props, sign text): short, descriptive,
+// never an AI label (a sentence with one is dropped), never the source shop. Always present, so payload never lacks it.
+export function altText(draft) {
+  const i = draft.idea || {};
+  const one = (s) => cleanText(String(s || '')).text.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '');
+  const parts = [one(i.product_type) || 'Product photo'];
+  if (draft.sign_text) parts[0] += ` reading "${one(draft.sign_text)}"`;
+  if (one(i.scene)) parts.push(`in ${one(i.scene).replace(/^(in|on|at)\s+/i, '')}`);
+  if (one(i.props) && !/^at most/i.test(one(i.props))) parts.push(`with ${one(i.props).replace(/^with\s+/i, '')}`);
+  let alt = parts.join(' ');
+  if (aiLabelHits(alt).length) alt = parts[0];
+  if (aiLabelHits(alt).length) alt = 'Product photo';
+  if (draft.inspiration?.source_shop && alt.toLowerCase().includes(String(draft.inspiration.source_shop).toLowerCase())) alt = parts[0];
+  alt = alt.charAt(0).toUpperCase() + alt.slice(1);
+  return alt.length > 240 ? alt.slice(0, 237).replace(/\s+\S*$/, '') + '…' : alt + '.';
+}
 
 export function slugify(text) {
   const s = String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase()
@@ -82,6 +99,7 @@ function writeBackInner(id) {
       : { ai_disclosure: { ai_scene: true, tool: 'codex' } }),
     ...(draft.sign_text ? { sign_text: draft.sign_text } : {}),
     ...(draft.product_size ? { product_size: draft.product_size } : {}),
+    media_alt: [altText(draft)],
     approval: { by, date, note },
     source: `social-autopilot ${draft.id}`,
   };

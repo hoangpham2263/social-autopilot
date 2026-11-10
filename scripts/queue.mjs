@@ -93,7 +93,8 @@ export function queueReport(args = {}) {
       unsent_approved: catalog.filter((c) => c.unsent).map((c) => c.post),
     };
   });
-  return { skillsRoot: root, date: today(), brands: report };
+  // date = the tool's day in ET (brands' Metricool timezone); date_vn = the user's day in Vietnam (differs in the VN morning).
+  return { skillsRoot: root, date: today(), date_tz: 'ET (America/New_York)', date_vn: today('Asia/Ho_Chi_Minh'), brands: report };
 }
 
 if (isMain(import.meta.url)) main(() => out(queueReport(parseArgs())));

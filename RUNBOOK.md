@@ -140,7 +140,7 @@ Không mở Facebook. Cần `node`, Codex CLI (tạo ảnh) và MCP Metricool c�
   ```
 - Ghi `workspace/metricool-brands.json` (dạng: `config/metricool-brands.example.json`): tên, blogId, múi giờ, mạng đã nối của từng brand. **Giữ** liên kết skill (`skill_id`, `skill_path`) theo blogId; brand không còn trong tài khoản thành `removed: true`. Báo người dùng brand mới (`added`, cần Choose skill ở Overview) và brand đã mất (`removed`).
 - Với từng thương hiệu usable: gọi tool MCP `getBestTimeToPostByNetwork` cho brand Metricool của nó (mạng `facebook`), lưu JSON vào file rồi:
-  Tham số (theo mô tả của tool: tối đa 1 tuần): `brandId` = blogId của brand, `socialNetwork` = `facebook`, `timezone` = múi giờ của brand trong Metricool (từ `getBrandSettings` / `workspace/metricool-brands.json`), `fromDate` = 00:00 ngày mai, `toDate` = 23:59 ngày thứ 7 tính từ mai, dạng ISO có offset (vd `2026-11-10T00:00:00-05:00`). Mỗi brand một lần gọi.
+  Tham số (theo mô tả của tool: tối đa 1 tuần): `brandId` = blogId của brand, `socialNetwork` = `facebook`, `timezone` = múi giờ của brand trong Metricool (từ `getBrandSettings` / `workspace/metricool-brands.json`), `fromDate` = 00:00 ngày mai **theo múi giờ Metricool của brand**, `toDate` = 23:59 ngày thứ 7 tính từ mai (cùng múi giờ đó), dạng ISO có offset (vd `2026-11-10T00:00:00-05:00`). Mỗi brand một lần gọi.
   ```
   node scripts/metricool-mcp.mjs sync-times --brand <id> --from workspace/tmp/best-times-<id>.json
   ```

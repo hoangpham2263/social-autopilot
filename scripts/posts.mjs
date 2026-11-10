@@ -10,6 +10,12 @@
 //   node scripts/posts.mjs list  --brand <id>
 //   node scripts/posts.mjs check --brand <id> --post POST-xx           delivery check of one register post
 //   node scripts/posts.mjs mark-published --brand <id> --post POST-xx --date yyyy-mm-dd [--url <link>] [--network facebook] [--lang en]
+//   node scripts/posts.mjs fill-alt --brand <id>     media_alt for approved posts that have none (from the draft's idea)
+//   node scripts/posts.mjs unsend --brand <id> --post POST-xx --reason "<why>" [--metricool-id <id> --uuid <uuid>] [--network facebook]
+//        pulled back from Metricool (a person turned it into a draft or deleted it there; there is no delete tool): the post
+//        is "approved, not sent" again (Queued, waiting), its Metricool id(s) go to metricool_history (never matched or
+//        recorded again: status lists them in ignore_ids), and the next Publish approved sends it fresh as a scheduled
+//        post. --metricool-id/--uuid: the id it has in Metricool now when that changed (e.g. turned into a draft).
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -113,12 +119,59 @@ export function markPublished({ brand: brandId, post, date, url = '', network = 
   });
 }
 
-if (isMain(import.meta.url)) main(() => {
+export function unsend({ brand: brandId, post, reason = '', metricoolId = '', uuid = '', network = '' }) {
+  if (!String(reason).trim()) throw new Error('--reason is required (why the post was pulled back).');
+  const brand = loadBrand(brandId, { allowDisabled: true });
+  return updatePosts(brand.id, (catalog) => {
+    const entry = (catalog.posts || []).find((p) => p.id === post);
+    if (!entry) throw new Error(`${post} không có trong sổ bài của tool (${postsCatalogFile(brand.id)}).`);
+    if (entry.status === 'published') throw new Error(`${post} is already published: it cannot be unsent.`);
+    const nets = network ? [network] : Object.keys(entry.metricool || {});
+    if (!nets.length) throw new Error(`${post} has no Metricool id: nothing to unsend.`);
+    const at = new Date().toISOString();
+    entry.metricool_history ||= [];
+    for (const n of nets) {
+      const m = entry.metricool?.[n];
+      if (!m) continue;
+      entry.metricool_history.push({ network: n, ...m, unsent_at: at, reason: String(reason) });
+      // The id it has in Metricool now (a person turned it into a draft there): also never matched again.
+      if (metricoolId && String(metricoolId) !== String(m.id)) entry.metricool_history.push({ network: n, blog_id: m.blog_id, id: String(metricoolId), uuid: String(uuid || ''), draft: true, replaced_draft: String(m.id), unsent_at: at, reason: String(reason) });
+      delete entry.metricool[n];
+      if (entry.schedule) delete entry.schedule[n];
+    }
+    if (entry.metricool && !Object.keys(entry.metricool).length) delete entry.metricool;
+    if (entry.schedule && !Object.keys(entry.schedule).length) delete entry.schedule;
+    entry.status = 'approved';
+    catalog.updated = today(brand.timezone);
+    return { brand: brand.id, post, status: entry.status, history: entry.metricool_history, next: 'Delete or keep the Metricool draft(s) by hand; the next Publish approved sends this post fresh as a scheduled post.' };
+  });
+}
+
+// Alt text for approved posts that have none (posts approved before Approve wrote media_alt): from their draft's idea.
+export async function fillAlt(brandId) {
+  const { altText } = await import('./writeback.mjs');
+  const { findDraft } = await import('./lib.mjs');
+  return updatePosts(brandId, (catalog) => {
+    const filled = [];
+    for (const p of catalog.posts || []) {
+      if ((Array.isArray(p.media_alt) ? p.media_alt.filter(Boolean).length : p.media_alt) || !p.draft) continue;
+      try { p.media_alt = [altText(findDraft(p.draft).draft)]; filled.push({ post: p.id, alt: p.media_alt[0] }); } catch {}
+    }
+    return { brand: brandId, filled };
+  });
+}
+
+// Every Metricool id a post had and lost (unsend): never matched, recorded or published again.
+export const historyIds = (entry) => (entry?.metricool_history || []).map((h) => String(h.id || '')).filter(Boolean);
+
+if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
   const cmd = args._[0];
   const brandId = need(args, 'brand');
   if (cmd === 'list') return out({ brand: brandId, catalog: postsCatalogFile(brandId), posts: readPosts(brandId).posts || [] });
   if (cmd === 'check') { const r = checkPost(loadBrand(brandId, { allowDisabled: true }), need(args, 'post')); return out({ ok: !r.errors, ...r }); }
   if (cmd === 'mark-published') return out(markPublished({ brand: brandId, post: need(args, 'post'), date: need(args, 'date'), url: args.url === true ? '' : args.url || '', network: args.network === true ? '' : args.network || '', lang: args.lang === true ? '' : args.lang || '' }));
-  throw new Error('Lệnh: list --brand <id> | check --brand <id> --post POST-xx | mark-published --brand <id> --post POST-xx --date yyyy-mm-dd [--url ..] [--network ..] [--lang ..]');
+  if (cmd === 'fill-alt') return out(await fillAlt(brandId));
+  if (cmd === 'unsend') return out(unsend({ brand: brandId, post: need(args, 'post'), reason: need(args, 'reason'), metricoolId: args['metricool-id'] === true ? '' : args['metricool-id'] || '', uuid: args.uuid === true ? '' : args.uuid || '', network: args.network === true ? '' : args.network || '' }));
+  throw new Error('Lệnh: unsend --brand <id> --post POST-xx --reason .. [--metricool-id .. --uuid ..] | list --brand <id> | check --brand <id> --post POST-xx | mark-published --brand <id> --post POST-xx --date yyyy-mm-dd [--url ..] [--network ..] [--lang ..]');
 });

@@ -104,7 +104,7 @@ test('payload: exact createScheduledPost shape, posted language only, no AI labe
   assert.equal(info.text, 'Hello from POST-01\n\n#TestBrand');
   assert.doesNotMatch(info.text, /Xin chào|chỉ để duyệt/, 'reviewer-only language is never posted');
   assert.doesNotMatch(it.args.info, /isAiGenerated":true|made with AI|AIgenerated/i);
-  assert.match(it.record, /record --brand testbrand --post POST-01 .* --tz <publicationDate.timezone> --time-source "catalog schedule"$/);
+  assert.match(it.record, /record --brand testbrand --post POST-01 .* --tz "<publicationDate.timezone>" --time-source "catalog schedule"$/);
   assert.match(run('payload', '--brand', 'testbrand', '--draft').error, /removed/);
   // the automatic time never reuses the day taken by the sent post
   const r2 = run('payload', '--brand', 'testbrand', '--posts', 'POST-02');
@@ -194,13 +194,29 @@ test('record: always scheduled (schedule.<network> + status); a legacy Metricool
   assert.deepEqual(st.posts[0].audience_time, { date: '2026-12-17', time: '10:00:00', timezone: 'America/Los_Angeles' });
   assert.equal(st.query.tool, 'getScheduledPosts');
   assert.equal(st.query.brandId, '1111');
-  assert.equal(st.query.fromDate, '2026-12-17T00:00:00');
-  assert.equal(st.query.toDate, '2026-12-19T23:59:59');
+  assert.equal(st.query.fromDate, '2026-12-17T00:00:00+07:00', 'ISO with the timezone offset (Metricool parses it)');
+  assert.equal(st.query.toDate, '2026-12-19T23:59:59+07:00');
   assert.equal(st.query.timezone, 'Indian/Christmas');
 
   // record refuses posts that are not approved/scheduled
   r = run('record', '--brand', 'testbrand', '--post', 'POST-09', '--id', '1', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles');
   assert.equal(r.ok, false);
+
+  // unsend (pulled back; a person turned it into a draft in Metricool, new id 501): approved again, ids in history,
+  // status ignores both ids, record refuses them, the next payload sends it fresh.
+  const posts = (...a) => JSON.parse(spawnSync(process.execPath, [path.join(tool, 'scripts', 'posts.mjs'), ...a], { env, encoding: 'utf8', windowsHide: true }).stdout);
+  assert.equal(posts('unsend', '--brand', 'testbrand', '--post', 'POST-01').ok, false, '--reason is required');
+  const u = posts('unsend', '--brand', 'testbrand', '--post', 'POST-01', '--reason', 'wrong time', '--metricool-id', '501', '--uuid=-12345');
+  assert.equal(u.ok, true, JSON.stringify(u));
+  p = catalog().posts.find((x) => x.id === 'POST-01');
+  assert.equal(p.status, 'approved');
+  assert.equal(p.metricool, undefined);
+  assert.equal(p.schedule, undefined);
+  assert.deepEqual(p.metricool_history.map((h) => [h.id, h.uuid]), [['500', 'u-500'], ['501', '-12345']]);
+  const st2 = run('status', '--brand', 'testbrand');
+  assert.ok(['500', '501'].every((id) => st2.ignore_ids.includes(id)), JSON.stringify(st2.ignore_ids));
+  assert.match(run('record', '--brand', 'testbrand', '--post', 'POST-01', '--id', '501', '--publication', `${FUTURE}T10:00`, '--tz', 'America/Los_Angeles').error, /unsent/);
+  assert.ok(run('payload', '--brand', 'testbrand').items.some((i) => i.post === 'POST-01'), 'sent fresh next time');
 });
 
 test('payload: a failing post is blocked, the others still go; an old settings default_mode is ignored', () => {
