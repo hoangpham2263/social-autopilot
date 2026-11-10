@@ -5,6 +5,10 @@
 //   node scripts/draft.mjs new   --brand <id> --idea I001 --product <brand image> [--scene <mood image>]
 //   node scripts/draft.mjs new   --brand <id> --idea I001 --ref-image <workspace/store/<brand>/images/S0001-1-….jpg>
 //                                [--brand-can-produce]   scene-swap: opt-in per brand (product_images.reference_redraw)
+//        --ref-mode keep-scene|new-scene (required with --ref-image; the agent LOOKS at the reference first) [--ref-has-face true|false]
+//          keep-scene: no human face in the reference: its scene/framing stay, the product gets NEW text: --sign-text (new,
+//                      same language/script as the original) and --ref-text (what the reference reads) are required
+//          new-scene:  a face / identifiable person: a new real-life scene, every person removed, the product's text kept
 //        --size "<real size, e.g. 91 cm (36 in) wide>" (required; from the skill: social.json product_images.size_source)
 //        --compare "<comparison object + its real size, e.g. the 4-seat table below, 120 cm (47 in) wide>" (named in the
 //        prompt with the proportion limits; tool defaults or social.json product_images.size_limits) [--frame-max N] [--close-up]
@@ -16,7 +20,8 @@
 //        written meanwhile. A Codex rate-limit/quota error: wait codex.retry_wait_seconds, retry once, then image_failed.
 //   node scripts/draft.mjs reprompt --id <draft> [--size ..] [--compare ..] [--smaller N] [--sign-text .. | --clear-sign-text] [--description "<product description>"]
 //        rebuilds prompt.txt from the template (the old description is kept when none is given); then image --force
-//   node scripts/draft.mjs confirm-clean --id <draft> --by <name>   scene-swap: looked at image.png, no shop name/logo left
+//   node scripts/draft.mjs confirm-clean --id <draft> --by <name> [--no-people]   scene-swap: looked at image.png, no shop name/logo
+//        left; new-scene also needs --no-people (nobody from the reference, no person at all, in the new image)
 //   node scripts/draft.mjs size-check --id <draft> --product-pct N --object-pct N [--wall-pct N] [--accept "<reason>"]
 //        measured proportions of the new image (logged in status.json size_check, shown in the app); over a limit: retry once with reprompt --smaller N
 //   node scripts/draft.mjs image --id <draft> [--force]     runs Codex (prompt.txt must be finished: no {{...}} left)
@@ -32,7 +37,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkDraft, summary, logoWarnings } from './draft-lib.mjs';
+import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText } from './draft-lib.mjs';
 import { cleanDraftImage } from './image-clean.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
 import { readStore, storeDir, storeIdeasFile, markUsed, reuseProblems } from './store.mjs';
@@ -67,7 +72,7 @@ export function newDraft(args) {
   // Default ("brand-image"): the product photo is the brand's own (inside its skill folder or a product_images.sources
   // folder). Opt-in "scene-swap" (--ref-image): a research reference of this brand is the product photo and only the
   // scene changes; only when the brand's social.json has product_images.reference_redraw.enabled: true.
-  let product, imageMode = 'brand-image', refUsed = ref;
+  let product, imageMode = 'brand-image', refUsed = ref, refMode = '', refHasFace = null;
   if (args['ref-image']) {
     const rr = brand.social.product_images?.reference_redraw || {};
     if (rr.enabled !== true) throw new Error('social.json product_images.reference_redraw.enabled khác true: thương hiệu chỉ dùng ảnh của chính mình (--product).');
@@ -79,6 +84,12 @@ export function newDraft(args) {
     if (!refUsed) throw new Error('--ref-image không phải một ảnh đã ingest vào kho (items.json).');
     if (rr.only_if_brand_can_produce !== false && !args['brand-can-produce']) throw new Error('reference_redraw.only_if_brand_can_produce: xác nhận thương hiệu làm được đúng sản phẩm này (project.md mục 5) bằng --brand-can-produce.');
     imageMode = 'scene-swap';
+    // The agent looked at the reference: a human face -> new-scene, none -> keep-scene (user 10/11/2026).
+    refMode = String(args['ref-mode'] && args['ref-mode'] !== true ? args['ref-mode'] : idea.ref_mode || '').trim();
+    if (!REF_MODES.includes(refMode)) throw new Error('--ref-mode keep-scene|new-scene: LOOK at the reference first; a human face -> new-scene (new scene, people removed, text kept), no face -> keep-scene (scene kept, new text on the product).');
+    const face = args['ref-has-face'] !== undefined ? args['ref-has-face'] : idea.ref_has_face;
+    refHasFace = face === undefined || face === null || face === '' ? refMode === 'new-scene' : face === true || String(face) === 'true';
+    if (refHasFace !== (refMode === 'new-scene')) throw new Error(`ref_has_face ${refHasFace} does not fit --ref-mode ${refMode}: a face in the reference -> new-scene, no face -> keep-scene.`);
   } else {
     product = path.resolve(need(args, 'product'));
     if (!fs.existsSync(product) || !IMAGE.test(product)) throw new Error('Ảnh sản phẩm không có hoặc không phải PNG/JPEG/WebP.');
@@ -104,7 +115,10 @@ export function newDraft(args) {
 
   const mode = brand.social.language_policy?.mode || 'single';
   const networks = (brand.social.channels || []).filter((x) => x.enabled).map((x) => ({ network: x.network, account: x.account || '', url: x.url || '', lang: [].concat(x.lang || []) }));
-  const { size: productSize, signText, customText } = sizeAndText(brand, args, idea, imageMode);
+  const refInfo = { mode: refMode, text: String(args['ref-text'] && args['ref-text'] !== true ? args['ref-text'] : idea.ref_text || '').trim() };
+  let sized;
+  try { sized = sizeAndText(brand, args, idea, refInfo); } catch (e) { fs.rmSync(dir, { recursive: true, force: true }); throw e; }
+  const { size: productSize, signText, customText } = sized;
   const so = sizeOpts(args, idea);
   // The same library item again only from a new angle: a different scene AND a different product or sign_text.
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) {
@@ -116,7 +130,7 @@ export function newDraft(args) {
     id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(), product_size: productSize, ...(so.compare ? { size_compare: so.compare } : {}), ...(so.frameMax ? { frame_pct_max: so.frameMax } : {}), ...(so.closeUp ? { close_up: true } : {}), ...(signText ? { sign_text: signText } : {}), custom_text: customText,
     idea: { run: 'store', id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'].map((f) => [f, idea[f] || ''])) },
     inspiration: { run: refUsed.run || 'store', ref: refUsed.id || idea.item, store_item: refUsed.id || idea.item, source: refUsed.source_id || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
-    image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false } : {}),
+    image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false, ref_mode: refMode, ref_has_face: refHasFace, ...(refInfo.text ? { ref_text: refInfo.text } : {}) } : {}),
     product_image: product, scene_image: scene, networks, languages: brand.languages, review_languages: brand.review_languages || [], language_mode: mode,
     // captions: posted languages + reviewer-only languages (language_policy.review_langs; never posted).
     image: 'image.png', captions: Object.fromEntries([...brand.languages, ...(brand.review_languages || [])].map((l) => [l, `content-${l}.txt`])), ai_disclosure: { tool: 'codex' },
@@ -125,15 +139,15 @@ export function newDraft(args) {
   const second = scene
     ? 'The second attached image is ONLY a mood/lighting reference. Do not copy it and do not take any objects from it.'
     : 'There is no second image.';
-  fs.writeFileSync(path.join(dir, 'prompt.txt'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', imageMode === 'scene-swap' ? 'scene-swap.txt' : 'scene-edit.txt'), 'utf8'), {
+  fs.writeFileSync(path.join(dir, 'prompt.txt'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', refTemplate(draft)), 'utf8'), {
     SOURCE_SHOP: refUsed.store || refUsed.source_id || 'the source shop',
     SCENE: idea.scene, ANGLE: idea.angle, PROPS: idea.props || 'at most one or two props that fit the scene',
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
-    ...sizeTextFill(brand, productSize, signText, so, imageMode),
+    ...sizeTextFill(brand, productSize, signText, so, refInfo),
   }), 'utf8');
   fs.writeFileSync(path.join(dir, 'brief.md'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'caption-brief.md'), 'utf8'), {
     BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
-    SIGN_TEXT_NOTE: [imageMode === 'scene-swap' ? 'Scene-swap: sản phẩm và chữ trên sản phẩm giữ nguyên như ảnh tham khảo, chỉ đổi nền và nội dung caption. Không bịa nghĩa hay bản dịch của chữ khi không chắc: khi đó gọi là "the characters/lettering on the sign" và tập trung vào thiết kế, cách đặt làm bảng riêng.' : '',
+    SIGN_TEXT_NOTE: [refNote(refMode, refInfo.text, signText),
       signText ? 'Chữ trên bảng là "' + signText + '": caption (mọi ngôn ngữ) nhắc đúng chữ này, không viết chữ mẫu kiểu "Your Names".' : ''].filter(Boolean).join(' '),
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
     SECTIONS: [].concat(brand.social.caption_rules?.project_md_sections || []).join('; ') || '1, 3, 7, 8, 10, 11',
@@ -149,22 +163,34 @@ export function newDraft(args) {
   // The store item(s) behind this draft get one more use (scene, product, sign text); they stay available.
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) markUsed(brand.id, it, id);
   const status = setStatus(dir, 'needs_prompt', { image_mode: imageMode, ...(imageMode === 'scene-swap' ? { source_shop: draft.inspiration.source_shop, source_url: draft.inspiration.source_url } : {}) });
-  return ({ id, dir, status: status.status, ...(so.compare ? {} : { warnings: ['No --compare: name the comparison object and its real size (e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"); the prompt falls back to a generic furniture line.'] }), next: `Mở ${path.join(dir, 'prompt.txt')}, thay {{PRODUCT_DESCRIPTION}} bằng mô tả đúng sản phẩm trong ảnh, rồi chạy draft.mjs image --id ${id}. Viết caption theo brief.md.` });
+  return ({ id, dir, status: status.status, ...(refMode ? { ref_mode: refMode, ref_has_face: refHasFace } : {}), ...(so.compare || refMode === 'keep-scene' ? {} : { warnings: ['No --compare: name the comparison object and its real size (e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"); the prompt falls back to a generic furniture line.'] }), next: `Mở ${path.join(dir, 'prompt.txt')}, thay {{PRODUCT_DESCRIPTION}} bằng mô tả đúng sản phẩm trong ảnh, rồi chạy draft.mjs image --id ${id}. Viết caption theo brief.md.` });
+}
+
+// The caption brief's note for a reference-based draft (keep-scene / new-scene).
+function refNote(mode, refText, signText) {
+  if (mode === 'keep-scene') return `Keep-scene (ảnh tham khảo không có mặt người): giữ nguyên cảnh của ảnh tham khảo, chữ trên sản phẩm đã được thay bằng chữ mới "${signText}" (ảnh gốc ghi "${refText}"). Caption nói về chữ mới này, không nhắc chữ cũ, không nhắc ảnh gốc hay shop nguồn.`;
+  if (mode === 'new-scene') return 'New-scene (ảnh tham khảo có người): sản phẩm và chữ trên nó giữ nguyên như ảnh tham khảo, đặt vào cảnh mới, không còn người nào. Không bịa nghĩa hay bản dịch của chữ khi không chắc: khi đó gọi là "the characters/lettering on the sign" và tập trung vào thiết kế, cách đặt làm bảng riêng.';
+  return '';
 }
 
 // The real size (required) and, for custom-text products (social.json product_images.custom_text), the context text
 // shown on the product. The rules live in the brand's skill (references/image-guide.md, project.md section 10).
-// Scene-swap (user 10/11/2026): the reference product is kept ENTIRELY, its text too; only the background changes. No new
-// text is required there; --sign-text only records what the reference already reads (for the caption check), and
-// --clear-sign-text drops it (text not readable for sure).
-function sizeAndText(brand, args, from = {}, mode = 'brand-image') {
+// Reference-based (user 10/11/2026): new-scene keeps the product's text, so --sign-text only records what the reference
+// already reads (for the caption check; --clear-sign-text drops it when not readable for sure). keep-scene puts NEW text
+// on the product: --sign-text is required and must differ from --ref-text (what the reference reads).
+function sizeAndText(brand, args, from = {}, ref = {}) {
   const str = (k) => (args[k] && args[k] !== true ? String(args[k]).trim() : '');
   const size = str('size') || String(from.product_size || '').trim();
   if (!size) throw new Error(`Missing --size: the product's real size (where: ${brand.social.product_images?.size_source || 'project.md mục 5/10'}).`);
   const customText = brand.social.product_images?.custom_text === true;
   const signText = args['clear-sign-text'] ? '' : str('sign-text') || String(from.sign_text || '').trim();
-  if (customText && !signText && mode !== 'scene-swap') throw new Error('This brand has custom-text products (product_images.custom_text): give --sign-text, a text that fits the scene (never the template placeholder).');
+  if (customText && !signText && !ref.mode) throw new Error('This brand has custom-text products (product_images.custom_text): give --sign-text, a text that fits the scene (never the template placeholder).');
   if (signText && PLACEHOLDER.test(signText)) throw new Error(`--sign-text "${signText}" is a template placeholder: choose a text that fits the scene.`);
+  if (ref.mode === 'keep-scene') {
+    if (!ref.text) throw new Error('keep-scene: give --ref-text, the text the product reads in the reference photo (exactly as seen).');
+    if (!signText) throw new Error('keep-scene: give --sign-text, the NEW text for the product (same language/script as the original, fits the scene; no placeholder, no third-party brand, no real customer name).');
+    if (sameSignText(signText, ref.text)) throw new Error(`keep-scene: --sign-text "${signText}" is the reference's own text; write a new one.`);
+  }
   return { size, signText, customText };
 }
 export const PLACEHOLDER = /\byour\s+(names?|logo|bar(\s+name)?|business(\s+name)?|name\s+here|text|brand|shop(\s+name)?|company)\b/i;
@@ -192,7 +218,7 @@ function sizeOpts(args, from = {}) {
   return { compare, frameMax, closeUp, smaller };
 }
 const DEFAULT_COMPARE = 'the main piece of furniture below or next to it (table, sofa, bed, counter, cabinet), drawn at its real size';
-function proportionFill(brand, o = {}, mode = 'brand-image') {
+function proportionFill(brand, o = {}, ref = {}) {
   const l = sizeLimits(brand.social, { frame_pct_max: o.frameMax, close_up: o.closeUp });
   const lim = [
     l.object_pct_max != null && `the product is at most ${l.object_pct_max}% as wide as the comparison object below or next to it (clearly narrower than the table, sofa, bed or counter)`,
@@ -202,7 +228,7 @@ function proportionFill(brand, o = {}, mode = 'brand-image') {
   const range = l.frame_pct_max != null ? `${l.frame_pct_min != null ? `about ${l.frame_pct_min}-${l.frame_pct_max}%` : `at most ${l.frame_pct_max}%`} of the image width, never more than ${l.frame_pct_max}%` : '';
   const framing = o.closeUp
     ? 'a close-up post: the product may fill most of the frame, but anything shown next to it keeps its real proportions.'
-    : `a room / wide shot that shows the surroundings: the product takes ${range || 'a modest part of the image width'}.${mode === 'scene-swap' ? ' The reference photo is a close-up: do NOT keep its frame-filling scale or crop; pull the camera back and show the product at its real size in the room.' : ''}`;
+    : `a room / wide shot that shows the surroundings: the product takes ${range || 'a modest part of the image width'}.${ref.mode ? ' The reference photo is a close-up: do NOT keep its frame-filling scale or crop; pull the camera back and show the product at its real size in the room.' : ''}`;
   return {
     COMPARE: o.compare || DEFAULT_COMPARE,
     SIZE_LIMITS: lim.length ? lim.join('; ') + '.' : 'keep the real size against the comparison object.',
@@ -210,11 +236,13 @@ function proportionFill(brand, o = {}, mode = 'brand-image') {
     SMALLER: o.smaller ? `\n- The previous image drew it too big: make the product about ${o.smaller}% smaller than in that attempt (it was drawn bigger than its real size), well inside the limits above; the room stays the same.` : '',
   };
 }
-function sizeTextFill(brand, size, signText, o = {}, mode = 'brand-image') {
+function sizeTextFill(brand, size, signText, o = {}, ref = {}) {
   return {
     SIZE: size,
-    ...proportionFill(brand, o, mode),
-    SIGN_TEXT_RULE: mode === 'scene-swap'
+    ...proportionFill(brand, o, ref),
+    SIGN_TEXT_RULE: ref.mode === 'keep-scene'
+      ? `The product in the reference reads "${ref.text}". Replace that text ENTIRELY with exactly: "${signText}" (character for character). Write it in the same language and script as the original text, with the product's own lettering style/font, colours, glow, layout, size and number of lines, on the same place of the product. No trace of the old text may remain; no other words, no placeholder, no brand or shop name.`
+      : ref.mode
       ? `Keep the product's text EXACTLY as in the reference photo: the same characters/letters, script, orientation, layout, font, colours and number of lines${signText ? ` (it reads: "${signText}")` : ''}. Do not change, translate, correct (not even a character that looks mirrored) or add any text on the product.`
       : signText ? `The customer's own text on the product (where the photo shows template/placeholder text such as "Your Names", "Your Logo", "Your Bar Name") must read exactly: "${signText}". No placeholder text may remain; fixed words of the design stay as they are; keep the product's font style, colours, layout and number of lines.` : 'Keep the product\'s own text exactly as in the photo.',
     IMAGE_GUIDE: path.join(brand.dir, 'references', 'image-guide.md'),
@@ -224,20 +252,21 @@ function sizeTextFill(brand, size, signText, o = {}, mode = 'brand-image') {
 function reprompt(args) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const brand = loadBrand(draft.brand, { allowDisabled: true });
-  const { size, signText, customText } = sizeAndText(brand, args, { product_size: draft.product_size, sign_text: draft.sign_text }, draft.image_mode);
+  const refInfo = { mode: refModeOf(draft), text: String(args['ref-text'] && args['ref-text'] !== true ? args['ref-text'] : draft.ref_text || '').trim() };
+  const { size, signText, customText } = sizeAndText(brand, args, { product_size: draft.product_size, sign_text: draft.sign_text }, refInfo);
   const so = sizeOpts(args, draft);
   const old = fs.existsSync(path.join(dir, 'prompt.txt')) ? fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8') : '';
   const kept = (old.match(/THE PRODUCT[^\n]*\n([\s\S]*?)\n(?:Keep |Real size)/) || [])[1] || '';
   const description = args.description && args.description !== true ? String(args.description).trim() : kept.trim();
-  const tpl = fs.readFileSync(path.join(toolRoot, 'prompts', draft.image_mode === 'scene-swap' ? 'scene-swap.txt' : 'scene-edit.txt'), 'utf8');
+  const tpl = fs.readFileSync(path.join(toolRoot, 'prompts', refTemplate(draft)), 'utf8');
   const second = draft.scene_image ? 'The second attached image is ONLY a mood/lighting reference. Do not copy it and do not take any objects from it.' : 'There is no second image.';
   fs.writeFileSync(path.join(dir, 'prompt.txt'), fill(tpl, {
     PRODUCT_DESCRIPTION: description || '{{PRODUCT_DESCRIPTION}}', SOURCE_SHOP: draft.inspiration?.source_shop || 'the source shop',
     SCENE: draft.idea.scene, ANGLE: draft.idea.angle, PROPS: draft.idea.props || 'at most one or two props that fit the scene',
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
-    ...sizeTextFill(brand, size, signText, so, draft.image_mode),
+    ...sizeTextFill(brand, size, signText, so, refInfo),
   }), 'utf8');
-  const next = { ...draft, product_size: size, custom_text: customText };
+  const next = { ...draft, product_size: size, custom_text: customText, ...(refInfo.text ? { ref_text: refInfo.text } : {}) };
   for (const [k, v] of [['size_compare', so.compare], ['frame_pct_max', so.frameMax], ['close_up', so.closeUp || undefined], ['size_smaller', so.smaller || undefined]]) if (v) next[k] = v; else delete next[k];
   if (signText) next.sign_text = signText; else delete next.sign_text;
   writeJson(path.join(dir, 'draft.json'), next);
@@ -424,8 +453,10 @@ export function confirmClean(args) {
   const { dir, draft } = findDraft(need(args, 'id'));
   if (draft.image_mode !== 'scene-swap') return { id: draft.id, skipped: true, note: 'Chỉ cần cho bản nháp scene-swap.' };
   if (!fs.existsSync(path.join(dir, 'image.png'))) throw new Error('Chưa có image.png.');
+  const noPeople = args['no-people'] === true || args['no-people'] === 'true';
+  if (refModeOf(draft) === 'new-scene' && !noPeople) throw new Error('new-scene: LOOK for people too; once no person (face, body, hand, silhouette) is left in image.png add --no-people.');
   const imageHash = sha1(fs.readFileSync(path.join(dir, 'image.png')));
-  const st = setStatus(dir, readJson(path.join(dir, 'status.json'), {}).status, { logo_check: { confirmed: stamp(), by: need(args, 'by'), image_sha1: imageHash, note: args.note ? String(args.note) : '' } });
+  const st = setStatus(dir, readJson(path.join(dir, 'status.json'), {}).status, { logo_check: { confirmed: stamp(), by: need(args, 'by'), image_sha1: imageHash, ...(noPeople ? { no_people: true } : {}), note: args.note && args.note !== true ? String(args.note) : '' } });
   return { id: draft.id, status: st.status, logo_check: st.logo_check, next: `node scripts/draft.mjs check --id ${draft.id}` };
 }
 
@@ -438,6 +469,8 @@ export function confirmClean(args) {
 // Logged in status.json size_check (+ history); draft check: over the limit for the current image = problem.
 export function sizeCheck(args) {
   const { dir, draft, status } = findDraft(need(args, 'id'));
+  // keep-scene keeps the reference's own framing: nothing to measure.
+  if (refModeOf(draft) === 'keep-scene') return { id: draft.id, skipped: true, framing: 'kept original framing', next: `node scripts/draft.mjs check --id ${draft.id}` };
   const file = path.join(dir, 'image.png');
   if (!fs.existsSync(file)) throw new Error('Chưa có image.png.');
   const num = (k) => (args[k] === undefined || args[k] === true ? null : Number(String(args[k]).replace('%', '')));

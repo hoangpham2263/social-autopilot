@@ -141,7 +141,7 @@ function stageA(args) {
   lap('sync_payload_status', t);
   // 2.3 ideas init per brand -> one ideas file for every brand
   t = Date.now();
-  const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), compare (the comparison object in the scene with ITS real size, e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"; the product stays at most 60% of it unless the brand sets other size_limits), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder; scene-swap: leave empty or write only what the reference already reads, the product and its text stay exactly as in the reference), description (the exact product: every letter and accent of its text, font, colours, material, proportions). A reused library item (_context.previous_uses): a NEW angle, a different scene AND a different product or sign_text than every previous use. Scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the reference photo is the product; only the scene changes). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
+  const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), compare (the comparison object in the scene with ITS real size, e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"; the product stays at most 60% of it unless the brand sets other size_limits), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder), description (the exact product: every letter and accent of its text, font, colours, material, proportions). A reused library item (_context.previous_uses): a NEW angle, a different scene AND a different product or sign_text than every previous use. Reference-based post / scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the PRODUCT always comes from the reference photo; every foreign logo, shop name, watermark, phone, price is removed); LOOK at _context.ref_image and set "ref_has_face" (true when any human face / identifiable person shows) and "ref_mode": no face -> "keep-scene" (the scene/background/framing stay; sign_text = NEW text in the SAME language/script as the original, fitting the scene, no placeholder, no third-party brand, no real customer name; "ref_text" = what the reference reads exactly; compare not needed), face -> "new-scene" (a new real-life scene, every person removed; the product text stays as is: sign_text empty or only what it already reads; compare + proportion rules apply). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
   for (const id of scope) {
     const r = step('ideas.mjs', ['init', '--brand', id, ...(pickIds.length ? ['--items', pickIds.join(',')] : args.count && args.count !== true ? ['--count', String(args.count)] : [])]);
     for (const n of r.notes || []) notes.push(`${id}: ${n}`);
@@ -155,7 +155,7 @@ function stageA(args) {
     for (const i of ideas) {
       const it = items.find((x) => x.id === i.item) || {};
       const prev = previousUses(it);
-      todo.ideas.push({ brand: id, id: i.id, _context: { item: i.item, ref_image: i.ref_image, reference_caption: String(it.caption || '').slice(0, 400), source: i.source, ...(prev.length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(todo.brands[id].reference_redraw ? { reference_redraw: true } : {}) }, idea: Object.fromEntries(IDEA_FIELDS.map((f) => [f, i[f] || ''])), product: '', size: i.product_size || '', compare: i.size_compare || '', sign_text: i.sign_text || '', description: '', reject: '' });
+      todo.ideas.push({ brand: id, id: i.id, _context: { item: i.item, ref_image: i.ref_image, reference_caption: String(it.caption || '').slice(0, 400), source: i.source, ...(prev.length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(todo.brands[id].reference_redraw ? { reference_redraw: true } : {}) }, idea: Object.fromEntries(IDEA_FIELDS.map((f) => [f, i[f] || ''])), product: '', size: i.product_size || '', compare: i.size_compare || '', sign_text: i.sign_text || '', description: '', reject: '', ...(todo.brands[id].reference_redraw ? { scene_swap: false, brand_can_produce: false, ref_has_face: i.ref_has_face ?? null, ref_mode: i.ref_mode || '', ref_text: i.ref_text || '' } : {}) });
     }
   }
   const ideasFile = path.join(pipeDir(), 'ideas-todo.json');
@@ -204,16 +204,27 @@ function stageB(st, file) {
     const swap = e.scene_swap === true;
     const miss = [...(swap ? [] : ['product']), 'size', 'description'].filter((k) => !String(e[k] || '').trim());
     if (swap && e.brand_can_produce !== true) { problems.push(`${tag}: scene_swap needs "brand_can_produce": true (the brand makes this exact product, project.md section 5)`); continue; }
+    // The agent looked at the reference: a face -> new-scene, none -> keep-scene (new sign_text + ref_text required).
+    const refMode = swap ? String(e.ref_mode || '').trim() : '';
+    if (swap) {
+      const rp = [];
+      if (typeof e.ref_has_face !== 'boolean') rp.push('"ref_has_face": true|false (LOOK at the reference: any human face?)');
+      if (!['keep-scene', 'new-scene'].includes(refMode)) rp.push('"ref_mode": "keep-scene" (no face) or "new-scene" (face)');
+      else if (typeof e.ref_has_face === 'boolean' && e.ref_has_face !== (refMode === 'new-scene')) rp.push(`ref_has_face ${e.ref_has_face} does not fit ref_mode ${refMode} (face -> new-scene, no face -> keep-scene)`);
+      if (refMode === 'keep-scene' && !String(e.ref_text || '').trim()) rp.push('keep-scene needs "ref_text" (what the reference reads)');
+      if (refMode === 'keep-scene' && !String(e.sign_text || '').trim()) rp.push('keep-scene needs "sign_text" (the NEW text, same language/script as the original)');
+      if (rp.length) { problems.push(`${tag}: ${rp.join('; ')}`); continue; }
+    }
     if (miss.length) { problems.push(`${tag}: missing ${miss.join(', ')}`); continue; }
     const ideaFile = path.join(pipeDir(), `idea-${e.brand}-${e.id}.json`);
-    writeJson(ideaFile, { ...e.idea, product_size: e.size, ...(e.compare ? { size_compare: e.compare } : {}), ...(e.sign_text ? { sign_text: e.sign_text } : {}) });
+    writeJson(ideaFile, { ...e.idea, product_size: e.size, ...(e.compare ? { size_compare: e.compare } : {}), ...(e.sign_text ? { sign_text: e.sign_text } : {}), ...(swap ? { ref_has_face: e.ref_has_face, ref_mode: refMode, ...(e.ref_text ? { ref_text: e.ref_text } : {}) } : {}) });
     const s = step('ideas.mjs', ['set', '--brand', e.brand, '--id', e.id, '--file', ideaFile]);
     fs.rmSync(ideaFile, { force: true });
     if (s.ok === false || (s.problems || []).length || (s.missing || []).length) { problems.push(`${tag}: ${s.error || [...(s.missing || []).map((m) => 'missing ' + m), ...(s.problems || [])].join('; ')}`); continue; }
     const p = step('ideas.mjs', ['pick', '--brand', e.brand, '--id', e.id]);
     if (p.ok === false) { problems.push(`${tag}: ${p.error}`); continue; }
     const refImage = swap ? String(e.ref_image || e._context?.ref_image || '') : '';
-    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce'] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : [])]);
+    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce', '--ref-mode', refMode, '--ref-has-face', String(e.ref_has_face), ...(e.ref_text ? ['--ref-text', String(e.ref_text)] : [])] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : [])]);
     if (n.ok === false) { problems.push(`${tag}: ${n.error}`); continue; }
     fillDescription(n.dir, cleanText(String(e.description)).text);
     made.push(n.id);
@@ -242,15 +253,16 @@ function waitImages(st, maxMs) {
   return true;
 }
 function captionTemplate(st) {
-  const tpl = { how: 'LOOK at every contact sheet first. Per draft EITHER the captions (one key per language in langs: the posted ones and the reviewer-only ones; follow brief.md, SKILL.md section A, project.md; mention sign_text exactly; Website line + fixed hashtag; no Markdown, no AI label, no source shop name) plus "size_check": { "product_pct": N, "object_pct": N } measured on the image (product width as % of the image width and of the comparison object), OR "redo": { "description": "...", "size": "...", "compare": "...", "smaller": N, "sign_text": "..." } (only what changes; "smaller": N when the product is too big, N from the size limits; at most 2 redos per draft). Then: node scripts/pipeline.mjs create --resume --captions workspace/pipeline/captions-todo.json', drafts: {} };
+  const tpl = { how: 'LOOK at every contact sheet first. Per draft EITHER the captions (one key per language in langs: the posted ones and the reviewer-only ones; follow brief.md, SKILL.md section A, project.md; mention sign_text exactly; Website line + fixed hashtag; no Markdown, no AI label, no source shop name) plus "size_check": { "product_pct": N, "object_pct": N } measured on the image (product width as % of the image width and of the comparison object; not for ref_mode keep-scene, which keeps the original framing), plus for a scene-swap draft "confirm_clean": { "by": "<name>", "no_people": true|false } once you LOOKED at the image beside _context.reference_image (no shop name, logo, watermark, phone, price left; new-scene: no person left, no_people true; keep-scene: the new sign_text reads exactly), OR "redo": { "description": "...", "size": "...", "compare": "...", "smaller": N, "sign_text": "..." } (only what changes; "smaller": N when the product is too big, N from the size limits; at most 2 redos per draft). Then: node scripts/pipeline.mjs create --resume --captions workspace/pipeline/captions-todo.json', drafts: {} };
   const old = readJson(path.join(pipeDir(), 'captions-todo.json'), { drafts: {} }).drafts || {};
   for (const id of st.drafts) {
     let d; try { d = findDraft(id); } catch { continue; }
     if (['approved', 'rejected', 'ready'].includes(d.status.status)) continue;
     const langs = Object.keys(d.draft.captions || {});
     const prev = old[id]?.captions || {};
-    tpl.drafts[id] = { _context: { brand: d.draft.brand, status: d.status.status, error: d.status.error || '', problems: d.status.problems || [], image: path.join(d.dir, 'image.png'), brief: path.join(d.dir, 'brief.md'), sign_text: d.draft.sign_text || '', idea: d.draft.idea, posted_langs: d.draft.languages || [], review_langs: d.draft.review_languages || [] },
-      size_check: { product_pct: d.status.size_check?.product_pct ?? '', object_pct: d.status.size_check?.object_pct ?? '' },
+    tpl.drafts[id] = { _context: { brand: d.draft.brand, status: d.status.status, error: d.status.error || '', problems: d.status.problems || [], image: path.join(d.dir, 'image.png'), brief: path.join(d.dir, 'brief.md'), sign_text: d.draft.sign_text || '', ...(d.draft.image_mode === 'scene-swap' ? { ref_mode: d.draft.ref_mode || '', ref_text: d.draft.ref_text || '', reference_image: d.draft.reference_image } : {}), idea: d.draft.idea, posted_langs: d.draft.languages || [], review_langs: d.draft.review_languages || [] },
+      ...(d.draft.ref_mode === 'keep-scene' ? {} : { size_check: { product_pct: d.status.size_check?.product_pct ?? '', object_pct: d.status.size_check?.object_pct ?? '' } }),
+      ...(d.draft.image_mode === 'scene-swap' ? { confirm_clean: { by: '', no_people: d.draft.ref_mode === 'new-scene' ? false : null } } : {}),
       captions: Object.fromEntries(langs.map((l) => [l, prev[l] || (fs.existsSync(path.join(d.dir, `content-${l}.txt`)) ? fs.readFileSync(path.join(d.dir, `content-${l}.txt`), 'utf8') : '')])) };
   }
   return tpl;
@@ -305,6 +317,9 @@ function stageD(st, file, args) {
     if (!fs.existsSync(path.join(d.dir, 'image.png')) && fs.existsSync(path.join(d.dir, 'image-generated.png'))) step('image-clean.mjs', ['--id', id]);
     const b = loadBrand(d.draft.brand, { allowDisabled: true });
     if (b.social.product_images?.watermark?.enabled && !d.status.watermark) { const w = step('draft.mjs', ['watermark', '--id', id]); if (w.ok === false) problems.push(`${id} watermark: ${w.error}`); }
+    // Scene-swap: the agent looked at the image (no shop marks; new-scene: no person) -> draft.mjs confirm-clean.
+    const cc = e.confirm_clean || {};
+    if (String(cc.by || '').trim()) { const r = step('draft.mjs', ['confirm-clean', '--id', id, '--by', String(cc.by), ...(cc.no_people === true ? ['--no-people'] : [])]); if (r.ok === false) problems.push(`${id} confirm-clean: ${r.error}`); }
     const c = step('draft.mjs', ['check', '--id', id]);
     results.push({ id, status: c.status || 'error', problems: c.problems || (c.error ? [c.error] : []), warnings: c.warnings || [] });
   }

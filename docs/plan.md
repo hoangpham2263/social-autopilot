@@ -33,7 +33,7 @@ Trạng thái bản nháp: `needs_prompt` → `generating` → `needs_caption` /
 ## 4. Luật ảnh
 - Ảnh sản phẩm là ảnh của chính thương hiệu; ảnh không khí không được là ảnh tham khảo. Dựng cảnh AI bật mặc định (`ai_scenes_allowed: false` mới tắt).
 - **Không bao giờ nhãn AI** lên bài. **Không logo trên sản phẩm**: prompt có NO LOGO; logo chỉ là watermark nhỏ ở góc khi `product_images.watermark.enabled`.
-- Scene-swap (opt-in `product_images.reference_redraw.enabled`): chỉ đổi cảnh, xoá logo/watermark/nhãn size/số điện thoại của shop, bắt `--brand-can-produce` và `confirm-clean`, caption không tên shop.
+- Scene-swap (opt-in `product_images.reference_redraw.enabled`): sản phẩm từ ảnh tham khảo, xoá logo/watermark/nhãn size/số điện thoại/giá của shop; ảnh không có mặt người → keep-scene (giữ cảnh, chữ mới cùng ngôn ngữ), có mặt người → new-scene (cảnh mới, xoá người, giữ chữ); bắt `--brand-can-produce` và `confirm-clean`, caption không tên shop.
 - Metadata: `settings.remove_watermark.script` (đường dẫn tương đối) chạy sau Codex, sau watermark, trước writeback; chỉ bỏ metadata, không EXIF giả.
 
 ## 5. Host ảnh

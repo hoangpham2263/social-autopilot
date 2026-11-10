@@ -1,11 +1,13 @@
 Use your built-in image generation / image editing tool to EDIT the first attached image (a reference product photo). Do NOT write code, scripts, or use PIL/canvas to draw anything.
 
-THE PRODUCT (keep it ENTIRELY as in the reference photo, its text included; only the background changes; this is a product type the brand makes to order):
+MODE: NEW SCENE. The reference photo shows a person, so nothing of that photo may stay except the product: take the product out of it and put it in a completely new real-life setting. Remove every person entirely (faces, bodies, hands, reflections, silhouettes); no person from the reference photo may appear in any form.
+
+THE PRODUCT (take it ENTIRELY from the reference photo, its text included; everything around it is new; this is a product type the brand makes to order):
 {{PRODUCT_DESCRIPTION}}
 Keep the product exactly: same shape, the same text character for character, lettering style, colors, materials and proportions. Do not add stands, feet, brackets, cables or any part not visible in the original.
 
 REMOVE EVERYTHING THAT BELONGS TO THE SOURCE SHOP:
-- Remove every shop logo, watermark, badge, sticker, size label, price tag, phone number, website, QR code, frame/border and any text overlay from the photo (the source shop is "{{SOURCE_SHOP}}"; its name must not appear anywhere).
+- Remove every shop logo, shop name, watermark, badge, sticker, size label, price tag, phone number, website, QR code, frame/border and any text overlay from the photo (the source shop is "{{SOURCE_SHOP}}"; its name must not appear anywhere).
 - NO LOGO: no logo of any shop or brand anywhere, and the brand's logo must never appear on the product. No text except the product's own lettering/design.
 - Do not add any logo or watermark yourself; if the brand wants one, it is added later as a small separate overlay in a corner.
 
@@ -21,7 +23,7 @@ Follow the brand's image guide ({{IMAGE_GUIDE}}): real size, context text, no lo
 BRAND RULES FOR THIS PRODUCT (from the brand's project.md, section 10):
 {{PRODUCT_RULES}}
 
-NEW SCENE (replace everything except the product):
+NEW SCENE (replace everything except the product; no people at all):
 {{SCENE}}
 Camera: {{ANGLE}}.
 Props: {{PROPS}}, plus the small lived-in details below; the product stays the clear subject.
@@ -31,13 +33,13 @@ PHOTOREALISM (a candid real-life photo, never a staged render):
 - Natural mixed lighting: practical lamps plus window or ambient light; realistic exposure, not HDR, not over-saturated; subtle grain/noise and a little lens softness at the edges.
 - Real materials with wear: scuffs, fingerprints, uneven paint, worn edges, slightly creased fabric. Not showroom-clean, no glossy CGI / 3D-render look.
 - Lived-in details that fit the place (for example napkins, menus, condiment bottles, a jacket on a chair, a half-full glass), a little everyday mess.
-- People are optional: at most someone partly in frame or softly out of focus in the background; never a face in focus, never an identifiable person.
+- No people: no person, face, body, hand or silhouette anywhere in the new scene.
 - A lit product (neon, lamp) glows realistically: soft halo, slight bloom and colour cast on the nearby wall, faint reflections on glossy surfaces; the lettering stays crisp.
 - The product itself is sharp and in focus.
 
 RULES:
 - Square 1:1 format.
-- No identifiable people, no face in focus.
+- No people at all; nothing from the reference photo except the product.
 
 {{SECOND_IMAGE}}
 

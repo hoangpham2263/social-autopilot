@@ -40,6 +40,16 @@ const OPEN = ['todo', 'ready', 'picked'];
 // can be given to draft.mjs new as --size / --compare / --sign-text.
 const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why', 'product_size', 'size_compare', 'sign_text'];
 const CORE = ['product_type', 'scene', 'angle', 'caption_structure'];
+// Reference-based posts (scene-swap): what the agent saw in the reference photo. ref_has_face true -> ref_mode new-scene
+// (new scene, people removed, text kept); false -> keep-scene (scene kept, new sign_text; ref_text = what the reference
+// reads). Kept apart from the copy check: ref_text is the reference's own lettering.
+const REF_FIELDS = ['ref_has_face', 'ref_mode', 'ref_text'];
+export function refProblems(idea) {
+  const p = [];
+  if (idea.ref_mode && !['keep-scene', 'new-scene'].includes(idea.ref_mode)) p.push('ref_mode must be keep-scene or new-scene');
+  if (idea.ref_mode && typeof idea.ref_has_face === 'boolean' && idea.ref_has_face !== (idea.ref_mode === 'new-scene')) p.push('ref_has_face does not fit ref_mode: a face -> new-scene, no face -> keep-scene');
+  return p;
+}
 
 // Words or marks taken from the reference: 6 words in a row, phone numbers, links, the shop's name.
 export function copyProblems(idea, item) {
@@ -116,7 +126,8 @@ function run(args, cmd, brand, file) {
     const idea = find();
     const patch = args.file ? readJson(path.resolve(String(args.file))) : JSON.parse(need(args, 'json'));
     for (const f of IDEA_FIELDS) if (patch[f] !== undefined) idea[f] = cleanText(patch[f]).text;
-    const problems = [...copyProblems(idea, itemOf(idea)), ...reuseProblems(itemOf(idea), { scene: idea.scene, idea: idea.id })];
+    for (const f of REF_FIELDS) if (patch[f] !== undefined && patch[f] !== null && patch[f] !== '') idea[f] = f === 'ref_has_face' ? patch[f] === true || patch[f] === 'true' : cleanText(patch[f]).text;
+    const problems = [...refProblems(idea), ...copyProblems(idea, itemOf(idea)), ...reuseProblems(itemOf(idea), { scene: idea.scene, idea: idea.id })];
     const missing = CORE.filter((f) => !idea[f]);
     idea.problems = problems;
     if (!['picked', 'rejected', 'drafted'].includes(idea.status)) idea.status = problems.length || missing.length ? 'todo' : 'ready';

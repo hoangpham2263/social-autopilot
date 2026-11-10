@@ -391,15 +391,24 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   setRedraw({ enabled: true, require_logo_removal: true, only_if_brand_can_produce: true });
   assert.match(run(...swapArgs).error, /brand-can-produce/);
   assert.equal(run('draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', outside, '--again', '--brand-can-produce', ...size).ok, false); // not a store image of this brand
-  const swap = run(...swapArgs, '--brand-can-produce');
+  // The agent looks at the reference and picks the mode: a face -> new-scene, no face -> keep-scene.
+  assert.match(run(...swapArgs, '--brand-can-produce').error, /--ref-mode keep-scene\|new-scene/);
+  assert.match(run(...swapArgs, '--brand-can-produce', '--ref-mode', 'new-scene', '--ref-has-face', 'false').error, /does not fit/);
+  const swap = run(...swapArgs, '--brand-can-produce', '--ref-mode', 'new-scene');
   assert.equal(swap.ok, true, JSON.stringify(swap));
+  assert.equal(swap.ref_mode, 'new-scene');
+  const swapDraft = JSON.parse(fs.readFileSync(path.join(swap.dir, 'draft.json'), 'utf8'));
+  assert.equal(swapDraft.ref_mode, 'new-scene');
+  assert.equal(swapDraft.ref_has_face, true);
   const swapPrompt = path.join(swap.dir, 'prompt.txt');
   assert.match(fs.readFileSync(swapPrompt, 'utf8'), /Shop A/);
-  // Scene-swap keeps the reference product entirely, its text too, and pulls back from the close-up reference.
+  // new-scene: the reference product entirely, its text too, in a new scene with nobody in it; pulls back from the close-up.
+  assert.match(fs.readFileSync(swapPrompt, 'utf8'), /MODE: NEW SCENE/);
+  assert.match(fs.readFileSync(swapPrompt, 'utf8'), /Remove every person entirely/);
   assert.match(fs.readFileSync(swapPrompt, 'utf8'), /Keep the product's text EXACTLY as in the reference photo/);
   assert.ok(!/must read exactly/.test(fs.readFileSync(swapPrompt, 'utf8')));
   assert.match(fs.readFileSync(swapPrompt, 'utf8'), /do NOT keep its frame-filling scale/);
-  assert.match(fs.readFileSync(path.join(swap.dir, 'brief.md'), 'utf8'), /Scene-swap: sản phẩm và chữ trên sản phẩm giữ nguyên/);
+  assert.match(fs.readFileSync(path.join(swap.dir, 'brief.md'), 'utf8'), /New-scene \(ảnh tham khảo có người\)/);
   fs.writeFileSync(swapPrompt, fs.readFileSync(swapPrompt, 'utf8').replace('{{PRODUCT_DESCRIPTION}}', 'A neon sign reading "Love".'));
   assert.equal(run('draft.mjs', 'image', '--id', swap.id).ok, true);
   for (const l of ['vn', 'en']) write(path.join(swap.dir, `content-${l}.txt`), `Bảng neon "Love" giống mẫu của Shop A (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
@@ -408,7 +417,9 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.ok(swapCheck.problems.some((p) => /Shop A/.test(p) && /content-vn/.test(p)), 'shop name in caption is flagged');
   assert.ok(swapCheck.problems.some((p) => /confirm-clean/.test(p)), 'visual logo check is required');
   for (const l of ['vn', 'en']) write(path.join(swap.dir, `content-${l}.txt`), `Bảng neon "Love" cho bàn tiệc (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
-  assert.equal(run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent').ok, true);
+  // new-scene: the agent also confirms no person is left.
+  assert.match(run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent').error, /--no-people/);
+  assert.equal(run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent', '--no-people').ok, true);
   assert.equal(run('draft.mjs', 'check', '--id', swap.id).status, 'ready');
   const shown = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').ready.find((d) => d.id === swap.id);
   assert.equal(shown.reference_image, refPath); // the shop's original beside the result in the app
@@ -419,6 +430,41 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   assert.equal(swapPost.ai_disclosure, true);
   assert.equal(swapPost.inspiration.source_shop, 'Shop A');
   assert.equal(swapOk.check_post.errors, 0, JSON.stringify(swapOk.check_post));
+
+  // keep-scene (no face in the reference): the scene stays, the product gets NEW text (same language as the original).
+  const keepArgs = ['draft.mjs', 'new', '--brand', 'dreamyvows', '--idea', I, '--ref-image', refPath, '--again', '--brand-can-produce', '--ref-mode', 'keep-scene', '--size', '76 cm (30 in) wide'];
+  assert.match(run(...keepArgs, '--sign-text', 'Forever Us').error, /--ref-text/);
+  assert.match(run(...keepArgs, '--ref-text', 'Love').error, /--sign-text/);
+  assert.match(run(...keepArgs, '--ref-text', 'Love', '--sign-text', 'love!').error, /reference's own text/);
+  assert.match(run(...keepArgs, '--ref-text', 'Love', '--sign-text', 'Forever Us', '--ref-has-face', 'true').error, /does not fit/);
+  const keep = run(...keepArgs, '--ref-text', 'Love', '--sign-text', 'Forever Us');
+  assert.equal(keep.ok, true, JSON.stringify(keep));
+  const keepDraft = JSON.parse(fs.readFileSync(path.join(keep.dir, 'draft.json'), 'utf8'));
+  assert.deepEqual([keepDraft.ref_mode, keepDraft.ref_has_face, keepDraft.ref_text, keepDraft.sign_text], ['keep-scene', false, 'Love', 'Forever Us']);
+  const keepPrompt = path.join(keep.dir, 'prompt.txt');
+  const kp = fs.readFileSync(keepPrompt, 'utf8');
+  assert.match(kp, /MODE: KEEP SCENE, NEW TEXT/);
+  assert.match(kp, /reads "Love"\. Replace that text ENTIRELY with exactly: "Forever Us"/);
+  assert.match(kp, /same language and script as the original/);
+  assert.match(kp, /NO LOGO/);
+  assert.ok(!/frame-filling|Comparison object/.test(kp), 'keep-scene keeps the original framing');
+  assert.match(fs.readFileSync(path.join(keep.dir, 'brief.md'), 'utf8'), /Keep-scene/);
+  fs.writeFileSync(keepPrompt, kp.replace('{{PRODUCT_DESCRIPTION}}', 'A neon sign in white script.'));
+  assert.equal(run('draft.mjs', 'image', '--id', keep.id).ok, true);
+  assert.equal(run('draft.mjs', 'size-check', '--id', keep.id, '--product-pct', '80').skipped, true);
+  const keepCaption = (t) => { for (const l of ['vn', 'en']) write(path.join(keep.dir, `content-${l}.txt`), `${t} (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`); };
+  keepCaption('Bảng neon cho bàn tiệc');
+  assert.equal(run('draft.mjs', 'confirm-clean', '--id', keep.id, '--by', 'agent').ok, true);
+  const keepCheck = run('draft.mjs', 'check', '--id', keep.id);
+  assert.ok(keepCheck.problems.some((p) => /Forever Us/.test(p)), 'captions quote the new text');
+  assert.ok(!keepCheck.warnings.some((w) => /size not measured/.test(w)), 'no size check for keep-scene');
+  keepCaption('Bảng neon "Forever Us" cho bàn tiệc');
+  assert.equal(run('draft.mjs', 'check', '--id', keep.id).status, 'ready');
+  // reprompt cannot put the reference's own text back.
+  assert.match(run('draft.mjs', 'reprompt', '--id', keep.id, '--sign-text', 'LOVE').error, /reference's own text/);
+  const keepShown = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').ready.find((d) => d.id === keep.id);
+  assert.equal(keepShown.ref_mode, 'keep-scene');
+  assert.equal(keepShown.framing, 'kept original framing');
   setRedraw(undefined);
 });
 

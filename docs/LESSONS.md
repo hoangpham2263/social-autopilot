@@ -25,11 +25,12 @@ Bài học đã đúc kết của dự án, ngắn gọn. Luật chi tiết củ
 - Neon/đèn sáng thật: quầng mềm, loang nhẹ và đổ màu lên tường gần, phản chiếu nhẹ; chữ vẫn nét.
 - Ảnh vẫn trông dựng/render thì tạo lại một lần.
 
-## Scene-swap (ảnh tham khảo làm ảnh sản phẩm)
-- Giữ nguyên TOÀN BỘ sản phẩm, kể cả chữ trên sản phẩm (đúng từng ký tự, hướng, bố cục); chỉ đổi nền và nội dung caption.
-- Xoá mọi logo, watermark, nhãn size, điện thoại, giá, chữ phủ của shop nguồn; `confirm-clean` sau khi xem.
-- Ảnh tham khảo là ảnh cận, sản phẩm đầy khung: không giữ tỉ lệ đó, lùi máy, đặt đúng cỡ thật trong phòng.
-- Ảnh tham khảo có chữ mẫu ("Your Names") thì không scene-swap ảnh đó.
+## Bài từ ảnh tham khảo (scene-swap): keep-scene / new-scene (người dùng, 10/11/2026)
+- Luôn lấy SẢN PHẨM từ ảnh tham khảo (đúng bảng/đồ đó) và luôn xoá mọi logo, tên shop, watermark, nhãn size, số điện thoại, giá, chữ phủ lạ; `confirm-clean` sau khi xem.
+- Agent NHÌN ảnh tham khảo rồi chọn chế độ, ghi `ref_has_face` + `ref_mode` (file ý, draft.json):
+  - **Không có mặt người → `keep-scene`:** GIỮ nguyên cảnh/nền/khung hình gốc, CẬP NHẬT chữ trên sản phẩm: chữ mới hợp bối cảnh, CÙNG ngôn ngữ/chữ viết với chữ gốc, đúng font/màu/bố cục của sản phẩm; không placeholder, không tên thương hiệu bên thứ ba, không tên khách thật. Ghi `ref_text` (chữ gốc) + `sign_text` (chữ mới, phải khác chữ gốc); caption nhắc đúng chữ mới. Không đo tỉ lệ (giữ khung gốc).
+  - **Có mặt người (bất kỳ ai nhận ra được) → `new-scene`:** ĐỔI sang cảnh đời thật mới hợp sản phẩm, xoá hẳn mọi người (không dùng người nào trong ảnh của họ); chữ trên sản phẩm giữ nguyên. Luật tỉ lệ + ảnh như đời thật vẫn áp dụng (lùi máy khỏi ảnh cận, `size-check`); `confirm-clean --no-people` sau khi xem không còn người.
+- Ảnh tham khảo có chữ mẫu ("Your Names"): keep-scene thay bằng chữ thật; new-scene thì không dùng ảnh đó.
 - Caption không bịa nghĩa/bản dịch của chữ khi không chắc: gọi là "the lettering on the sign", nói về thiết kế, cách đặt làm.
 
 ## Caption

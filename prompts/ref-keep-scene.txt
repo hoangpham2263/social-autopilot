@@ -1,0 +1,31 @@
+Use your built-in image generation / image editing tool to EDIT the first attached image (a reference product photo). Do NOT write code, scripts, or use PIL/canvas to draw anything.
+
+MODE: KEEP SCENE, NEW TEXT. The reference photo shows no person. Keep the photo itself: the same scene, background, room, furniture, lighting, camera angle, crop and framing, and the product at the same place and size. Change ONLY two things: the text on the product, and the source shop's marks (removed).
+
+THE PRODUCT (the same product as in the reference photo; only its text changes; this is a product type the brand makes to order):
+{{PRODUCT_DESCRIPTION}}
+Keep the product exactly: same shape, outline, lettering style, colors, materials, lighting/glow and proportions. Do not add stands, feet, brackets, cables or any part not visible in the original.
+
+TEXT ON THE PRODUCT: {{SIGN_TEXT_RULE}}
+
+REMOVE EVERYTHING THAT BELONGS TO THE SOURCE SHOP:
+- Remove every shop logo, shop name, watermark, badge, sticker, size label, price tag, phone number, website, QR code, frame/border and any text overlay from the photo (the source shop is "{{SOURCE_SHOP}}"; its name must not appear anywhere). Fill what they covered with the scene behind them, matching it seamlessly.
+- NO LOGO: no logo of any shop or brand anywhere, and the brand's logo must never appear on the product. No text except the product's new lettering.
+- Do not add any logo or watermark yourself; if the brand wants one, it is added later as a small separate overlay in a corner.
+Follow the brand's image guide ({{IMAGE_GUIDE}}): context text, no logo.
+
+BRAND RULES FOR THIS PRODUCT (from the brand's project.md, section 10):
+{{PRODUCT_RULES}}
+
+KEEP THE ORIGINAL PHOTO:
+- Same scene and background, same objects in the same places, same light and colours, same camera angle, crop and framing; the product keeps its position and size in the frame.
+- The glow of a lit product (neon, lamp) follows the new lettering naturally: soft halo and colour cast on the nearby wall, as in the original; the lettering stays crisp.
+- Keep it looking like the same real photo: no re-render, no added gloss, no extra props, no people.
+
+RULES:
+- Square 1:1 format (extend the original scene naturally at the edges if the photo is not square; never stretch it).
+- No people.
+
+{{SECOND_IMAGE}}
+
+Save the result in the current working directory as {{OUTPUT}}. Reply with only the file name.

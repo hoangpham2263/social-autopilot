@@ -17,6 +17,18 @@ export function draftLangs(draft, social) {
   return { posted, review, file: (l) => draft.captions?.[l] || `content-${l}.txt` };
 }
 
+// Reference-based posts (scene-swap, user 10/11/2026): the PRODUCT always comes from the reference photo and every foreign
+// logo/shop name/watermark/phone/price goes. The agent looks at the reference and picks the mode:
+//   keep-scene  no human face in the reference: keep its scene/background/framing, put NEW text on the product (same
+//               language/script, the product's own font/colours/layout; no placeholder, no third-party brand, no real names)
+//   new-scene   a face / identifiable person: a new real-life scene, every person removed, the product's text kept as is
+// Drafts made before the rule have no ref_mode ("legacy": the old keep-text, new-background behaviour, no extra checks).
+export const REF_MODES = ['keep-scene', 'new-scene'];
+export const refModeOf = (draft) => (draft?.image_mode !== 'scene-swap' ? '' : REF_MODES.includes(draft.ref_mode) ? draft.ref_mode : 'legacy');
+export const refTemplate = (draft) => { const m = refModeOf(draft); return m === 'keep-scene' ? 'ref-keep-scene.txt' : m ? 'ref-new-scene.txt' : 'scene-edit.txt'; };
+// Two sign texts are "the same" when they differ only in case, spaces or punctuation.
+export const sameSignText = (a, b) => { const n = (x) => String(x || '').normalize('NFC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, ''); return !!n(a) && n(a) === n(b); };
+
 // The prompt must keep the no-logo rule: the brand's logo never appears on the product (user, 07/11/2026).
 export function logoWarnings(prompt) {
   const text = String(prompt || '');
@@ -73,18 +85,28 @@ export function checkDraft(dir, draft, status = {}) {
   }
   // Scene-swap: the source shop's name/logo/watermark must be gone from the image. A program cannot read that reliably,
   // so a person or the agent looks and confirms (draft.mjs confirm-clean); a new image needs a new confirmation.
+  const mode = refModeOf(draft);
+  // keep-scene: the product carries NEW text (draft.sign_text, quoted by every caption above), never the reference's own text.
+  if (mode === 'keep-scene') {
+    if (!draft.sign_text) problems.push('keep-scene: thiếu sign_text (chữ mới trên sản phẩm; reprompt --sign-text "..")');
+    if (!draft.ref_text) problems.push('keep-scene: thiếu ref_text (chữ đang có trên sản phẩm trong ảnh tham khảo)');
+    else if (sameSignText(draft.sign_text, draft.ref_text)) problems.push(`keep-scene: sign_text "${draft.sign_text}" trùng chữ của ảnh tham khảo; phải là chữ mới`);
+  }
   if (draft.image_mode === 'scene-swap') {
     const image = path.join(dir, 'image.png');
     const hash = fs.existsSync(image) ? crypto.createHash('sha1').update(fs.readFileSync(image)).digest('hex') : '';
     if (draft.require_logo_removal !== false && (!status.logo_check || status.logo_check.image_sha1 !== hash)) {
-      problems.push(`scene-swap: xem image.png và xác nhận không còn tên shop "${draft.inspiration.source_shop || draft.inspiration.source}", logo, watermark, nhãn size, số điện thoại (draft.mjs confirm-clean --id ${draft.id} --by <tên>)`);
+      problems.push(`scene-swap: xem image.png và xác nhận không còn tên shop "${draft.inspiration.source_shop || draft.inspiration.source}", logo, watermark, nhãn size, số điện thoại (draft.mjs confirm-clean --id ${draft.id} --by <tên>${mode === 'new-scene' ? ' --no-people' : ''})`);
     }
+    // new-scene: the reference showed a person; the agent confirms nobody is left in the new image (confirm-clean --no-people).
+    if (mode === 'new-scene' && status.logo_check?.image_sha1 === hash && status.logo_check.no_people !== true) problems.push(`new-scene: xem image.png và xác nhận không còn người nào (draft.mjs confirm-clean --id ${draft.id} --by <tên> --no-people)`);
     warnings.push('scene-swap: agent phải xem kỹ ảnh mới cạnh ảnh gốc của shop (reference_image; app hiện cả hai).');
   }
   // Size (user 10/11/2026): the agent measures every new image (draft.mjs size-check). Over a limit for the current image
   // and not accepted = problem; not measured (or measured on an older image) = warning.
+  // keep-scene keeps the reference's own framing: no proportion measurement.
   const image = path.join(dir, 'image.png');
-  if (fs.existsSync(image)) {
+  if (fs.existsSync(image) && mode !== 'keep-scene') {
     const sc = status.size_check;
     const hash = crypto.createHash('sha1').update(fs.readFileSync(image)).digest('hex');
     if (!sc || sc.image_sha1 !== hash) warnings.push(`size not measured for this image: draft.mjs size-check --id ${draft.id} --product-pct N --object-pct N`);
@@ -108,9 +130,10 @@ export function summary({ dir, draft, status }) {
   const captions = read(langs.posted), review_captions = read(langs.review);
   return { id: draft.id, brand: draft.brand, status: status.status, dir, image: path.join(dir, 'image.png'), idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}`, inspiration: draft.inspiration.post_url || draft.inspiration.source_url, networks: draft.networks.map((n) => n.network), problems: status.problems || [], note: status.note || '', captions,
     posted_languages: langs.posted, review_languages: langs.review, review_captions,
-    product_size: draft.product_size || '', size_compare: draft.size_compare || '', size_check: sizeShown(dir, status.size_check),
+    product_size: draft.product_size || '', size_compare: draft.size_compare || '', size_check: refModeOf(draft) === 'keep-scene' ? null : sizeShown(dir, status.size_check),
+    ...(refModeOf(draft) === 'keep-scene' ? { framing: 'kept original framing' } : {}),
     image_mode: draft.image_mode || 'brand-image',
     // Scene-swap: the approver sees the shop's original photo next to the result.
-    ...(draft.image_mode === 'scene-swap' ? { reference_image: draft.reference_image, source_shop: draft.inspiration.source_shop || '', source_url: draft.inspiration.source_url || '', logo_check: status.logo_check || null } : {}) };
+    ...(draft.image_mode === 'scene-swap' ? { reference_image: draft.reference_image, ref_mode: refModeOf(draft), ref_has_face: draft.ref_has_face ?? null, ref_text: draft.ref_text || '', source_shop: draft.inspiration.source_shop || '', source_url: draft.inspiration.source_url || '', logo_check: status.logo_check || null } : {}) };
 }
 

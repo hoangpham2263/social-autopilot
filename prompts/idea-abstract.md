@@ -15,7 +15,10 @@ Dùng cho từng ý trong `workspace/store/<brand>/ideas.json` (Mode 2 "Create &
 | why | vì sao ý này hợp khách của thương hiệu | khách cưới/kỷ niệm ở Mỹ |
 | product_size | cỡ thật theo bối cảnh (social.json product_images.size_source; image-guide của skill) | 60 cm (24 in) ngang |
 | size_compare | vật so sánh trong cảnh + cỡ thật của nó (sản phẩm ≤ 60% vật đó, ≤ 40% tường, chiếm 20-35% ngang ảnh trừ bài cận cảnh) | tủ gỗ bên dưới, 120 cm (47 in) ngang |
-| sign_text | chỉ khi product_images.custom_text: chữ hợp cảnh, không phải chữ mẫu | Emma & Liam |
+| sign_text | chỉ khi product_images.custom_text: chữ hợp cảnh, không phải chữ mẫu; scene-swap keep-scene: chữ MỚI cùng ngôn ngữ/chữ viết với chữ gốc | Emma & Liam |
+| ref_has_face | chỉ scene-swap: ảnh tham khảo có mặt người (ai nhận ra được) không | false |
+| ref_mode | chỉ scene-swap: không mặt người → keep-scene (giữ cảnh, chữ mới); có mặt người → new-scene (cảnh mới, xoá người, giữ chữ) | keep-scene |
+| ref_text | chỉ keep-scene: chữ đang có trên sản phẩm trong ảnh tham khảo, đúng từng ký tự | Love |
 
 Trước khi chọn ý: **kiểm sản phẩm hợp bối cảnh** theo image-guide của skill (mục "Sản phẩm hợp bối cảnh") và bảng trong project.md mục 10 (vd biển quán bar/logo cửa hàng chỉ ở địa điểm kinh doanh thật, nhà ở chỉ bảng cá nhân). Sai cặp thì đổi scene cho đúng hoặc reject.
 

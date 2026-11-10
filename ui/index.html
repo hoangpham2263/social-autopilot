@@ -752,7 +752,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   let prMode = "", prBase = "";
   // "Make a post from this" (Library preview): one post from exactly this library item (--items), optional scene-swap.
   let prItem = null; // { brand, id }
-  const SWAP_LINE = (id) => `scene-swap from ${id}: keep the reference photo's product/sign exactly, only replace the background with a fitting real scene; remove every foreign logo, shop name, watermark, phone number and price (ideas file: "scene_swap": true, "brand_can_produce": true)`;
+  const SWAP_LINE = (id) => `scene-swap from ${id}: take the product/sign exactly from the reference photo and remove every foreign logo, shop name, watermark, phone number and price; LOOK at the reference: no human face -> keep-scene (keep its scene, put NEW text on the product in the same language/script as the original); a face -> new-scene (new real-life scene, every person removed, the product text kept) (ideas file: "scene_swap": true, "brand_can_produce": true, "ref_has_face", "ref_mode", keep-scene: "ref_text" + new "sign_text")`;
   function makeFromItem(brand, id) {
     prItem = { brand, id };
     $("#prSwap").checked = false;
@@ -1131,7 +1131,7 @@ function draftTags(d) {
     const bp = d.brand_post, tag = (t, c = "") => `<span class="status-tag ${c}">${esc(t)}</span>`;
     return tag(STATUS_TEXT[d.status] || d.status, STATUS_COLOR[d.status]) + (arr(d.problems).length ? tag(`${d.problems.length} check problems`, "c-red") : "")
       + (bp ? tag(bp.media_url ? "Image hosted" : "Image not hosted", bp.media_url ? "c-green" : "c-amber") + tag(MC_TEXT[bp.metricool] || bp.metricool || "-", MC_COLOR[bp.metricool]) : "")
-      + (d.image_mode === "scene-swap" ? tag("scene-swap") : "");
+      + (d.image_mode === "scene-swap" ? tag(d.ref_mode && d.ref_mode !== "legacy" ? `scene-swap · ${d.ref_mode}` : "scene-swap") : "");
   }
   // Planned time: what Metricool was given (metricool_sent publication), else nothing yet.
   const plannedOf = (d) => { const m = arr(d.brand_post?.metricool_sent).find((x) => x.publication); return m ? `${String(m.publication).slice(0, 16).replace("T", " ")}${m.draft ? " (old draft)" : ""}` : "-"; };
