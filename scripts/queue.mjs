@@ -63,7 +63,9 @@ export function catalogPosts(b, drafts = listDrafts(b.id)) {
     return {
       post: p.id, group: p.group || '', status: p.status || '', in_app: linked.has(p.id), state, metricool: mc.state,
       metricool_sent: mc.sent.map(({ network, draft, publication, timezone, planner_url, id, sent_at, time_source }) => ({ network, draft, publication, timezone, planner_url, id, sent_at, time_source })),
-      media_url: media.length ? media[0] : null, image, folder, captions: p.captions || {}, created: p.created || '',
+      media_url: media.length ? media[0] : null, media_urls: media, image, folder, captions: p.captions || {}, created: p.created || '',
+      // Album: every image of the post, cover first (catalog images; one image = just image).
+      images: folder ? [...new Set([].concat(p.images || [], p.image || []))].map((n) => path.join(folder, n)).filter((x) => fs.existsSync(x)) : [],
       unsent: p.status === 'approved' && !!media.length && !sent,
       on_metricool: state === 'scheduled',
     };
