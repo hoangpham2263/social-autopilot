@@ -228,3 +228,22 @@ test('facebook feed: real permalink first, set=pcb id as post key, date from ari
   assert.equal(cutWords('short', 100), 'short');
   assert.equal(instagram.splitOgCaption('ab.c on May 1, 2026: "Hello wor…').author, '@ab.c');
 });
+
+// Hand-made result (the fallback when the extract script does not work): no total / checksum / tag is fine, verified:false.
+test('loadPageResult accepts a hand-made --json result without total/checksum', async () => {
+  const { loadPageResult } = await import('../scripts/collect-pagemode.mjs');
+  const json = JSON.stringify({ platform: 'facebook', url: 'https://www.facebook.com/x', tiles: [{ id: '1', url: 'https://www.facebook.com/x/posts/1', image_urls: ['https://example.com/a.jpg'], caption: 'hi', author: 'x', date_text: '1d' }] });
+  const r = loadPageResult({ json });
+  assert.equal(r.verified, false);
+  assert.equal(r.result.tiles.length, 1);
+});
+
+test('timeInfo: elapsed under the limit, stop "time" over it, nothing without a start', async () => {
+  const { timeInfo, TIME_NEXT } = await import('../scripts/research.mjs');
+  const now = Date.parse('2026-11-11T10:10:00Z');
+  const under = timeInfo('2026-11-11T10:08:00Z', now, 3);
+  assert.equal(under.elapsed, '2m00s'); assert.equal(under.stop, undefined);
+  const over = timeInfo('2026-11-11T10:06:00Z', now, 3);
+  assert.equal(over.stop, 'time'); assert.equal(over.next, TIME_NEXT);
+  assert.deepEqual(timeInfo('', now, 3), {});
+});
