@@ -253,6 +253,12 @@ details.sec[open] > summary { margin-bottom: 12px; }
 @media (max-width: 600px) {
   #page-settings .kv { grid-template-columns: 1fr; }
 }
+/* Soft corners: a small, uniform radius on controls and boxes. */
+:root { --r: 6px; }
+nav.tabs { gap: 4px; }
+.btn, a.btn, button.btn, nav.tabs button, input:not([type=checkbox]):not([type=radio]), select, textarea, .card, fieldset, .plat, .status-tag, .setup-status, .reject-box, .ar-panel, .run-panel { border-radius: var(--r); }
+.status-tag { border-radius: 999px; }
+.pv:not(.ig) { border-radius: 8px; }
 </style>
 </head>
 <body>
