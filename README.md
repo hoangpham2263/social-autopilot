@@ -50,6 +50,13 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 **Crawl** (Research): *New posts* lấy bài mới (mặc định) · *Backfill older* lấy dần bài cũ · *Full rescan* đọc lại toàn bộ. Script `collect.mjs` lấy dữ liệu (fetch hoặc script in-page chạy qua Playwright MCP trong Chrome đã đăng nhập; Facebook chưa có script in-page nên lấy tay bằng Playwright MCP), rồi agent lọc cả lô (`store.mjs classify` / `verdict`): bài bị lọc nằm ở Library → Dropped kèm lý do; tab Log hiện "N kept · M filtered".
 
+## Connecting Chrome
+1. Install the **Playwright MCP Bridge** extension in the Chrome profile you want to use.
+2. In the app, Prompt tab, choose that profile in the Chrome check line (it is the list of profiles found in your Chrome).
+3. Click **Open Chrome (profile)**. The first time (and once per session), click **Connect** on the Playwright MCP Bridge page; if the agent says it is not connected it runs `node scripts/chrome-connect.mjs --url "<connect url>"` and waits for you to click Connect and say "connected".
+4. Run the Chrome check (Copy check prompt).
+The token (Settings > Playwright MCP) is optional: it only skips the Connect click. If no Playwright server exists in your `claude` CLI, that card can add one (`claude mcp add`, needs npx). Nothing is machine-specific: Chrome, its profiles and the `claude` CLI are discovered; override with `research.chrome_path`, `research.chrome_user_data_dir` and `claudeCli.command` in `workspace/settings.json` if needed.
+
 ## Playwright MCP token
 The Chrome connection token (Playwright MCP Bridge extension) is entered in Settings > Playwright MCP (Chrome connection). The app sets it with the official `claude mcp` command after backing up `~/.claude.json` (`.sa-backup-<time>`, Restore button), keeps it only in `workspace/secrets/` (gitignored), and shows only the last 4 characters. Restart Claude Code after Apply.
 
