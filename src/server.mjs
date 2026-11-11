@@ -22,7 +22,7 @@ import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
-import { chromeInfo, openChromeProfile } from "../core/setup/chrome.mjs";
+import { chromeInfo, openChromeProfile, chromeSetupCheck } from "../core/setup/chrome.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
@@ -346,6 +346,7 @@ async function handle(req, res) {
   // POST (session token), so no other page can list folders on this machine.
   // Chrome profiles (read only) and opening a window in one profile (session token via the POST guard, loopback only, no CORS; allow-lists in core/setup/chrome.mjs).
   if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => chromeInfo({ settings: settings() }));
+  if (path === "/api/chrome-setup-check" && req.method === "GET") return api(res, () => ({ ...chromeSetupCheck({ profile: new URL(req.url, "http://x").searchParams.get("profile") || "", settings: settings() }), last_full_check: readCheck() }));
   if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));

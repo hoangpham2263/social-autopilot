@@ -111,3 +111,24 @@ export function chromeInfo({ settings = {}, ...rest } = {}) {
   const { profiles } = listProfiles({ browser, userDataDir: String(r.chrome_user_data_dir || ""), ...rest });
   return { browser, profiles, selected: String(r.chrome_profile || "") };
 }
+
+// Extension id of "Playwright MCP Bridge" in the Chrome Web Store (same on every machine).
+export const BRIDGE_EXTENSION_ID = "mmlmfjhmonkocbjadbfplnigmagldckm";
+
+// Instant read-only setup check: browser found, profile listed, and whether <profile>/Extensions/<bridge id> exists.
+// Reads only Local State and that one directory's existence; nothing else inside the profile.
+export function chromeSetupCheck({ profile = "", settings = {}, ...rest } = {}) {
+  const r = settings.research || {};
+  const exists = rest.exists || existsSync;
+  const browser = findBrowser({ override: String(r.chrome_path || ""), ...rest });
+  const { dir, profiles } = listProfiles({ browser, userDataDir: String(r.chrome_user_data_dir || ""), ...rest });
+  const chosen = String(profile || r.chrome_profile || "").trim();
+  const ok = validProfile(chosen, profiles);
+  const info = ok ? profiles.find((p) => p.folder === chosen) : null;
+  const known = ok && (!!info || exists(join(dir, chosen)));
+  return {
+    browser,
+    profile: { folder: ok ? chosen : "", exists: known, name: info?.name || "", email: info?.email || "" },
+    extension: { id: BRIDGE_EXTENSION_ID, installed: known && exists(join(dir, chosen, "Extensions", BRIDGE_EXTENSION_ID)) },
+  };
+}
