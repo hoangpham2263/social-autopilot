@@ -315,6 +315,22 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     <fieldset><legend>Requirements<button class="btn" type="button" id="setRecheck">Re-check</button></legend>
       <dl class="kv" id="setReqs"><dt>Node.js</dt><dd class="meta">Checking…</dd></dl>
     </fieldset>
+    <fieldset><legend>Playwright MCP (Chrome connection)</legend>
+      <dl class="kv" id="pwStatus"><dt>Status</dt><dd class="meta">Checking…</dd></dl>
+      <div class="fields">
+        <div class="field wide"><label for="pwToken">Token</label><input type="password" id="pwToken" autocomplete="off" spellcheck="false" placeholder="paste the token from the Playwright MCP Bridge extension"></div>
+        <div class="field"><label for="pwProfile">Chrome profile folder</label><input type="text" id="pwProfile" autocomplete="off" placeholder="e.g. Profile 2"></div>
+      </div>
+      <div class="row-actions">
+        <button class="btn" type="button" id="pwPreview">Preview</button>
+        <button class="btn primary" type="button" id="pwApply">Apply</button>
+        <button class="btn" type="button" id="pwReapply">Re-apply saved token</button>
+        <button class="btn" type="button" id="pwRestore">Restore backup</button>
+        <button class="btn" type="button" id="pwForget">Forget token</button>
+      </div>
+      <div class="msg" id="pwMsg"></div>
+      <p class="meta">Open the Playwright MCP Bridge extension in Chrome, copy its token, paste it here and press Apply, then restart Claude Code. The token is saved only on this machine (workspace/secrets, never in git) and is never shown again; the profile folder is the name from chrome://version.</p>
+    </fieldset>
     <fieldset><legend>Tool settings</legend>
       <div id="settingsView"></div>
       <div class="row-actions"><button class="btn" type="button" id="settingsEdit">Edit</button></div>
@@ -1515,8 +1531,32 @@ function draftTags(d) {
     loadAccounts();
   }
   $("#setRecheck").onclick = () => loadAccounts();
+  // ----- Settings: Playwright MCP token (set through `claude mcp`; the token is never read back, only its last 4 characters) -----
+  const loadPw = safely("#pwStatus", async () => {
+    const r = await getJson("/api/playwright-mcp").catch(() => offline);
+    if (r.error) { $("#pwStatus").innerHTML = `<dt>Status</dt><dd>${errLine(r.error)}</dd>`; return; }
+    $("#pwStatus").innerHTML = r.found
+      ? dotRow(true, "MCP server", `${esc(r.name)} (${esc(r.scope || "?")})`) + dotRow(r.extension_mode, "Extension mode", r.extension_mode ? "on" : "off")
+        + dotRow(r.has_token, "Token in MCP config", r.has_token ? esc(r.token_tail) : "not set") + dotRow(r.saved_tail ? true : null, "Saved in the app", r.saved_tail ? esc(r.saved_tail) : "none")
+        + dotRow(r.profile_dir ? true : null, "Chrome profile", r.profile_dir ? esc(r.profile_dir) : "default")
+      : dotRow(false, "MCP server", esc(r.message || "Not found")) + dotRow(r.saved_tail ? true : null, "Saved in the app", r.saved_tail ? esc(r.saved_tail) : "none");
+  });
+  async function pwDo(url, data, doneText) {
+    $("#pwMsg").textContent = "Working…";
+    const r = await call(url, data).catch(() => offline);
+    if (url === "/api/playwright-mcp" && !data.dry_run) $("#pwToken").value = "";
+    if (r.error) $("#pwMsg").innerHTML = errLine(r.error);
+    else $("#pwMsg").innerHTML = r.dry_run ? `<span class="meta">${esc((r.commands || [r.backup_path]).join("  |  "))}</span>` : `<span class="ok-text">${esc(doneText)}${r.backup_path ? " Backup: " + esc(r.backup_path) + "." : ""}${r.restart_needed ? " Restart Claude Code." : ""}</span>`;
+    loadPw();
+  }
+  const pwBody = (extra) => ({ token: $("#pwToken").value, profile_dir: $("#pwProfile").value, confirm: true, ...extra });
+  $("#pwPreview").onclick = () => pwDo("/api/playwright-mcp", pwBody({ dry_run: true }));
+  $("#pwApply").onclick = () => { if (confirm("This backs up your Claude Code config and rewrites the Playwright MCP entry with this token. You must restart the Claude Code session afterwards. Continue?")) pwDo("/api/playwright-mcp", pwBody(), "Applied."); };
+  $("#pwReapply").onclick = () => { if (confirm("Re-apply the saved token: backs up your Claude Code config and rewrites the Playwright MCP entry. Restart Claude Code afterwards. Continue?")) { $("#pwToken").value = ""; pwDo("/api/playwright-mcp", pwBody(), "Applied."); } };
+  $("#pwRestore").onclick = () => { if (confirm("Restore the newest backup of your Claude Code config (.claude.json.sa-backup-*)?")) pwDo("/api/playwright-mcp-restore", { confirm: true }, "Restored."); };
+  $("#pwForget").onclick = () => { if (confirm("Delete the token saved by this app? The MCP config is not changed.")) pwDo("/api/playwright-mcp-forget", { confirm: true }, "Saved token deleted."); };
   const loadSettings = safely("#settingsView", async () => {
-    loadAccounts();
+    loadAccounts(); loadPw();
     const [r, mb] = await Promise.all([getJson("/api/settings"), getJson("/api/metricool-brands")]).catch(() => [offline, {}]);
     if (r.error) { $("#settingsMsg").innerHTML = errLine(r.error); return; }
     const s = r.settings || {};
