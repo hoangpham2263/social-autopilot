@@ -87,7 +87,7 @@ test.before(() => {
   git(hostRepo, 'config', 'user.name', 'test'); git(hostRepo, 'config', 'user.email', 'test@example.invalid');
   write(path.join(hostRepo, 'README.md'), '# test host\n');
   git(hostRepo, 'add', 'README.md'); git(hostRepo, 'commit', '--quiet', '-m', 'init'); git(hostRepo, 'remote', 'add', 'origin', hostBare); git(hostRepo, 'push', '--quiet', '-u', 'origin', 'main');
-  write(path.join(ws, 'settings.json'), JSON.stringify({ imageHost: { type: 'github-repo', path: hostRepo, rawBase: 'https://raw.example.invalid/sources/main', verify: { attempts: 1, delay_seconds: 0 } } }));
+  write(path.join(ws, 'settings.json'), JSON.stringify({ posts: { images_per_post: [1, 1] }, imageHost: { type: 'github-repo', path: hostRepo, rawBase: 'https://raw.example.invalid/sources/main', verify: { attempts: 1, delay_seconds: 0 } } })); // one image per draft: the album range (default 1-3) is random, tests/album.test.mjs covers it
   // Not a brand: no social.json.
   write(path.join(skills, 'other-skills', 'SKILL.md'), '---\nname: other-skills\n---\n');
 });
@@ -423,7 +423,8 @@ test('whole cycle', { skip: !haveReal && 'no brand skills to copy' }, () => {
   for (const l of ['vn', 'en']) write(path.join(swap.dir, `content-${l}.txt`), `Bảng neon "Love" cho bàn tiệc (${l}).\n\n🌐 Website: https://dreamyvows.com/\n#DreamyVows\n`);
   // new-scene: the agent also confirms no person is left.
   assert.match(run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent').error, /--no-people/);
-  assert.equal(run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent', '--no-people').ok, true);
+  const cc = run('draft.mjs', 'confirm-clean', '--id', swap.id, '--by', 'agent', '--no-people');
+  assert.equal(cc.ok, true, JSON.stringify(cc));
   assert.equal(run('draft.mjs', 'check', '--id', swap.id).status, 'ready');
   const shown = run('queue.mjs').brands.find((x) => x.brand === 'dreamyvows').ready.find((d) => d.id === swap.id);
   assert.equal(shown.reference_image, refPath); // the shop's original beside the result in the app
