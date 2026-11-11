@@ -1,12 +1,13 @@
 // Generic collector (Mode 1 step 1.2), the ONE research path: the agent opens the page or search URL with Playwright MCP,
-// scrolls it with normal Playwright MCP actions (End / mouse wheel, 1-2 times, research.scroll_wait_seconds) and decides when
+// scrolls it with normal Playwright MCP actions (scrollBy from next.scroll, mouse.wheel only as the fallback, 1-2 times, research.scroll_wait_seconds) and decides when
 // to stop; to read the data it runs ONE extract script that reads what is on the page now and returns at once. The AI writes
 // / fixes the platform adapters (scripts/platforms/<platform>.mjs, SELECTORS) and judges the images.
 //   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--seen <file>] [--max N]
-//        prints the extract script for browser_run_code_unsafe: no navigation, no scroll, no pause; returns ONE line
-//        { total, total_on_page, reason, tag, b64 } with only the tiles whose id is not in the task's seen list
+//        writes the extract script to research.script_dir (~/.playwright-mcp/social-autopilot/<brand>-<task>.js, readable by the Playwright
+//        MCP) and prints its path; run it with browser_run_code_unsafe filename=: no navigation, no scroll, no pause; it POSTs its result to the
+//        app (one-time token, 15 min) and returns { saved:true, total, tag, bytes } (b64 only when the POST failed) with only the tiles whose id is not in the task's seen list
 //        (<task dir>/seen.json, written by from-page; --seen <file> = another JSON list of ids)
-//   node scripts/collect.mjs from-page --brand <id> (--for-query <qid> | --for-source <sid>) --b64 <line> | --file <result.json> | --stdin [--images N]
+//   node scripts/collect.mjs from-page --brand <id> (--for-query <qid> | --for-source <sid>) [--b64 <line> | --file <result.json> | --stdin | --json] [--images N]   (no result flag = <task dir>/page-result.json sent by the script)
 //        checks total + checksum + tag (fails loudly when cut off or edited), drops posts the store already has, downloads
 //        images into the run folder, ADDS the posts to raw.json (scroll, extract, scroll, extract accumulates) and says
 //        whether to stop (target reached, 3 extracts with no new posts, all known, login wall / captcha / closed page)

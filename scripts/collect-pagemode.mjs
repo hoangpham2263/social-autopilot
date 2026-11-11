@@ -203,7 +203,7 @@ export async function fromPage(args) {
     : tm.time_over && !stop ? (cnt.pending_fit > 0 && task.max ? 'Nhìn ảnh review[] và chạy collect.mjs fit ngay, rồi: ' : '') + TIME_NEXT
     : !blocked && cnt.pending_fit > 0 && task.max ? `Nhìn ảnh review[] rồi chạy ngay: node scripts/collect.mjs fit --brand ${b} ${task.kind === 'query' ? '--for-query' : '--for-source'} ${task.id} --file <decisions.json>, rồi đọc need_more (run collect.mjs fit on review[], then check need_more).`
       : stop ? `Dừng (${stop}): ${done}`
-      : `Cuộn tiếp (End / con lăn 1-2 lần, chờ ${lo}-${hi} s), rồi chạy lại script (node scripts/collect.mjs script ${forArgOf(task, brand)}) và from-page.${trust ? '' : ` Adapter ${st.status}: so kết quả với trang thật trước khi tin.`}`;
+      : `Cuộn tiếp (scrollBy của next.scroll 1-2 lần, chờ ${lo}-${hi} s), rồi chạy lại script (node scripts/collect.mjs script ${forArgOf(task, brand)}) và from-page.${trust ? '' : ` Adapter ${st.status}: so kết quả với trang thật trước khi tin.`}`;
   if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: extract ${extracts}, +${posts.length} · ${summary}` });
   out({ brand: brand?.id || '', platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, adapter: st, trusted: trust,
     verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0, counters: cnt, summary,
