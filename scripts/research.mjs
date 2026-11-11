@@ -490,9 +490,10 @@ export function filterCounts(items) {
 }
 
 // The end-of-crawl report: new posts per source, sources done, blocked, not finished; store totals.
+// kept = what ingest really ADDED to the Library (new_total), not the per-task fit count.
 // One summary line per brand for the final message: target N · kept Y · rejected Z · duplicates D · Library available A
 const sidList = (xs) => xs.map((x) => x.id).join(',');
-export const reportLine = (r) => `target ${r.target || 0} · kept ${r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
+export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
 export function researchReport(brandId, date) {
   const r = researchReportBase(brandId, date);
   return { ...r, summary_line: reportLine(r) };

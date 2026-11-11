@@ -83,6 +83,7 @@ export function applyDecisions(raw, decisions) {
   return { raw: { ...raw, posts, rejected }, fit, off, undecided };
 }
 // Counters per task (cumulative; <task dir>/progress.json holds read + need, kept / rejected come from raw.json).
+// kept here = fit kept per task; ingest takes at most the share (will_ingest), and `report` counts what ingest really added.
 // need = the task's share; need_more = max(0, need - kept). One definition for from-page, fit and the run progress.
 export function counters(raw, read, need = 0) {
   const posts = raw?.posts || [];
@@ -90,9 +91,9 @@ export function counters(raw, read, need = 0) {
   const rejected = (raw?.rejected || []).length;
   const r = Math.max(Number(read) || 0, posts.length + rejected);
   const n = Math.max(0, Number(need) || 0);
-  return { read: r, pending_fit: Math.max(0, r - kept - rejected), kept, rejected, need: n, need_more: Math.max(0, n - kept) };
+  return { read: r, pending_fit: Math.max(0, r - kept - rejected), kept, rejected, need: n, need_more: Math.max(0, n - kept), will_ingest: n ? Math.min(kept, n) : kept };
 }
-export const counterLine = (c) => `read ${c.read} · kept ${c.kept} · rejected ${c.rejected}${c.pending_fit ? ` · to fit ${c.pending_fit}` : ''}${c.need ? ` · need ${c.need} · missing ${c.need_more}` : ''}`;
+export const counterLine = (c) => `read ${c.read} · kept ${c.kept} · rejected ${c.rejected}${c.pending_fit ? ` · to fit ${c.pending_fit}` : ''}${c.need ? ` · need ${c.need} · missing ${c.need_more}` : ''}${c.need && c.kept > c.need ? ` · will ingest ${c.need} (share ${c.need})` : ''}`;
 // Stop by KEPT posts: target once enough are kept (none waiting for fit); poor_source when read >= factor * need and kept is still short.
 export function fitStop(c, factor = 3) {
   if (c.pending_fit > 0) return '';
