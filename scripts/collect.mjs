@@ -69,7 +69,7 @@ export function rawShape(task, posts, { rejected = [], now = stamp() } = {}) {
 }
 // Product-fit decisions (the agent looked at the images) -> raw: fit posts get product_fit, the others go to rejected[].
 // types = the brand's product_fit.types: a decision type is normalised to the exact valid string, an unknown one lands in `bad` (fit refuses).
-const normType = (x) => String(x || '').toLowerCase().replace(/[^p{L}p{N}]+/gu, ' ').trim();
+const normType = (x) => String(x || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 export function matchType(type, types = []) {
   if (!types.length) return String(type || '').trim();
   const t = String(type || '').trim();
