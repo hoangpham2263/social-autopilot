@@ -110,7 +110,9 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt > #prTextBox, #page-prompt > #prAgentRun { flex: 1 1 auto; min-height: 140px; display: flex; flex-direction: column; }
 #page-prompt > [hidden] { display: none; }
 .pr-text-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
-#page-prompt .field:has(#prStart) { width: 250px; }
+#page-prompt .field:has(#prStart) { width: 220px; }
+#page-prompt .fields { gap: 16px 8px; }
+#page-prompt .fields > .field:not(.auto):not(:has(#prStart)) { width: 146px; flex: 0 1 146px; }
 #prText { display: block; flex: 1 1 auto; height: 100%; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prMsg.copied { color: var(--ink); }
 #prText[readonly] { background: #fafafa; }
@@ -122,10 +124,13 @@ details[open] > summary { margin-bottom: 6px; }
 .run-steps li .dot { margin-right: 6px; width: 8px; height: 8px; }
 .run-steps li.now { border-color: var(--accent); }
 .run-steps li.skipped, .run-steps li.pending { color: var(--muted); }
-#page-prompt .ar-panel { gap: 6px; margin: 0 0 12px; }
+#page-prompt .ar-panel { gap: 8px; margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--line); background: #fff; box-sizing: border-box; }
+#page-prompt > #prAgentRun { min-height: 0; }
+#page-prompt > #prAgentRun.has-log { min-height: 140px; }
+.ar-logbox > .label { font-size: 12px; color: var(--muted); }
 .ar-logbox[hidden] { display: none; }
 .ar-logbox { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
-.ar-log { margin: 0; flex: 1 1 auto; min-height: 0; padding: 8px; border: 1px solid var(--line); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.ar-log { margin: 0; flex: 1 1 auto; min-height: 0; padding: 8px; border: 1px solid var(--line); background: #fafafa; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .dot-run { background: var(--accent); }
 .run-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .run-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -237,6 +242,7 @@ details.sec > summary { color: var(--ink); font-size: inherit; display: flex; fl
 details.sec[open] > summary { margin-bottom: 12px; }
 #page-settings details.sec > summary { margin: 0; } #page-settings details.sec[open] > summary { margin-bottom: 12px; }
 #page-prompt details.sec { flex: 0 0 auto; }
+#page-prompt #prChrome { margin: 0 0 12px; box-sizing: border-box; }
 .sec .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; } .sec .chips:empty { display: none; }
 /* Quiet action: text link in a row of secondary actions. */
 .row-actions .linkbtn { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--accent); text-decoration: underline; cursor: default; }
@@ -315,7 +321,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
     </div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
-      <button class="btn" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
+      <button class="btn primary" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
       <span class="meta" id="prAppHint">Starts Claude Code for you; the live panel below shows progress.</span>
@@ -1070,8 +1076,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
     box.hidden = howNow() !== "app";
-    if (!show) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last"; $("#arLogBox").hidden = true; return; }
-    $("#arLast").className = "ar-last"; $("#arLogBox").hidden = false;
+    if (!show) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
+    $("#arLast").className = "ar-last"; $("#arLogBox").hidden = false; box.classList.add("has-log");
     if (noCli) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
@@ -1212,17 +1218,19 @@ details.sec[open] > summary { margin-bottom: 12px; }
     if (r.error) { $("#prRunSum").innerHTML = errLine(r.error); return; }
     if (!Array.isArray(r.steps)) throw new Error("progress missing");
     const run = r.run && Array.isArray(r.run.steps) ? r.run : null;
+    let active = !!r.active; // a copied prompt nobody started (no step begun) is not 'waiting' after 30 min
+    if (active && run && !run.steps.some((x) => x.state !== "pending") && Date.now() - Date.parse(run.updated || run.created || 0) > 30 * 60000) active = false;
     const states = run ? run.steps : r.steps.map((x) => ({ ...x, state: "pending", detail: "" }));
     const lastBegun = states.reduce((a, x, i) => (x.state !== "pending" ? i : a), -1);
     $("#prRunSteps").innerHTML = states.map((x, i) => {
       const skipped = x.state === "pending" && i < lastBegun;
-      const now = r.active && (x.state === "running" || (x.state === "failed" && i === lastBegun));
+      const now = active && (x.state === "running" || (x.state === "failed" && i === lastBegun));
       const tip = [skipped ? "Skipped" : RUN_TEXT[x.state] || x.state, x.detail, clock(x.at)].filter(Boolean).join(" · ");
       return `<li class="${now ? "now" : skipped ? "skipped" : x.state}" title="${esc(tip)}"><span class="dot ${RUN_DOT[x.state] || "dot-grey"}"></span>${x.n}. ${esc(x.name)}</li>`;
     }).join("");
     const logLink = `<a href="#" data-goto-log>see Log</a>`;
     const parts = [];
-    if (run && r.active) {
+    if (run && active) {
       const begun = lastBegun >= 0;
       const cur = states.find((x) => x.state === "running") || states[lastBegun];
       parts.push(begun ? `<span>${esc(RUN_TEXT[cur?.state] || "Running")}${cur ? ` · step ${cur.n} ${esc(cur.name)}` : ""}</span>` : `<span>Waiting for the agent (prompt copied ${esc(clock(run.created))})</span>`);
@@ -1237,12 +1245,12 @@ details.sec[open] > summary { margin-bottom: 12px; }
     } else parts.push(`<span class="meta">No run yet. Copy the prompt and paste it into the agent.</span>`);
     $("#prRunSum").innerHTML = parts.join("");
     // Run progress only shows while a run is waiting or going (after Copy prompt or from a running agent); the history is in the Log tab.
-    $("#prRun").hidden = !r.active;
-    $("#prRunDetail").textContent = r.active || run?.finished ? run?.detail || "" : "";
+    $("#prRun").hidden = !active;
+    $("#prRunDetail").textContent = active || run?.finished ? run?.detail || "" : "";
     $("#prRunDetail").title = $("#prRunDetail").textContent;
     for (const a of $$("#prRunSum [data-goto-log]")) a.onclick = (e) => { e.preventDefault(); lgMode = mode; store.set("lgMode", mode); show("log"); };
     // Poll while the run is active and the Prompt tab is open.
-    if (r.active && !$("#page-prompt").hidden) runTimer = setTimeout(loadProgress, 3000);
+    if (active && !$("#page-prompt").hidden) runTimer = setTimeout(loadProgress, 3000);
   });
 
   // ----- Log: every agent run (scripts/runlog.mjs), newest first; a click opens the per-brand / per-source detail -----
