@@ -98,7 +98,9 @@ export function openChromeProfile({ profile = "", url = "", settings = {}, plat 
   if (!validProfile(chosen, profiles)) throw new Error(chosen ? "Unknown Chrome profile folder." : "Choose a Chrome profile first (Prompt tab) or pass --profile.");
   const u = String(url || "").trim();
   if (u && !validConnectUrl(u)) throw new Error("Only a chrome-extension://<id>/connect.html?mcpRelayUrl=ws://<loopback> URL is accepted.");
-  const { cmd, args } = openCommand({ browser, profile: chosen, url: u, plat });
+  // With no url Chrome would open a NEW WINDOW of the profile; with a url it adds a TAB to the profile's existing window.
+  const target = u || (browser.kind === "edge" ? "edge://newtab/" : "chrome://newtab/");
+  const { cmd, args } = openCommand({ browser, profile: chosen, url: target, plat });
   const go = start || ((c, a) => { const p = spawn(c, a, { detached: true, stdio: "ignore" }); p.on("error", () => {}); p.unref(); });
   go(cmd, args);
   return { ok: true, profile: chosen, browser: browser.kind, url: u };
