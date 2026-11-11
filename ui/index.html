@@ -316,9 +316,12 @@ details.sec[open] > summary { margin-bottom: 12px; }
       <div class="row-actions">
         <button class="btn primary" type="button" id="prChromeCheck" title="Instant check: Chrome, profile and the Playwright MCP Bridge extension">Check</button>
         <button class="btn" type="button" id="prChromeOpen" title="Opens that profile's window">Open Chrome</button>
-        <button class="linkbtn" type="button" id="prChromeCopy" title="Also checks which sites you are signed in to (paste into Claude Code)">Full check in Claude Code</button>
+        <button class="linkbtn" type="button" id="prChromeCopy" title="Also checks which sites you are signed in to. The app cannot run Claude: paste this into Claude Code">Copy full-check prompt</button>
       </div>
+      <div class="meta" id="prChromeMsg" role="status" style="margin-top:8px"></div>
+      <div id="prChromeLive"></div>
       <div class="chips" id="prChromeChips"></div>
+      <div class="meta" id="prChromeStamp"></div>
     </details>
     <!-- Run progress of the selected mode (scripts/progress.mjs, GET /api/progress): steps, counter, time, last message. -->
     <fieldset class="run-panel" id="prRun"><legend>Run progress</legend>
@@ -1021,7 +1024,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
     "3. Save the JSON it returns to a file and record it: node scripts/research.mjs chrome-record --state ok --result-file <file> (hidden:true: bringToFront again and re-run; browser not answering: --state fail --note \"<reason>\").",
     "4. Report one line per platform (signed in / signed out / blocked) and whether the tab was hidden.",
   ].join("\n");
-  let chromeTimer = 0;
+  let chromeTimer = 0, chromeErr = "";
   const loadChrome = safely("#prChromeSum", async () => {
     clearTimeout(chromeTimer); chromeTimer = 0;
     const sum = $("#prChromeSum"), chipsEl = $("#prChromeChips"), prof = $("#prChromeProf");
@@ -1058,15 +1061,52 @@ details.sec[open] > summary { margin-bottom: 12px; }
       }
     }
     chipsEl.innerHTML = chips || setup.join("");
+    chromeErr = r.error ? String(r.error) : cp.error ? String(cp.error) : sc.error ? String(sc.error) : "";
+    renderChromeLive(r);
     const opts = ['<option value="">choose the profile</option>'].concat(profs.map((p) => `<option value="${esc(p.folder)}"${p.folder === sel ? " selected" : ""}>${esc([p.folder, p.name, p.email].filter(Boolean).join(" · "))}</option>`));
     if (sel && !profs.some((p) => p.folder === sel)) opts.push(`<option value="${esc(sel)}" selected>${esc(sel)}</option>`);
     prof.innerHTML = opts.join("");
     if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000);
   });
-  $("#prChromeCheck").onclick = () => { loadChrome(); flash("Checked."); };
+  // Visible feedback for the buttons: status line (#prChromeMsg), last-check stamp, full-check waiting box (#prChromeLive).
+  const hms = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
+  let fullWait = null, lastLive = "";
+  const chromeMsg = (text, amber) => { const m = $("#prChromeMsg"); m.textContent = text || ""; m.style.color = amber ? "var(--amber, #b45309)" : ""; };
+  function renderChromeLive(r) {
+    const box = $("#prChromeLive"); let h = "";
+    if (fullWait) {
+      const rec = r && r.record, got = rec && Date.parse(rec.at) > fullWait.since;
+      if (got) { h = `<div class="meta">Result received ${esc(hms(rec.at))}</div>`; fullWait = null; }
+      else {
+        const late = Date.now() - fullWait.since > 300000;
+        h = `<div class="sec" style="padding:10px 12px;margin-top:8px"><div class="meta">${esc(fullWait.note)}</div>` +
+          `<div class="meta">1. Paste the prompt into Claude Code. 2. Wait for Claude to run it. This panel updates by itself.</div>` +
+          (fullWait.manual ? `<textarea readonly rows="6" style="width:100%;margin-top:6px" id="prChromeManual">${esc(CHROME_PROMPT)}</textarea>` : "") +
+          (late ? `<div class="meta" style="color:var(--amber, #b45309)">No result yet: did you paste the prompt in Claude Code? The browser must be connected (look for 'started debugging this browser')</div>` : "") +
+          `<div class="meta">Waiting for the result… (since ${esc(hms(fullWait.since))}) <button class="linkbtn" type="button" id="prChromeCancel">cancel</button></div></div>`;
+      }
+    }
+    if (h !== lastLive) { box.innerHTML = h; lastLive = h; const c = $("#prChromeCancel"); if (c) c.onclick = () => { fullWait = null; renderChromeLive(null); chromeMsg("Cancelled."); }; }
+  }
+  $("#prChromeCheck").onclick = async () => {
+    const b = $("#prChromeCheck"), t0 = b.textContent; b.disabled = true; b.textContent = "Checking…"; chromeMsg("");
+    try { await loadChrome(); if (chromeErr) chromeMsg("Could not run the check: " + chromeErr, true); else $("#prChromeStamp").textContent = "Checked " + hms(Date.now()); }
+    catch (e) { chromeMsg("Could not run the check: " + (e && e.message ? e.message : e), true); }
+    finally { b.disabled = false; b.textContent = t0; }
+  };
   $("#prChromeProf").onchange = async (e) => { const r2 = await postJson("/api/settings", { settings: { research: { chrome_profile: e.target.value } } }).catch(() => offline); flash(r2.error ? "Could not save the profile." : "Profile saved."); e.target.blur(); loadChrome(); };
-  $("#prChromeOpen").onclick = async () => { const r2 = await postJson("/api/open-chrome", { profile: $("#prChromeProf").value }).catch(() => offline); flash(r2.error ? r2.error : "Chrome opened."); };
-  $("#prChromeCopy").onclick = async () => { try { await navigator.clipboard.writeText(CHROME_PROMPT); } catch { /* ignore */ } flash("Copied."); };
+  $("#prChromeOpen").onclick = async () => {
+    const b = $("#prChromeOpen"), p = $("#prChromeProf").value; b.disabled = true; chromeMsg("Opening Chrome profile " + (p || "(default)") + "…");
+    const r2 = await postJson("/api/open-chrome", { profile: p }).catch(() => offline);
+    b.disabled = false; if (r2 && r2.error) chromeMsg("Could not open Chrome: " + r2.error, true); else chromeMsg("Opened Chrome profile " + (p || "(default)") + " at " + hms(Date.now()));
+  };
+  $("#prChromeCopy").onclick = async () => {
+    fullWait = { since: Date.now(), note: "", manual: false };
+    try { await navigator.clipboard.writeText(CHROME_PROMPT); fullWait.note = "Copied to the clipboard"; }
+    catch { fullWait.manual = true; fullWait.note = "Could not copy automatically: select the prompt below and copy it by hand"; }
+    lastLive = ""; renderChromeLive(null);
+    const m = $("#prChromeManual"); if (m) { m.focus(); m.select(); }
+  };
   const loadProgress = safely("#prRunSum", async () => {
     clearTimeout(runTimer); runTimer = 0;
     loadChrome();
