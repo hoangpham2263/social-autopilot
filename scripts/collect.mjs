@@ -17,8 +17,9 @@
 // Read only: it never likes, saves, follows, comments, messages, joins, posts or signs in. A login wall / captcha / block
 // page = state blocked, nothing more opened. Cookies stay in Chrome; nothing secret is written.
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
 import { openRun, nextTask } from './research.mjs';
+import { track } from './progress.mjs';
 import { REGISTRY, STATUSES, getAdapter, adapterStatus, platformIds } from './platforms/index.mjs';
 
 // ---------- pure parts (tests/collect.test.mjs) ----------
@@ -80,6 +81,25 @@ export function applyDecisions(raw, decisions) {
   }
   return { raw: { ...raw, posts, rejected }, fit, off, undecided };
 }
+// Counters per task (cumulative; <task dir>/progress.json holds read + need, kept / rejected come from raw.json).
+// need = the task's share; need_more = max(0, need - kept). One definition for from-page, fit and the run progress.
+export function counters(raw, read, need = 0) {
+  const posts = raw?.posts || [];
+  const kept = posts.filter((p) => p.product_fit && String(p.product_fit.type || '').trim()).length;
+  const rejected = (raw?.rejected || []).length;
+  const r = Math.max(Number(read) || 0, posts.length + rejected);
+  const n = Math.max(0, Number(need) || 0);
+  return { read: r, pending_fit: Math.max(0, r - kept - rejected), kept, rejected, need: n, need_more: Math.max(0, n - kept) };
+}
+export const counterLine = (c) => `read ${c.read} · kept ${c.kept} · rejected ${c.rejected}${c.pending_fit ? ` · to fit ${c.pending_fit}` : ''}${c.need ? ` · need ${c.need} · missing ${c.need_more}` : ''}`;
+// Stop by KEPT posts: target once enough are kept (none waiting for fit); poor_source when read >= factor * need and kept is still short.
+export function fitStop(c, factor = 3) {
+  if (c.pending_fit > 0) return '';
+  if (c.need && c.need_more === 0) return 'target';
+  if (c.need && c.read >= Math.max(1, Number(factor) || 3) * c.need) return 'poor_source';
+  return '';
+}
+export const progressFile = (task) => path.join(task.dir, 'progress.json');
 // How the step ended -> the state `research.mjs result` takes.
 export function suggestedState(kind, { blocked, error, limit, read, stop }) {
   if (blocked) return 'blocked';
@@ -96,7 +116,13 @@ function fit(args) {
   const file = path.resolve(need(args, 'file'));
   const r = applyDecisions(raw, readJson(file, []));
   writeJson(task.raw_file, r.raw);
-  out({ brand: brand.id, raw_file: task.raw_file, fit: r.fit, off_brand: r.off, undecided: r.undecided, next: r.undecided.length ? 'Còn bài chưa có quyết định: ingest sẽ từ chối bài thiếu product_fit.type; quyết nốt rồi chạy lại fit.' : 'node scripts/research.mjs ingest ... rồi result ...' });
+  const c = counters(r.raw, readJson(progressFile(task), { read: 0 }).read, task.max);
+  writeJson(progressFile(task), { read: c.read, need: c.need });
+  const stop = fitStop(c, settings().research?.max_read_factor);
+  const summary = counterLine(c);
+  if (task.kind !== 'standalone') track('crawl', { brand: brand.id, detail: `${task.id}: ${summary}` });
+  out({ brand: brand.id, raw_file: task.raw_file, fit: r.fit, off_brand: r.off, undecided: r.undecided, ...c, summary, stop,
+    next: stop === 'target' ? 'Đủ bài giữ lại (need_more 0): dừng, rồi ingest + result.' : stop === 'poor_source' ? 'Nguồn này ít bài hợp thương hiệu: dừng, chuyển nguồn khác (ingest + result).' : c.need_more > 0 && !r.undecided.length ? 'Còn thiếu bài: cuộn tiếp, extract, from-page, nhìn ảnh, fit lại.' : r.undecided.length ? 'Còn bài chưa có quyết định: ingest sẽ từ chối bài thiếu product_fit.type; quyết nốt rồi chạy lại fit.' : 'node scripts/research.mjs ingest ... rồi result ...' });
 }
 
 if (isMain(import.meta.url)) main(async () => {

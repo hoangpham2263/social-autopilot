@@ -9,6 +9,7 @@ import path from 'node:path';
 import { out, fail, need, settings, loadBrand, readJson, writeJson } from './lib.mjs';
 import { track } from './progress.mjs';
 import { openRun } from './research.mjs';
+import { counters, counterLine, fitStop, progressFile } from './collect.mjs';
 import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
@@ -141,7 +142,10 @@ export async function fromPage(args) {
   const state0 = readJson(path.join(task.dir, 'extracts.json'), { extracts: 0, idle: 0 });
   const prevPosts = prevRaw?.posts || [];
   const known = task.known_file ? readJson(task.known_file, { count: 0 }) : brand ? knownPosts(brand.id) : { count: 0 };
-  const left = task.max ? Math.max(0, task.max - prevPosts.length) : 0;
+  const prog0 = readJson(progressFile(task), { read: prevPosts.length + (prevRaw?.rejected || []).length });
+  const factor = Math.max(1, Number(settings().research?.max_read_factor) || 3);
+  // download cap = what may still be READ (factor x need), not the need: rejected posts must not use up the share
+  const left = task.max ? Math.max(0, factor * task.max - prog0.read) : 0;
   const r = pageResultPosts(result, adapter, { cursor: makeCursor({ mode: task.mode, known }), max: task.max ? left : 0, found_by: task.found_by, skip: [...prevSeen, ...prevPosts.map((p) => p.collector_id)] });
   const rawDir = path.join(task.dir, 'raw');
   fs.mkdirSync(rawDir, { recursive: true });
@@ -171,8 +175,13 @@ export async function fromPage(args) {
   const allKnown = !blocked && r.read > 0 && r.skippedKnown === r.read && !posts.length;
   const note = blocked ? `${reason || 'login wall / block page'}: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : !all.length && !r.read && !(result?.total_on_page) ? 'error: 0 posts on the page (page empty or selectors no longer fit)' : noImage && !posts.length && r.read ? 'error: posts read but no image could be downloaded' : '';
   writeJson(task.raw_file, { ...rawShape(task, all, { rejected: prevRaw?.rejected || [] }) });
-  const target = !!task.max && all.length >= task.max;
-  const stop = blocked ? 'blocked' : target ? 'target' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
+  const cnt = counters({ posts: all, rejected: prevRaw?.rejected || [] }, prog0.read + posts.length, task.max);
+  writeJson(progressFile(task), { read: cnt.read, need: cnt.need });
+  const fs0 = task.max ? fitStop(cnt, factor) : '';
+  const target = fs0 === 'target';
+  const poor = fs0 === 'poor_source';
+  const summary = counterLine(cnt);
+  const stop = blocked ? 'blocked' : target ? 'target' : poor ? 'poor_source' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
   const state = blocked ? 'blocked' : suggestedState(task.kind, { blocked, error: /^error/.test(note) || !loaded.verified, limit: target, read: all.length, stop: task.kind === 'source' ? (allKnown ? 'known' : stop === 'no_new' ? 'end' : '') : '' });
   const idArg = task.kind === 'query' ? `--query ${task.id}` : task.kind === 'source' ? `--source ${task.id}` : '';
   const b = brand?.id || '<id>';
@@ -181,11 +190,12 @@ export async function fromPage(args) {
     : `node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`;
   const [lo, hi] = scrollWait(task.platform);
   const next = blocked ? `Bị chặn (${reason || 'login wall'}): node scripts/research.mjs result --brand ${b} ${idArg} --state blocked --note "${note.replace(/"/g, "'")}" (dừng nền tảng này).`
-    : stop ? `Dừng (${stop}): ${done}`
+    : !blocked && cnt.pending_fit > 0 && task.max ? `Nhìn ảnh review[] rồi chạy ngay: node scripts/collect.mjs fit --brand ${b} ${task.kind === 'query' ? '--for-query' : '--for-source'} ${task.id} --file <decisions.json>, rồi đọc need_more (run collect.mjs fit on review[], then check need_more).`
+      : stop ? `Dừng (${stop}): ${done}`
       : `Cuộn tiếp (End / con lăn 1-2 lần, chờ ${lo}-${hi} s), rồi chạy lại script (node scripts/collect.mjs script ${forArgOf(task, brand)}) và from-page.${trust ? '' : ` Adapter ${st.status}: so kết quả với trang thật trước khi tin.`}`;
-  if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: extract ${extracts}, +${posts.length} (${all.length} total)` });
+  if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: extract ${extracts}, +${posts.length} · ${summary}` });
   out({ brand: brand?.id || '', platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, adapter: st, trusted: trust,
-    verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0,
+    verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0, counters: cnt, summary,
     skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || '', suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
     review: posts.map((p, i) => ({ n: prevPosts.length + i + 1, id: p.collector_id, url: p.post_url, author: p.author, date: p.posted_date, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
 }
