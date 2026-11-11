@@ -126,6 +126,16 @@ export function checksumOf(ids) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h.toString(36);
 }
+// Caption cut for the compact result: never mid-word; prefers the end of a sentence; adds an ellipsis. SELF-CONTAINED (embedded in page scripts).
+export function cutWords(x, n) {
+  const s = String(x || '').replace(/\s+/g, ' ').trim();
+  if (s.length <= n) return s;
+  let head = s.slice(0, n);
+  const sentence = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '));
+  if (sentence >= n * 0.6) head = head.slice(0, sentence + 1);
+  else if (!/\s/.test(s[n])) { const sp = head.lastIndexOf(' '); if (sp >= n * 0.4) head = head.slice(0, sp); }
+  return head.replace(/[\s,;:\-–—]+$/, '') + '…';
+}
 export const COMPACT = { caption: 100, author: 40, images: 2 };
 
 // Single-line transport of a page result: base64url(JSON) ~ one 2-char tag per 100-char segment ~ 4-char tag of the whole.
@@ -170,6 +180,7 @@ export function buildPageScript(S, opts) {
   const r = await page.evaluate(async (o) => {
     const extractTiles = ${extractTiles};
     const checksumOf = ${checksumOf};
+    const cutWords = ${cutWords};
     const wallSignals = ${wallSignals};
     const sig = wallSignals(document, o.wall);
     const loginWall = (o.wall.url || []).some((x) => new RegExp(x, 'i').test(sig.url)) || sig.captcha || sig.login_form || sig.dialog;
@@ -207,7 +218,7 @@ export function buildPageScript(S, opts) {
     const C = o.compact;
     return { platform: o.platform, url: shortUrl(location.href), loginWall, reason, signals: loginWall ? { url: sig.url, title: sig.title, captcha: sig.captcha, login_form: sig.login_form, dialog: sig.dialog } : null,
       note: cut(note, 80), total: list.length, total_on_page: onPage, checksum: checksumOf(list.map((t) => t.id || t.url)),
-      tiles: list.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images).map(imgUrl), caption: cut(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
+      tiles: list.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images).map(imgUrl), caption: cutWords(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
   }, o);
   const p = packB64(r);
   return { platform: r.platform, total: r.total, total_on_page: r.total_on_page, reason: r.reason, tag: p.tag, b64: p.line };

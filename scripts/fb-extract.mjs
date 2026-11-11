@@ -11,12 +11,14 @@ export const SELECTORS = {
   // The post's text.
   message: ['[data-ad-rendering-role="story_message"]', '[data-ad-preview="message"]', '[data-ad-comet-preview="message"]'],
   // Links that carry a post id (the permalink is usually the timestamp).
-  post_link: ['a[href*="/posts/"]', 'a[href*="/permalink/"]', 'a[href*="story_fbid="]', 'a[href*="/videos/"]', 'a[href*="/reel/"]', 'a[href*="/watch/?v="]', 'a[href*="/photo/?fbid="]', 'a[href*="/photo.php?fbid="]', 'a[href*="/photos/"]'],
+  post_link: ['a[href*="/posts/"]', 'a[href*="/permalink/"]', 'a[href*="story_fbid="]', 'a[href*="/videos/"]', 'a[href*="/reel/"]', 'a[href*="/watch/?v="]', 'a[href*="/photo/?fbid="]', 'a[href*="/photo?fbid="]', 'a[href*="/photo.php?fbid="]', 'a[href*="/photos/"]'],
   // "See more" inside a post's text (read only: its label is cut off the caption, never clicked).
   see_more: ['div[role="button"]', 'span[role="button"]'],
   see_more_text: ['See more', 'Xem thêm', 'Voir plus', 'Mehr ansehen', 'Ver más', 'Mostra altro'],
   // Timestamps whose link appears only on hover (href="#"); the extract script does not hover, it reads aria-label / abbr / time.
   hover: ['a[role="link"][href="#"]', 'a[role="link"]:not([href])', 'span[id] a[href="#"]'],
+  // Any link / span of the post whose aria-label looks like a date (photo posts: the permalink is not the timestamp link).
+  date_label: ['a[aria-label]', 'span[aria-label]', '[role="link"][aria-label]'],
   timestamp: ['abbr[data-utime]', '[data-utime]', 'time[datetime]', 'abbr[title]'],
   image_host: ['scontent', 'fbcdn.net'],
   image_skip: ['emoji.php', '/rsrc.php/', 'static.xx.fbcdn.net', '/p32x32/', '/p40x40/', '/s40x40/', '/p50x50/', '/s60x60/'],
@@ -60,6 +62,7 @@ export function extractFeed(root, sel) {
   const abs = (h) => { try { return new URL(h, 'https://www.facebook.com/').href; } catch { return ''; } };
   const KEEP = ['fbid', 'story_fbid', 'id', 'v', 'set'];
   const clean = (h) => { let u; try { u = new URL(h, 'https://www.facebook.com/'); } catch { return ''; } const q = KEEP.filter((k) => u.searchParams.get(k)).map((k) => `${k}=${u.searchParams.get(k)}`).join('&'); return `https://www.facebook.com${u.pathname.replace(/\/+$/, '')}${q ? '?' + q : ''}`; };
+  const DATE_LABEL = /\d.*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|th[aá]ng|ago|trước|giờ|phút|hour|min|yesterday|hôm qua)|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|th[aá]ng).*\d/i;
   const POST = /\/(posts|permalink|videos|reel)\/|story_fbid=|\/photo\/?\?fbid=|\/photo\.php\?fbid=|\/photos\/|\/watch\/?\?v=/;
   const rank = (u) => (/\/(posts|permalink)\/|story_fbid=/.test(u) ? 0 : /\/(videos|reel)\/|\/watch/.test(u) ? 1 : 2);
   // el belongs to the post, not to a comment: no role=article between the box and el's nearest article.
@@ -97,11 +100,12 @@ export function extractFeed(root, sel) {
     let caption = msg ? text(msg) : '';
     let seeMoreLeft = false;
     for (const t of sel.see_more_text) if (caption.endsWith(t)) { caption = caption.slice(0, -t.length).replace(/[\s…\.]+$/, '').trim(); seeMoreLeft = true; }
+    const labelEl = all(box, sel.date_label || []).find((a) => own(box, a) && a.getAttribute('aria-label').length < 70 && DATE_LABEL.test(a.getAttribute('aria-label')));
     const video = all(box, sel.video).some((v) => own(box, v)) || urls.some((u) => /\/(videos|reel)\/|\/watch/.test(u));
     posts.push({
       post_url: urls[0] || '', alt_urls: urls.slice(1), caption,
       // Date: the timestamp link's aria-label / tooltip, else abbr/time; text without a digit (e.g. a name) is not a date.
-      date_text: [permalink && permalink.getAttribute('aria-label'), permalink && permalink.getAttribute('title'), ts && ts.getAttribute('title'), ts && ts.getAttribute('datetime'), ts && text(ts), permalink && text(permalink)].map((x) => String(x || '').trim()).find((x) => /\d/.test(x)) || '',
+      date_text: [permalink && permalink.getAttribute('aria-label'), permalink && permalink.getAttribute('title'), ts && ts.getAttribute('title'), ts && ts.getAttribute('datetime'), labelEl && labelEl.getAttribute('aria-label'), ts && text(ts), permalink && text(permalink)].map((x) => String(x || '').trim()).find((x) => /\d/.test(x)) || '',
       utime: ts ? Number(ts.getAttribute('data-utime')) || 0 : 0,
       images: imgs, media_type: video ? 'video' : imgs.length > 1 ? 'album' : imgs.length ? 'photo' : 'text', see_more_left: seeMoreLeft,
     });

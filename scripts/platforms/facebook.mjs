@@ -3,7 +3,7 @@
 // search/hashtag pages (not just a page's own feed) have NOT been run on a live page.
 // pageScript (the extract script) only reads: no click, no hover, no scroll (the agent scrolls with Playwright MCP).
 import { SELECTORS as FB, extractFeed, extractGrid, parseFbDate, tabUrl } from '../fb-extract.mjs';
-import { wallSignals, makePost, enc, isHashtag, tagOf, checksumOf, packB64, COMPACT } from './common.mjs';
+import { wallSignals, makePost, enc, isHashtag, tagOf, checksumOf, cutWords, packB64, COMPACT } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block (the post selectors are FB, in fb-extract.mjs) ----
 export const SELECTORS = {
@@ -36,8 +36,13 @@ export const postId = (url) => postIds(url)[0] || '';
 export function fbPostKeys(postUrl, altUrls) {
   const urls = [postUrl].concat(altUrls || []).filter(Boolean).map(String);
   const strong = (u) => /\/(posts|permalink|videos|reel)\/|story_fbid=|\/watch\/?\?v=/.test(u);
+  // set=pcb.<id> in a photo link is the album / post id: the post key when no real permalink is there (set=a.<id> is the page's album: ignored).
+  const pcb = (u) => (String(u).match(/[?&]set=pcb\.(\d{5,})/) || [])[1];
   const ids = [];
-  for (const u of urls.filter(strong).concat(urls.filter((u) => !strong(u)))) for (const x of postIds(u)) if (!ids.includes(x)) ids.push(x);
+  const add = (x) => { if (x && !ids.includes(x)) ids.push(x); };
+  for (const u of urls.filter(strong)) for (const x of postIds(u)) add(x);
+  for (const u of urls) add(pcb(u));
+  for (const u of urls.filter((u) => !strong(u))) for (const x of postIds(u)) add(x);
   return { id: ids[0] || '', aliases: ids.slice(1) };
 }
 export const searchUrl = (query) => (isHashtag(query) ? `https://www.facebook.com/hashtag/${enc(tagOf(query))}` : `https://www.facebook.com/search/posts/?q=${enc(String(query).trim())}`);
@@ -83,6 +88,7 @@ export function pageScript(opts) {
   const packB64 = ${packB64};
   const o = ${JSON.stringify(o)};
   const r = await page.evaluate((o) => {
+    const cutWords = ${cutWords};
     const checksumOf = ${checksumOf}; // inside evaluate: the browser cannot see the outer script scope
     const extractFeed = ${extractFeed};
     const extractGrid = ${extractGrid};
@@ -110,7 +116,7 @@ export function pageScript(opts) {
     const C = o.compact;
     return { platform: 'facebook', url: location.href, loginWall: o.blocks.includes(reason), reason, ...(isClosedPage(sig.text) ? { closed: true } : {}), view: grid ? 'grid' : 'feed',
       total: list.length, total_on_page: byId.size, checksum: checksumOf(list.map((t) => t.id)),
-      tiles: list.map((t) => ({ id: t.id, ...(t.alt.length ? { alt: t.alt } : {}), url: t.url, ...(t.alt_urls && t.alt_urls.length ? { alt_urls: t.alt_urls.slice(0, 4) } : {}), image_urls: t.image_urls.slice(0, C.images), caption: cut(t.caption, C.caption), author: cut(author, C.author), date_text: cut(t.date_text, 40), ...(t.utime ? { utime: t.utime } : {}) })) };
+      tiles: list.map((t) => ({ id: t.id, ...(t.alt.length ? { alt: t.alt } : {}), url: t.url, ...(t.alt_urls && t.alt_urls.length ? { alt_urls: t.alt_urls.slice(0, 4) } : {}), image_urls: t.image_urls.slice(0, C.images), caption: cutWords(t.caption, C.caption), author: cut(author, C.author), date_text: cut(t.date_text, 40), ...(t.utime ? { utime: t.utime } : {}) })) };
   }, o);
   const p = packB64(r);
   return { platform: 'facebook', total: r.total, total_on_page: r.total_on_page, reason: r.reason, ...(r.closed ? { closed: true } : {}), tag: p.tag, b64: p.line };

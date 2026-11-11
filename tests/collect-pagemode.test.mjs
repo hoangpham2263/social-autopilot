@@ -208,3 +208,23 @@ test('facebook: post permalink id with photo fbids as aliases, caption of the po
   const cursorKnownByPhoto = { take: (x) => ([x.post_url, ...x.alt_urls].some((u) => u.includes('1333219135645308')) ? 'known' : 'collect') };
   assert.equal(pageResultPosts({ tiles: [{ id: p.id, alt: p.aliases, url: p.url, image_urls: ['i'] }] }, fb, { cursor: cursorKnownByPhoto }).skippedKnown, 1);
 });
+
+test('facebook feed: real permalink first, set=pcb id as post key, date from aria-label, cut at a word', async () => {
+  const fb = getAdapter('facebook');
+  const { cutWords } = await import('../scripts/platforms/common.mjs');
+  const doc = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-photo-posts.html'), 'utf8')).document;
+  const posts = extractFeed(doc, FB).posts;
+  const k0 = fb.fbPostKeys(posts[0].post_url, posts[0].alt_urls);
+  assert.equal(k0.id, 'pfbid02RealPermalinkAbcdefghijk123');
+  assert.ok(k0.aliases.includes('1333219525645269') && k0.aliases.includes('1333219135645308'));
+  assert.match(posts[0].date_text, /3 tháng 11/);
+  const k1 = fb.fbPostKeys(posts[1].post_url, posts[1].alt_urls);
+  assert.equal(k1.id, '1326352609665294');
+  assert.deepEqual([...k1.aliases].sort(), ['1326352479665307', '1326352506331971']);
+  assert.match(posts[1].date_text, /Tháng 11 5/);
+  const long = 'Quá trình test và vệ sinh đèn là một bước vô cùng quan trọng trước khi gửi đến tay khách hàng Cám ơn các bạn';
+  const cut = cutWords(long, 100);
+  assert.ok(cut.endsWith('…') && long.startsWith(cut.slice(0, -1)) && /\s/.test(long[cut.length - 1]), cut);
+  assert.equal(cutWords('short', 100), 'short');
+  assert.equal(instagram.splitOgCaption('ab.c on May 1, 2026: "Hello wor…').author, '@ab.c');
+});

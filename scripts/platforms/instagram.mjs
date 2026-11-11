@@ -32,8 +32,10 @@ export const authorOf = (url) => { const m = String(url || '').match(/instagram\
 export const searchUrl = (query) => (isHashtag(query) ? `https://www.instagram.com/explore/tags/${enc(tagOf(query))}/` : `https://www.instagram.com/explore/search/keyword/?q=${enc(String(query).trim())}`);
 // og:description of a post page: '306 likes, 1 comments - user on October 2, 2026: "text".' -> { author, text }
 const OG_RE = /^[\d.,KMkm]+ likes?, [\d.,KMkm]+ comments? - ([\w.]+) on [^:]+: "([\s\S]*?)"\.?\s*$/;
-export const splitOgCaption = (c) => { const m = String(c || '').match(OG_RE); return m ? { author: `@${m[1]}`, text: m[2].trim() } : { author: '', text: String(c || '') }; };
-export const toPost = (t, ctx = {}) => { const o = splitOgCaption(t.caption); return makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls, caption: o.text, author: t.author || authorOf(t.url) || o.author, found_by: ctx.found_by || '' }); };
+// Also the compact (cut) form: no closing quote, "user on <date>: "text…".
+const OG_ALT = /^(?:[\d.,KMkm]+ likes?, [\d.,KMkm]+ comments? - )?([\w.]+) on [A-Za-z]+ \d{1,2}, \d{4}: "([\s\S]*?)(?:"\.?)?\s*$/;
+export const splitOgCaption = (c) => { const m = String(c || '').match(OG_RE) || String(c || '').match(OG_ALT); return m ? { author: `@${m[1]}`, text: m[2].trim() } : { author: '', text: String(c || '') }; };
+export const toPost = (t, ctx = {}) => { const o = splitOgCaption(t.caption); return makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls, caption: o.text, author: t.author || o.author || authorOf(t.url), found_by: ctx.found_by || '' }); };
 
 
 // extract script (Playwright MCP browser_run_code_unsafe): reads the page as it is now
