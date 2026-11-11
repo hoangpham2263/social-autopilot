@@ -149,6 +149,7 @@ export function timeInfo(issuedAt, now = Date.now(), limit = sourceMinutes()) {
   return { time_limit_minutes: limit, started: issuedAt, elapsed: `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`, ...(over ? { stop: 'time', time_over: true, next: TIME_NEXT } : {}) };
 }
 const FALLBACK = "If the extract script errors, or returns 0 posts / total_on_page 0 twice in a row on a page that visibly has posts, STOP using the script for that source: read the page yourself (Playwright MCP snapshot, a small browser_evaluate, or a screenshot), write the posts you see in the same small JSON the script returns ({platform, url, tiles:[{id, url, image_urls, caption, author, date_text}]}, no checksum) and pass it to collect.mjs from-page --json '<that>' (the tool downloads the images, skips known posts, writes raw.json; verified:false is expected); then the same loop (look at images, fit, counters, stop rules, time cap).";
+export const REFERENCE_RULE = `Every reference source gets its turn before discovery (${'`next`'} will not move to discovery while one has no result). Never skip a source to save output: skipping is allowed only with result --state blocked|partial|known|end and a reason. Login wall (Facebook or any site): result --state blocked --note "login wall", go on, and re-check that source ONCE at the end of this brand's run (Chrome may have been signed in meanwhile).`;
 export function nextTask(run) {
   const target = run.mode?.max_posts || 0, total = brandTotal(run), left = target ? Math.max(0, target - total) : 0;
   const waiting = (run.sources || []).filter((x) => !x.result);
@@ -157,7 +158,7 @@ export function nextTask(run) {
     if (target && !left) return { step: 'reference', source: src.id, share: 0, skip: true, total, target, do: `target reached: node scripts/research.mjs result --brand ${run.brand} --source ${src.id} --state skipped` };
     return { step: 'reference', source: src.id, name: src.name, platform: src.platform || platformOf({ source_url: src.url }) || '', url: src.url, what_to_take: src.what_to_take || '', dir: src.dir, raw_file: src.raw_file, downloads: src.downloads, known_file: src.known_file, stop_rule: src.stop_rule, share: target ? Math.ceil(left / waiting.length) : 0, total, target,
       found_by: 'reference page', ...collectInfo(run.brand, 'source', src.id, src.platform || platformOf({ source_url: src.url }) || '', target ? Math.ceil(left / waiting.length) : 0, src.url),
-      ...timeInfo(src.issued_at, undefined, undefined), do: doText(run.brand, 'source', src.id, '', 'end|known|since|limit|blocked|partial') };
+      ...timeInfo(src.issued_at, undefined, undefined), rule: REFERENCE_RULE, do: doText(run.brand, 'source', src.id, '', 'end|known|since|limit|blocked|partial') };
   }
   if (target && !left) return { step: 'done', reason: `target reached (${total}/${target})`, total, target };
   const d = run.discovery;
@@ -459,7 +460,7 @@ function result(args) {
   const progress = recordProgress(brand.id, sid, src.result, { date: run.date, mode: crawlMode(run.mode) });
   run.status = runStatus(run);
   writeJson(runFile, run);
-  out({ source: sid, result: src.result, progress, run_status: run.status, next: state === 'blocked' ? 'Trang tham khảo Facebook bị chặn: không mở trang Facebook nào nữa trong lượt này (các trang còn lại: result --state skipped); nền tảng khác vẫn theo research.mjs next.' : 'node scripts/research.mjs next' });
+  out({ source: sid, result: src.result, progress, run_status: run.status, next: state === 'blocked' ? 'Source blocked (login wall / captcha): go on with the other sources (research.mjs next); re-check THIS source once at the end of the brand run (the user Chrome may have been signed in meanwhile). Do not skip other sources: skipped is only for a reached target/quota.' : 'node scripts/research.mjs next' });
 }
 
 // What to collect next (nextTask), with the query's folders made.
