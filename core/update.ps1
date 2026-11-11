@@ -82,7 +82,14 @@ function Get-LatestRelease {
 function Get-InstalledVersion([string]$Root) {
     $versionFile = Join-Path $Root 'workspace/version.txt'
     if (Test-Path -LiteralPath $versionFile) { return (Get-Content -LiteralPath $versionFile -Raw).Trim() }
-    if (Test-Path -LiteralPath (Join-Path $Root '.git')) { return [string](git -C $Root describe --tags --abbrev=0 2>$null) }
+    if (Test-Path -LiteralPath (Join-Path $Root '.git')) {
+        # A repository without any tag makes git fail ("No names found"); under $ErrorActionPreference = 'Stop' that stderr
+        # can become a terminating error in Windows PowerShell, so it is caught here: no tag simply means no version.
+        try {
+            $tag = & git -C $Root describe --tags --abbrev=0 2>$null
+            if ($LASTEXITCODE -eq 0 -and $tag) { return [string]$tag }
+        } catch { Write-Verbose $_ }
+    }
     return ''
 }
 

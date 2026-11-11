@@ -341,9 +341,10 @@ async function handle(req, res) {
   if (path === "/setup" && req.method === "GET") return sendHtml(res, join(root, "core", "setup", "page.html"));
   if (await configApi(req, res, path)) return;
   if (path === "/api/update-check") {
-    const out = await pwshOut(`. '${q(join(root, "core", "update.ps1"))}' -NoRun; [pscustomobject]@{ current = (Get-InstalledVersion '${q(root)}'); next = (Get-AppUpdate '${q(root)}') } | ConvertTo-Json -Compress`, 60000).catch(() => "");
+    let why = "";
+    const out = await pwshOut(`. '${q(join(root, "core", "update.ps1"))}' -NoRun; [pscustomobject]@{ current = (Get-InstalledVersion '${q(root)}'); next = (Get-AppUpdate '${q(root)}') } | ConvertTo-Json -Compress`, 60000).catch((e) => { why = String((e && (e.stderr || e.message)) || "").replace(/\s+/g, " ").trim().slice(0, 300); return ""; });
     res.writeHead(out ? 200 : 502, { "content-type": TYPES[".json"] });
-    return res.end(out || "{}");
+    return res.end(out || JSON.stringify({ error: why || "update check failed" }));
   }
   if (path === "/api/update" && req.method === "POST") {
     const ok = await pwshOut(`. '${q(join(root, "core", "update.ps1"))}' -NoRun; Update-App '${q(root)}'`, 300000).then(() => true, () => false);
