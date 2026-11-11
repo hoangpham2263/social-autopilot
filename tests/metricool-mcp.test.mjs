@@ -321,3 +321,12 @@ test('skill-owned posts (the skill catalog) are never sent, recorded or exported
   assert.ok(!JSON.stringify(r.posts || []).includes('POST-02'));
   assert.equal(fs.readFileSync(path.join(brandDir, 'workspace', 'catalog.json'), 'utf8'), skillCatalog, 'skill catalog untouched');
 });
+
+test('payload: an album sends every image link in order (cover first) with one alt text each', () => {
+  setup({ posts: [{ id: 'POST-01', media_url: [IMG(1), IMG(2), IMG(3)], media_alt: ['Cover', 'Close-up', 'Wide'], schedule: { date: FUTURE, time: '10:00' } }] });
+  const r = run('payload', '--brand', 'testbrand');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const info = JSON.parse(r.items[0].args.info);
+  assert.deepEqual(info.media, [IMG(1), IMG(2), IMG(3)]);
+  assert.deepEqual(info.mediaAltText, ['Cover', 'Close-up', 'Wide']);
+});

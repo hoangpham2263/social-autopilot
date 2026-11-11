@@ -4,6 +4,8 @@ Bài học đã đúc kết của dự án, ngắn gọn. Luật chi tiết củ
 
 ## Ảnh: sản phẩm
 - Không bao giờ đặt logo thương hiệu lên sản phẩm (prompt giữ NO LOGO); logo chỉ là watermark nhỏ ở góc khi thương hiệu bật.
+- **Album:** mỗi bài 1-3 ảnh ngẫu nhiên (`posts.images_per_post`). Ảnh phụ cùng sản phẩm, cùng chữ, cùng cảnh với ảnh chính, chỉ khác cú máy (cận chi tiết; góc rộng/góc khác). Tên: 1 ảnh `image.png`; nhiều ảnh `image-01.png` (bìa), `image-02.png`...
+- **Chữ trên ảnh luôn tiếng Anh**; không bao giờ làm `image-vn.png`/`image-en.png`. Tiếng Việt chỉ có ở `content-vn.txt`.
 - Prompt tả sản phẩm từng chữ: ký tự, dấu, font, màu, vật liệu; kiểm lại chữ sau khi tạo.
 - Sản phẩm chữ theo khách (`custom_text`): chữ hợp cảnh đúng kiểu chữ của sản phẩm; không placeholder ("Your Names", "Your Logo"); không tên thương hiệu/shop bên thứ ba; không tên khách thật lấy từ ảnh tham khảo (dùng tên tự đặt).
 

@@ -1073,7 +1073,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   window.saOpenLog = (id) => { show("log"); getJson(`/api/runlog?id=${encodeURIComponent(id)}`).then((l) => { if (!l.error) openLog(l); }).catch(() => {}); };
 
   // ----- Posts: image(s), automatic checks, hosted image, Metricool; optional "Drop" before written -----
-  const STATUS_TEXT = { ready: "Needs review", approved: "Approved", published: "Published", scheduled: "Scheduled", check_failed: "Failed checks", rejected: "Dropped", needs_prompt: "Making", needs_caption: "Making", generating: "Making", image_failed: "Image failed", preparing: "Making" };
+  const STATUS_TEXT = { ready: "To review", approved: "Approved", published: "Posted", scheduled: "Scheduled", check_failed: "Failed checks", rejected: "Dropped", needs_prompt: "Making", needs_caption: "Making", generating: "Making", image_failed: "Image failed", preparing: "Making" };
   const STATUS_COLOR = { ready: "c-amber", approved: "c-green", rejected: "", image_failed: "c-red", check_failed: "c-red" };
   const MC = (d) => d.brand_post?.metricool;
   // The live Metricool ids of a post (scheduled/published, not an old draft): on Metricool, never sent again.
@@ -1140,18 +1140,18 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   });
   let drList = [];
   const draftThumb = (d) => (d.image_exists ? d.image : arr(d.preview?.media).find((m) => m.type !== "video")?.path || "");
-  // The card's ONE label: the latest step reached (Making → Needs review → Approved · waiting to send → Scheduled →
-  // Published), Dropped, or Failed in red. A post recorded earlier as a Metricool draft (old) counts as approved and
+  // The card's ONE label: the latest step reached (Making → To review → Approved · waiting to send → Scheduled →
+  // Posted), Dropped, or Failed in red. A post recorded earlier as a Metricool draft (old) counts as approved and
   // waiting: the next Create & publish run sends it as a scheduled post.
   function stepOf(d) {
     const bp = d.brand_post, mc = bp?.metricool;
     if (d.status === "rejected") return ["Dropped", ""];
     if (["check_failed", "image_failed"].includes(d.status)) return ["Failed", "c-red"];
     if (mc === "error") return ["Failed (Metricool)", "c-red"];
-    if (mc === "published") return ["Published", "c-green"];
+    if (mc === "published") return ["Posted", "c-green"];
     if (mc === "scheduled") return ["Scheduled", "c-green"];
     if (bp) return ["Approved · waiting to send", "c-amber"];
-    if (d.status === "ready") return ["Needs review", "c-amber"];
+    if (d.status === "ready") return ["To review", "c-amber"];
     return ["Making", ""];
   }
   const stepTag = (d) => { const [t, c] = stepOf(d); return `<span class="status-tag ${c}">${esc(t)}</span>`; };
@@ -1175,7 +1175,8 @@ function draftTags(d) {
   const plannedOf = (d) => { const m = arr(d.brand_post?.metricool_sent).find((x) => x.publication); return m ? `${String(m.publication).slice(0, 16).replace("T", " ")}${m.draft ? " (old draft)" : ""}` : "-"; };
   // The post's media for the lightbox: its own images/videos, then the shop's original (scene-swap).
   function mediaOf(d) {
-    const own = (arr(d.preview?.media).length ? d.preview.media : d.image_exists ? [{ type: "image", path: d.image }] : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? `New image ${i + 1}/${all.length}` : "New image" }));
+    const own = (arr(d.preview?.media).length ? d.preview.media : d.image_exists ? (arr(d.images).length ? d.images : [d.image]).map((p) => ({ type: "image", path: p })) : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? (i === 0 ? `Cover 1/${all.length}` : `Image ${i + 1}/${all.length}`) : "New image" }));
+    // Album: every image of the post, cover (image.png) first.
     return d.image_mode === "scene-swap" && d.reference_image ? [...own, { type: "image", path: d.reference_image, label: "Shop's original" }] : own;
   }
 

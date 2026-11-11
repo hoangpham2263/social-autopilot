@@ -64,7 +64,10 @@ function createPart(brandId, since) {
   const fresh = drafts.filter((d) => after(d.draft.created));
   const toReview = drafts.filter((d) => d.status.status === 'ready' && !d.status.brand_post && after(d.draft.created)).map((d) => ({ id: d.id }));
   const failed = fresh.filter((d) => ['check_failed', 'image_failed'].includes(d.status.status)).map((d) => ({ id: d.id, reason: (d.status.problems || [])[0] || d.status.error || d.status.status }));
-  return { scheduled, made: fresh.length, to_review: toReview, failed, errors };
+  // Album: images made = every image of the fresh drafts (cover + extras), failed extras counted per image.
+  const imgs = fresh.map((d) => Math.max(1, Number(d.draft.image_count) || 1));
+  const images = { planned: imgs.reduce((a, b) => a + b, 0), failed: fresh.reduce((a, d) => a + Object.values(d.status.images || {}).filter((x) => x?.state === 'failed').length, 0), albums: imgs.filter((n) => n > 1).length };
+  return { scheduled, made: fresh.length, images, to_review: toReview, failed, errors };
 }
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -76,7 +79,7 @@ export function brandHeadline(mode, b) {
     return [`+${plural(r.new || 0, 'post')}`, keptText(r.kept, r.filtered), r.rejected_off_brand && `${r.rejected_off_brand} off-brand skipped`, (r.discovery?.platforms || []).some((p) => p.blocked) && `blocked on ${r.discovery.platforms.filter((p) => p.blocked).map((p) => p.id).join(', ')}`, dry && `${plural(dry, 'source')} dried up`, blocked && `${blocked} blocked`, (b.errors || []).length && plural(b.errors.length, 'error')].filter(Boolean).join(' · ');
   }
   const c = b.create || {}, errs = (c.failed || []).length + (c.errors || []).length + (b.errors || []).length;
-  return [`${(c.scheduled || []).length} scheduled`, `${(c.to_review || []).length} to review`, errs && plural(errs, 'error')].filter(Boolean).join(' · ');
+  return [`${(c.scheduled || []).length} scheduled`, `${(c.to_review || []).length} to review`, c.images?.albums && `${plural(c.images.planned, 'image')} (${plural(c.images.albums, 'album')})`, errs && plural(errs, 'error')].filter(Boolean).join(' · ');
 }
 const resultOf = (mode, b) => {
   const errs = (b.errors || []).length + (b.create?.errors || []).length + (b.research?.sources || []).filter((x) => x.state === 'error').length;

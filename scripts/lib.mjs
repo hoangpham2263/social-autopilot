@@ -511,7 +511,10 @@ export function normalizeOverride(input = {}) {
     add.push({ id, name: String(x.name || id).slice(0, 120), platform: String(x.platform || (/facebook.com/.test(u.host) ? 'facebook' : '')), url: u.href, enabled: true, what_to_take: String(x.what_to_take || ''), notes: String(x.notes || '') });
   }
   const disabled = [...new Set((Array.isArray(o.sources_disabled) ? o.sources_disabled : []).map(String).filter((s) => SRC_ID.test(s)))];
-  return { posts_per_day: ppd, paused: o.paused === true, sources_add: add, sources_disabled: disabled };
+  // Album size per post (posts.images_per_post [min, max], 1-10); missing = the tool default (settings posts.images_per_post).
+  const ipp = o.posts?.images_per_post;
+  const album = Array.isArray(ipp) && ipp.length === 2 && ipp.every((x) => Number.isInteger(x) && x >= 1 && x <= 10) && ipp[0] <= ipp[1] ? { posts: { images_per_post: ipp } } : {};
+  return { posts_per_day: ppd, paused: o.paused === true, sources_add: add, sources_disabled: disabled, ...album };
 }
 export function readBrandOverride(id) {
   try { return normalizeOverride(readJson(brandOverrideFile(id), {})); } catch { return normalizeOverride({}); }

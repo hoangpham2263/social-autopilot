@@ -37,9 +37,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText } from './draft-lib.mjs';
-import { cleanDraftImage } from './image-clean.mjs';
-import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords } from './lib.mjs';
+import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText, imagesRange, pickImageCount, draftImages, extraShotOf, albumHash } from './draft-lib.mjs';
+import { cleanDraftImage, cleanExtraImage } from './image-clean.mjs';
+import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords, readBrandOverride } from './lib.mjs';
 import { readStore, storeDir, storeIdeasFile, markUsed, reuseProblems } from './store.mjs';
 import { track } from './progress.mjs';
 import { contactSheet } from './contact-sheet.mjs';
@@ -134,6 +134,8 @@ export function newDraft(args) {
     product_image: product, scene_image: scene, networks, languages: brand.languages, review_languages: brand.review_languages || [], language_mode: mode,
     // captions: posted languages + reviewer-only languages (language_policy.review_langs; never posted).
     image: 'image.png', captions: Object.fromEntries([...brand.languages, ...(brand.review_languages || [])].map((l) => [l, `content-${l}.txt`])), ai_disclosure: { tool: 'codex' },
+    // Album (user 11/11/2026): a random number of images in posts.images_per_post (tool default, brand override).
+    image_count: Number(args.images) >= 1 ? Math.min(10, Math.floor(Number(args.images))) : pickImageCount(imagesRange(settings(), readBrandOverride(brand.id))),
   };
   writeJson(path.join(dir, 'draft.json'), draft);
   const second = scene
@@ -145,6 +147,7 @@ export function newDraft(args) {
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
     ...sizeTextFill(brand, productSize, signText, so, refInfo),
   }), 'utf8');
+  writeExtraPrompts(dir, draft, brand, sizeTextFill(brand, productSize, signText, so, refInfo));
   fs.writeFileSync(path.join(dir, 'brief.md'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'caption-brief.md'), 'utf8'), {
     BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
     SIGN_TEXT_NOTE: [refNote(refMode, refInfo.text, signText),
@@ -266,6 +269,7 @@ function reprompt(args) {
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
     ...sizeTextFill(brand, size, signText, so, refInfo),
   }), 'utf8');
+  writeExtraPrompts(dir, draft, brand, { ...sizeTextFill(brand, size, signText, so, refInfo), ...(description ? { PRODUCT_DESCRIPTION: description } : {}) });
   const next = { ...draft, product_size: size, custom_text: customText, ...(refInfo.text ? { ref_text: refInfo.text } : {}) };
   for (const [k, v] of [['size_compare', so.compare], ['frame_pct_max', so.frameMax], ['close_up', so.closeUp || undefined], ['size_smaller', so.smaller || undefined]]) if (v) next[k] = v; else delete next[k];
   if (signText) next.sign_text = signText; else delete next.sign_text;
@@ -296,7 +300,7 @@ export function waitingForImage(brand, force = false, s = settings()) {
   return listDrafts(brand === 'all' ? undefined : brand).filter((d) => {
     if (d.status.brand_post || ['rejected', 'approved'].includes(d.status.status)) return false;
     if (busy(d.status, s)) return false;
-    if (!force && fs.existsSync(path.join(d.dir, 'image.png'))) return false;
+    if (!force && fs.existsSync(path.join(d.dir, 'image.png')) && draftImages(d.draft).every((x) => fs.existsSync(path.join(d.dir, x)))) return false; // album: also when an extra is missing
     return fs.existsSync(path.join(d.dir, 'prompt.txt'));
   });
 }
@@ -353,7 +357,11 @@ export async function imageBatch(args, s = settings()) {
 export function image(args, s = settings()) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const target = path.join(dir, 'image.png');
-  if (fs.existsSync(target) && !args.force) return ({ id: draft.id, skipped: true, image: target, note: 'Đã có image.png (thêm --force để làm lại).' });
+  if (fs.existsSync(target) && !args.force) {
+    // Main image made: only the album extras still missing (or all again with --force-extras).
+    const album = draftImages(draft).length > 1 ? imageExtras(dir, draft, s, { force: !!args['force-extras'] }) : null;
+    return ({ id: draft.id, skipped: !album, image: target, ...(album ? { album } : {}), ...(album?.failed.length ? { ok: false, error: album.failed.map((x) => `${x.file}: ${x.error}`).join('; ') } : {}), note: 'Đã có image.png (thêm --force để làm lại).' });
+  }
   const prompt = fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8');
   const left = prompt.match(/\{\{\w+\}\}/g);
   if (left) throw new Error(`prompt.txt còn chỗ chưa điền: ${[...new Set(left)].join(', ')}`);
@@ -414,7 +422,10 @@ export function image(args, s = settings()) {
   setStatus(dir, 'needs_caption', { error: '', watermark: null, logo_check: null, metadata_clean: null });
   const cleaned = cleanDraftImage(dir, { generator: 'codex', force: true }, s);
   const st = readJson(path.join(dir, 'status.json'));
-  return ({ id: draft.id, image: target, ...(retried ? { retried_after_rate_limit: true } : {}), original: cleaned.original, metadata_removed: cleaned.removed, warnings: logoWarnings(prompt), status: st.status, next: `Xem ảnh; nếu đạt, viết caption theo brief.md rồi chạy draft.mjs check --id ${draft.id}.` });
+  // Album: the extras follow the NEW main image (same scene), so they are made again after every main image.
+  const album = draftImages(draft).length > 1 ? imageExtras(dir, draft, s, { force: true }) : null;
+  const st2 = readJson(path.join(dir, 'status.json'));
+  return ({ id: draft.id, image: target, images: draftImages(draft).map((x) => path.join(dir, x)), ...(album ? { album } : {}), ...(album?.failed.length ? { album_failed: album.failed } : {}), ...(retried ? { retried_after_rate_limit: true } : {}), original: cleaned.original, metadata_removed: cleaned.removed, warnings: logoWarnings(prompt), status: st2.status, next: `Xem ${album ? 'mọi ảnh (image.png là ảnh bìa)' : 'ảnh'}; nếu đạt, viết caption theo brief.md rồi chạy draft.mjs check --id ${draft.id}.` });
 }
 
 // Optional post-processing, default off: the brand's logo as a small overlay in one corner of the finished image, never
@@ -455,7 +466,9 @@ export function confirmClean(args) {
   if (!fs.existsSync(path.join(dir, 'image.png'))) throw new Error('Chưa có image.png.');
   const noPeople = args['no-people'] === true || args['no-people'] === 'true';
   if (refModeOf(draft) === 'new-scene' && !noPeople) throw new Error('new-scene: LOOK for people too; once no person (face, body, hand, silhouette) is left in image.png add --no-people.');
-  const imageHash = sha1(fs.readFileSync(path.join(dir, 'image.png')));
+  const missing = draftImages(draft).filter((x) => !fs.existsSync(path.join(dir, x)));
+  if (missing.length) throw new Error(`Album: chưa có ${missing.join(', ')}; xem đủ mọi ảnh rồi xác nhận.`);
+  const imageHash = albumHash(dir, draft); // every image of the post (album) or image.png alone
   const st = setStatus(dir, readJson(path.join(dir, 'status.json'), {}).status, { logo_check: { confirmed: stamp(), by: need(args, 'by'), image_sha1: imageHash, ...(noPeople ? { no_people: true } : {}), note: args.note && args.note !== true ? String(args.note) : '' } });
   return { id: draft.id, status: st.status, logo_check: st.logo_check, next: `node scripts/draft.mjs check --id ${draft.id}` };
 }
@@ -551,3 +564,59 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
   throw new Error('Lệnh: new | reprompt | image | image-batch | watermark | confirm-clean | size-check | check | show | list');
 });
+
+// Album: one prompt per extra image (prompt-02.txt, ...), filled from prompts/album-extra.txt. {{PRODUCT_DESCRIPTION}}
+// stays open like in prompt.txt and is filled with the same text (pipeline fills every prompt*.txt).
+const SHOTS = {
+  detail: 'detail: a close-up of the product (material, edge, finish, light on it), the same scene softly behind it.',
+  wide: 'wide: a wider view or a different angle of the same room/scene, the product at its real size in the same place.',
+};
+function writeExtraPrompts(dir, draft, brand, sizeFill) {
+  const files = draftImages(draft);
+  for (let k = 1; k < files.length; k++) {
+    fs.writeFileSync(path.join(dir, `prompt-${String(k + 1).padStart(2, '0')}.txt`), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'album-extra.txt'), 'utf8'), {
+      INDEX: String(k + 1), COUNT: String(files.length), MAIN_IMAGE: 'image.png', SHOT: SHOTS[extraShotOf(k)],
+      PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', OUTPUT: files[k], ...sizeFill,
+    }), 'utf8');
+  }
+}
+
+// Album extras: each extra is one more Codex run (its own global Codex slot), input = the clean main image.png
+// (+ the product photo), output image-0k.png, cleaned by the remove-watermark skill like the main image.
+// Status per image in status.json images { <file>: { state: ok|failed, sha1 (clean copy), error } }.
+function imageExtras(dir, draft, s, { force = false } = {}) {
+  const files = draftImages(draft).slice(1), done = [], failed = [];
+  for (const f of files) {
+    const target = path.join(dir, f), k = f.match(/(\d+)\.png$/)[1];
+    if (fs.existsSync(target) && !force) { done.push(f); continue; }
+    const promptFile = path.join(dir, `prompt-${k}.txt`);
+    const prompt = fs.existsSync(promptFile) ? fs.readFileSync(promptFile, 'utf8') : '';
+    const left = prompt.match(/\{\{\w+\}\}/g);
+    const fail = (error) => { failed.push({ file: f, error }); const st = readJson(path.join(dir, 'status.json'), {}); setStatus(dir, st.status, { images: { ...(st.images || {}), [f]: { state: 'failed', error } } }); };
+    if (!prompt || left) { fail(`prompt-${k}.txt ${prompt ? `còn ${[...new Set(left)].join(', ')}` : 'không có'}`); continue; }
+    const raw = path.join(dir, `image-${k}-generated.png`);
+    if (force && fs.existsSync(target)) fs.renameSync(target, path.join(dir, `image-old-${Date.now()}-${f}`));
+    fs.rmSync(raw, { force: true });
+    const codexArgs = ['exec', '--skip-git-repo-check', '-s', 'workspace-write', '-', '-i', path.join(dir, 'image.png'), '-i', draft.product_image];
+    const c = codexCommand(s), q = (a) => (c.shell ? `"${a}"` : a);
+    const before = new Set(fs.readdirSync(dir));
+    let r, release;
+    try { release = takeCodexSlot(s); } catch (e) { fail(e.message); continue; }
+    try {
+      r = c.shell
+        ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+        : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+      fs.appendFileSync(path.join(dir, 'codex.log'), `\n$ codex ${codexArgs.join(' ')} < prompt-${k}.txt\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}\n`, 'utf8');
+    } finally { release(); }
+    if (!fs.existsSync(target)) { const fresh = fs.readdirSync(dir).filter((x) => !before.has(x) && /\.png$/i.test(x)); if (fresh.length === 1) fs.renameSync(path.join(dir, fresh[0]), target); }
+    if (!fs.existsSync(target)) { fail(QUOTA.test(`${r.stdout}${r.stderr}`) ? 'Codex hết hạn mức ảnh' : `Codex không tạo được ${f} (mã ${r.status})`); continue; }
+    fs.renameSync(target, raw);
+    try {
+      const sha = cleanExtraImage(raw, target, s);
+      const st = readJson(path.join(dir, 'status.json'), {});
+      setStatus(dir, st.status, { images: { ...(st.images || {}), [f]: { state: 'ok', sha1: sha, updated: stamp() } }, logo_check: null });
+      done.push(f);
+    } catch (e) { fail(e.message); }
+  }
+  return { done, failed };
+}

@@ -201,6 +201,10 @@ function mediaOf(brand, entry, postId, wantVideo) {
     return items;
   }
   if (!imageName) throw new Error(`${postId} không có ảnh trong catalog.`);
+  // Album (entry.images, cover first): every image is hosted (<post>-01.png, <post>-02.png, ...) and media_url becomes
+  // the list of links in the same order. One image: media_url stays one link, as before.
+  const album = [...new Set([].concat(entry.images || []))].filter((n) => !isVideoName(n));
+  if (album.length > 1) return album.map((n, i) => ({ kind: 'image', file: resolve(n), ext: imageExt(n), suffix: `-${String(i + 1).padStart(2, '0')}`, field: 'media_url', index: i }));
   return [{ kind: 'image', file: resolve(imageName), ext: imageExt(imageName), suffix: '', field: 'media_url' }];
 }
 function imageExt(name) {
@@ -232,7 +236,7 @@ export async function publish({ brand: brandId, post: postId, video: wantVideo =
     sync(h);
     let copied = false;
     for (const it of items) {
-      const known = relOf(h, entry[it.field]) || findHosted(h, brand.id, postId, it.kind === 'video' ? ['mp4'] : ['png', 'jpg'], it.suffix);
+      const known = relOf(h, it.index === undefined ? entry[it.field] : [].concat(entry[it.field] || [])[it.index]) || findHosted(h, brand.id, postId, it.kind === 'video' ? ['mp4'] : ['png', 'jpg'], it.suffix);
       it.rel = known && known.endsWith(it.ext) ? known : `${dir}/${postId.toLowerCase()}${it.suffix}${it.ext}`;
       it.target = path.join(h.repo, ...it.rel.split('/'));
       if (!fs.existsSync(it.target) || sha(fs.readFileSync(it.target)) !== it.hash) {
@@ -250,10 +254,12 @@ export async function publish({ brand: brandId, post: postId, video: wantVideo =
   const [main1, thumb] = items;
   // fast + video: nothing verified yet, no link written (the caller runs the full publish later).
   if (main1.check.pending) return { brand: brand.id, post: postId, kind: main1.kind, path: main1.rel, url: '', field: main1.field, pending: true, commit: git1.commit, committed: git1.committed, pushed: git1.pushed, catalog: catalogFile, reused: false };
-  written = setFields(catalogFile, postId, Object.fromEntries(items.filter((it) => it.check.url).map((it) => [it.field, it.check.url]))) || written;
+  // Album: media_url = every image link in order (only when all of them serve).
+  const albumUrls = items.every((it) => it.index !== undefined) ? items.map((it) => it.check.url) : null;
+  written = setFields(catalogFile, postId, albumUrls ? (albumUrls.every(Boolean) ? { media_url: albumUrls } : {}) : Object.fromEntries(items.filter((it) => it.check.url).map((it) => [it.field, it.check.url]))) || written;
   const { url, ...check } = main1.check;
   return {
-    brand: brand.id, post: postId, kind: main1.kind, file: main1.target, path: main1.rel, url, field: main1.field,
+    brand: brand.id, post: postId, kind: main1.kind, file: main1.target, path: main1.rel, url, field: main1.field, ...(albumUrls ? { urls: albumUrls, paths: items.map((it) => it.rel) } : {}),
     ...(main1.kind === 'video' ? { video: main1.file, thumbnail_url: thumb?.check.url || '', thumbnail_path: thumb?.rel || '' } : { image: main1.file }),
     ...check, commit: git1.commit, committed: git1.committed, pushed: git1.pushed, catalog: catalogFile,
     reused: !git1.copied && !git1.committed && !written, check_post: checkPost(brand, postId),
@@ -272,7 +278,8 @@ export function remove({ brand: brandId, post: postId, force = false }, s = sett
   const git1 = withLock(path.join(workspace, 'image-host'), () => {
     sync(h);
     const rels = [...new Set([
-      ...URL_FIELDS.map((f) => relOf(h, entry[f])),
+      ...URL_FIELDS.flatMap((f) => [].concat(entry[f] || []).map((u) => relOf(h, u))),
+      ...Array.from({ length: 10 }, (_, i) => findHosted(h, brand.id, postId, ['png', 'jpg'], `-${String(i + 1).padStart(2, '0')}`)),
       findHosted(h, brand.id, postId), findHosted(h, brand.id, postId, ['mp4']), findHosted(h, brand.id, postId, ['png', 'jpg'], '-thumb'),
     ].filter((rel) => rel && fs.existsSync(path.join(h.repo, ...rel.split('/')))))];
     if (!rels.length) return { rels, removed: false };

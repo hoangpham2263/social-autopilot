@@ -99,3 +99,17 @@ if (isMain(import.meta.url)) main(() => {
   const { dir } = findDraft(need(args, 'id'));
   out(cleanDraftImage(dir, { force: !!args.force }));
 });
+
+// Album extras (image-02.png, ...): the same remove-watermark skill run, raw Codex file -> clean copy, pixels kept.
+// Returns the clean copy's sha1 (recorded in status.json images[file].sha1 and checked by draft-lib albumProblems).
+export function cleanExtraImage(raw, out, s = settings()) {
+  const script = scriptPath(s);
+  if (!fs.existsSync(script)) throw new Error(`Không thấy script của remove-watermark-skill: ${script} (settings remove_watermark.script).`);
+  const report = `${out}.clean-report.json`, tmp = `${out}.clean.${process.pid}.png`;
+  const r = spawnSync(process.execPath, [script, '--in', raw, '--out', tmp, '--report', report], { encoding: 'utf8', windowsHide: true });
+  if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); throw new Error(`remove-watermark-skill dừng (${path.basename(out)}): ${(r.stderr || r.stdout || '').trim().split('\n').pop()}`); }
+  const rep = readJson(report);
+  if (rep.imageDataIdentical !== true) { fs.rmSync(tmp, { force: true }); throw new Error(`${path.basename(out)}: làm sạch đổi điểm ảnh`); }
+  fs.renameSync(tmp, out);
+  return crypto.createHash('sha1').update(fs.readFileSync(out)).digest('hex');
+}

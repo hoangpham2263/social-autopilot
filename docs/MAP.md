@@ -37,7 +37,7 @@ User-visible states (Posts tab, in order): **To review** (draft `ready`) · **Ap
 |---|---|
 | `settings.json` | machine settings (relative paths; never secrets) |
 | `metricool-brands.json` | synced Metricool brands + skill links |
-| `brands/<id>.json` | Brand Edit overrides (posts_per_day, paused, sources_add, sources_disabled) |
+| `brands/<id>.json` | Brand Edit overrides (posts_per_day, paused, sources_add, sources_disabled, posts.images_per_post) |
 | `store/<brand>/` | research store: items carry `platform`, `source_url`, `author`, `found_by` (reference page \| keyword:<kw> \| hashtag:<tag>), `product_fit`; rejected.json = off-brand posts not stored; items.json (status new\|rejected = Available/Removed, `uses[]`, `last_used`; old "used" migrates in memory, `store.mjs migrate-uses` saves), images/, ideas.json, progress.json, duplicates.json |
 | `runs/<brand>/<date>/` | crawl logs; `runs/current-<mode>.json` Run progress |
 | `drafts/<brand>/<draft>/` | draft.json, status.json, prompt.txt, image*.png, content-<lang>.txt, codex.log |
@@ -53,6 +53,7 @@ User-visible states (Posts tab, in order): **To review** (draft `ready`) · **Ap
 - Agents never approve (`finalize.mjs approve` is the user's, in the app).
 - No AI labels anywhere in a post; `instagramData.isAiGenerated` false.
 - No logo on the product (prompt keeps NO LOGO; a corner watermark only when the brand turns it on).
+- Album: each post has a random 1-3 images (`posts.images_per_post`); draft folder `image.png` + `image-02.png`...; register `image.png` (one) or `image-01.png` (cover), `image-02.png`...; text on images is always English, never `image-vn.png`/`image-en.png`. Payload `info.media` = every link in order, `mediaAltText` one per image.
 - Never competitor images/words/shop names in posts; references are inspiration only.
 - One browser = one agent; the user's signed-in Chrome (Playwright MCP) is used by one agent at a time; tests and UI checks never open it. `collect.mjs` is read only (scroll + read), pauses never below 5-15 s, stops on a login wall/captcha.
 - Commits: user identity only, no co-author lines. Every `child_process` has `windowsHide: true`. Shared files only via `withLock` + atomic write.

@@ -82,6 +82,10 @@ export function checkPost(brand, postOrId) {
       if (entry.sign_text && !text.toLowerCase().includes(String(entry.sign_text).toLowerCase())) errors.push(`${name} không nhắc đúng chữ trên bảng "${entry.sign_text}".`);
     }
     const images = [...new Set([...(entry.images || []), ...(entry.image ? [entry.image] : [])])];
+    // Album rules: English text on images, so never per-language images; one alt text per image.
+    if (images.some((n) => /^image-[a-z]{2}\.(png|jpe?g)$/i.test(n))) errors.push('Ảnh theo ngôn ngữ (image-vn/image-en) không dùng: chữ trên ảnh luôn tiếng Anh.');
+    const alts = [].concat(entry.media_alt || []).filter(Boolean).length;
+    if (images.length > 1 && alts < images.length) warnings.push(`media_alt có ${alts}/${images.length} alt (posts.mjs fill-alt).`);
     if (!images.length && !entry.video && !entry.media_url && !entry.video_url) errors.push('Chưa có ảnh trong catalog.');
     const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
     for (const name of images) {
@@ -149,13 +153,14 @@ export function unsend({ brand: brandId, post, reason = '', metricoolId = '', uu
 
 // Alt text for approved posts that have none (posts approved before Approve wrote media_alt): from their draft's idea.
 export async function fillAlt(brandId) {
-  const { altText } = await import('./writeback.mjs');
+  const { altTexts } = await import('./writeback.mjs');
   const { findDraft } = await import('./lib.mjs');
   return updatePosts(brandId, (catalog) => {
     const filled = [];
     for (const p of catalog.posts || []) {
-      if ((Array.isArray(p.media_alt) ? p.media_alt.filter(Boolean).length : p.media_alt) || !p.draft) continue;
-      try { p.media_alt = [altText(findDraft(p.draft).draft)]; filled.push({ post: p.id, alt: p.media_alt[0] }); } catch {}
+      const imgs = Array.isArray(p.images) && p.images.length ? p.images.length : 1, have = (Array.isArray(p.media_alt) ? p.media_alt : [p.media_alt]).filter(Boolean).length;
+      if (have >= imgs || !p.draft) continue; // album: one alt per image
+      try { p.media_alt = altTexts(findDraft(p.draft).draft).slice(0, imgs); filled.push({ post: p.id, alt: p.media_alt }); } catch {}
     }
     return { brand: brandId, filled };
   });
