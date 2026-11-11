@@ -258,7 +258,11 @@ details.sec[open] > summary { margin-bottom: 12px; }
 /* Everything clickable shows the pointer. */
 button:not(:disabled), .btn:not(:disabled), a[href], select:not(:disabled), summary, label[for], input[type=checkbox]:not(:disabled), input[type=radio]:not(:disabled), [data-act], [data-card], [data-page], .open-card, .linkbtn, [role=button] { cursor: pointer; }
 button:disabled, .btn:disabled { cursor: default; }
-nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); margin: 0 0 0 16px; }
+.home { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+.home h1 { margin: 0; }
+nav.tabs { gap: 6px; margin: 0 0 0 20px; }
+header + * { margin-top: 4px; }
+.fields { margin-bottom: 14px; }
 .btn, a.btn, button.btn, nav.tabs button, input:not([type=checkbox]):not([type=radio]), select, textarea, .card, fieldset, .plat, .status-tag, .setup-status, .reject-box, .ar-panel, .run-panel { border-radius: var(--r); }
 .status-tag { border-radius: 999px; }
 .pv:not(.ig) { border-radius: 8px; }
@@ -266,7 +270,7 @@ nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--lin
 </head>
 <body>
 <main>
-  <header><img src="/icon.svg" alt=""><h1>Social Autopilot</h1>
+  <header><a class="home" href="#" id="home" title="Overview"><img src="/icon.svg" alt=""><h1>Social Autopilot</h1></a>
     <nav class="tabs" id="tabs">
       <button type="button" data-page="overview">Overview</button>
       <button type="button" data-page="store">Library</button>
@@ -436,6 +440,7 @@ nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--lin
 
   // ----- tabs -----
   const pages = ["overview", "store", "posts", "log", "prompt", "settings", "brand"];
+  $("#home").onclick = (e) => { e.preventDefault(); show("overview"); };
   function show(page) {
     if (!pages.includes(page)) page = "overview";
     for (const p of pages) $(`#page-${p}`).hidden = p !== page;
