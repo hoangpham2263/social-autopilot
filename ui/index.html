@@ -1053,8 +1053,10 @@ details.sec[open] > summary { margin-bottom: 12px; }
     const key = modeKey(prMode);
     // Only Publish approved asks first (it schedules real posts on Metricool); Research and Create start at once and say what they do in the live panel.
     if (key === "publish" && !confirm(AR_CONFIRM[key]())) return;
-    const text = $("#prText").value; // exactly what Copy prompt copies
-    if (!text.startsWith("TASK:")) { flash("Run now needs Run in: Main chat (no sub-agent line)."); return; }
+    // The same text Copy prompt copies, minus the optional "Run in: Sub-agent" lead line (a headless run is its own agent, so that line means nothing to it).
+    let text = $("#prText").value;
+    if (text.startsWith(SUB_LINE)) text = text.slice(SUB_LINE.length).replace(/^\s+/, "");
+    if (!text.startsWith("TASK:")) { flash("Could not build the prompt: it does not start with TASK:."); return; }
     const brandSel = $("#prBrand").value;
     const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
     const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands }).catch(() => ({ error: "The app did not answer." }));
