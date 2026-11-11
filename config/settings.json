@@ -33,7 +33,9 @@
         5,
         10
       ]
-    }
+    },
+    "chrome_check_required": false,
+    "chrome_check_minutes": 30
   },
   "codex": {
     "command": "codex",

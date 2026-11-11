@@ -148,8 +148,9 @@ if (isMain(import.meta.url)) main(async () => {
   const cmd = args._[0] || '';
   if (cmd === 'status') return out({ statuses: STATUSES, adapters: Object.fromEntries(Object.keys(REGISTRY).map((id) => [id, adapterStatus(id)])) });
   if (cmd === 'fit') return fit(args);
+  if (cmd === 'check-chrome') return (await import('./chrome-check.mjs')).checkChrome(args);
   if (cmd === 'install') return (await import('./collect-pagemode.mjs')).install(args);
   if (cmd === 'script') return (await import('./collect-pagemode.mjs')).script(args);
   if (cmd === 'from-page') return (await import('./collect-pagemode.mjs')).fromPage(args);
-  throw new Error('Lệnh: install | script | from-page | fit | status');
+  throw new Error('Lệnh: install | check-chrome | script | from-page | fit | status');
 });

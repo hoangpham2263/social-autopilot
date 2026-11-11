@@ -42,6 +42,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { cleanScripts } from './collect-transfer.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, latestRun, brandSources, inside, brandDiscovery, DISCOVERY_PLATFORMS, RETIRED_PLATFORMS } from './lib.mjs';
+import { assertGate, unavailableLines, recordCheck, saveCheck, parseResult } from './chrome-check.mjs';
 import { adapterStatus } from './platforms/index.mjs';
 import { scrollWait, scrollHint, BROWSER_RULES } from './collect-pagemode.mjs';
 import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf } from './store.mjs';
@@ -175,6 +176,9 @@ export function nextTask(run) {
 
 function start(args, s) {
   const brand = loadBrand(need(args, 'brand'));
+  // Chrome check gate: only when research.chrome_check_required is true (default false = start behaves as before).
+  const gate = assertGate(Date.now(), s.research?.chrome_check_required === true);
+  const unav = gate.unavailable || {};
   const date = today(brand.timezone);
   const dir = runDir(brand.id, date);
   const runFile = path.join(dir, 'run.json');
@@ -189,14 +193,17 @@ function start(args, s) {
   const retiredNotes = [...new Set([...(disc.retired || []), ...(askedPlatforms || []).filter((p) => RETIRED_PLATFORMS.includes(p))])].map((p) => `${p}: not supported, skipped`);
   if (unknownPlatforms.length) throw new Error(`--platforms: không biết ${unknownPlatforms.join(', ')} (chỉ ${DISCOVERY_PLATFORMS.join(', ')}, hoặc none).`);
   const skillPlatforms = disc.platforms.map((p) => p.id);
-  const platforms = askedPlatforms ? (askedPlatforms.includes('none') ? [] : askedPlatforms.filter((p) => skillPlatforms.includes(p))) : skillPlatforms;
+  const platformsAll = askedPlatforms ? (askedPlatforms.includes('none') ? [] : askedPlatforms.filter((p) => skillPlatforms.includes(p))) : skillPlatforms;
+  const platforms = platformsAll.filter((p) => !unav[p]);
   const platformsIgnored = (askedPlatforms || []).filter((p) => p !== 'none' && !skillPlatforms.includes(p) && !RETIRED_PLATFORMS.includes(p));
   const keywords = listArg(args.keywords) || disc.keywords, hashtags = (listArg(args.hashtags) || disc.hashtags).map((h) => h.replace(/^#/, ''));
   const queries = discoveryQueries(platforms, keywords, hashtags);
   if (!all.length && !queries.length) throw new Error(`${brand.id}: không có research.sources nào bật (có url) và không có truy vấn discovery (research.discovery tắt, không có nền tảng hoặc từ khoá).`);
   const bad = only.filter((id) => id !== 'none' && !all.some((x) => x.id === id));
   if (bad.length) throw new Error(`Source không có hoặc đang tắt trong social.json của ${brand.id}: ${bad.join(', ')}.`);
-  const sources = noRef ? [] : all.filter((x) => !only.length || only.includes(x.id));
+  const srcPlatform = (x) => x.platform || platformOf({ source_url: x.url }) || '';
+  const sources = noRef ? [] : all.filter((x) => (!only.length || only.includes(x.id)) && !unav[srcPlatform(x)]);
+  const chromeSkipped = unavailableLines(Object.fromEntries(Object.entries(unav).filter(([id]) => platformsAll.includes(id) || all.some((x) => srcPlatform(x) === id))));
   if (args.since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(args.since))) throw new Error('--since cần dạng YYYY-MM-DD.');
   if (args['max-posts'] !== undefined && !(Number.isInteger(Number(args['max-posts'])) && Number(args['max-posts']) > 0)) throw new Error('--max-posts cần số nguyên dương.');
   if (args.full && args.backfill) throw new Error('--full và --backfill không dùng cùng lúc.');
@@ -250,6 +257,7 @@ function start(args, s) {
     }),
   };
   delete run.budget;
+  if (chromeSkipped.length) run.chrome_skipped = chromeSkipped;
   // Discovery queue of this run (each start is a new queue). Folders are made by next.
   run.discovery = queries.length ? {
     platforms: disc.platforms.filter((p) => platforms.includes(p.id)), keywords, hashtags, max_per_platform: disc.max_per_platform, product_fit: disc.product_fit, target: mode.max_posts,
@@ -263,7 +271,7 @@ function start(args, s) {
   writeJson(logFile(), log);
   const next = !crawl.length && !queries.length ? 'Không còn source nào để backfill (xem run.skipped). Chạy research.mjs report.'
     : `Lặp: node scripts/research.mjs next --brand ${brand.id} → lấy đúng nguồn/truy vấn đó bằng Playwright MCP (docs/research.md) → ingest → result, tới khi next trả "done" (RUNBOOK 1.2). Trang tham khảo trước (${crawl.length}), rồi ${queries.length} truy vấn discovery xoay vòng ${platforms.length} nền tảng.${mode.backfill ? ' Backfill: cuộn nhanh qua bài đã có, bắt đầu lấy sau oldest_seen.' : ''}`;
-  out({ reused: !!before, archived, dir, run: { ...run, discovery: run.discovery ? { ...run.discovery, queries: run.discovery.queries.length } : null }, discovery: run.discovery ? { platforms, keywords, hashtags, queries: queries.length, max_per_platform: disc.max_per_platform, ...(platformsIgnored.length ? { platforms_ignored: platformsIgnored } : {}) } : null, ...(retiredNotes.length ? { notes: retiredNotes } : {}), next });
+  out({ reused: !!before, archived, dir, run: { ...run, discovery: run.discovery ? { ...run.discovery, queries: run.discovery.queries.length } : null }, discovery: run.discovery ? { platforms, keywords, hashtags, queries: queries.length, max_per_platform: disc.max_per_platform, ...(platformsIgnored.length ? { platforms_ignored: platformsIgnored } : {}) } : null, ...(retiredNotes.length || chromeSkipped.length ? { notes: [...retiredNotes, ...chromeSkipped] } : {}), next });
 }
 
 // The source page's profile picture: raw.json as an object may carry { page: { name, avatar: "raw/avatar.jpg" } } (or
@@ -494,6 +502,15 @@ function next(args) {
   out({ brand: brand.id, ...task, ...(task.step === 'done' ? { do: `node scripts/store.mjs classify --brand ${brand.id} (1.3), then research.mjs report` } : {}) });
 }
 // Step 1.0 (the agent's own check: Playwright MCP connected to the user's Chrome) shown in Run progress.
+function chromeRecord(args) {
+  const state = need(args, 'state');
+  if (!['ok', 'fail'].includes(state)) throw new Error('--state ok|fail');
+  const note = args.note && args.note !== true ? cleanText(args.note).text : '';
+  if (state === 'fail' && !note) throw new Error('--state fail needs --note "<reason>".');
+  const text = args['result-file'] && args['result-file'] !== true ? fs.readFileSync(path.resolve(String(args['result-file'])), 'utf8').replace(/^﻿/, '') : args.result && args.result !== true ? String(args.result) : '';
+  const rec = saveCheck(recordCheck({ state, note, result: text ? parseResult(text) : null }));
+  out({ chrome_check: rec.state, hidden: rec.hidden, tabs: rec.tabs, platforms: rec.platforms, note: rec.note });
+}
 function browser(args) {
   const state = need(args, 'state');
   if (!['ok', 'fail'].includes(state)) throw new Error('--state ok|fail');
@@ -547,7 +564,7 @@ function researchReportBase(brandId, date) {
   } : null;
   const discKept = d ? d.queries.reduce((a, q) => a + (q.kept || 0), 0) : 0;
   return {
-    brand: brandId, date: day, status: run.status, mode: run.mode || {}, crawl_mode: crawlMode(run.mode), skipped: run.skipped || [], discovery,
+    brand: brandId, date: day, ...(run.chrome_skipped?.length ? { chrome_skipped: run.chrome_skipped } : {}), status: run.status, mode: run.mode || {}, crawl_mode: crawlMode(run.mode), skipped: run.skipped || [], discovery,
     target: run.mode?.max_posts || 0, discovery_kept_total: discKept,
     unjudged_total: sources.reduce((a, x) => a + x.unjudged, 0) + (d ? d.queries.reduce((a, q) => a + (q.unjudged || 0), 0) : 0),
     rejected_off_brand_total: sources.reduce((a, x) => a + x.rejected_off_brand, 0) + (d ? d.queries.reduce((a, q) => a + (q.rejected_off_brand || 0), 0) : 0),
@@ -587,7 +604,8 @@ if (isMain(import.meta.url)) main(() => {
   if (cmd === 'result') return withLock(logFile(), () => result(args));
   if (cmd === 'next') return withLock(logFile(), () => next(args));
   if (cmd === 'browser') return browser(args);
+  if (cmd === 'chrome-record') return chromeRecord(args);
   if (cmd === 'report') { const b = loadBrand(need(args, 'brand')); return out(researchReport(b.id, args.date ? String(args.date) : '')); }
   if (cmd === 'clean') return clean(args);
-  throw new Error('Lệnh: browser | start | next | ingest | result | report | clean');
+  throw new Error('Lệnh: browser | chrome-record | start | next | ingest | result | report | clean');
 });
