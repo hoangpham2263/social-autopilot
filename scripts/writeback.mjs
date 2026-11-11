@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { cleanDraftImage } from './image-clean.mjs';
 import { hostAfterWriteback } from './host-image.mjs';
 import { postsDir, postsCatalogFile, nextPostId, checkPost } from './posts.mjs';
+import { publishPairs, draftImages, extraShotOf } from './draft-lib.mjs';
 import { main, out, parseArgs, need, isMain, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus, cleanText, aiLabelHits } from './lib.mjs';
 
 // Alt text for the post image, made at Approve from the idea (product, scene, props, sign text): short, descriptive,
@@ -27,6 +28,13 @@ export function altText(draft) {
   if (draft.inspiration?.source_shop && alt.toLowerCase().includes(String(draft.inspiration.source_shop).toLowerCase())) alt = parts[0];
   alt = alt.charAt(0).toUpperCase() + alt.slice(1);
   return alt.length > 240 ? alt.slice(0, 237).replace(/\s+\S*$/, '') + '…' : alt + '.';
+}
+
+// One alt text per image, in post order (album: cover, then close-up detail / wider view of the same scene).
+export function altTexts(draft) {
+  const cover = altText(draft);
+  const what = cover.split(/ in | with /)[0].replace(/[.…]+$/, '');
+  return draftImages(draft).map((_, k) => (k === 0 ? cover : extraShotOf(k) === 'detail' ? `Close-up of the ${what.charAt(0).toLowerCase() + what.slice(1)}: material, edge and light.` : `${what}, a wider view of the same scene.`));
 }
 
 export function slugify(text) {
@@ -76,13 +84,24 @@ function writeBackInner(id) {
   for (const f of captionFiles) fs.copyFileSync(path.join(dir, f), path.join(folder, f));
   const png = fs.readFileSync(path.join(folder, 'image.png'));
   const dims = png.subarray(1, 4).toString('latin1') === 'PNG' ? [png.readUInt32BE(16), png.readUInt32BE(20)] : undefined;
+  // Album: the extras (already metadata-clean, draft-lib albumProblems) go in too, and every image takes the brand
+  // skill's name: image-01.png (cover, the draft's image.png), image-02.png, ... One image stays image.png.
+  const pairs = publishPairs(draft);
+  if (pairs.length > 1) {
+    for (const p of pairs.slice(1)) {
+      if (!fs.existsSync(path.join(dir, p.from))) { fs.rmSync(folder, { recursive: true, force: true }); throw new Error(`Album: bản nháp thiếu ${p.from}.`); }
+      fs.copyFileSync(path.join(dir, p.from), path.join(folder, p.to));
+    }
+    fs.renameSync(path.join(folder, 'image.png'), path.join(folder, pairs[0].to));
+  }
+  const images = pairs.map((p) => p.to);
 
   const date = today(brand.timezone);
   const rel = (p) => path.relative(brand.dir, p).split(path.sep).join('/');
   const entry = {
     id: postId, draft: draft.id, folder: folderRel,
     status: 'approved', created: date,
-    image: 'image.png', ...(dims ? { image_dimensions: dims } : {}),
+    image: images[0], ...(images.length > 1 ? { images } : {}), ...(dims ? { image_dimensions: dims } : {}),
     image_mode: draft.image_mode || 'brand-image',
     image_source: draft.image_mode === 'scene-swap' ? `reference:${draft.inspiration.post_url || draft.inspiration.source_url}` : inside(brand.dir, draft.product_image) ? rel(draft.product_image) : draft.product_image,
     captions: Object.fromEntries(brand.languages.map((l) => [l, `content-${l}.txt`])),
@@ -99,7 +118,7 @@ function writeBackInner(id) {
       : { ai_disclosure: { ai_scene: true, tool: 'codex' } }),
     ...(draft.sign_text ? { sign_text: draft.sign_text } : {}),
     ...(draft.product_size ? { product_size: draft.product_size } : {}),
-    media_alt: [altText(draft)],
+    media_alt: altTexts(draft),
     approval: { by, date, note },
     source: `social-autopilot ${draft.id}`,
   };

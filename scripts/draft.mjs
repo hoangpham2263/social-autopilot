@@ -269,6 +269,7 @@ function reprompt(args) {
     PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', SECOND_IMAGE: second, OUTPUT: 'image.png',
     ...sizeTextFill(brand, size, signText, so, refInfo),
   }), 'utf8');
+  writeExtraPrompts(dir, draft, brand, { ...sizeTextFill(brand, size, signText, so, refInfo), ...(description ? { PRODUCT_DESCRIPTION: description } : {}) });
   const next = { ...draft, product_size: size, custom_text: customText, ...(refInfo.text ? { ref_text: refInfo.text } : {}) };
   for (const [k, v] of [['size_compare', so.compare], ['frame_pct_max', so.frameMax], ['close_up', so.closeUp || undefined], ['size_smaller', so.smaller || undefined]]) if (v) next[k] = v; else delete next[k];
   if (signText) next.sign_text = signText; else delete next.sign_text;
