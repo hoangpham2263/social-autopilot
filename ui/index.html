@@ -285,7 +285,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
       <div class="field" data-opt="research" hidden><span class="label" title="The brand's reference pages (social.json research.sources), collected first; none ticked = all">Reference pages</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
       <div class="field" data-opt="research" hidden><span class="label" title="Search more posts by the brand's keywords/hashtags on these platforms after the reference pages (default: every enabled platform of the skill)">Discovery platforms</span><details class="select" id="prPlatBox"><summary id="prPlatSum">All</summary><div class="options" id="prPlat"></div></details></div>
-      <div class="field" data-opt="research" hidden><label for="prKw" title="Comma-separated; empty = the skill's keywords and hashtags">Keywords</label><input type="text" id="prKw" placeholder="from the skill"></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run: reference pages first, then discovery until it is met">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="research" hidden><label for="prKind" title="How the reference pages are read">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
@@ -896,8 +895,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       // Discovery platforms: every one ticked = defaults (no flag); some = --platforms; none = no discovery.
       const pall = $$("#prPlat input"), pon = pall.filter((x) => x.checked).map((x) => x.value);
       if (pall.length && pon.length < pall.length) lines.push(pon.length ? `discovery platforms ${pon.map(platformName).join(", ")} (--platforms ${pon.join(",")})` : "no discovery, reference pages only (--platforms none)");
-      const kw = $("#prKw").value.split(",").map((x) => x.trim().replace(/"/g, "")).filter(Boolean);
-      if (kw.length) lines.push(`keywords ${kw.join(", ")} (--keywords "${kw.join(",")}")`);
       if (max > 0) lines.push(`target ${max} new posts per brand: reference pages first, then discovery (--max-posts ${max})`);
       if (kind === "backfill") lines.push("backfill older posts on the reference pages (--backfill)");
       if (kind === "full") lines.push("full rescan (--full)");
@@ -972,8 +969,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
   $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").value === "sub" ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
-  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prKw"]) $(id).onchange = regenerate;
-  $("#prKw").oninput = regenerate;
+  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
   $("#prItemClear").onclick = () => { prItem = null; $("#prCount").value = ""; drawPrompt(); };
   document.addEventListener("click", (e) => { for (const id of ["#prSrcBox", "#prPlatBox"]) if ($(id).open && !e.target.closest(id)) $(id).open = false; });
   const baseHint = $("#prMsg").textContent;
