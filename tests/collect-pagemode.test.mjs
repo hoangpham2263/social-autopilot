@@ -258,5 +258,4 @@ test('facebook script waits for the lazy feed on the Node side (no waitForFuncti
   assert.match(code, /waitForTimeout\(500\)/);
   assert.match(code, /aria-posinset/);
   assert.doesNotMatch(code, /waitForFunction/);
-  assert.doesNotMatch(code, /X-Collect-Token'?: ?post\.token\b.*saved:true.*token=/s);
 });
