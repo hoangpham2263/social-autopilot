@@ -16,7 +16,6 @@ import { REGISTRY, STATUSES, getAdapter, adapterStatus, isTrusted, platformIds }
 import { extractTiles, wallSignals, classifyWall } from '../scripts/platforms/common.mjs';
 import * as instagram from '../scripts/platforms/instagram.mjs';
 import * as pinterest from '../scripts/platforms/pinterest.mjs';
-import * as tiktok from '../scripts/platforms/tiktok.mjs';
 import * as facebook from '../scripts/platforms/facebook.mjs';
 import * as reddit from '../scripts/platforms/reddit.mjs';
 import * as etsy from '../scripts/platforms/etsy.mjs';
@@ -28,8 +27,8 @@ import { searchUrl as researchSearchUrl, nextTask, collectInfo } from '../script
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = (n) => parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', `collect-${n}.html`), 'utf8')).document;
-const MODS = { instagram, pinterest, tiktok, facebook, reddit, etsy, youtube, houzz };
-const GRID = { instagram, pinterest, tiktok, reddit, etsy, youtube, houzz };
+const MODS = { instagram, pinterest, facebook, reddit, etsy, youtube, houzz };
+const GRID = { instagram, pinterest, reddit, etsy, youtube, houzz };
 // Every grid adapter's tiles on a fixture, as the adapter turns them into posts.
 const tilesOf = (id, name, base) => {
   const S = GRID[id].SELECTORS;
@@ -43,7 +42,7 @@ const wall = (id, name) => {
 };
 
 test('registry: every platform has an adapter with the full contract; status is untested until checked on a live page', () => {
-  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'houzz', 'instagram', 'pinterest', 'reddit', 'tiktok', 'youtube']);
+  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'houzz', 'instagram', 'pinterest', 'reddit', 'youtube']);
   for (const id of platformIds()) {
     const e = REGISTRY[id], a = getAdapter(id);
     assert.ok(STATUSES.includes(e.status), id);
@@ -59,7 +58,7 @@ test('registry: every platform has an adapter with the full contract; status is 
 test('search URLs: the adapters agree with research.mjs for keywords and hashtags', () => {
   for (const id of platformIds()) {
     assert.equal(getAdapter(id).searchUrl('custom neon sign'), researchSearchUrl(id, 'keyword', 'custom neon sign'), `${id} keyword`);
-    if (['instagram', 'tiktok', 'facebook', 'youtube', 'pinterest'].includes(id)) assert.equal(getAdapter(id).searchUrl('#CustomNeonSign'), researchSearchUrl(id, 'hashtag', 'CustomNeonSign'), `${id} hashtag`);
+    if (['instagram', 'facebook', 'youtube', 'pinterest'].includes(id)) assert.equal(getAdapter(id).searchUrl('#CustomNeonSign'), researchSearchUrl(id, 'hashtag', 'CustomNeonSign'), `${id} hashtag`);
   }
 });
 
@@ -73,9 +72,6 @@ test('post id / url parsing per platform (pure)', () => {
   assert.equal(pinterest.postId('https://www.pinterest.com/pin/some-title--987654321098/'), '987654321098');
   assert.equal(pinterest.canonicalUrl('https://www.pinterest.com/pin/123456789012/?x=1'), 'https://www.pinterest.com/pin/123456789012/');
   assert.equal(pinterest.upgradeImage('https://i.pinimg.com/236x/ab/cd/x.jpg'), 'https://i.pinimg.com/736x/ab/cd/x.jpg');
-  assert.equal(tiktok.postId('https://www.tiktok.com/@neon.maker/video/7301234567890123456?lang=en'), '7301234567890123456');
-  assert.equal(tiktok.authorOf('https://www.tiktok.com/@neon.maker/video/7301234567890123456'), '@neon.maker');
-  assert.equal(tiktok.canonicalUrl('https://www.tiktok.com/@a/photo/7309999999999999999?x=1'), 'https://www.tiktok.com/@a/photo/7309999999999999999');
   assert.equal(reddit.postId('https://www.reddit.com/r/NeonSigns/comments/1ABC2de/my_new_sign/'), '1abc2de');
   assert.equal(reddit.subredditOf('https://www.reddit.com/r/NeonSigns/comments/1abc2de/x/'), 'r/NeonSigns');
   assert.equal(reddit.upgradeImage('https://preview.redd.it/abcd1234.jpg?width=640&s=x'), 'https://i.redd.it/abcd1234.jpg');
@@ -107,8 +103,6 @@ test('tiles on saved pages become adapter posts: id, canonical url, images, capt
   assert.equal(pin[0].image_urls[0], 'https://i.pinimg.com/736x/ab/cd/ef/abcdef.jpg');
   assert.equal(pin[1].image_urls[0], 'https://i.pinimg.com/736x/11/22/33/x.jpg', 'the largest srcset entry');
   assert.equal(pin[0].caption, 'Custom neon sign wedding');
-  const tt = tilesOf('tiktok', 'tiktok-grid', 'https://www.tiktok.com/tag/neon');
-  assert.deepEqual(tt.map((p) => [p.id, p.author]), [['7301234567890123456', '@neon.maker'], ['7309999999999999999', '@bar.owner']]);
   const rd = tilesOf('reddit', 'reddit-grid', 'https://www.reddit.com/search/?q=neon');
   assert.equal(rd.length, 2);
   assert.equal(rd[0].url, 'https://www.reddit.com/r/neonsigns/comments/1abc2de/');
@@ -147,7 +141,6 @@ test('facebook adapter reads posts through fb-extract (reused, not copied)', () 
 test('login wall / captcha / block page detection on saved HTML; ordinary pages pass', () => {
   assert.match(wall('instagram', 'instagram-wall'), /login/i);
   assert.match(wall('pinterest', 'pinterest-wall'), /sign-in dialog|blocked|login/i);
-  assert.equal(wall('tiktok', 'tiktok-wall'), 'captcha');
   assert.match(wall('reddit', 'reddit-wall'), /blocked/i);
   assert.equal(wall('etsy', 'etsy-wall'), 'captcha');
   assert.match(wall('youtube', 'youtube-wall'), /sign-in dialog|blocked/i);

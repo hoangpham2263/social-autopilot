@@ -159,7 +159,7 @@ test('a result without total/checksum is unverified; a cut result fails', async 
   assert.throws(() => verifyPageResult({ platform: 'etsy', total: 2, checksum: 'x', tiles: [{ id: '1' }] }), /BỊ CẮT/);
 });
 
-test('scroll waits: per platform from config, defaults 2-4 s (grids) and 5-10 s (Instagram/Facebook/TikTok)', async () => {
+test('scroll waits: per platform from config, defaults 2-4 s (grids) and 5-10 s (Instagram/Facebook)', async () => {
   const { scrollWait } = await import('../scripts/collect-pagemode.mjs');
   assert.deepEqual(scrollWait('pinterest', {}), [2, 4]);
   assert.deepEqual(scrollWait('facebook', {}), [5, 10]);

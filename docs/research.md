@@ -4,13 +4,13 @@
 
 **Thứ tự (người dùng, 10/11/2026):**
 1. **Trang tham khảo** của thương hiệu (`research.sources[]` trong `project/social.json` của skill): bài mới chưa có trong kho.
-2. Hết trang tham khảo mà chưa đủ **mục tiêu** của lượt (`--max-posts N` = mục tiêu bài mới mỗi thương hiệu), hoặc không đặt mục tiêu: **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` (tiếng Anh, thị trường Mỹ) trên các nền tảng bật: Instagram, Pinterest, TikTok, Facebook (tìm bài + nhóm công khai), Reddit, Etsy, YouTube/Shorts, Houzz (chỉ thương hiệu nội thất/nhà). Xoay vòng các nền tảng (mỗi lần một truy vấn của nền tảng ít truy vấn nhất), tới khi đủ mục tiêu hoặc hết truy vấn. Mỗi nền tảng tối đa `max_per_platform` bài giữ mỗi lượt.
+2. Hết trang tham khảo mà chưa đủ **mục tiêu** của lượt (`--max-posts N` = mục tiêu bài mới mỗi thương hiệu), hoặc không đặt mục tiêu: **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` (tiếng Anh, thị trường Mỹ) trên các nền tảng bật: Instagram, Pinterest, Facebook (tìm bài + nhóm công khai), Reddit, Etsy, YouTube/Shorts, Houzz (chỉ thương hiệu nội thất/nhà). Xoay vòng các nền tảng (mỗi lần một truy vấn của nền tảng ít truy vấn nhất), tới khi đủ mục tiêu hoặc hết truy vấn. Mỗi nền tảng tối đa `max_per_platform` bài giữ mỗi lượt.
 3. **Chỉ lấy bài có SẢN PHẨM đúng loại thương hiệu bán** (`research.discovery.product_fit`): `types` (loại sản phẩm, theo project.md mục 5), `must_have`, `must_not`. Bài sai loại bị bỏ **ngay lúc lấy** (không tải ảnh, không lưu; chỉ ghi vào `rejected[]` của raw.json) và lần nữa ở bước lọc. DreamyVows: bảng LED neon theo yêu cầu (chữ, câu, tên, logo, cưới, sự kiện, bar), bảng neon phải có trong ảnh và là chủ thể. GRENHEIM: đồ gỗ tự nhiên (bàn ăn, bàn trà, console live-edge...), không kim loại/nhựa/MDF.
 
 ## Một đường duy nhất: mở, cuộn, trích xuất
 
 Research chỉ có **một đường**. Claude tự làm: mở trang (hoặc URL tìm kiếm/hashtag) bằng Playwright MCP, tự cuộn bằng thao tác Playwright MCP bình thường, tự quyết khi nào dừng. Để đọc dữ liệu, Claude gọi **một script trích xuất**: script chỉ đọc những gì đang có trên trang lúc đó và trả về ngay (không mở trang, không cuộn, không chờ).
-Mỗi bước `research.mjs next` in: `open` (URL cần mở), `scroll` (cách cuộn), `scroll_wait_seconds` (chờ giữa hai lần cuộn, theo nền tảng: `research.scroll_wait_seconds` trong config; Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook/TikTok 5-10 giây), `script`, `from_page`, `target` (số bài cần), `stop_rules`, `adapter` (`platform`, `status`: `untested` | `ok` | `broken` | `missing`; registry `scripts/platforms/index.mjs`).
+Mỗi bước `research.mjs next` in: `open` (URL cần mở), `scroll` (cách cuộn), `scroll_wait_seconds` (chờ giữa hai lần cuộn, theo nền tảng: `research.scroll_wait_seconds` trong config; Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook 5-10 giây), `script`, `from_page`, `target` (số bài cần), `stop_rules`, `adapter` (`platform`, `status`: `untested` | `ok` | `broken` | `missing`; registry `scripts/platforms/index.mjs`).
 1. **Mở** `open` bằng `browser_navigate`.
 2. **Trích xuất:** `node scripts/collect.mjs script --brand <id> --for-query|--for-source <id>` in script; dán vào MỘT lần gọi `browser_run_code_unsafe`. Kết quả là MỘT dòng `{total, total_on_page, reason, tag, b64}`; chỉ có các bài **mới** (id đã trả trong bước này nằm ở `<thư mục bước>/seen.json`, script bỏ qua; `--seen <file>` để dùng danh sách khác).
 3. **Ghi:** `node scripts/collect.mjs from-page --brand <id> --for-query|--for-source <id> --b64 <cả dòng b64>` (hoặc `--file <result.json>`). Không gõ lại JSON; đọc lại 4 ký tự `tag`. from-page kiểm `total` + checksum + tag, bỏ bài đã có trong kho, tải ảnh, **cộng thêm** vào `raw.json` (nhiều lần trích xuất của cùng bước cộng dồn), trả `added`, `collected`, `extracts_without_new`, `stop`, `review[]`, `next`.
@@ -48,13 +48,13 @@ tới khi next trả "done" → 1.3 lọc (store.mjs classify / verdict) → 1.4
 
 ## Luật chung trên mọi nền tảng
 - **Chỉ xem:** mở trang, cuộn, mở bài, đọc. **Không bao giờ** like, thả tim, lưu/save/pin, theo dõi, bình luận, nhắn tin, chia sẻ, tham gia nhóm, đăng hay tải lên gì. Không đăng nhập hộ, không nhập mật khẩu, không lưu cookie. Một trình duyệt = một agent (Chrome đã đăng nhập qua Playwright MCP).
-- **Nhịp lịch sự:** chờ giữa hai lần cuộn theo `research.scroll_wait_seconds` (Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook/TikTok 5-10 giây). Cuộn bằng phím End hoặc con lăn (`browser_press_key` End / `browser_mouse_wheel`), 1-2 lần mỗi vòng, rồi trích xuất. Dừng theo `stop_rules` của `next`.
+- **Nhịp lịch sự:** chờ giữa hai lần cuộn theo `research.scroll_wait_seconds` (Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook 5-10 giây). Cuộn bằng phím End hoặc con lăn (`browser_press_key` End / `browser_mouse_wheel`), 1-2 lần mỗi vòng, rồi trích xuất. Dừng theo `stop_rules` của `next`.
 - **Dừng ngay** khi gặp tường đăng nhập, captcha, "checkpoint", "unusual activity", "try again later", trang trống bất thường: `result --state blocked --note "<thấy gì>"`, không thử lại nền tảng đó trong lượt.
 - **Đọc gọn:** đọc dữ liệu bằng script trích xuất của bước (một lần gọi, chỉ bài mới); snapshot/screenshot chỉ để nhìn sản phẩm khi cần phán đoán hoặc để sửa selector.
 - **Bỏ bài đã có:** link hoặc mã bài nằm trong `brand_post_urls` / `brand_post_ids` (lệnh `store.mjs known`) thì bỏ qua, không mở, không tải.
 - **Kiểm sản phẩm TRƯỚC khi tải** (nhìn ảnh): đúng một loại trong `product_fit.types`, đạt `must_have`, không dính `must_not`. Không đạt → ghi `{ post_url, author, reason }` vào `rejected[]`, không tải. Đạt → ghi `product_fit: { "type": "<đúng một chuỗi trong types>", "reason": "<thấy gì>" }`. `ingest` từ chối bài không có `product_fit.type` hợp lệ (ghi `rejected.json`).
 - **Mỗi bài cần:** `post_url` (permalink của bài/pin/video/listing, không phải link trang tìm kiếm), `alt_urls` (link khác của cùng bài nếu thấy), `images` (file đã tải, ảnh lớn nhất), `caption` (đầy đủ, nguyên văn), `author` (tên tài khoản/trang/shop), `posted_date` (`YYYY-MM-DD` nếu thấy, không thì trống), `likes` (số nếu hiện, không thì bỏ), `product_fit`.
-- **Tải ảnh:** lấy URL ảnh lớn nhất (`img.currentSrc`, phần tử lớn nhất của `srcset`, ảnh ở chế độ xem lớn), tải bằng `curl -L -A "Mozilla/5.0" -e <post_url> -o <downloads>/<n>-<k>.jpg "<url>"`. JPEG/PNG/WebP thật (ingest kiểm chữ ký file). curl bị 403: trong trang chạy `browser_evaluate` `fetch(url).then(r => r.arrayBuffer())` đổi sang base64 rồi ghi file bằng `node -e`. Video/Shorts/TikTok: ảnh bìa hoặc khung hình rõ sản phẩm (ảnh `poster`/thumbnail). Không chụp màn hình thay ảnh.
+- **Tải ảnh:** lấy URL ảnh lớn nhất (`img.currentSrc`, phần tử lớn nhất của `srcset`, ảnh ở chế độ xem lớn), tải bằng `curl -L -A "Mozilla/5.0" -e <post_url> -o <downloads>/<n>-<k>.jpg "<url>"`. JPEG/PNG/WebP thật (ingest kiểm chữ ký file). curl bị 403: trong trang chạy `browser_evaluate` `fetch(url).then(r => r.arrayBuffer())` đổi sang base64 rồi ghi file bằng `node -e`. Video/Shorts: ảnh bìa hoặc khung hình rõ sản phẩm (ảnh `poster`/thumbnail). Không chụp màn hình thay ảnh.
 - **raw.json** (một file mỗi nguồn/truy vấn, ghi đè được, ingest nhiều đợt không đếm trùng):
   ```json
   { "query": { "id": "instagram-h-customneonsign", "platform": "instagram" }, "platform": "instagram",
@@ -80,11 +80,6 @@ tới khi next trả "done" → 1.3 lọc (store.mjs classify / verdict) → 1.4
 - Đọc lưới: link pin + `img.currentSrc` (thay `/236x/` bằng `/736x/` hoặc `/originals/` cho ảnh lớn) + `alt`.
 - Mở pin khi cần: tiêu đề, mô tả, nguồn (link ra web/shop: ghi vào `alt_urls` nếu là bài mạng xã hội), tên người đăng. Nhiều pin là mockup của shop: chỉ giữ ảnh thật hoặc ảnh sản phẩm sạch; ảnh chữ mẫu ("Your Names") vẫn được lấy làm ý nhưng không scene-swap.
 - Dừng: popup đăng nhập không đóng được → blocked.
-
-### tiktok
-- Mở: tag `tiktok.com/tag/<tag>`, tìm `tiktok.com/search?q=<kw>`. Ô video `a[href*="/video/"]` (hoặc `/photo/`).
-- Đọc: link, ảnh bìa (`img` trong ô; `poster`), mô tả ngắn, tác giả (`/@handle` trong link), lượt xem/thích nếu hiện. Chỉ giữ video mà ảnh bìa/khung hình thấy rõ sản phẩm; không tải video.
-- Dừng: captcha kéo trượt (puzzle), "Log in to TikTok" chặn trang → blocked.
 
 ### facebook
 - Mở: tìm bài `facebook.com/search/posts/?q=<kw>`, hashtag `facebook.com/hashtag/<tag>`. Nhóm công khai: `facebook.com/search/groups/?q=<kw>` → mở nhóm **công khai** đã thấy bài, đọc tab bài viết; **không bao giờ** bấm Tham gia/Join, không trả lời câu hỏi nhóm.
@@ -173,7 +168,7 @@ Adapter Facebook (`scripts/platforms/facebook.mjs`, đọc bằng `extractFeed` 
 
 ## Bỏ trùng (tool tự làm khi ingest)
 Kho không bao giờ giữ một bài hai lần, trên mọi nguồn **và mọi nền tảng** của thương hiệu:
-- cùng link bài (bỏ `www.`/`m.`, tham số theo dõi) hoặc cùng mã bài (kể cả `alt_urls`): mã Facebook; Instagram `/p/` = `/reel/`; YouTube `watch?v=` = `/shorts/` = `youtu.be`; mã pin Pinterest, video TikTok, bài Reddit, listing Etsy, ảnh Houzz;
+- cùng link bài (bỏ `www.`/`m.`, tham số theo dõi) hoặc cùng mã bài (kể cả `alt_urls`): mã Facebook; Instagram `/p/` = `/reel/`; YouTube `watch?v=` = `/shorts/` = `youtu.be`; mã pin Pinterest, bài Reddit, listing Etsy, ảnh Houzz;
 - cùng ảnh: SHA-1 của file, hoặc ảnh gần giống (dHash 256 bit, khác ≤ `research.dedupe.image_distance`, mặc định 20 bit): shop khác đăng lại hay Facebook nén lại vẫn bị bắt. JPEG/PNG đọc được trên Windows (System.Drawing) và macOS (sips); WebP cần ffmpeg (`settings.ffmpeg.command`), không có thì chỉ so SHA-1 (JSON báo `images_without_phash`);
 - cùng caption (chữ thường, bỏ ký tự ẩn, emoji, hashtag, link, số điện thoại, dấu câu) hoặc giống ≥ `research.dedupe.caption_similarity` (mặc định 90%), với caption đủ dài (≥ 40 ký tự sau chuẩn hoá).
 

@@ -40,7 +40,7 @@
 // between scrolls (settings research.scroll_wait_seconds per platform) and stops at any login wall / checkpoint / captcha.
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, latestRun, brandSources, inside, brandDiscovery, DISCOVERY_PLATFORMS } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, latestRun, brandSources, inside, brandDiscovery, DISCOVERY_PLATFORMS, RETIRED_PLATFORMS } from './lib.mjs';
 import { adapterStatus } from './platforms/index.mjs';
 import { scrollWait, scrollHint } from './collect-pagemode.mjs';
 import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf } from './store.mjs';
@@ -76,7 +76,7 @@ export function backfillSkip(mode, known, progress = {}) {
 
 // ----- discovery (research.discovery of the skill): queries, search URLs, what to do next -----
 // Hashtag pages exist on these platforms; elsewhere only keywords are searched.
-export const HASHTAG_PLATFORMS = ['instagram', 'tiktok', 'facebook', 'youtube', 'pinterest'];
+export const HASHTAG_PLATFORMS = ['instagram', 'facebook', 'youtube', 'pinterest'];
 const enc = encodeURIComponent;
 // The search (or hashtag) page the agent opens for a query.
 export function searchUrl(platform, kind, term) {
@@ -84,7 +84,6 @@ export function searchUrl(platform, kind, term) {
   const U = {
     instagram: kind === 'hashtag' ? `https://www.instagram.com/explore/tags/${enc(tag.toLowerCase())}/` : `https://www.instagram.com/explore/search/keyword/?q=${enc(t)}`,
     pinterest: `https://www.pinterest.com/search/pins/?q=${enc(kind === 'hashtag' ? '#' + tag : t)}`,
-    tiktok: kind === 'hashtag' ? `https://www.tiktok.com/tag/${enc(tag.toLowerCase())}` : `https://www.tiktok.com/search?q=${enc(t)}`,
     facebook: kind === 'hashtag' ? `https://www.facebook.com/hashtag/${enc(tag.toLowerCase())}` : `https://www.facebook.com/search/posts/?q=${enc(t)}`,
     reddit: `https://www.reddit.com/search/?q=${enc(t)}&type=posts`,
     etsy: `https://www.etsy.com/search?q=${enc(t)}`,
@@ -175,11 +174,12 @@ function start(args, s) {
   // Discovery: the skill's enabled platforms (or --platforms, only among them), keywords / hashtags (or the overrides).
   const disc = brandDiscovery(brand.social);
   const askedPlatforms = listArg(args.platforms);
-  const unknownPlatforms = (askedPlatforms || []).filter((p) => p !== 'none' && !DISCOVERY_PLATFORMS.includes(p));
+  const unknownPlatforms = (askedPlatforms || []).filter((p) => p !== 'none' && !DISCOVERY_PLATFORMS.includes(p) && !RETIRED_PLATFORMS.includes(p));
+  const retiredNotes = [...new Set([...(disc.retired || []), ...(askedPlatforms || []).filter((p) => RETIRED_PLATFORMS.includes(p))])].map((p) => `${p}: not supported, skipped`);
   if (unknownPlatforms.length) throw new Error(`--platforms: không biết ${unknownPlatforms.join(', ')} (chỉ ${DISCOVERY_PLATFORMS.join(', ')}, hoặc none).`);
   const skillPlatforms = disc.platforms.map((p) => p.id);
   const platforms = askedPlatforms ? (askedPlatforms.includes('none') ? [] : askedPlatforms.filter((p) => skillPlatforms.includes(p))) : skillPlatforms;
-  const platformsIgnored = (askedPlatforms || []).filter((p) => p !== 'none' && !skillPlatforms.includes(p));
+  const platformsIgnored = (askedPlatforms || []).filter((p) => p !== 'none' && !skillPlatforms.includes(p) && !RETIRED_PLATFORMS.includes(p));
   const keywords = listArg(args.keywords) || disc.keywords, hashtags = (listArg(args.hashtags) || disc.hashtags).map((h) => h.replace(/^#/, ''));
   const queries = discoveryQueries(platforms, keywords, hashtags);
   if (!all.length && !queries.length) throw new Error(`${brand.id}: không có research.sources nào bật (có url) và không có truy vấn discovery (research.discovery tắt, không có nền tảng hoặc từ khoá).`);
@@ -252,7 +252,7 @@ function start(args, s) {
   writeJson(logFile(), log);
   const next = !crawl.length && !queries.length ? 'Không còn source nào để backfill (xem run.skipped). Chạy research.mjs report.'
     : `Lặp: node scripts/research.mjs next --brand ${brand.id} → lấy đúng nguồn/truy vấn đó bằng Playwright MCP (docs/research.md) → ingest → result, tới khi next trả "done" (RUNBOOK 1.2). Trang tham khảo trước (${crawl.length}), rồi ${queries.length} truy vấn discovery xoay vòng ${platforms.length} nền tảng.${mode.backfill ? ' Backfill: cuộn nhanh qua bài đã có, bắt đầu lấy sau oldest_seen.' : ''}`;
-  out({ reused: !!before, archived, dir, run: { ...run, discovery: run.discovery ? { ...run.discovery, queries: run.discovery.queries.length } : null }, discovery: run.discovery ? { platforms, keywords, hashtags, queries: queries.length, max_per_platform: disc.max_per_platform, ...(platformsIgnored.length ? { platforms_ignored: platformsIgnored } : {}) } : null, next });
+  out({ reused: !!before, archived, dir, run: { ...run, discovery: run.discovery ? { ...run.discovery, queries: run.discovery.queries.length } : null }, discovery: run.discovery ? { platforms, keywords, hashtags, queries: queries.length, max_per_platform: disc.max_per_platform, ...(platformsIgnored.length ? { platforms_ignored: platformsIgnored } : {}) } : null, ...(retiredNotes.length ? { notes: retiredNotes } : {}), next });
 }
 
 // The source page's profile picture: raw.json as an object may carry { page: { name, avatar: "raw/avatar.jpg" } } (or

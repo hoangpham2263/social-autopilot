@@ -64,7 +64,7 @@ Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**.
 | Khoá | Ý nghĩa |
 |---|---|
 | `research.delay_seconds` | `[min, max]` giây nghỉ ngẫu nhiên (giữ cho tương thích) |
-| `research.scroll_wait_seconds` | theo nền tảng, `[min, max]` giây Claude chờ giữa hai lần cuộn (Pinterest/Houzz/Etsy 2-4, Instagram/Facebook/TikTok 5-10) |
+| `research.scroll_wait_seconds` | theo nền tảng, `[min, max]` giây Claude chờ giữa hai lần cuộn (Pinterest/Houzz/Etsy 2-4, Instagram/Facebook 5-10) |
 | `research.dedupe` | ngưỡng trùng: `image_distance` (/256), `caption_similarity` (0–1) |
 | `codex.command`, `codex.timeout_minutes` | lệnh chạy Codex, thời gian chờ tối đa |
 | `codex.concurrency`, `codex.retry_wait_seconds` | số ảnh Codex làm cùng lúc trên cả máy (3), giây chờ trước khi thử lại khi Codex báo hết lượt (60) |

@@ -79,7 +79,7 @@ export function pageResultPosts(result, adapter, { cursor = null, max = 0, found
 // research.scroll_wait_seconds[platform] -> [lo, hi] seconds the agent waits between scrolls.
 export function scrollWait(platform, cfg = settings().research?.scroll_wait_seconds) {
   const v = cfg?.[String(platform || '').toLowerCase()];
-  return Array.isArray(v) && v.length === 2 ? v.map(Number) : ['instagram', 'facebook', 'tiktok'].includes(platform) ? [5, 10] : [2, 4];
+  return Array.isArray(v) && v.length === 2 ? v.map(Number) : ['instagram', 'facebook'].includes(platform) ? [5, 10] : [2, 4];
 }
 
 // ---------- commands ----------

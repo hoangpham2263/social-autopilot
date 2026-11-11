@@ -17,7 +17,7 @@
 //         caption, caption_norm, caption_hash, main_product, price_seen, images: ["images/S0001-1-ab12cd34.jpg"],
 //         image_sha1: [..], image_phash: [..], status: new|rejected (Removed), uses: [{ draft, idea, scene, product, sign_text, at }],
 //         last_used, used_by: [draft ids] (history), note, run,
-//         platform (facebook|instagram|pinterest|tiktok|reddit|etsy|youtube|houzz), author, found_by ("reference page" |
+//         platform (facebook|instagram|pinterest|reddit|etsy|youtube|houzz), author, found_by ("reference page" |
 //         "keyword:<kw>" | "hashtag:<tag>"), product_fit: { type, reason }, query (discovery query id) }
 //         (old status "used" is read as new + uses: migrateUses; old items without platform: from the post link)
 //   workspace/store/<brand>/rejected.json    posts seen but NOT stored because their product is off-brand (product_fit)
@@ -164,7 +164,7 @@ export function postKey(url) {
 }
 // The platform of a link (host), '' when not one of the research platforms.
 export const PLATFORM_HOSTS = [['facebook', /(^|\.)(facebook\.com|fb\.com|fb\.watch)$/], ['instagram', /(^|\.)instagram\.com$/], ['pinterest', /(^|\.)pinterest\.[a-z.]+$|^pin\.it$/],
-  ['tiktok', /(^|\.)tiktok\.com$/], ['reddit', /(^|\.)(reddit\.com|redd\.it)$/], ['etsy', /(^|\.)etsy\.com$/], ['youtube', /(^|\.)(youtube\.com|youtu\.be)$/], ['houzz', /(^|\.)houzz\.[a-z.]+$/]];
+  ['reddit', /(^|\.)(reddit\.com|redd\.it)$/], ['etsy', /(^|\.)etsy\.com$/], ['youtube', /(^|\.)(youtube\.com|youtu\.be)$/], ['houzz', /(^|\.)houzz\.[a-z.]+$/]];
 export function platformOfUrl(url) {
   let u; try { u = new URL(String(url || '').trim()); } catch { return ''; }
   const host = u.hostname.toLowerCase();
@@ -173,14 +173,13 @@ export function platformOfUrl(url) {
 // An item's platform: stored, else from its post link, else from its source page.
 export const platformOf = (i) => i?.platform || platformOfUrl(i?.post_url) || platformOfUrl(i?.source_url) || '';
 // Post ids of the other platforms, prefixed (the same post under another link form is one post): Instagram /p/ = /reel/,
-// YouTube watch?v= = /shorts/ = youtu.be, Pinterest /pin/<slug>--<id>, TikTok /video/<id>, Reddit /comments/<id>,
+// YouTube watch?v= = /shorts/ = youtu.be, Pinterest /pin/<slug>--<id>, Reddit /comments/<id>,
 // Etsy /listing/<id>, Houzz photo ids.
 function otherIds(u) {
   const host = u.hostname.toLowerCase(), p = u.pathname;
   let m;
   if (/(^|\.)instagram\.com$/.test(host)) return (m = p.match(/\/(?:p|reels?|tv)\/([\w-]{5,})/)) ? [`ig:${m[1]}`] : [];
   if (/(^|\.)pinterest\.[a-z.]+$/.test(host)) return (m = p.match(/\/pin\/(?:[\w-]*?--)?(\d{6,})/)) ? [`pin:${m[1]}`] : [];
-  if (/(^|\.)tiktok\.com$/.test(host)) return (m = p.match(/\/(?:video|photo)\/(\d{8,})/)) ? [`tt:${m[1]}`] : [];
   if (/(^|\.)(youtube\.com|youtu\.be)$/.test(host)) { const v = u.searchParams.get('v') || (/youtu\.be$/.test(host) ? p.slice(1).split('/')[0] : (p.match(/\/(?:shorts|embed|live)\/([\w-]{6,})/) || [])[1]); return v ? [`yt:${v}`] : []; }
   if (/(^|\.)reddit\.com$/.test(host)) return (m = p.match(/\/comments\/([a-z0-9]{4,})/i)) ? [`reddit:${m[1].toLowerCase()}`] : [];
   if (/(^|\.)etsy\.com$/.test(host)) return (m = p.match(/\/listing\/(\d{5,})/)) ? [`etsy:${m[1]}`] : [];

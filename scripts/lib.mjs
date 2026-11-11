@@ -616,7 +616,9 @@ export function brandSources(social) {
 
 // research.discovery of the brand's social.json (skill standard): search more reference posts by keywords/hashtags on
 // several platforms, keeping only posts whose product is a type the brand sells (product_fit). Enabled platforms only.
-export const DISCOVERY_PLATFORMS = ['instagram', 'pinterest', 'tiktok', 'facebook', 'reddit', 'etsy', 'youtube', 'houzz'];
+export const DISCOVERY_PLATFORMS = ['instagram', 'pinterest', 'facebook', 'reddit', 'etsy', 'youtube', 'houzz'];
+// Not supported by the tool any more: a skill (or --platforms) that still names one is skipped with a one-line note, never an error.
+export const RETIRED_PLATFORMS = ['tiktok'];
 export function brandDiscovery(social) {
   const d = social?.research?.discovery;
   const strs = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()))] : []);
@@ -624,7 +626,8 @@ export function brandDiscovery(social) {
   const product_fit = { types: strs(pf.types), must_have: strs(pf.must_have), must_not: strs(pf.must_not) };
   if (!d || typeof d !== 'object' || d.enabled !== true) return { enabled: false, platforms: [], keywords: [], hashtags: [], product_fit, max_per_platform: 0 };
   const platforms = (Array.isArray(d.platforms) ? d.platforms : []).filter((p) => p && p.enabled === true && DISCOVERY_PLATFORMS.includes(p.id)).map((p) => ({ id: p.id, notes: typeof p.notes === 'string' ? p.notes : '' }));
-  return { enabled: true, platforms, keywords: strs(d.keywords), hashtags: strs(d.hashtags).map((h) => h.replace(/^#/, '')), product_fit, max_per_platform: Number.isInteger(d.max_per_platform) && d.max_per_platform > 0 ? d.max_per_platform : 15 };
+  const retired = (Array.isArray(d.platforms) ? d.platforms : []).filter((p) => p && p.enabled === true && RETIRED_PLATFORMS.includes(p.id)).map((p) => p.id);
+  return { enabled: true, platforms, ...(retired.length ? { retired } : {}), keywords: strs(d.keywords), hashtags: strs(d.hashtags).map((h) => h.replace(/^#/, '')), product_fit, max_per_platform: Number.isInteger(d.max_per_platform) && d.max_per_platform > 0 ? d.max_per_platform : 15 };
 }
 
 export function latestRun(brand) {
