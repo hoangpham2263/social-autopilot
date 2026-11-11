@@ -1,3 +1,4 @@
+import { POST_JS } from '../collect-transfer.mjs';
 // Shared parts of the platform adapters (scripts/platforms/<platform>.mjs, used by scripts/collect.mjs).
 // An adapter keeps ALL its selectors in one SELECTORS block at the top of its file; this module only holds the generic
 // logic that reads them. extractTiles / wallSignals are PURE and SELF-CONTAINED (no imports, no outer variables): the
@@ -233,7 +234,7 @@ export function buildPageScript(S, opts) {
       tiles: list.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images).map(imgUrl), caption: cutWords(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
   }, o);
   const p = packB64(r);
-  return { platform: r.platform, total: r.total, total_on_page: r.total_on_page, reason: r.reason, tag: p.tag, b64: p.line };
+  ${POST_JS}
 }`;
 }
 

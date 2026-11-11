@@ -40,6 +40,7 @@
 // between scrolls (settings research.scroll_wait_seconds per platform) and stops at any login wall / checkpoint / captcha.
 import fs from 'node:fs';
 import path from 'node:path';
+import { cleanScripts } from './collect-transfer.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, latestRun, brandSources, inside, brandDiscovery, DISCOVERY_PLATFORMS, RETIRED_PLATFORMS } from './lib.mjs';
 import { adapterStatus } from './platforms/index.mjs';
 import { scrollWait, scrollHint, BROWSER_RULES } from './collect-pagemode.mjs';
@@ -176,6 +177,7 @@ function start(args, s) {
   const date = today(brand.timezone);
   const dir = runDir(brand.id, date);
   const runFile = path.join(dir, 'run.json');
+  cleanScripts(); // extract scripts of earlier runs (research.script_dir)
   const only = args.source && args.source !== true ? String(args.source).split(',').map((x) => x.trim()).filter(Boolean) : [];
   const noRef = only.length === 1 && only[0] === 'none';
   const all = brandSources(brand.social);

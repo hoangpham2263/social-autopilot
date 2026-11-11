@@ -3,6 +3,7 @@
 // search/hashtag pages (not just a page's own feed) have NOT been run on a live page.
 // pageScript (the extract script) only reads: no click, no hover, no scroll (the agent scrolls with Playwright MCP).
 import { SELECTORS as FB, extractFeed, extractGrid, parseFbDate, tabUrl } from '../fb-extract.mjs';
+import { POST_JS } from '../collect-transfer.mjs';
 import { wallSignals, makePost, enc, isHashtag, tagOf, checksumOf, cutWords, packB64, COMPACT } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block (the post selectors are FB, in fb-extract.mjs) ----
@@ -121,6 +122,6 @@ export function pageScript(opts) {
       tiles: list.map((t) => ({ id: t.id, ...(t.kind ? { kind: t.kind } : {}), ...(t.alt.length ? { alt: t.alt } : {}), url: t.url, ...(t.alt_urls && t.alt_urls.length ? { alt_urls: t.alt_urls.slice(0, 4) } : {}), image_urls: t.image_urls.slice(0, C.images), caption: cutWords(t.caption, C.caption), author: cut(author, C.author), date_text: cut(t.date_text, 40), ...(t.utime ? { utime: t.utime } : {}) })) };
   }, o);
   const p = packB64(r);
-  return { platform: 'facebook', total: r.total, total_on_page: r.total_on_page, reason: r.reason, ...(r.closed ? { closed: true } : {}), tag: p.tag, b64: p.line };
+  ${POST_JS}
 }`;
 }

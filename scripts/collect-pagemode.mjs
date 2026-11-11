@@ -14,6 +14,7 @@ import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
 import { checksumOf, unpackB64 } from './platforms/common.mjs';
+import { scriptDir, scriptFile, serverBase, issueToken, resultFile } from './collect-transfer.mjs';
 import { resolveTask, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
 
 // ---------- pure parts (tests/collect-pagemode.test.mjs) ----------
@@ -42,13 +43,14 @@ export function verifyPageResult(r) {
   return { result: { ...r, tiles }, verified: true };
 }
 // --b64 <line> | --file <result> | --stdin | --json '<compact>' -> ONE verified result.
-export function loadPageResult(args, readStdin = () => fs.readFileSync(0, 'utf8')) {
+export function loadPageResult(args, readStdin = () => fs.readFileSync(0, 'utf8'), autoFile = '') {
   const objs = [];
   let tag = '';
   if (args.file && args.file !== true) objs.push(parsePageResult(fs.readFileSync(path.resolve(String(args.file)), 'utf8')));
   if (args.stdin) objs.push(parsePageResult(readStdin()));
   if (args.json && args.json !== true) objs.push(parsePageResult(String(args.json)));
   if (args.b64 && args.b64 !== true) { const u = unpackB64(String(args.b64)); objs.push(u.obj); tag = u.tag; }
+  if (!objs.length && autoFile && fs.existsSync(autoFile)) { const o = JSON.parse(fs.readFileSync(autoFile, 'utf8')); objs.push(o); tag = String(o.tag || ''); }
   if (!objs.length) throw new Error("Thiếu kết quả: --b64 <chuỗi b64 một dòng> | --file <result.json> | --stdin | --json '<compact>'.");
   if (objs.length > 1) throw new Error('Mỗi lần from-page chỉ nhận MỘT kết quả trích xuất (một lần chạy script).');
   return { ...verifyPageResult(objs[0]), ...(tag ? { tag } : {}) };
@@ -114,17 +116,24 @@ export function script(args) {
   if (!adapter?.pageScript) throw new Error(`Nền tảng "${task.platform}" chưa có script trích xuất: viết scripts/platforms/${task.platform}.mjs (docs/research.md "Adapter").`);
   const seen = readSeen(args.seen && args.seen !== true ? path.resolve(String(args.seen)) : seenFile(task));
   const max = Number(args.max) > 0 ? Number(args.max) : 0;
-  const code = adapter.pageScript({ found_by: task.found_by, max, seen });
-  // The script is ~9-16K chars: never hand-paste it. It goes to <step dir>/extract.js (exactly the async function browser_run_code_unsafe
-  // needs, nothing else in the file) and the agent runs it with browser_run_code_unsafe { filename }. --stdout prints it instead.
+  // The script goes to the Playwright MCP's readable folder (research.script_dir, default ~/.playwright-mcp/social-autopilot): one file per
+  // task, <brand>-<task id>.js, exactly the async function browser_run_code_unsafe needs. --stdout prints it instead (no token).
+  // For a task of an open run it carries the app's loopback address + a ONE-TIME token (15 min): the script POSTs its result there and
+  // returns only { saved:true, total, tag, bytes }; when that is not possible it returns the b64 as before.
+  const base = args.stdout || task.kind === 'standalone' ? '' : serverBase();
+  const token = base ? issueToken(task.dir, task.id) : '';
+  const post = base ? { url: `${base}/api/collect-result?task=${encodeURIComponent(task.id)}`, token } : null;
+  const code = adapter.pageScript({ found_by: task.found_by, max, seen, ...(post ? { post } : {}) });
   if (args.stdout) { process.stdout.write(code + '\n'); return; }
-  const file = path.join(task.dir, 'extract.js');
-  fs.mkdirSync(task.dir, { recursive: true });
+  const dir = scriptDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const file = scriptFile(brand?.id || task.platform, task.id, dir);
   fs.writeFileSync(file, code + '\n');
+  fs.rmSync(resultFile(task.dir), { force: true });
   const [lo, hi] = scrollWait(task.platform);
-  process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, seen_ids: seen.length,
-    run: 'browser_run_code_unsafe with the filename parameter = file (do not paste the script); it reads the page as it is now and returns ONE line {b64, tag}',
-    from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)} --b64 <b64>`, scroll: scrollHint(task.platform, lo, hi), ...timeInfo(task.started) }) + '\n');
+  process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, seen_ids: seen.length, transfer: post ? 'post' : 'b64',
+    run: post ? 'browser_run_code_unsafe with filename = file (do not paste or copy the script). It reads the page and sends the result to the app itself, returns {saved:true,total,tag,bytes}; then run from-page with no --b64. If it returns saved:false with b64 (the app was not reachable), pass that value as --b64 instead.' : 'browser_run_code_unsafe with filename = file (do not paste the script); it returns ONE line {b64, tag}: pass b64 to from-page --b64 (copy it, never retype). The app is not running (workspace/server-address.json missing), so the result cannot be sent automatically.',
+    from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)}${post ? '' : ' --b64 <b64>'}`, scroll: scrollHint(task.platform, lo, hi), ...timeInfo(task.started) }) + '\n');
 }
 
 export async function fromPage(args) {
@@ -133,8 +142,9 @@ export async function fromPage(args) {
   const adapter = getAdapter(task.platform);
   if (!adapter) return fail(`Chưa có adapter cho nền tảng "${task.platform}".`, { platform: task.platform });
   let loaded;
-  try { loaded = loadPageResult(args); } catch (e) { return fail(String(e.message || e), { verified: false }); }
+  try { loaded = loadPageResult(args, undefined, resultFile(task.dir)); } catch (e) { return fail(String(e.message || e), { verified: false }); }
   const result = loaded.result;
+  fs.rmSync(resultFile(task.dir), { force: true }); // spent: the next extract sends a new one
   // Accumulate across extracts of the same task: earlier posts stay in raw.json, earlier ids are skipped.
   const prevRaw = readJson(task.raw_file, null);
   const prevSeen = readSeen(seenFile(task));

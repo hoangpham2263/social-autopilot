@@ -20,6 +20,7 @@ import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, dupli
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
+import { redeem, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
@@ -166,10 +167,24 @@ const sendHtml = (res, file) => {
   res.end(html);
 };
 
+const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type, x-collect-token", "access-control-allow-private-network": "true", "access-control-max-age": "600", vary: "Origin" };
+const reply = (res, status, obj) => { res.writeHead(status, { ...CORS, "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+async function collectResult(req, res, task) {
+  if (!hosts().includes(String(req.headers.host || "").toLowerCase())) return reply(res, 403, { error: "Wrong host." });
+  if (req.method === "OPTIONS") { res.writeHead(204, CORS); return res.end(); }
+  if (req.method !== "POST") return reply(res, 405, { error: "POST only." });
+  const chunks = []; let size = 0;
+  for await (const c of req) { size += c.length; if (size > MAX_BODY) { req.destroy(); return reply(res, 413, { error: "Body above 512 KB." }); } chunks.push(c); }
+  const r = redeem({ token: String(req.headers["x-collect-token"] || ""), task, body: Buffer.concat(chunks) });
+  return reply(res, r.status, r.ok ? { ok: true } : { error: r.error });
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
   const get = (k) => url.searchParams.get(k) || "";
+  // The extract script (running on facebook.com etc.) sends its result here: its own auth (one-time token), CORS only for this route.
+  if (path === "/api/collect-result") return collectResult(req, res, get("task"));
   const refused = refuse(req, path);
   if (refused) return send(res, 403, { error: refused });
   if (req.method !== "GET" && req.method !== "HEAD") { cache.clear(); res.on("finish", () => cache.clear()); }
