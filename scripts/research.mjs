@@ -477,7 +477,13 @@ export function filterCounts(items) {
 }
 
 // The end-of-crawl report: new posts per source, sources done, blocked, not finished; store totals.
+// One summary line per brand for the final message: target N · kept Y · rejected Z · duplicates D · Library available A
+export const reportLine = (r) => `target ${r.target || 0} · kept ${r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}`;
 export function researchReport(brandId, date) {
+  const r = researchReportBase(brandId, date);
+  return { ...r, summary_line: reportLine(r) };
+}
+function researchReportBase(brandId, date) {
   const day = date || latestRun(brandId);
   const run = day ? readJson(path.join(runDir(brandId, day), 'run.json'), null) : null;
   const store = readStore(brandId);
