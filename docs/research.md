@@ -4,7 +4,7 @@
 
 **Thứ tự (người dùng, 10/11/2026):**
 1. **Trang tham khảo** của thương hiệu (`research.sources[]` trong `project/social.json` của skill): bài mới chưa có trong kho.
-2. Hết trang tham khảo mà chưa đủ **mục tiêu** của lượt (`--max-posts N` = mục tiêu bài mới mỗi thương hiệu), hoặc không đặt mục tiêu: **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` (tiếng Anh, thị trường Mỹ) trên các nền tảng bật: Instagram, Pinterest, Facebook (tìm bài + nhóm công khai), Reddit, Etsy, YouTube/Shorts, Houzz (chỉ thương hiệu nội thất/nhà). Xoay vòng các nền tảng (mỗi lần một truy vấn của nền tảng ít truy vấn nhất), tới khi đủ mục tiêu hoặc hết truy vấn. Mỗi nền tảng tối đa `max_per_platform` bài giữ mỗi lượt.
+2. Hết trang tham khảo mà chưa đủ **mục tiêu** của lượt (`--max-posts N` = mục tiêu bài mới mỗi thương hiệu), hoặc không đặt mục tiêu: **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` (tiếng Anh, thị trường Mỹ) trên các nền tảng bật: Instagram, Pinterest, Facebook (tìm bài + nhóm công khai), Reddit, Etsy, Houzz (chỉ thương hiệu nội thất/nhà). Xoay vòng các nền tảng (mỗi lần một truy vấn của nền tảng ít truy vấn nhất), tới khi đủ mục tiêu hoặc hết truy vấn. Mỗi nền tảng tối đa `max_per_platform` bài giữ mỗi lượt.
 3. **Chỉ lấy bài có SẢN PHẨM đúng loại thương hiệu bán** (`research.discovery.product_fit`): `types` (loại sản phẩm, theo project.md mục 5), `must_have`, `must_not`. Bài sai loại bị bỏ **ngay lúc lấy** (không tải ảnh, không lưu; chỉ ghi vào `rejected[]` của raw.json) và lần nữa ở bước lọc. DreamyVows: bảng LED neon theo yêu cầu (chữ, câu, tên, logo, cưới, sự kiện, bar), bảng neon phải có trong ảnh và là chủ thể. GRENHEIM: đồ gỗ tự nhiên (bàn ăn, bàn trà, console live-edge...), không kim loại/nhựa/MDF.
 
 ## Một đường duy nhất: mở, cuộn, trích xuất
@@ -96,10 +96,6 @@ tới khi next trả "done" → 1.3 lọc (store.mjs classify / verdict) → 1.4
 - Đọc: tiêu đề listing (caption), tên shop (`author`), ảnh listing lớn (`il_fullxfull` thay `il_340x270`), số sao/đánh giá nếu hiện (`likes` bỏ trống). Ảnh sản phẩm của đối thủ **cùng loại sản phẩm**: ứng viên scene-swap (khi thương hiệu bật `reference_redraw`), vẫn phải xoá logo/chữ shop. Bỏ quảng cáo "Ad by" nếu lạc loại.
 - Dừng: captcha "We need to make sure you're not a robot" → blocked.
 
-### youtube
-- Mở: hashtag `youtube.com/hashtag/<tag>/shorts`, tìm `youtube.com/results?search_query=<kw>` (bộ lọc Shorts). Ưu tiên Shorts.
-- Đọc: link (`/shorts/<id>` = `watch?v=<id>`: một bài), tiêu đề, kênh (`author`), lượt xem nếu hiện, ảnh thumbnail lớn `https://i.ytimg.com/vi/<id>/hqdefault.jpg` (hoặc `maxresdefault.jpg`). Chỉ giữ khi thumbnail/khung hình thấy rõ sản phẩm thành phẩm (không phải quá trình làm).
-- Dừng: "Sign in to confirm you're not a bot" → blocked.
 
 ### houzz
 - Chỉ thương hiệu nội thất/nhà (GRENHEIM). Mở: `houzz.com/photos/query/<kw-gạch-nối>`. Ảnh phòng thật ở Mỹ.
@@ -168,7 +164,7 @@ Adapter Facebook (`scripts/platforms/facebook.mjs`, đọc bằng `extractFeed` 
 
 ## Bỏ trùng (tool tự làm khi ingest)
 Kho không bao giờ giữ một bài hai lần, trên mọi nguồn **và mọi nền tảng** của thương hiệu:
-- cùng link bài (bỏ `www.`/`m.`, tham số theo dõi) hoặc cùng mã bài (kể cả `alt_urls`): mã Facebook; Instagram `/p/` = `/reel/`; YouTube `watch?v=` = `/shorts/` = `youtu.be`; mã pin Pinterest, bài Reddit, listing Etsy, ảnh Houzz;
+- cùng link bài (bỏ `www.`/`m.`, tham số theo dõi) hoặc cùng mã bài (kể cả `alt_urls`): mã Facebook; Instagram `/p/` = `/reel/`; mã pin Pinterest, bài Reddit, listing Etsy, ảnh Houzz;
 - cùng ảnh: SHA-1 của file, hoặc ảnh gần giống (dHash 256 bit, khác ≤ `research.dedupe.image_distance`, mặc định 20 bit): shop khác đăng lại hay Facebook nén lại vẫn bị bắt. JPEG/PNG đọc được trên Windows (System.Drawing) và macOS (sips); WebP cần ffmpeg (`settings.ffmpeg.command`), không có thì chỉ so SHA-1 (JSON báo `images_without_phash`);
 - cùng caption (chữ thường, bỏ ký tự ẩn, emoji, hashtag, link, số điện thoại, dấu câu) hoặc giống ≥ `research.dedupe.caption_similarity` (mặc định 90%), với caption đủ dài (≥ 40 ký tự sau chuẩn hoá).
 

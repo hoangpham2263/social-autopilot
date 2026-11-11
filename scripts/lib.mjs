@@ -616,9 +616,9 @@ export function brandSources(social) {
 
 // research.discovery of the brand's social.json (skill standard): search more reference posts by keywords/hashtags on
 // several platforms, keeping only posts whose product is a type the brand sells (product_fit). Enabled platforms only.
-export const DISCOVERY_PLATFORMS = ['instagram', 'pinterest', 'facebook', 'reddit', 'etsy', 'youtube', 'houzz'];
+export const DISCOVERY_PLATFORMS = ['instagram', 'pinterest', 'facebook', 'reddit', 'etsy', 'houzz'];
 // Not supported by the tool any more: a skill (or --platforms) that still names one is skipped with a one-line note, never an error.
-export const RETIRED_PLATFORMS = ['tiktok'];
+export const RETIRED_PLATFORMS = ['tiktok', 'youtube'];
 export function brandDiscovery(social) {
   const d = social?.research?.discovery;
   const strs = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()))] : []);

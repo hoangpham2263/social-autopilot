@@ -76,7 +76,7 @@ export function backfillSkip(mode, known, progress = {}) {
 
 // ----- discovery (research.discovery of the skill): queries, search URLs, what to do next -----
 // Hashtag pages exist on these platforms; elsewhere only keywords are searched.
-export const HASHTAG_PLATFORMS = ['instagram', 'facebook', 'youtube', 'pinterest'];
+export const HASHTAG_PLATFORMS = ['instagram', 'facebook', 'pinterest'];
 const enc = encodeURIComponent;
 // The search (or hashtag) page the agent opens for a query.
 export function searchUrl(platform, kind, term) {
@@ -87,7 +87,6 @@ export function searchUrl(platform, kind, term) {
     facebook: kind === 'hashtag' ? `https://www.facebook.com/hashtag/${enc(tag.toLowerCase())}` : `https://www.facebook.com/search/posts/?q=${enc(t)}`,
     reddit: `https://www.reddit.com/search/?q=${enc(t)}&type=posts`,
     etsy: `https://www.etsy.com/search?q=${enc(t)}`,
-    youtube: kind === 'hashtag' ? `https://www.youtube.com/hashtag/${enc(tag.toLowerCase())}/shorts` : `https://www.youtube.com/results?search_query=${enc(t)}&sp=EgIYAQ%253D%253D`,
     houzz: `https://www.houzz.com/photos/query/${enc(t.toLowerCase().replace(/\s+/g, '-'))}`,
   };
   return U[platform] || '';

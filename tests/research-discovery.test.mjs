@@ -86,8 +86,6 @@ test('next: reference pages first, then discovery round-robin across platforms; 
 
 test('cross-platform post ids, platform of a link, product fit', () => {
   assert.deepEqual(postIds('https://www.instagram.com/reel/CxYz123/'), postIds('https://instagram.com/p/CxYz123/?igsh=abc'));
-  assert.deepEqual(postIds('https://youtube.com/shorts/abcdefgh1'), ['yt:abcdefgh1']);
-  assert.deepEqual(postIds('https://www.youtube.com/watch?v=abcdefgh1&t=3'), ['yt:abcdefgh1']);
   assert.deepEqual(postIds('https://www.pinterest.com/pin/neon-sign--1234567890/'), ['pin:1234567890']);
   assert.deepEqual(postIds('https://www.etsy.com/listing/123456789/custom-neon'), ['etsy:123456789']);
   assert.equal(platformOfUrl('https://www.houzz.com/photos/x-phvw-vp~123456'), 'houzz');

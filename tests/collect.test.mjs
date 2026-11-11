@@ -19,7 +19,6 @@ import * as pinterest from '../scripts/platforms/pinterest.mjs';
 import * as facebook from '../scripts/platforms/facebook.mjs';
 import * as reddit from '../scripts/platforms/reddit.mjs';
 import * as etsy from '../scripts/platforms/etsy.mjs';
-import * as youtube from '../scripts/platforms/youtube.mjs';
 import * as houzz from '../scripts/platforms/houzz.mjs';
 import { SELECTORS as FB, extractFeed } from '../scripts/fb-extract.mjs';
 import { resolveTask, rawShape, toRawPost, applyDecisions, suggestedState, fileId } from '../scripts/collect.mjs';
@@ -27,8 +26,8 @@ import { searchUrl as researchSearchUrl, nextTask, collectInfo } from '../script
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = (n) => parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', `collect-${n}.html`), 'utf8')).document;
-const MODS = { instagram, pinterest, facebook, reddit, etsy, youtube, houzz };
-const GRID = { instagram, pinterest, reddit, etsy, youtube, houzz };
+const MODS = { instagram, pinterest, facebook, reddit, etsy, houzz };
+const GRID = { instagram, pinterest, reddit, etsy, houzz };
 // Every grid adapter's tiles on a fixture, as the adapter turns them into posts.
 const tilesOf = (id, name, base) => {
   const S = GRID[id].SELECTORS;
@@ -42,7 +41,7 @@ const wall = (id, name) => {
 };
 
 test('registry: every platform has an adapter with the full contract; status is untested until checked on a live page', () => {
-  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'houzz', 'instagram', 'pinterest', 'reddit', 'youtube']);
+  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'houzz', 'instagram', 'pinterest', 'reddit']);
   for (const id of platformIds()) {
     const e = REGISTRY[id], a = getAdapter(id);
     assert.ok(STATUSES.includes(e.status), id);
@@ -58,7 +57,7 @@ test('registry: every platform has an adapter with the full contract; status is 
 test('search URLs: the adapters agree with research.mjs for keywords and hashtags', () => {
   for (const id of platformIds()) {
     assert.equal(getAdapter(id).searchUrl('custom neon sign'), researchSearchUrl(id, 'keyword', 'custom neon sign'), `${id} keyword`);
-    if (['instagram', 'facebook', 'youtube', 'pinterest'].includes(id)) assert.equal(getAdapter(id).searchUrl('#CustomNeonSign'), researchSearchUrl(id, 'hashtag', 'CustomNeonSign'), `${id} hashtag`);
+    if (['instagram', 'facebook', 'pinterest'].includes(id)) assert.equal(getAdapter(id).searchUrl('#CustomNeonSign'), researchSearchUrl(id, 'hashtag', 'CustomNeonSign'), `${id} hashtag`);
   }
 });
 
@@ -78,10 +77,6 @@ test('post id / url parsing per platform (pure)', () => {
   assert.equal(etsy.postId('https://www.etsy.com/uk/listing/1234567890/custom-neon?ref=x'), '1234567890');
   assert.equal(etsy.canonicalUrl('https://www.etsy.com/listing/1234567890/custom-neon?ref=x'), 'https://www.etsy.com/listing/1234567890');
   assert.equal(etsy.upgradeImage('https://i.etsystatic.com/1/r/il/ab/5/il_340x270.5_ab.jpg'), 'https://i.etsystatic.com/1/r/il/ab/5/il_794xN.5_ab.jpg');
-  assert.equal(youtube.postId('https://www.youtube.com/shorts/AbCdEfGhIjK'), 'AbCdEfGhIjK');
-  assert.equal(youtube.postId('https://www.youtube.com/watch?v=AbCdEfGhIjK&t=3'), 'AbCdEfGhIjK');
-  assert.equal(youtube.postId('https://youtu.be/AbCdEfGhIjK'), 'AbCdEfGhIjK');
-  assert.equal(youtube.thumbnailUrl('AbCdEfGhIjK'), 'https://i.ytimg.com/vi/AbCdEfGhIjK/hqdefault.jpg');
   assert.equal(houzz.postId('https://www.houzz.com/photos/live-edge-dining-table-phvw-vp~12345678?x=1'), '12345678');
   assert.deepEqual(facebook.postIds('https://www.facebook.com/shop/posts/pfbid02abcdefghij'), ['pfbid02abcdefghij']);
   assert.deepEqual(facebook.postIds('https://www.facebook.com/photo/?fbid=1122334455'), ['1122334455']);
@@ -114,12 +109,6 @@ test('tiles on saved pages become adapter posts: id, canonical url, images, capt
   assert.match(et[0].image_urls[0], /il_794xN\.5555_abcd\.jpg$/);
   assert.equal(et[0].caption, 'Custom neon sign for wedding');
   assert.equal(et[0].author, 'NeonShopUS');
-  const yt = tilesOf('youtube', 'youtube-grid', 'https://www.youtube.com/results?search_query=neon');
-  assert.deepEqual(yt.map((p) => p.id), ['AbCdEfGhIjK', 'ZyXwVuTsRqP']);
-  assert.equal(yt[0].url, 'https://www.youtube.com/shorts/AbCdEfGhIjK');
-  assert.equal(yt[1].url, 'https://www.youtube.com/watch?v=ZyXwVuTsRqP');
-  assert.deepEqual(yt[0].image_urls, ['https://i.ytimg.com/vi/AbCdEfGhIjK/hqdefault.jpg']);
-  assert.equal(yt[0].author, 'Neon Lab');
   const hz = tilesOf('houzz', 'houzz-grid', 'https://www.houzz.com/photos/query/live-edge');
   assert.equal(hz.length, 1);
   assert.equal(hz[0].id, '12345678');
@@ -143,7 +132,6 @@ test('login wall / captcha / block page detection on saved HTML; ordinary pages 
   assert.match(wall('pinterest', 'pinterest-wall'), /sign-in dialog|blocked|login/i);
   assert.match(wall('reddit', 'reddit-wall'), /blocked/i);
   assert.equal(wall('etsy', 'etsy-wall'), 'captcha');
-  assert.match(wall('youtube', 'youtube-wall'), /sign-in dialog|blocked/i);
   assert.match(wall('houzz', 'houzz-wall'), /captcha/);
   for (const id of Object.keys(MODS)) assert.equal(wall(id, 'ok-page'), '', `${id}: a normal page is not a wall`);
   for (const [id, name] of [['instagram', 'instagram-grid'], ['pinterest', 'pinterest-grid'], ['etsy', 'etsy-grid'], ['reddit', 'reddit-grid']]) assert.equal(wall(id, name), '', `${id} grid`);
@@ -165,7 +153,6 @@ test('resolveTask: from an open run (query / source) or standalone; max defaults
   assert.throws(() => resolveTask({ 'for-query': 'x' }, null), /Chưa có lượt/);
   const t = resolveTask({ platform: 'Etsy', query: '#neon sign', out: path.join(os.tmpdir(), 'sa-collect-x') });
   assert.deepEqual([t.kind, t.platform, t.found_by, t.max, t.url], ['standalone', 'etsy', 'hashtag:neon sign', 30, 'https://www.etsy.com/search?q=neon%20sign']);
-  assert.equal(resolveTask({ platform: 'youtube', url: 'https://www.youtube.com/results?search_query=x', max: '5' }).max, 5);
   assert.throws(() => resolveTask({ platform: 'myspace', query: 'x' }), /Chưa có adapter/);
   assert.throws(() => resolveTask({ platform: 'etsy' }), /--url/);
   assert.throws(() => resolveTask({}), /--platform/);
