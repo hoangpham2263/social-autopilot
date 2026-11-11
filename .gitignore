@@ -2,3 +2,6 @@
 /workspace/
 node_modules/
 .DS_Store
+
+# per-machine Claude Code permissions
+.claude/settings.local.json
