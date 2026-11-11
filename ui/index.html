@@ -292,6 +292,10 @@ a, .linkbtn { color: var(--accent); }
 /* green wins over the generic blue primary */
 main .btn[data-act=approve], main .btn[data-link], main .btn[data-install], main .btn[data-make], main #settingsSave, main #brandSave { background: #e6f4ea; border-color: #34a853; color: #14532d; }
 main .btn[data-act=approve]:hover, main .btn[data-link]:hover, main .btn[data-install]:hover, main .btn[data-make]:hover, main #settingsSave:hover, main #brandSave:hover { background: #d3ecdb; border-color: #1e7e34; }
+/* Toast: action errors appear here, the click itself never waits. */
+#toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+.toast { padding: 10px 14px; border-radius: 10px; border: 1px solid #e5857c; background: #fdecea; color: #8a1c13; font-size: 13px; line-height: 1.35; cursor: pointer; }
+.toast.ok { border-color: #34a853; background: #e6f4ea; color: #14532d; }
 nav.tabs button { margin-right: 0; }
 .log-row { margin-bottom: 6px; }
 nav.tabs { gap: 6px; margin: 0 0 0 20px; }
@@ -792,10 +796,10 @@ header + * { margin-top: 0; }
     wireTiles($("#resBody"), (i) => openStoreItem(c.brand, list.slice(), i));
     for (const card of cards) {
       const it = items.find((x) => x.id === card.dataset.id);
-      const setStatus = async (status, note = "") => {
-        const res = await postJson("/api/store-item", { brand: c.brand, id: it.id, status, note }).catch(() => offline);
-        if (res.error) { $(".msg", card).innerHTML = errLine(res.error); return; }
-        loadResearch();
+      // At once: the card leaves the list, the request runs in the background (an error brings it back with a toast).
+      const setStatus = (status, note = "") => {
+        card.remove();
+        bg(postJson("/api/store-item", { brand: c.brand, id: it.id, status, note }), { onFail: loadResearch, onDone: loadResearch });
       };
       if ($("[data-reject]", card)) $("[data-reject]", card).onclick = () => { if (confirm(`Remove ${it.id}? It will not be used for posts (Restore brings it back).`)) setStatus("rejected", ""); };
       if ($("[data-restore]", card)) $("[data-restore]", card).onclick = () => setStatus("new");
@@ -848,14 +852,14 @@ header + * { margin-top: 0; }
       // The image large (lightbox); closing it comes back to this post.
       for (const m of $$("[data-big]", overlay)) m.onclick = () => { openLightbox(imgs.map((x, j) => ({ type: "image", path: x, label: `${it.id} ${j + 1}/${imgs.length}` })), k); lbOnClose = draw; };
       const box = $(".pv-side", overlay);
-      const setStatus = async (status, note = "") => {
-        for (const b of $$(".btn", box)) b.disabled = true;
-        const res = await postJson("/api/store-item", { brand, id: it.id, status, note }).catch(() => offline);
-        if (res.error) { msg = errLine(res.error); draw(); return; }
-        items[i] = { ...it, ...res.item, image_paths: it.image_paths, duplicates: it.duplicates };
+      const setStatus = (status, note = "") => {
+        items[i] = { ...it, status, note }; // shown at once
         msg = `<span class="ok-text">${status === "new" ? "Restored." : "Removed."}</span>`;
         draw();
-        loadResearch();
+        bg(postJson("/api/store-item", { brand, id: it.id, status, note }), {
+          onDone: (res) => { items[i] = { ...items[i], ...res.item, image_paths: it.image_paths, duplicates: it.duplicates }; loadResearch(); },
+          onFail: () => { items[i] = it; msg = ""; draw(); loadResearch(); },
+        });
       };
       // Remove opens its reason box.
       if ($("[data-reject]", box)) $("[data-reject]", box).onclick = () => { const r = $(".reject-box", box); r.hidden = !r.hidden; if (!r.hidden) $("input", r).focus(); };
@@ -1085,6 +1089,17 @@ header + * { margin-top: 0; }
   document.addEventListener("click", (e) => { for (const id of ["#prSrcBox", "#prPlatBox"]) if ($(id).open && !e.target.closest(id)) $(id).open = false; });
   const baseHint = $("#prMsg").textContent;
   let hint = baseHint;
+  const toast = (text, kind = "error") => {
+    let box = $("#toasts"); if (!box) { box = document.createElement("div"); box.id = "toasts"; document.body.append(box); }
+    const el = document.createElement("div"); el.className = "toast" + (kind === "ok" ? " ok" : ""); el.textContent = String(text || "Something went wrong.").slice(0, 400);
+    el.onclick = () => el.remove(); box.append(el); setTimeout(() => el.remove(), kind === "ok" ? 3000 : 9000);
+  };
+  // Optimistic action: the screen changes at once, the request runs in the background; on an error a toast says why and the list is reloaded (put back).
+  const bg = async (req, { onFail = () => {}, onDone = () => {} } = {}) => {
+    const r = await req.catch(() => offline);
+    if (r.error) { toast(r.error); onFail(); } else onDone(r);
+    return r;
+  };
   const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
   $("#prCopy").onclick = async () => {
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
@@ -1449,12 +1464,12 @@ header + * { margin-top: 0; }
       for (const btn of $$("[data-act]", card)) btn.onclick = async () => {
         const d = list[i], msg = $(".msg", card);
         if (btn.dataset.act === "drop" && !confirm("Drop this post? It will not be used.")) return;
-        if (btn.dataset.act === "unreview") { const r = await backToReview(d, msg); if (r) loadDrafts(); return; }
-        for (const b of $$("[data-act]", card)) b.disabled = true;
-        if (btn.dataset.act === "approve") msg.innerHTML = `<span class="meta">Saving and hosting…</span>`;
-        const res = btn.dataset.act === "approve" ? await postJson("/api/approve", { id: d.id }).catch(() => offline) : await postJson("/api/cancel", { id: d.id, note: "" }).catch(() => offline);
-        if (res.error) { msg.innerHTML = errLine(res.error); for (const b of $$("[data-act]", card)) b.disabled = false; return; }
-        loadDrafts();
+        if (btn.dataset.act === "unreview") {
+          const sure = confirmBack(d); if (!sure.ok) return;
+          card.remove(); bg(postJson("/api/unapprove", { id: d.id, metricool_deleted: sure.sched }), { onFail: loadDrafts, onDone: loadDrafts }); return;
+        }
+        card.remove(); // gone at once; an error brings it back with a toast
+        bg(btn.dataset.act === "approve" ? postJson("/api/approve", { id: d.id }) : postJson("/api/cancel", { id: d.id, note: "" }), { onFail: loadDrafts, onDone: () => { if (btn.dataset.act === "approve") toast("Approved: " + (d.preview?.page_name || d.brand), "ok"); loadDrafts(); } });
       };
     });
   });
@@ -1699,38 +1714,26 @@ function draftTags(d) {
   async function cancelDraft(panel, d, act, nav) {
     const msg = $(".msg", panel), box = $(".reject-box", panel);
     if (act === "cancel") { box.hidden = !box.hidden; if (!box.hidden) $(".note", panel).focus(); return; }
-    if (act === "unreview") {
-      const ok = await backToReview(d, msg, $$("[data-act]", panel));
-      if (!ok) return;
-      await loadDrafts();
-      const j = drList.findIndex((x) => x.id === d.id);
-      if (nav && j >= 0) openPreview(drList[j], { list: drList, i: j }); else closeOverlay();
-      return;
-    }
-    for (const b of $$("[data-act]", panel)) b.disabled = true;
-    if (act === "approve") msg.innerHTML = `<span class="meta">Saving to the brand and hosting the image…</span>`;
-    const r = act === "approve" ? await postJson("/api/approve", { id: d.id }).catch(() => offline)
-      : await postJson("/api/cancel", { id: d.id, note: $(".note", panel)?.value.trim() || "" }).catch(() => offline);
-    if (r.error) { msg.innerHTML = errLine(r.error); for (const b of $$("[data-act]", panel)) b.disabled = false; return; }
-    await loadDrafts();
-    if (!nav) return;
-    const j = drList.findIndex((x) => x.id === d.id), at = j >= 0 ? j : Math.min(nav?.i || 0, drList.length - 1);
-    if (at >= 0) openPreview(drList[at], { list: drList, i: at }); else closeOverlay();
+    // Approve, Drop and Back to review act at once: the preview moves to the next post, the request runs in the background.
+    const sure = act === "unreview" ? confirmBack(d) : { ok: true };
+    if (!sure.ok) return;
+    const note = $(".note", panel)?.value.trim() || "";
+    const idx = drList.findIndex((x) => x.id === d.id);
+    if (idx >= 0) drList.splice(idx, 1);
+    const at = Math.min(Math.max(idx, 0), drList.length - 1);
+    const req = act === "approve" ? postJson("/api/approve", { id: d.id }) : act === "unreview" ? postJson("/api/unapprove", { id: d.id, metricool_deleted: sure.sched }) : postJson("/api/cancel", { id: d.id, note });
+    bg(req, { onFail: loadDrafts, onDone: () => { if (act === "approve") toast("Approved: " + (d.preview?.page_name || d.brand), "ok"); loadDrafts(); } });
+    if (nav && at >= 0) openPreview(drList[at], { list: drList, i: at }); else closeOverlay();
   }
   $("#drBrand").onchange = () => { store.set("drBrand", $("#drBrand").value); loadDrafts(); };
   // "Back to review" (Approved or Scheduled, never Posted): undo the approval (finalize.mjs unapprove). A post already scheduled in
   // Metricool must be deleted there first; the confirm says which one.
-  async function backToReview(d, msg, buttons = []) {
+  function confirmBack(d) {
     const sched = arr(d.brand_post?.metricool_sent).filter((m) => m.id && !m.draft);
     const text = sched.length
       ? `This post is scheduled in Metricool (${sched.map((m) => `id ${m.id}, ${String(m.publication || "").slice(0, 16).replace("T", " ")}`).join("; ")}). Delete it in Metricool, then confirm.`
       : "Move this post back to To review? The approval is undone and its hosted image is removed.";
-    if (!confirm(text)) return false;
-    for (const b of buttons) b.disabled = true;
-    if (msg) msg.innerHTML = `<span class="meta">Moving back to review…</span>`;
-    const r = await postJson("/api/unapprove", { id: d.id, metricool_deleted: sched.length > 0 }).catch(() => offline);
-    if (r.error) { if (msg) msg.innerHTML = errLine(r.error); for (const b of buttons) b.disabled = false; return false; }
-    return true;
+    return { ok: confirm(text), sched: sched.length > 0 };
   }
 
   // ----- Settings: Accounts (who is signed in: names only), Requirements (installed tools), then tool settings -----
