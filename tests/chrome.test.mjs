@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findBrowser, parseProfiles, listProfiles, validProfile, validConnectUrl, openCommand, openChromeProfile, userDataDirs } from '../core/setup/chrome.mjs';
-import { parseList, guessServer, buildAdd, findClaude } from '../core/setup/playwright-mcp.mjs';
 
 const ID = 'a'.repeat(32);
 const url = (relay) => `chrome-extension://${ID}/connect.html?mcpRelayUrl=${relay}&client=x`;
@@ -54,12 +53,3 @@ test('openCommand and openChromeProfile use argument arrays, never spawn in the 
   assert.throws(() => openChromeProfile({ profile: 'Default', url: 'https://x', settings: { research: { chrome_path: '/c' } }, plat: 'linux', exists: () => true, read: () => '{}', start() {} }));
 });
 
-test('claude mcp list parsing, server guess, add command, finder', () => {
-  assert.deepEqual(parseList('Checking MCP server health...\n\nplaywright-sa: npx x - ok\nplugin:a:b: https://x - needs auth'), ['playwright-sa', 'plugin:a:b']);
-  assert.equal(guessServer(['x', 'my-Playwright']), 'my-Playwright'); assert.equal(guessServer(['x']), '');
-  const a = buildAdd('n', { token: 'abcd1234', profile_dir: 'Default' }, true, true);
-  assert.deepEqual(a.slice(-4), ['cmd', '/c', 'npx', '@playwright/mcp@latest'].slice(0, 0).concat(['npx', '@playwright/mcp@latest', '--extension']).slice(-4));
-  assert.ok(a.join(' ').includes('••••1234') && !a.join(' ').includes('abcd1234'));
-  const ex = path.normalize('/h/.claude/local/claude');
-  assert.equal(findClaude({ home: '/h', win: false, which: () => '', list: () => ['anthropic.claude-code-9.9.9-linux-x64'], exists: (p) => path.normalize(p) === ex }), path.join('/h', '.claude', 'local', 'claude'));
-});

@@ -23,7 +23,6 @@ import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { chromeInfo, openChromeProfile } from "../core/setup/chrome.mjs";
-import { createPlaywrightMcp } from "../core/setup/playwright-mcp.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
@@ -34,7 +33,6 @@ const root = resolve(here, "..");
 const BASE_PORT = Number(process.env.SA_PORT || 47000 + (parseInt(createHash("sha1").update(root).digest("hex").slice(0, 6), 16) % 1000));
 let PORT = BASE_PORT;
 const logs = join(workspace, "logs");
-const playwrightMcp = createPlaywrightMcp({ getSettings: () => { try { return settings(); } catch { return {}; } }, workspaceDir: workspace });
 const configApi = createConfigApi({ hubRoot: root, pwsh: PWSH, env: toolEnv });
 mkdirSync(logs, { recursive: true });
 
@@ -349,12 +347,6 @@ async function handle(req, res) {
   // Chrome profiles (read only) and opening a window in one profile (session token via the POST guard, loopback only, no CORS; allow-lists in core/setup/chrome.mjs).
   if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => chromeInfo({ settings: settings() }));
   if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
-  // Playwright MCP token (core/setup/playwright-mcp.mjs): set through `claude mcp`; saved only in workspace/secrets, answers only masked.
-  if (path === "/api/playwright-mcp" && req.method === "GET") return api(res, () => playwrightMcp.status({ name: new URL(req.url, "http://x").searchParams.get("name") || "" }));
-  if (path === "/api/playwright-mcp-add" && req.method === "POST") return api(res, async () => playwrightMcp.add(await body(req)));
-  if (path === "/api/playwright-mcp" && req.method === "POST") return api(res, async () => playwrightMcp.apply(await body(req)));
-  if (path === "/api/playwright-mcp-restore" && req.method === "POST") return api(res, async () => playwrightMcp.restore(await body(req)));
-  if (path === "/api/playwright-mcp-forget" && req.method === "POST") return api(res, async () => playwrightMcp.forget(await body(req)));
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
   if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: defaultSource() }));

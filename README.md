@@ -52,14 +52,10 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 ## Connecting Chrome
 1. Install the **Playwright MCP Bridge** extension in the Chrome profile you want to use.
-2. In the app, Prompt tab, choose that profile in the Chrome check line (it is the list of profiles found in your Chrome).
-3. Click **Open Chrome (profile)**. The first time (and once per session), click **Connect** on the Playwright MCP Bridge page; if the agent says it is not connected it runs `node scripts/chrome-connect.mjs --url "<connect url>"` and waits for you to click Connect and say "connected".
-4. Run the Chrome check (Copy check prompt).
-The token (Settings > Playwright MCP) is optional: it only skips the Connect click. If no Playwright server exists in your `claude` CLI, that card can add one (`claude mcp add`, needs npx). Nothing is machine-specific: Chrome, its profiles and the `claude` CLI are discovered; override with `research.chrome_path`, `research.chrome_user_data_dir` and `claudeCli.command` in `workspace/settings.json` if needed.
-
-## Playwright MCP token
-The Chrome connection token (Playwright MCP Bridge extension) is entered in Settings > Playwright MCP (Chrome connection). The app sets it with the official `claude mcp` command after backing up `~/.claude.json` (`.sa-backup-<time>`, Restore button), keeps it only in `workspace/secrets/` (gitignored), and shows only the last 4 characters. Restart Claude Code after Apply.
-
+2. In the app, Prompt tab, open **Chrome connection** and choose that profile.
+3. Click **Open Chrome**. The first time (and once per session), click **Connect** on the Playwright MCP Bridge page; if the agent says it is not connected it runs `node scripts/chrome-connect.mjs --url "<connect url>"` and waits for you to click Connect and say "connected".
+4. Click **Check**: instant, done by the app (Chrome found, profile exists, extension installed; it cannot see logins). **Full check in Claude Code** also tests the connection and which sites are signed in.
+Nothing is machine-specific: Chrome and its profiles are discovered; override with `research.chrome_path` and `research.chrome_user_data_dir` in `workspace/settings.json` if needed.
 ## Quy tắc
 
 - Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay. Publish approved có Start: From today (mặc định trong app: giờ tốt nhất kế tiếp, chừa 15 phút; 1 bài/ngày chỉ giờ chính) / From tomorrow.

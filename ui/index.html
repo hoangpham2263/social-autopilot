@@ -336,28 +336,6 @@ details.sec[open] > summary { margin-bottom: 12px; }
     <fieldset><legend>Requirements<button class="btn" type="button" id="setRecheck">Re-check</button></legend>
       <dl class="kv" id="setReqs"><dt>Node.js</dt><dd class="meta">Checking…</dd></dl>
     </fieldset>
-    <details class="sec" id="pwBox">
-      <summary><span>Advanced: Playwright MCP token (optional)</span><span id="pwSum" class="meta">· checking…</span></summary>
-      <dl class="kv" id="pwStatus"><dt>Status</dt><dd class="meta">Checking…</dd></dl>
-      <p class="meta" id="pwNone" hidden>No Playwright MCP found.</p>
-      <div class="fields">
-        <div class="field" id="pwServerField"><label for="pwServer">MCP server</label><select id="pwServer"><option value="">none found</option></select></div>
-        <div class="field" id="pwAddNameField" hidden><label for="pwAddName">Name for a new server</label><input type="text" id="pwAddName" autocomplete="off" value="playwright-sa"></div>
-        <div class="field wide"><label for="pwToken">Token</label><input type="password" id="pwToken" autocomplete="off" spellcheck="false" placeholder="paste the token from the Playwright MCP Bridge extension (empty = use the saved one)"></div>
-        <div class="field"><label for="pwProfile">Chrome profile folder</label><input type="text" id="pwProfile" autocomplete="off" placeholder="defaults to the profile chosen in the Prompt tab"></div>
-      </div>
-      <div class="row-actions">
-        <button class="btn primary" type="button" id="pwApply">Apply</button>
-        <button class="btn primary" type="button" id="pwAdd" title="Adds a new MCP server with: claude mcp add (needs npx)" hidden>Add Playwright MCP</button>
-      </div>
-      <div class="row-actions quiet">
-        <button class="linkbtn" type="button" id="pwPreview" title="Shows what would change, without changing anything">Preview</button>
-        <button class="linkbtn" type="button" id="pwRestore" title="Restores the newest backup of the Claude Code config">Restore backup</button>
-        <button class="linkbtn" type="button" id="pwForget" title="Deletes the token saved by this app" hidden>Forget token</button>
-      </div>
-      <div class="msg" id="pwMsg"></div>
-      <p class="meta">Copy the token from the Playwright MCP Bridge extension in Chrome, paste it and press the button, then restart Claude Code. It is saved only on this machine and never shown again.</p>
-    </details>
     <fieldset><legend>Tool settings</legend>
       <div id="settingsView"></div>
       <div class="row-actions"><button class="btn" type="button" id="settingsEdit">Edit</button></div>
@@ -1570,44 +1548,8 @@ function draftTags(d) {
     loadAccounts();
   }
   $("#setRecheck").onclick = () => loadAccounts();
-  // ----- Settings: Playwright MCP token (set through `claude mcp`; the token is never read back, only its last 4 characters) -----
-  const loadPw = safely("#pwStatus", async () => {
-    const r = await getJson("/api/playwright-mcp").catch(() => offline);
-    if (r.error) { $("#pwSum").textContent = "· reload the app to enable this"; $("#pwStatus").innerHTML = '<dt>Status</dt><dd class="warn-text">Reload the app (top right) to enable this.</dd>'; return; }
-    $("#pwStatus").innerHTML = r.found
-      ? dotRow(true, "MCP server", `${esc(r.name)} (${esc(r.scope || "?")})`) + dotRow(r.extension_mode, "Extension mode", r.extension_mode ? "on" : "off")
-        + dotRow(r.has_token, "Token in MCP config", r.has_token ? esc(r.token_tail) : "not set") + dotRow(r.saved_tail ? true : null, "Saved in the app", r.saved_tail ? esc(r.saved_tail) : "none")
-        + dotRow(r.profile_dir ? true : null, "Chrome profile", r.profile_dir ? esc(r.profile_dir) : "default")
-      : dotRow(false, "MCP server", esc(r.message || "Not found")) + dotRow(r.saved_tail ? true : null, "Saved in the app", r.saved_tail ? esc(r.saved_tail) : "none")
-        + (r.no_playwright ? dotRow(r.npx ? true : false, "npx", r.npx ? "found" : "not found: install Node.js to add Playwright MCP") + dotRow(null, "Note", "A new server makes tools named mcp__&lt;name&gt;__*; they may need allow rules.") : "");
-    const sv = arr(r.servers);
-    $("#pwServer").innerHTML = sv.length ? sv.map((n) => `<option value="${esc(n)}"${n === r.name ? " selected" : ""}>${esc(n)}</option>`).join("") : '<option value="">none found</option>';
-    const adding = !!r.no_playwright;
-    $("#pwSum").textContent = r.found ? `· ${r.name}${r.has_token ? " · token set" : " · no token"}` : adding ? "· no server found" : "· not available";
-    $("#pwAdd").hidden = !adding; $("#pwApply").hidden = adding || !r.found; $("#pwNone").hidden = !adding;
-    $("#pwServerField").hidden = adding; $("#pwAddNameField").hidden = !adding;
-    $("#pwForget").hidden = !r.saved_tail; $("#pwRestore").hidden = adding;
-    if (r.default_add_name && !$("#pwAddName").dataset.set) $("#pwAddName").value = r.default_add_name;
-    if (!$("#pwProfile").value) { const cp = await getJson("/api/chrome-profiles").catch(() => offline); if (cp.selected) $("#pwProfile").value = cp.selected; }
-  });
-  $("#pwServer").onchange = () => { $("#pwServer").dataset.touched = "1"; getJson("/api/playwright-mcp?name=" + encodeURIComponent($("#pwServer").value)).then(() => loadPw()); };
-  $("#pwAddName").oninput = () => { $("#pwAddName").dataset.set = "1"; };
-  async function pwDo(url, data, doneText) {
-    $("#pwMsg").textContent = "Working…";
-    const r = await call(url, data).catch(() => offline);
-    if (url === "/api/playwright-mcp" && !data.dry_run) $("#pwToken").value = "";
-    if (r.error) $("#pwMsg").innerHTML = errLine(r.error);
-    else $("#pwMsg").innerHTML = r.dry_run ? `<span class="meta">${esc((r.commands || [r.backup_path]).join("  |  "))}</span>` : `<span class="ok-text">${esc(doneText)}${r.backup_path ? " Backup: " + esc(r.backup_path) + "." : ""}${r.restart_needed ? " Restart Claude Code." : ""}</span>`;
-    loadPw();
-  }
-  const pwBody = (extra) => ({ token: $("#pwToken").value, profile_dir: $("#pwProfile").value, name: $("#pwServer").value, confirm: true, ...extra });
-  $("#pwPreview").onclick = () => ($("#pwAdd").hidden ? pwDo("/api/playwright-mcp", pwBody({ dry_run: true })) : pwDo("/api/playwright-mcp-add", { ...pwBody({ dry_run: true }), name: $("#pwAddName").value }));
-  $("#pwAdd").onclick = () => { if (confirm("This backs up your Claude Code config and adds a new MCP server with 'claude mcp add' (needs npx). Its tools will be named mcp__<name>__* and may need allow rules. Restart Claude Code afterwards. Continue?")) pwDo("/api/playwright-mcp-add", { ...pwBody({}), name: $("#pwAddName").value }, "Playwright MCP added."); };
-  $("#pwApply").onclick = () => { if (confirm("This backs up your Claude Code config and rewrites the Playwright MCP entry with this token (an empty Token field uses the saved one). You must restart the Claude Code session afterwards. Continue?")) pwDo("/api/playwright-mcp", pwBody(), "Applied."); };
-  $("#pwRestore").onclick = () => { if (confirm("Restore the newest backup of your Claude Code config (.claude.json.sa-backup-*)?")) pwDo("/api/playwright-mcp-restore", { confirm: true }, "Restored."); };
-  $("#pwForget").onclick = () => { if (confirm("Delete the token saved by this app? The MCP config is not changed.")) pwDo("/api/playwright-mcp-forget", { confirm: true }, "Saved token deleted."); };
   const loadSettings = safely("#settingsView", async () => {
-    loadAccounts(); loadPw();
+    loadAccounts();
     const [r, mb] = await Promise.all([getJson("/api/settings"), getJson("/api/metricool-brands")]).catch(() => [offline, {}]);
     if (r.error) { $("#settingsMsg").innerHTML = errLine(r.error); return; }
     const s = r.settings || {};
