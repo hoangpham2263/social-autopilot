@@ -81,9 +81,9 @@ export function pageScript(opts) {
     wall: { login_form: SELECTORS.wall.login_form, captcha: SELECTORS.wall.captcha, dialog: SELECTORS.wall.dialog }, blocks: BLOCK_REASONS };
   return `async (page) => {
   const packB64 = ${packB64};
-  const checksumOf = ${checksumOf};
   const o = ${JSON.stringify(o)};
   const r = await page.evaluate((o) => {
+    const checksumOf = ${checksumOf}; // inside evaluate: the browser cannot see the outer script scope
     const extractFeed = ${extractFeed};
     const extractGrid = ${extractGrid};
     const wallSignals = ${wallSignals};
