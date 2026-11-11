@@ -157,7 +157,7 @@ test('next: every step carries the one path (open, scroll, script, from-page, ta
   assert.equal(a.open, 'https://www.instagram.com/shop/');
   assert.equal(a.scroll_wait_seconds.length, 2);
   assert.match(a.stop_rules, /3 extracts in a row/);
-  assert.match(a.from_page, /from-page --brand dv --for-source shop --b64/);
+  assert.match(a.from_page, /from-page --brand dv --for-source shop$/); // no --b64: the extract script posts the result, from-page reads <task dir>/page-result.json
   const b = nextTask({ ...run, sources: [{ ...run.sources[0], result: { state: 'end' } }] });
   assert.equal(b.step, 'discovery');
   assert.match(b.script, /--for-query etsy-k-neon$/);
@@ -245,7 +245,7 @@ test('CLI: collector raw.json (query and reference page) is accepted by research
     assert.deepEqual([i2.added, i2.rejected_off_brand], [2, 1], JSON.stringify(i2));
     const items = JSON.parse(fs.readFileSync(path.join(ws, 'store', 'dv', 'items.json'), 'utf8')).items.filter((x) => x.platform === 'etsy');
     assert.deepEqual(items.map((x) => x.found_by), [n2.found_by, n2.found_by]);
-    assert.equal(run('collect.mjs', 'status').adapters.etsy.status, 'untested');
+    assert.equal(run('collect.mjs', 'status').adapters.etsy.status, 'ok'); // etsy adapter is verified (status ok)
     assert.equal(run('collect.mjs', '--platform', 'myspace', '--query', 'x').ok, false);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });

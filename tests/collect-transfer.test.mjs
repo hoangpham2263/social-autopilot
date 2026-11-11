@@ -19,10 +19,12 @@ test('token: valid once, wrong task / bad token / oversize / expired are refused
   const tok = issueToken(task, 'q1', Date.now(), dir);
   assert.equal(redeem({ token: 'bad', task: 'q1', body, dir, runsRoot }).status, 403);
   assert.equal(redeem({ token: tok, task: 'q2', body, dir, runsRoot }).status, 403);
-  assert.equal(redeem({ token: tok, task: 'q1', body: Buffer.alloc(MAX_BODY + 1, 1), dir, runsRoot }).status, 413);
-  assert.equal(redeem({ token: tok, task: 'q1', body, dir, runsRoot }).ok, true);
+  const tok2 = issueToken(task, 'q1', Date.now(), dir); // a wrong-task attempt spends the token, so each step gets its own
+  assert.equal(redeem({ token: tok2, task: 'q1', body: Buffer.alloc(MAX_BODY + 1, 1), dir, runsRoot }).status, 413);
+  const tok3 = issueToken(task, 'q1', Date.now(), dir);
+  assert.equal(redeem({ token: tok3, task: 'q1', body, dir, runsRoot }).ok, true);
   assert.ok(fs.existsSync(path.join(task, 'page-result.json')));
-  assert.equal(redeem({ token: tok, task: 'q1', body, dir, runsRoot }).status, 403);
+  assert.equal(redeem({ token: tok3, task: 'q1', body, dir, runsRoot }).status, 403);
   const old = issueToken(task, 'q1', Date.now() - 20 * 60000, dir);
   assert.equal(redeem({ token: old, task: 'q1', body, dir, runsRoot }).status, 403);
 });
