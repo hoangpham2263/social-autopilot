@@ -43,7 +43,9 @@ export function fbPostKeys(postUrl, altUrls) {
   for (const u of urls.filter(strong)) for (const x of postIds(u)) add(x);
   for (const u of urls) add(pcb(u));
   for (const u of urls.filter((u) => !strong(u))) for (const x of postIds(u)) add(x);
-  return { id: ids[0] || '', aliases: ids.slice(1) };
+  // kind: post (real permalink or set=pcb album key), photo (only a photo link: the id is that photo's fbid, e.g. of the page's own album).
+  const kind = urls.some(strong) || urls.some((u) => pcb(u)) ? 'post' : ids.length ? 'photo' : '';
+  return { id: ids[0] || '', aliases: ids.slice(1), kind };
 }
 export const searchUrl = (query) => (isHashtag(query) ? `https://www.facebook.com/hashtag/${enc(tagOf(query))}` : `https://www.facebook.com/search/posts/?q=${enc(String(query).trim())}`);
 // One post as fb-extract's extractFeed reads it -> the adapter contract.
@@ -56,7 +58,7 @@ export function toPost(p, ctx = {}) {
   const aliases = [].concat(p.alt || fbPostKeys(url, alt).aliases);
   // Every alias (a photo fbid) also becomes a link, so the store's known-post check matches the post under either id.
   for (const x of aliases) if (!alt.some((u) => postIds(u).includes(x)) && /^\d+$/.test(x)) alt.push(`https://www.facebook.com/photo/?fbid=${x}`);
-  return post && { ...post, alt_urls: alt, aliases, posted_date: parseFbDate(p.date_text, new Date(), p.utime), media_type: p.media_type || '' };
+  return post && { ...post, alt_urls: alt, aliases, posted_date: parseFbDate(p.date_text, new Date(), p.utime), media_type: p.media_type || '', ...(p.kind ? { kind: p.kind } : {}) };
 }
 
 
@@ -104,7 +106,7 @@ export function pageScript(opts) {
     const all = [];
     if (!o.blocks.includes(block)) {
       if (grid) for (const t of extractGrid(document, o.sel).tiles) { const id = postIds(t.url)[0] || ''; if (id) all.push({ id, alt: [], url: t.url, image_urls: t.thumb ? [t.thumb] : [], caption: '', date_text: '', utime: 0 }); }
-      else for (const p of extractFeed(document, o.sel).posts) { const k = fbPostKeys(p.post_url, p.alt_urls); if (k.id) all.push({ id: k.id, alt: k.aliases, alt_urls: p.alt_urls, url: p.post_url, image_urls: p.images.map((x) => x.src), caption: p.caption, date_text: p.date_text, utime: p.utime }); }
+      else for (const p of extractFeed(document, o.sel).posts) { const k = fbPostKeys(p.post_url, p.alt_urls); if (k.id) all.push({ id: k.id, kind: k.kind, alt: k.aliases, alt_urls: p.alt_urls, url: p.post_url, image_urls: p.images.map((x) => x.src), caption: p.caption, date_text: p.date_text, utime: p.utime }); }
     }
     const byId = new Map(); for (const t of all) if (!byId.has(t.id)) byId.set(t.id, t);
     let list = [...byId.values()].filter((t) => !seen.has(t.id) && !t.alt.some((a) => seen.has(a)));
@@ -116,7 +118,7 @@ export function pageScript(opts) {
     const C = o.compact;
     return { platform: 'facebook', url: location.href, loginWall: o.blocks.includes(reason), reason, ...(isClosedPage(sig.text) ? { closed: true } : {}), view: grid ? 'grid' : 'feed',
       total: list.length, total_on_page: byId.size, checksum: checksumOf(list.map((t) => t.id)),
-      tiles: list.map((t) => ({ id: t.id, ...(t.alt.length ? { alt: t.alt } : {}), url: t.url, ...(t.alt_urls && t.alt_urls.length ? { alt_urls: t.alt_urls.slice(0, 4) } : {}), image_urls: t.image_urls.slice(0, C.images), caption: cutWords(t.caption, C.caption), author: cut(author, C.author), date_text: cut(t.date_text, 40), ...(t.utime ? { utime: t.utime } : {}) })) };
+      tiles: list.map((t) => ({ id: t.id, ...(t.kind ? { kind: t.kind } : {}), ...(t.alt.length ? { alt: t.alt } : {}), url: t.url, ...(t.alt_urls && t.alt_urls.length ? { alt_urls: t.alt_urls.slice(0, 4) } : {}), image_urls: t.image_urls.slice(0, C.images), caption: cutWords(t.caption, C.caption), author: cut(author, C.author), date_text: cut(t.date_text, 40), ...(t.utime ? { utime: t.utime } : {}) })) };
   }, o);
   const p = packB64(r);
   return { platform: 'facebook', total: r.total, total_on_page: r.total_on_page, reason: r.reason, ...(r.closed ? { closed: true } : {}), tag: p.tag, b64: p.line };

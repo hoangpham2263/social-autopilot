@@ -100,12 +100,14 @@ export function extractFeed(root, sel) {
     let caption = msg ? text(msg) : '';
     let seeMoreLeft = false;
     for (const t of sel.see_more_text) if (caption.endsWith(t)) { caption = caption.slice(0, -t.length).replace(/[\s…\.]+$/, '').trim(); seeMoreLeft = true; }
+    // Facebook scrambles the timestamp link's text (decoy characters); the real date is the text of the element its aria-labelledby points to.
+    const lbl = all(box, ['a [aria-labelledby]', 'a[aria-labelledby]']).filter((e) => own(box, e)).map((e) => { const t = doc.getElementById(e.getAttribute('aria-labelledby')); return t ? String(t.textContent || '').replace(/[͏\s]+/g, ' ').trim() : ''; }).find((x) => x.length < 40 && /\d/.test(x) && DATE_LABEL.test(x)) || '';
     const labelEl = all(box, sel.date_label || []).find((a) => own(box, a) && a.getAttribute('aria-label').length < 70 && DATE_LABEL.test(a.getAttribute('aria-label')));
     const video = all(box, sel.video).some((v) => own(box, v)) || urls.some((u) => /\/(videos|reel)\/|\/watch/.test(u));
     posts.push({
       post_url: urls[0] || '', alt_urls: urls.slice(1), caption,
       // Date: the timestamp link's aria-label / tooltip, else abbr/time; text without a digit (e.g. a name) is not a date.
-      date_text: [permalink && permalink.getAttribute('aria-label'), permalink && permalink.getAttribute('title'), ts && ts.getAttribute('title'), ts && ts.getAttribute('datetime'), labelEl && labelEl.getAttribute('aria-label'), ts && text(ts), permalink && text(permalink)].map((x) => String(x || '').trim()).find((x) => /\d/.test(x)) || '',
+      date_text: [lbl, permalink && permalink.getAttribute('aria-label'), permalink && permalink.getAttribute('title'), ts && ts.getAttribute('title'), ts && ts.getAttribute('datetime'), labelEl && labelEl.getAttribute('aria-label'), ts && text(ts), permalink && text(permalink)].map((x) => String(x || '').trim()).find((x) => /\d/.test(x)) || '',
       utime: ts ? Number(ts.getAttribute('data-utime')) || 0 : 0,
       images: imgs, media_type: video ? 'video' : imgs.length > 1 ? 'album' : imgs.length ? 'photo' : 'text', see_more_left: seeMoreLeft,
     });
