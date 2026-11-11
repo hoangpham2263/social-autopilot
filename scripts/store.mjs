@@ -164,7 +164,7 @@ export function postKey(url) {
 }
 // The platform of a link (host), '' when not one of the research platforms.
 export const PLATFORM_HOSTS = [['facebook', /(^|\.)(facebook\.com|fb\.com|fb\.watch)$/], ['instagram', /(^|\.)instagram\.com$/], ['pinterest', /(^|\.)pinterest\.[a-z.]+$|^pin\.it$/],
-  ['etsy', /(^|.)etsy.com$/], ['houzz', /(^|.)houzz.[a-z.]+$/]];
+  ['etsy', /(^|\.)etsy\.com$/], ['houzz', /(^|\.)houzz\.[a-z.]+$/]];
 export function platformOfUrl(url) {
   let u; try { u = new URL(String(url || '').trim()); } catch { return ''; }
   const host = u.hostname.toLowerCase();
