@@ -27,12 +27,17 @@ import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
+import { findClaude } from "../core/setup/claude-cli.mjs";
+import { createAgentRunner } from "../core/setup/agent-run.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const BASE_PORT = Number(process.env.SA_PORT || 47000 + (parseInt(createHash("sha1").update(root).digest("hex").slice(0, 6), 16) % 1000));
 let PORT = BASE_PORT;
 const logs = join(workspace, "logs");
+// Run now: headless Claude for one mode (core/setup/agent-run.mjs); one run at a time, killed when this server stops.
+const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }) });
+for (const sig of ["exit", "SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { agentRun.shutdown(); if (sig !== "exit") process.exit(0); });
 const configApi = createConfigApi({ hubRoot: root, pwsh: PWSH, env: toolEnv });
 mkdirSync(logs, { recursive: true });
 
@@ -277,6 +282,10 @@ async function handle(req, res) {
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));
+  // Prompt tab, Run now: POST starts headless Claude (409 when a run is active), POST /stop kills it, GET = live status (no secrets).
+  if (path === "/api/agent-run" && req.method === "GET") return api(res, () => agentRun.status());
+  if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); const r = agentRun.start({ mode: b.mode, prompt: b.prompt, brands: b.brands }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started } : { error: r.error }); }
+  if (path === "/api/agent-run/stop" && req.method === "POST") { const r = agentRun.stop(); return send(res, r.status, r.ok ? { ok: true } : { error: r.error }); }
   // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
   // current-<mode>.json) and the last run log of the mode. POST = Copy prompt: a new pending run (resets the panel).
   // Prompt tab, Chrome check line: reads workspace/runs/chrome-check.json only (never touches Chrome).
