@@ -55,7 +55,7 @@ export function toPost(p, ctx = {}) {
 }
 
 
-// ---- in-page mode (Playwright MCP browser_run_code_unsafe) ----
+// ---- reason codes (used by the extract script) ----
 // Why a page gave nothing -> a reason code ('' = fine). PURE and SELF-CONTAINED (embedded in the page script, tested on fixtures).
 // sig: wallSignals() of the page; n: posts/tiles read so far. Codes: checkpoint, login_wall, captcha, blocked, unavailable, no_posts.
 export function fbReason(sig = {}, n = 0) {

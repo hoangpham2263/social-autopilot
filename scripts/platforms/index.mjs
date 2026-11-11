@@ -31,5 +31,5 @@ export function adapterStatus(id) {
   const e = REGISTRY[String(id || '').toLowerCase()];
   return e ? { status: e.status, checked: e.checked, note: e.note } : { status: 'missing', checked: '', note: 'no adapter: write scripts/platforms/<platform>.mjs and register it here' };
 }
-// The collector's output is trusted (no hand-driven check needed) only for a verified adapter.
+// The collector's output is trusted (no extra check against the live page needed) only for a verified adapter.
 export const isTrusted = (id) => adapterStatus(id).status === 'ok';
