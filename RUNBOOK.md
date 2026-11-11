@@ -63,6 +63,8 @@ Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo khô
 
 1.0. Kiểm tra trình duyệt (**bước đầu tiên**, trước `research.mjs start`): công cụ Playwright MCP có và đang nối Chrome của người dùng (vd `browser_tabs` trả danh sách tab). Một trình duyệt = một agent: không chạy hai agent cùng lúc trên Chrome đã đăng nhập đó.
 
+   Token tự động duyệt kết nối (extension Playwright MCP Bridge): nhập ở app > Settings > Playwright MCP (Chrome connection), app đặt bằng lệnh `claude mcp` (có sao lưu `~/.claude.json.sa-backup-*`, có Restore). Token chỉ lưu ở `workspace/secrets/` (ngoài git), không bao giờ hiện lại; sau Apply phải khởi động lại Claude Code.
+
 1.0b. Quy tắc trình duyệt (đo được: tab ẩn thì mọi chờ khung hình treo hàng chục giây): đóng các tab còn sót từ lượt trước, chỉ làm trong MỘT tab mới. Browser rules: start every browser_run_code_unsafe with `await page.bringToFront();` (a hidden tab never gets animation frames, so rAF-based waits and mouse.wheel hang); work in ONE tab: close tabs left over from earlier runs and open the source in a new tab; never use waitForFunction for page readiness (use waitForLoadState('domcontentloaded') with a short timeout, or waitForTimeout; if waitForFunction is unavoidable use { polling: 250, timeout: 10000 }); any single browser call that takes more than 30 s counts as stuck: stop using it and go on (fallback: read the page yourself). Scrolling: scrollBy first, page.mouse.wheel(0,900) only as fallback AFTER bringToFront (Facebook sometimes needs real scrolling to render its feed).
 ```
 node scripts/research.mjs browser --brand <id> --state ok

@@ -50,6 +50,9 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 **Crawl** (Research): *New posts* lấy bài mới (mặc định) · *Backfill older* lấy dần bài cũ · *Full rescan* đọc lại toàn bộ. Script `collect.mjs` lấy dữ liệu (fetch hoặc script in-page chạy qua Playwright MCP trong Chrome đã đăng nhập; Facebook chưa có script in-page nên lấy tay bằng Playwright MCP), rồi agent lọc cả lô (`store.mjs classify` / `verdict`): bài bị lọc nằm ở Library → Dropped kèm lý do; tab Log hiện "N kept · M filtered".
 
+## Playwright MCP token
+The Chrome connection token (Playwright MCP Bridge extension) is entered in Settings > Playwright MCP (Chrome connection). The app sets it with the official `claude mcp` command after backing up `~/.claude.json` (`.sa-backup-<time>`, Restore button), keeps it only in `workspace/secrets/` (gitignored), and shows only the last 4 characters. Restart Claude Code after Apply.
+
 ## Quy tắc
 
 - Luôn hẹn giờ thật, không làm nháp. Đăng mỗi ngày (`cadence.posts_per_day`, mặc định 1) ở giờ tốt nhất của Metricool cho brand; chưa có dữ liệu thì theo bảng nghiên cứu `config/best-times.json` (America/New_York). Không đặt giờ tay. Publish approved có Start: From today (mặc định trong app: giờ tốt nhất kế tiếp, chừa 15 phút; 1 bài/ngày chỉ giờ chính) / From tomorrow.
