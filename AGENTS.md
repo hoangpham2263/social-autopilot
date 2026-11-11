@@ -46,6 +46,9 @@ App (`start-app.cmd` Windows / `start-app.command` macOS → `src/server.mjs` + 
 - Commit chỉ đứng tên người dùng của repo, không thêm dòng co-author của agent.
 
 
+## Chạy từ app (Run now)
+Lần chạy do nút Run now của app khởi động có đúng các quy tắc như prompt người dùng dán: cùng RUNBOOK, cùng kỹ năng, không làm gì ngoài danh sách tool được cấp. Không đọc, ghi hay in token (kể cả PLAYWRIGHT_MCP_EXTENSION_TOKEN).
+
 ## Cấu trúc
 - `config/settings.json`, `config/metricool-brands.example.json` (dạng file máy `workspace/metricool-brands.json`).
 - `scripts/lib.mjs`: settings, dò thương hiệu, brand Metricool (sync, link), khoá + ghi nguyên tử, làm sạch chữ. `SA_WORKSPACE`, `SA_SKILLS_ROOT`, `SA_CODEX`, `SA_STRIP_SCRIPT`, `SA_FFMPEG`, `SA_IMAGE_HOST_CHECK_BASE` chỉ dùng cho test.

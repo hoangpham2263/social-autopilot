@@ -50,6 +50,9 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 **Crawl** (Research): *New posts* lấy bài mới (mặc định) · *Backfill older* lấy dần bài cũ · *Full rescan* đọc lại toàn bộ. Script `collect.mjs` lấy dữ liệu (fetch hoặc script in-page chạy qua Playwright MCP trong Chrome đã đăng nhập; Facebook chưa có script in-page nên lấy tay bằng Playwright MCP), rồi agent lọc cả lô (`store.mjs classify` / `verdict`): bài bị lọc nằm ở Library → Dropped kèm lý do; tab Log hiện "N kept · M filtered".
 
+## Run now (chạy không cần dán)
+Tab Prompt có nút **Run now** cạnh **Copy prompt** (Copy vẫn như cũ). App tự chạy Claude Code ở chế độ headless với đúng prompt đó, kèm Playwright MCP riêng cho lần chạy, và hiện tiến độ trực tiếp (trạng thái, thời gian, dòng cuối, Live log). Lần đầu mỗi lượt có thể phải bấm Connect trong Chrome (trừ khi máy có biến môi trường PLAYWRIGHT_MCP_EXTENSION_TOKEN: app không lưu, không hỏi, không ghi token). Agent chạy với danh sách tool giới hạn theo mode và giới hạn thời gian cứng (settings `agent_run.timeout_minutes`: research 30, create 30, publish 15 phút; `agent_run.max_turns` mặc định 400). Nút **Stop** dừng cả cây tiến trình. Chỉ một lần chạy mỗi lúc. Không tìm thấy Claude: đặt `claudeCli.command` trong workspace/settings.json. Log rút gọn ở workspace/runs/agent-run.log (không chứa input/kết quả của tool).
+
 ## Connecting Chrome
 1. Install the **Playwright MCP Bridge** extension in the Chrome profile you want to use.
 2. In the app, Prompt tab, open **Chrome connection** and choose that profile.

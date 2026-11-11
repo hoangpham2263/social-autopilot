@@ -57,6 +57,9 @@ node scripts/skills.mjs unlink --brand "<tên brand Metricool>"  # chỉ bỏ li
 ```
 Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo không tìm thấy, dùng Change skill.
 
+## Run now (chạy từ app)
+Nút **Run now** (tab Prompt) chạy `claude -p` headless với đúng prompt của Copy prompt (qua stdin). Quy tắc y hệt lúc dán: RUNBOOK này, AGENTS.md, kỹ năng của thương hiệu. Khác biệt: tool được phép giới hạn theo mode, có giới hạn thời gian cứng, một lần chạy mỗi lúc, Stop trong app. Lần đầu cần bấm Connect trong Chrome nếu chưa có PLAYWRIGHT_MCP_EXTENSION_TOKEN trong môi trường OS (app không lưu token). Tiến độ Run progress do script của tool ghi vẫn hoạt động như cũ.
+
 ## Mode 1. Research only
 
 **Claude mở trang trên Chrome đã đăng nhập của người dùng (Playwright MCP), tự cuộn, đọc bằng một script trích xuất (`collect.mjs`), nhìn ảnh để lọc (và sửa adapter), rồi lọc một lượt.** Thứ tự (người dùng, 10/11/2026): (1) **trang tham khảo** của thương hiệu (`research.sources[]`: bài mới chưa có trong kho); (2) hết trang tham khảo mà chưa đủ mục tiêu (`--max-posts N` mỗi thương hiệu, hoặc không đặt mục tiêu): **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` của skill trên các nền tảng bật (Instagram, Pinterest, Facebook tìm bài + nhóm, Etsy, Houzz cho nội thất), xoay vòng các nền tảng tới khi đủ mục tiêu hoặc hết truy vấn. **Chỉ lấy bài có sản phẩm đúng loại thương hiệu bán** (`research.discovery.product_fit`: `types`, `must_have`, `must_not`): bài sai loại không tải, không lưu (ghi `rejected[]`), và bị lọc lần nữa ở 1.3. Script `research.mjs next` nói việc tiếp theo **và in sẵn lệnh `collect` + `adapter.status`**; chi tiết từng nền tảng và quy trình adapter: `docs/research.md`. Facebook chưa có script in-page (`pageScript`): lấy tay bằng Playwright MCP cho tới khi script đó được viết và kiểm trên trang thật. Một trình duyệt = một agent, không song song.
