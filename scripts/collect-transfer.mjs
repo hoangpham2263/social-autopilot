@@ -1,7 +1,9 @@
 // Page -> tool transfer of the extract result (docs/research.md). The extract script's Node side POSTs its compact result to the app's own
 // loopback server instead of making the agent retype b64; `collect.mjs script` issues a ONE-TIME token per task (5 minutes),
 // src/server.mjs redeems it on POST /api/collect-result and writes <task dir>/page-result.json, `collect.mjs from-page` reads it.
-// The token lives only in the script file (script_dir) and, as a sha256 hash, in workspace/collect-tokens/. Never logged.
+// The script FILE holds no secret (only the task id and the app URL): its Node side first GETs /api/collect-token?task=<id> (tokenFor below:
+// refused when the request carries Sec-Fetch-Site, i.e. any browser-initiated request, and no CORS on that route), then posts with the token.
+// The token exists only in that reply and, as a sha256 hash, in workspace/collect-tokens/. Never logged, never in a file or in stdout.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,6 +50,33 @@ export function issueToken(taskDir, taskId, now = Date.now(), dir = tokenDir(), 
   return token;
 }
 
+// The task dir of an open run (the latest run of each brand) for a task id (a reference page or a discovery query), or ''.
+export function findTaskDir(task, runsRoot = path.join(workspace, 'runs')) {
+  const id = String(task || '');
+  if (!id) return '';
+  try {
+    for (const b of fs.readdirSync(runsRoot)) {
+      const bd = path.join(runsRoot, b);
+      try {
+      const date = fs.readdirSync(bd).filter((d) => fs.existsSync(path.join(bd, d, 'run.json'))).sort().pop();
+      if (!date) continue;
+      const run = JSON.parse(fs.readFileSync(path.join(bd, date, 'run.json'), 'utf8').replace(/^﻿/, ''));
+      const hit = [...(run.sources || []), ...(run.discovery?.queries || [])].find((x) => x.id === id && x.dir);
+      if (hit && fs.existsSync(hit.dir)) return hit.dir;
+      } catch { /* not a brand folder */ }
+    }
+  } catch { /* no runs */ }
+  return '';
+}
+// GET /api/collect-token?task=<id> -> { ok, status, token?, error? }. Only for a request WITHOUT a Sec-Fetch-Site header (every browser
+// request carries it; the Playwright Node request does not) and a task of an open run. One token per task (a newer one replaces it).
+export function tokenFor({ headers = {}, task, now = Date.now(), dir = tokenDir(), runsRoot = path.join(workspace, 'runs'), ttl = ttlMs() }) {
+  if (headers['sec-fetch-site'] !== undefined) return { ok: false, status: 403, error: 'Browser requests get no token.' };
+  const taskDir = findTaskDir(task, runsRoot);
+  if (!taskDir) return { ok: false, status: 404, error: 'Task is not in an open run.' };
+  return { ok: true, status: 200, token: issueToken(taskDir, task, now, dir, ttl) };
+}
+
 // Redeem: valid token + same task id + task dir inside workspace/runs and existing + body below the limit and JSON -> writes page-result.json.
 // -> { ok, status, error? }. The token is spent by the first accepted post AND by a rejected attempt for another task (use `collect.mjs script` again).
 export function redeem({ token, task, body, now = Date.now(), dir = tokenDir(), runsRoot = path.join(workspace, 'runs') }) {
@@ -72,9 +101,12 @@ export function redeem({ token, task, body, now = Date.now(), dir = tokenDir(), 
 // only a summary; if that fails it returns saved:false + reason + the b64 line.
 export const POST_JS = `const post = o.post;
   const summary = (x) => Object.assign({ platform: r.platform, total: r.total, total_on_page: r.total_on_page, reason: r.reason }, x);
-  let why = 'standalone task: no transfer token';
-  if (post && post.url && post.token) {
+  let why = 'standalone task: no transfer';
+  if (post && post.url && post.token_url) {
     try {
+      const tr = await page.context().request.get(post.token_url, { timeout: 10000 });
+      if (!tr.ok()) throw new Error('token HTTP ' + tr.status());
+      post.token = (await tr.json()).token;
       const body = JSON.stringify(Object.assign({}, r, { tag: p.tag }));
       const res = await page.context().request.post(post.url, { headers: { 'X-Collect-Token': post.token, 'content-type': 'text/plain' }, data: body, timeout: 10000 });
       if (res.ok()) return summary({ saved: true, status: res.status(), tag: p.tag, bytes: body.length });

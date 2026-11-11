@@ -14,7 +14,7 @@ import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
 import { checksumOf, unpackB64 } from './platforms/common.mjs';
-import { scriptDir, scriptFile, serverBase, issueToken, maskToken, resultFile } from './collect-transfer.mjs';
+import { scriptDir, scriptFile, serverBase, resultFile } from './collect-transfer.mjs';
 import { resolveTask, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
 
 // ---------- pure parts (tests/collect-pagemode.test.mjs) ----------
@@ -121,8 +121,8 @@ export function script(args) {
   // For a task of an open run it carries the app's loopback address + a ONE-TIME token (research.token_minutes, default 5): the script POSTs its result there and
   // returns only { saved:true, total, tag, bytes }; when that is not possible it returns the b64 as before.
   const base = args.stdout || task.kind === 'standalone' ? '' : serverBase();
-  const token = base ? issueToken(task.dir, task.id) : '';
-  const post = base ? { url: `${base}/api/collect-result?task=${encodeURIComponent(task.id)}`, token } : null;
+  // the file carries no secret: the Node side of the script fetches a one-time token from token_url when it runs
+  const post = base ? { url: `${base}/api/collect-result?task=${encodeURIComponent(task.id)}`, token_url: `${base}/api/collect-token?task=${encodeURIComponent(task.id)}` } : null;
   const code = adapter.pageScript({ found_by: task.found_by, max, seen, ...(post ? { post } : {}) });
   if (args.stdout) { process.stdout.write(code + '\n'); return; }
   const dir = scriptDir();
@@ -131,8 +131,8 @@ export function script(args) {
   fs.writeFileSync(file, code + '\n');
   fs.rmSync(resultFile(task.dir), { force: true });
   const [lo, hi] = scrollWait(task.platform);
-  process.stdout.write(JSON.stringify({ platform: task.platform, file, ...(post ? { token: maskToken(post.token) } : {}), chars: code.length, seen_ids: seen.length, transfer: post ? 'post' : 'b64',
-    run: post ? 'browser_run_code_unsafe with filename = file (do not paste or copy the script). It reads the page; the Node side of the script posts the result to the app and returns {saved:true,total,tag,bytes}; then run from-page with no --b64. saved:false with HTTP 403 means: token already used or expired, run collect.mjs script again (right before running the file, never reuse an old file). Other saved:false: use the b64 it returns (pass it as --b64; reason_saved says why).' : 'browser_run_code_unsafe with filename = file (do not paste the script); it returns ONE line {b64, tag}: pass b64 to from-page --b64 (copy it, never retype). '+(args.stdout ? '--stdout: no transfer token, the b64 path is used.' : task.kind === 'standalone' ? 'Standalone task: no transfer token, the b64 path is used.' : 'The app is not running (workspace/server-address.json missing), so the result cannot be sent automatically.'),
+  process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, seen_ids: seen.length, transfer: post ? 'post' : 'b64',
+    run: post ? 'browser_run_code_unsafe with filename = file (do not paste or copy the script). It reads the page; the Node side of the script posts the result to the app and returns {saved:true,total,tag,bytes}; then run from-page with no --b64. saved:false with HTTP 403: run collect.mjs script again. Other saved:false: use the b64 it returns (pass it as --b64; reason_saved says why).' : 'browser_run_code_unsafe with filename = file (do not paste the script); it returns ONE line {b64, tag}: pass b64 to from-page --b64 (copy it, never retype). '+(args.stdout ? '--stdout: no transfer token, the b64 path is used.' : task.kind === 'standalone' ? 'Standalone task: no transfer token, the b64 path is used.' : 'The app is not running (workspace/server-address.json missing), so the result cannot be sent automatically.'),
     from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)}${post ? '' : ' --b64 <b64>'}`, scroll: scrollHint(task.platform, lo, hi), ...timeInfo(task.started) }) + '\n');
 }
 

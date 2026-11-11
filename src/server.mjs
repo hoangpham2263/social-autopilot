@@ -20,7 +20,7 @@ import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, dupli
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
-import { redeem, MAX_BODY } from "../scripts/collect-transfer.mjs";
+import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
@@ -169,6 +169,15 @@ const sendHtml = (res, file) => {
 
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type, x-collect-token", "access-control-allow-private-network": "true", "access-control-max-age": "600", vary: "Origin" };
 const reply = (res, status, obj) => { res.writeHead(status, { ...CORS, "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+// One-time token for the extract script's Node side. NO CORS headers (a web page can neither get a token nor read the reply); refused when the
+// request carries Sec-Fetch-Site (browser-initiated) or the Host is not the app's loopback address.
+function collectToken(req, res, task) {
+  const plain = (status, obj) => { res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(obj)); };
+  if (!hosts().includes(String(req.headers.host || "").toLowerCase())) return plain(403, { error: "Wrong host." });
+  if (req.method !== "GET") return plain(405, { error: "GET only." });
+  const r = tokenFor({ headers: req.headers, task });
+  return plain(r.status, r.ok ? { token: r.token } : { error: r.error });
+}
 async function collectResult(req, res, task) {
   if (!hosts().includes(String(req.headers.host || "").toLowerCase())) return reply(res, 403, { error: "Wrong host." });
   if (req.method === "OPTIONS") { res.writeHead(204, CORS); return res.end(); }
@@ -184,6 +193,7 @@ async function handle(req, res) {
   const path = url.pathname;
   const get = (k) => url.searchParams.get(k) || "";
   // The extract script (running on facebook.com etc.) sends its result here: its own auth (one-time token), CORS only for this route.
+  if (path === "/api/collect-token") return collectToken(req, res, get("task"));
   if (path === "/api/collect-result") return collectResult(req, res, get("task"));
   const refused = refuse(req, path);
   if (refused) return send(res, 403, { error: refused });
