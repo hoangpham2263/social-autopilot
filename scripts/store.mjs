@@ -421,7 +421,7 @@ export const RULES_OF_THUMB = [
   "drop when the product is not one of product_fit.types, misses product_fit.must_have or matches product_fit.must_not (off-brand: reason starts with \"off-brand:\")",
   "keep: a real product photo of the brand's category, a usable scene / angle / caption structure",
 ];
-const excerpt = (t, n = 220) => { const x = String(t || '').replace(/s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
+const excerpt = (t, n = 220) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
 export function classifyBatch(brand, { limit = 40, source = '' } = {}) {
   const all = readStore(brand).items.filter((i) => i.status === 'new' && !i.filter && (!source || i.source_id === source));
   let rules = { project_md: '', sources: {}, product_fit: null };

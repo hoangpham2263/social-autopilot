@@ -533,7 +533,7 @@ export function contactSheets(args, s = settings()) {
     sheets.push({ file, width: r.width, height: r.height, drafts: part.map((x, k) => ({ n: i + k + 1, id: x.id, image: x.file })), missing: r.missing });
   }
   // Older sheets of an earlier, longer run would mislead: drop the extra numbered files.
-  for (const f of fs.readdirSync(outDir)) { const m = f.match(/^contact-sheet-(d+).png$/); if (m && Number(m[1]) > sheets.length) fs.unlinkSync(path.join(outDir, f)); }
+  for (const f of fs.readdirSync(outDir)) { const m = f.match(/^contact-sheet-(\d+)\.png$/); if (m && Number(m[1]) > sheets.length) fs.unlinkSync(path.join(outDir, f)); }
   return { sheets, count: items.length, without_image: drafts.length - items.length,
     next: items.length ? 'LOOK at every sheet (Read the PNG): product↔setting fit, real size vs surroundings (measure each image: draft.mjs size-check), sign text exact, no logo on the product, no placeholder text. Unsure about one: open its image file.' : 'No draft image to show.' };
 }
