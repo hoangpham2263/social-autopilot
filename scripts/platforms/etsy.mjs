@@ -2,7 +2,7 @@
 // Search (/search?q=) lists listings; each card links to /listing/<id>/<slug> and holds an image
 // (https://i.etsystatic.com/<shop>/r/il/<hash>/<n>/il_340x270.<n>_xxxx.jpg). Sponsored cards ("Ad by") are not skipped here:
 // the product-fit look at the images drops them if off type.
-import { pageWall, gridExtract, makePost, buildPageScript, enc } from './common.mjs';
+import { makePost, buildPageScript, enc } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -34,9 +34,6 @@ export const stripCaption = (c) => String(c || '').replace(/^\s*May include:\s*/
 export const shopOf = (a) => (String(a || '').match(/\bBy\s+([\w-]+)/i) || [])[1] || String(a || '').trim();
 export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls.map(upgradeImage), caption: stripCaption(t.caption), author: shopOf(t.author), found_by: ctx.found_by || '' });
 
-// ---- adapter contract ----
-export const isLoginWall = (page) => pageWall(page, SELECTORS);
-export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
 
-// in-page mode: script for Playwright MCP browser_run_code_unsafe
-export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'etsy', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /\/listing\/(\d{5,})/.source });
+// extract script (Playwright MCP browser_run_code_unsafe): reads the page as it is now
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'etsy', max: 0, ...o, id_re: /\/listing\/(\d{5,})/.source });

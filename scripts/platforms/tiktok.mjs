@@ -1,7 +1,7 @@
 // TikTok adapter (status in scripts/platforms/index.mjs; written from knowledge of the site, NOT yet run on a live page).
 // Tag pages (/tag/<tag>) and search (/search?q=) list video cards; each card links to /@<user>/video/<id> (or /photo/<id>)
 // and holds a cover image. No video is downloaded, only the cover.
-import { pageWall, gridExtract, makePost, buildPageScript, enc, isHashtag, tagOf } from './common.mjs';
+import { makePost, buildPageScript, enc, isHashtag, tagOf } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -29,9 +29,6 @@ export const canonicalUrl = (url) => { const id = postId(url), a = authorOf(url)
 export const searchUrl = (query) => (isHashtag(query) ? `https://www.tiktok.com/tag/${enc(tagOf(query))}` : `https://www.tiktok.com/search?q=${enc(String(query).trim())}`);
 export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls, caption: t.caption, author: authorOf(t.url) || t.author, found_by: ctx.found_by || '' });
 
-// ---- adapter contract ----
-export const isLoginWall = (page) => pageWall(page, SELECTORS);
-export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
 
-// in-page mode: script for Playwright MCP browser_run_code_unsafe
-export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'tiktok', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /\/(?:video|photo)\/(\d{8,})/.source });
+// extract script (Playwright MCP browser_run_code_unsafe): reads the page as it is now
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'tiktok', max: 0, ...o, id_re: /\/(?:video|photo)\/(\d{8,})/.source });

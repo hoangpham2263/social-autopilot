@@ -1,8 +1,7 @@
 // Facebook page extraction (used by scripts/platforms/facebook.mjs). Every selector lives here, each with
 // fallbacks (a list is tried in order and the matches are merged), so a Facebook DOM change is fixed in ONE place.
-// extractFeed / extractGrid / extractViewer are PURE and SELF-CONTAINED (no imports, no outer variables): the source text is sent into the page (one page.evaluate per scroll step) and the tests run them on saved HTML
-// (tests/fixtures/fb-*.html, linkedom). They read the DOM only; the browser-side wrapper browserStep may click
-// "See more" inside a post's text and hover timestamps (never like / comment / follow / share).
+// extractFeed / extractGrid / extractViewer are PURE and SELF-CONTAINED (no imports, no outer variables): the source text is sent into the page and the tests run them on saved HTML
+// (tests/fixtures/fb-*.html, linkedom). They read the DOM only (no click, no hover);
 // Node-side helpers: parseFbDate (relative and absolute Facebook dates -> YYYY-MM-DD), detectBlock (checkpoint,
 // captcha, login wall), tabUrl (the page's /posts, /photos_by, /reels tabs).
 
@@ -18,7 +17,7 @@ export const SELECTORS = {
   see_more_text: ['See more', 'Xem thêm', 'Voir plus', 'Mehr ansehen', 'Ver más', 'Mostra altro'],
   // Timestamps whose link appears only on hover (href="#").
   hover: ['a[role="link"][href="#"]', 'a[role="link"]:not([href])', 'span[id] a[href="#"]'],
-  timestamp: ['abbr[data-utime]', '[data-utime]'],
+  timestamp: ['abbr[data-utime]', '[data-utime]', 'time[datetime]', 'abbr[title]'],
   image_host: ['scontent', 'fbcdn.net'],
   image_skip: ['emoji.php', '/rsrc.php/', 'static.xx.fbcdn.net', '/p32x32/', '/p40x40/', '/s40x40/', '/p50x50/', '/s60x60/'],
   min_image: 120,
@@ -76,9 +75,11 @@ export function extractFeed(root, sel) {
   boxes = boxes.filter((b) => !boxes.some((o) => o !== b && o.contains(b)));
   const posts = [];
   for (const box of boxes) {
-    if (box.getAttribute(sel.done_attr)) continue;
+    if (sel.done_attr && box.getAttribute(sel.done_attr)) continue;
     const links = all(box, sel.post_link).filter((a) => own(box, a) && isPostHref(a.getAttribute('href')));
-    const msg = all(box, sel.message).find((m) => own(box, m)) || null;
+    // Album / photo posts: the post caption is the message of the post container, not a photo's own text (inside a photo link).
+    const msgs = all(box, sel.message).filter((m) => own(box, m));
+    const msg = msgs.find((m) => !m.closest('a[href*="/photo"], a[href*="/photos/"]')) || msgs[0] || null;
     const host = (src) => sel.image_host.some((h) => src.includes(h)) && !sel.image_skip.some((h) => src.includes(h));
     const imgs = [];
     for (const im of box.querySelectorAll('img')) {
@@ -99,11 +100,12 @@ export function extractFeed(root, sel) {
     const video = all(box, sel.video).some((v) => own(box, v)) || urls.some((u) => /\/(videos|reel)\/|\/watch/.test(u));
     posts.push({
       post_url: urls[0] || '', alt_urls: urls.slice(1), caption,
-      date_text: (permalink && (permalink.getAttribute('aria-label') || text(permalink))) || (ts && (ts.getAttribute('title') || text(ts))) || '',
+      // Date: the timestamp link's aria-label / tooltip, else abbr/time; text without a digit (e.g. a name) is not a date.
+      date_text: [permalink && permalink.getAttribute('aria-label'), permalink && permalink.getAttribute('title'), ts && ts.getAttribute('title'), ts && ts.getAttribute('datetime'), ts && text(ts), permalink && text(permalink)].map((x) => String(x || '').trim()).find((x) => /\d/.test(x)) || '',
       utime: ts ? Number(ts.getAttribute('data-utime')) || 0 : 0,
       images: imgs, media_type: video ? 'video' : imgs.length > 1 ? 'album' : imgs.length ? 'photo' : 'text', see_more_left: seeMoreLeft,
     });
-    if (urls.length) box.setAttribute(sel.done_attr, '1');
+    if (urls.length && sel.done_attr) box.setAttribute(sel.done_attr, '1');
   }
   const chromeEls = all(doc, sel.chrome);
   const outside = (el) => !chromeEls.some((c) => c.contains(el));
@@ -176,28 +178,6 @@ export function extractViewer(root, sel) {
     images, media_type: first(doc, sel.video) || /\/(reel|videos)\//.test(urls[0] || '') ? 'video' : 'photo',
     block: { url: (doc.location && doc.location.href) || '', title: doc.title || '', login_form: !!first(doc, sel.login_form), captcha: !!first(doc, sel.captcha), text: body ? String(body.textContent || '').slice(0, 3000) : '' },
   };
-}
-
-// Runs in the page (sent as `(${browserStep})(${extractFeed}, sel, opts)` as one expression): expands
-// "See more" inside post texts, hovers timestamps so their permalink appears, waits a moment, extracts, then scrolls.
-export async function browserStep(extract, sel, opts) {
-  const doc = document;
-  const q = (el, list) => { const out = []; for (const s of [].concat(list)) { try { out.push(...el.querySelectorAll(s)); } catch { /* skip */ } } return out; };
-  let touched = 0;
-  if (opts.expand) {
-    for (const m of q(doc, sel.message)) for (const b of q(m, sel.see_more)) {
-      if (sel.see_more_text.includes(String(b.textContent || '').trim())) { b.click(); touched++; }
-    }
-    for (const box of q(doc, sel.container)) {
-      if (box.getAttribute(sel.done_attr)) continue;
-      for (const a of q(box, sel.hover).slice(0, 3)) { for (const t of ['mouseover', 'mouseenter', 'focus']) a.dispatchEvent(new Event(t, { bubbles: true })); touched++; }
-    }
-  }
-  if (touched) await new Promise((r) => setTimeout(r, opts.settle_ms || 600));
-  const data = extract(doc, sel);
-  if (opts.scroll) window.scrollBy(0, Math.round(window.innerHeight * opts.scroll));
-  data.scroll = { y: window.scrollY, height: doc.documentElement.scrollHeight };
-  return data;
 }
 
 // ---------- Node side ----------

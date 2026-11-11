@@ -1,38 +1,27 @@
-// Generic collector (Mode 1 step 1.2): a SCRIPT reads the raw data of a page, the AI only writes/fixes the platform adapters
-// (scripts/platforms/<platform>.mjs) and judges the images. Three routes, all writing the raw.json that `research.mjs ingest
-// --source|--query` reads: `fetch` (no browser), `script` + `from-page` (in-page script run through Playwright MCP in the user's
-// signed-in Chrome), or hand-driven Playwright MCP (fallback; Facebook has no in-page script yet). Nothing else changes downstream.
+// Generic collector (Mode 1 step 1.2), the ONE research path: the agent opens the page or search URL with Playwright MCP,
+// scrolls it with normal Playwright MCP actions (End / mouse wheel, 1-2 times, research.scroll_wait_seconds) and decides when
+// to stop; to read the data it runs ONE extract script that reads what is on the page now and returns at once. The AI writes
+// / fixes the platform adapters (scripts/platforms/<platform>.mjs, SELECTORS) and judges the images.
+//   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--seen <file>] [--max N]
+//        prints the extract script for browser_run_code_unsafe: no navigation, no scroll, no pause; returns ONE line
+//        { total, total_on_page, reason, tag, b64 } with only the tiles whose id is not in the task's seen list
+//        (<task dir>/seen.json, written by from-page; --seen <file> = another JSON list of ids)
+//   node scripts/collect.mjs from-page --brand <id> (--for-query <qid> | --for-source <sid>) --b64 <line> | --file <result.json> | --stdin [--images N]
+//        checks total + checksum + tag (fails loudly when cut off or edited), drops posts the store already has, downloads
+//        images into the run folder, ADDS the posts to raw.json (scroll, extract, scroll, extract accumulates) and says
+//        whether to stop (target reached, 3 extracts with no new posts, all known, login wall / captcha / closed page)
 //   node scripts/collect.mjs fit --brand <id> (--for-query <qid> | --for-source <sid>) --file decisions.json
 //        decisions [{ id, fit: true, type, reason } | { id, fit: false, reason }] (the agent LOOKED at the images): fit posts get
 //        product_fit, the others move to rejected[] (what ingest needs for a discovery query)
-//   FETCH MODE (no browser, first choice where a route exists: reddit, houzz, pinterest user/board; scripts/collect-fetch.mjs)
-//   node scripts/collect.mjs fetch (--brand <id> --for-query <qid> | --for-source <sid> | --platform <id> (--query <kw> | --url <page>)) [--max N] [--images N] [--from-file <saved response>]
-//        ONE polite request (>= 5 s per host, 429/403 = state blocked, no retry), same raw.json, then `fit` + ingest as below
-//   IN-PAGE MODE (scripts/collect-pagemode.mjs): ONE Playwright MCP call per keyword/page
-//   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--max N] [--max-steps N]
-//        [--chunk N] prints the script for browser_run_code_unsafe (scrolls with 5-15 s pauses, reads tiles, returns COMPACT JSON with total + checksum);
-//        --chunk N returns only tiles N*6.. (run --chunk 0,1,.. when the full result is too long to read back)
-//   node scripts/collect.mjs from-page --brand <id> (--for-query <qid> | --for-source <sid>) --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>' [--images N]
-//        paste the result AS IS (never retype): from-page checks tiles.length === total and the checksum of the ids and fails loudly if it was cut off or edited
-//        (or --platform <id> --file ...) drops posts already in the store, downloads images into the run folder, writes raw.json
 //   node scripts/collect.mjs status      every adapter with its status (untested | ok | broken)
-// Options: --max-steps N (scroll steps), --images N (per post, default 4), --date YYYY-MM-DD (run of --for-*).
 // Read only: it never likes, saves, follows, comments, messages, joins, posts or signs in. A login wall / captcha / block
-// page stops it at once (state blocked, nothing more opened). Cookies stay in Chrome; nothing secret is written.
+// page = state blocked, nothing more opened. Cookies stay in Chrome; nothing secret is written.
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
 import { openRun, nextTask } from './research.mjs';
 import { REGISTRY, STATUSES, getAdapter, adapterStatus, platformIds } from './platforms/index.mjs';
 
 // ---------- pure parts (tests/collect.test.mjs) ----------
-export const DEFAULT_DELAY = [5, 15];
-// research.delay_seconds, never lower than the defaults (5-15 s).
-export function delayRange(cfg) {
-  const [a, b] = Array.isArray(cfg) ? cfg.map(Number) : [];
-  const lo = Math.max(Number.isFinite(a) ? a : 0, DEFAULT_DELAY[0]);
-  const hi = Math.max(Number.isFinite(b) ? b : 0, DEFAULT_DELAY[1], lo);
-  return [lo, hi];
-}
 const slug = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'x';
 export const fileId = (id) => String(id || '').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'post';
 
@@ -115,8 +104,7 @@ if (isMain(import.meta.url)) main(async () => {
   const cmd = args._[0] || '';
   if (cmd === 'status') return out({ statuses: STATUSES, adapters: Object.fromEntries(Object.keys(REGISTRY).map((id) => [id, adapterStatus(id)])) });
   if (cmd === 'fit') return fit(args);
-  if (cmd === 'fetch') return (await import('./collect-fetch.mjs')).runFetch(args);
   if (cmd === 'script') return (await import('./collect-pagemode.mjs')).script(args);
   if (cmd === 'from-page') return (await import('./collect-pagemode.mjs')).fromPage(args);
-  throw new Error('Lệnh: fetch | script | from-page | fit | status');
+  throw new Error('Lệnh: script | from-page | fit | status');
 });

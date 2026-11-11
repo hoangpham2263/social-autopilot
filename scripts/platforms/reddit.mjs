@@ -1,7 +1,7 @@
 // Reddit adapter (status in scripts/platforms/index.mjs; written from knowledge of the site, NOT yet run on a live page).
 // Search (/search/?q=&type=posts) lists posts; each has a link to /r/<sub>/comments/<id>/<slug>/ and, for image posts, a
 // thumbnail on preview.redd.it / i.redd.it. Text-only posts have no image and are left out by the collector.
-import { pageWall, gridExtract, makePost, buildPageScript, enc } from './common.mjs';
+import { makePost, buildPageScript, enc } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -32,9 +32,6 @@ export const upgradeImage = (u) => { const m = String(u || '').match(/^https?:\/
 export const searchUrl = (query) => `https://www.reddit.com/search/?q=${enc(String(query).replace(/^#/, '').trim())}&type=posts`;
 export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls.map(upgradeImage), caption: t.caption, author: subredditOf(t.url) || t.author, found_by: ctx.found_by || '' });
 
-// ---- adapter contract ----
-export const isLoginWall = (page) => pageWall(page, SELECTORS);
-export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
 
-// in-page mode: script for Playwright MCP browser_run_code_unsafe
-export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'reddit', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /comments\/([a-z0-9]{4,})/.source });
+// extract script (Playwright MCP browser_run_code_unsafe): reads the page as it is now
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'reddit', max: 0, ...o, id_re: /comments\/([a-z0-9]{4,})/.source });

@@ -1,10 +1,9 @@
 // Facebook adapter (status in scripts/platforms/index.mjs). Reuses scripts/fb-extract.mjs (the post selectors, the pure
 // feed reader, tested on saved fixtures); only the page-level glue is new, and
 // search/hashtag pages (not just a page's own feed) have NOT been run on a live page.
-// The one click is the existing "See more" inside a post's own text (browserStep, expand); nothing is liked, followed, shared.
-// pageScript (in-page mode) never clicks: it scrolls, reads, and dispatches mouseover on timestamps.
-import { SELECTORS as FB, extractFeed, extractGrid, browserStep, parseFbDate, tabUrl } from '../fb-extract.mjs';
-import { pageWall, wallSignals, makePost, enc, isHashtag, tagOf, checksumOf, packB64, COMPACT } from './common.mjs';
+// pageScript (the extract script) only reads: no click, no hover, no scroll (the agent scrolls with Playwright MCP).
+import { SELECTORS as FB, extractFeed, extractGrid, parseFbDate, tabUrl } from '../fb-extract.mjs';
+import { wallSignals, makePost, enc, isHashtag, tagOf, checksumOf, packB64, COMPACT } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block (the post selectors are FB, in fb-extract.mjs) ----
 export const SELECTORS = {
@@ -31,23 +30,30 @@ export function postIds(url) {
   return [...ids];
 }
 export const postId = (url) => postIds(url)[0] || '';
+// A post's links -> { id, aliases }. PURE and SELF-CONTAINED except postIds (both are embedded in the extract script).
+// id = the real post permalink (/posts/pfbid.., story_fbid, /permalink/, reel / video id) when the DOM has one, else the
+// photo fbid; every other id (each photo's fbid) is an alias, so the known-post check matches either form.
+export function fbPostKeys(postUrl, altUrls) {
+  const urls = [postUrl].concat(altUrls || []).filter(Boolean).map(String);
+  const strong = (u) => /\/(posts|permalink|videos|reel)\/|story_fbid=|\/watch\/?\?v=/.test(u);
+  const ids = [];
+  for (const u of urls.filter(strong).concat(urls.filter((u) => !strong(u)))) for (const x of postIds(u)) if (!ids.includes(x)) ids.push(x);
+  return { id: ids[0] || '', aliases: ids.slice(1) };
+}
 export const searchUrl = (query) => (isHashtag(query) ? `https://www.facebook.com/hashtag/${enc(tagOf(query))}` : `https://www.facebook.com/search/posts/?q=${enc(String(query).trim())}`);
 // One post as fb-extract's extractFeed reads it -> the adapter contract.
 // Also takes a page-script tile ({ url, image_urls, caption, author }, collect.mjs from-page).
 export function toPost(p, ctx = {}) {
   const url = p.post_url || p.url || '';
   const images = p.images ? p.images.map((x) => x.src) : p.image_urls || [];
-  const post = makePost({ id: postId(url) || postIds((p.alt_urls || [])[0])[0] || '', url, image_urls: images.filter(Boolean), caption: p.caption || '', author: p.author || '', found_by: ctx.found_by || '' });
-  return post && { ...post, alt_urls: p.alt_urls || [], posted_date: parseFbDate(p.date_text, new Date(), p.utime), media_type: p.media_type || '' };
+  const alt = [].concat(p.alt_urls || []);
+  const post = makePost({ id: p.id || fbPostKeys(url, alt).id, url, image_urls: images.filter(Boolean), caption: p.caption || '', author: p.author || '', found_by: ctx.found_by || '' });
+  const aliases = [].concat(p.alt || fbPostKeys(url, alt).aliases);
+  // Every alias (a photo fbid) also becomes a link, so the store's known-post check matches the post under either id.
+  for (const x of aliases) if (!alt.some((u) => postIds(u).includes(x)) && /^\d+$/.test(x)) alt.push(`https://www.facebook.com/photo/?fbid=${x}`);
+  return post && { ...post, alt_urls: alt, aliases, posted_date: parseFbDate(p.date_text, new Date(), p.utime), media_type: p.media_type || '' };
 }
 
-// ---- adapter contract ----
-export const isLoginWall = (page) => pageWall(page, SELECTORS);
-export async function extract(page, ctx) {
-  const opts = { expand: true, settle_ms: 700, scroll: 0 }; // the collector scrolls
-  const d = await page.evaluate(`(${browserStep})(${extractFeed}, ${JSON.stringify(FB)}, ${JSON.stringify(opts)})`);
-  return (d.posts || []).map((p) => toPost(p, ctx)).filter(Boolean);
-}
 
 // ---- in-page mode (Playwright MCP browser_run_code_unsafe) ----
 // Why a page gave nothing -> a reason code ('' = fine). PURE and SELF-CONTAINED (embedded in the page script, tested on fixtures).
@@ -65,89 +71,48 @@ export const BLOCK_REASONS = ['checkpoint', 'login_wall', 'captcha', 'blocked'];
 // "Permanently closed" is information, not an error: the page still shows its old posts.
 export const isClosedPage = (text) => /permanently closed|đã đóng cửa vĩnh viễn|ngừng hoạt động vĩnh viễn/i.test(String(text || ''));
 
-// A page source -> its timeline, then /photos_by and /reels grids when the timeline gave fewer than `min_feed` posts (as fb-extract did).
-// Read only: scroll, read the DOM, dispatch mouseover on timestamps so their permalink appears. No click, no typing.
-// opts: { url, found_by, max, steps, delay:[lo,hi], deadline, chunk, min_feed }
+// ---- extract script (Playwright MCP browser_run_code_unsafe): reads the page as it is now ----
+// The agent opens the page (timeline, /photos_by or /reels tab, search) and scrolls with Playwright MCP; this script only
+// READS the posts on the page now and returns at once: no navigation, no scroll, no pause, no click, no hover, no DOM marks.
+// Timeline/search -> extractFeed (post permalink id, photo fbids as aliases, caption of the post container, date text);
+// photos/reels tab -> extractGrid. opts: { found_by, max, seen[] (ids AND aliases already returned) }.
 export function pageScript(opts) {
-  const o = { platform: 'facebook', steps: 12, max: 8, delay: [5, 15], deadline: 120, compact: COMPACT, b64: true, min_feed: 4, ...opts, sel: FB,
-    wall: { login_form: SELECTORS.wall.login_form, captcha: SELECTORS.wall.captcha, dialog: SELECTORS.wall.dialog },
-    tabs: { photos: tabUrl(opts.url, 'photos'), reels: tabUrl(opts.url, 'reels') }, blocks: BLOCK_REASONS };
+  const o = { platform: 'facebook', max: 0, seen: [], compact: COMPACT, ...opts, sel: { ...FB, done_attr: '' },
+    wall: { login_form: SELECTORS.wall.login_form, captcha: SELECTORS.wall.captcha, dialog: SELECTORS.wall.dialog }, blocks: BLOCK_REASONS };
   return `async (page) => {
   const packB64 = ${packB64};
   const checksumOf = ${checksumOf};
   const o = ${JSON.stringify(o)};
-  const t0 = Date.now();
-  const isBlock = (r) => o.blocks.includes(r);
-  const run = async (url, mode, have) => {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    return page.evaluate(async ([o, mode, have, t0]) => {
-      const extractFeed = ${extractFeed};
-      const extractGrid = ${extractGrid};
-      const wallSignals = ${wallSignals};
-      const fbReason = ${fbReason};
-      const postIds = ${postIds};
-      const isClosedPage = ${isClosedPage};
-      const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-      const pause = () => sleep(1000 * (o.delay[0] + Math.random() * (o.delay[1] - o.delay[0])));
-      const over = () => Date.now() - t0 > o.deadline * 1000;
-      const seen = new Set(have), out = [];
-      let steps = 0, idle = 0, reason = '', partial = false;
-      await pause();
-      for (; steps < o.steps; steps++) {
-        if (over()) { partial = true; break; }
-        const r = fbReason(wallSignals(document, o.wall), 1);
-        if (r) { reason = r; break; }
-        let fresh = 0;
-        if (mode === 'feed') {
-          for (const a of document.querySelectorAll(o.sel.hover.join(','))) { if (a.closest('[' + o.sel.done_attr + ']')) continue; for (const t of ['mouseover', 'mouseenter', 'focus']) a.dispatchEvent(new Event(t, { bubbles: true })); }
-          await sleep(700);
-          for (const p of extractFeed(document, o.sel).posts) {
-            const id = postIds(p.post_url)[0] || postIds(p.alt_urls[0])[0] || '';
-            if (!id || seen.has(id)) continue;
-            seen.add(id); fresh++;
-            out.push({ id, url: p.post_url, image_urls: p.images.map((x) => x.src), caption: p.caption, date_text: /\\d/.test(p.date_text) ? p.date_text : '', utime: p.utime });
-          }
-        } else {
-          for (const t of extractGrid(document, o.sel).tiles) {
-            const id = postIds(t.url)[0] || '';
-            if (!id || seen.has(id)) continue;
-            seen.add(id); fresh++;
-            out.push({ id, url: t.url, image_urls: t.thumb ? [t.thumb] : [], caption: '', date_text: '', utime: 0, via: mode });
-          }
-        }
-        if (have.length + out.length >= o.max) break;
-        idle = fresh ? 0 : idle + 1;
-        if (idle >= 3) break;
-        window.scrollBy(0, Math.round(innerHeight * 0.9));
-        await pause();
-      }
-      const sig = wallSignals(document, o.wall);
-      const h1 = document.querySelector('[role="main"] h1') || document.querySelector('h1');
-      return { out, steps, partial, reason: reason || fbReason(sig, out.length + have.length), closed: isClosedPage(sig.text), author: (h1 && h1.textContent.trim()) || (location.pathname.split('/').filter(Boolean)[0] || ''), url: location.href, title: document.title };
-    }, [o, mode, have, t0]);
-  };
-  let list = [], steps = 0, partial = false, reason = '', closed = false, author = '', last = null;
-  const via = [];
-  const phases = [[o.url, 'feed'], [o.tabs.photos, 'photos'], [o.tabs.reels, 'reels']];
-  for (let i = 0; i < phases.length; i++) {
-    if (i > 0 && (list.length >= o.min_feed || list.length >= o.max || partial || isBlock(reason))) break;
-    last = await run(phases[i][0], phases[i][1], list.map((t) => t.id));
-    steps += last.steps; partial = partial || last.partial; closed = closed || last.closed; author = author || last.author; reason = last.reason;
-    if (last.out.length) via.push(phases[i][1]);
-    list = list.concat(last.out.map((t) => ({ ...t, author: last.author })));
-    if (isBlock(reason)) break;
-  }
-  list = list.slice(0, o.max);
-  if (list.length && !isBlock(reason)) reason = '';
-  const cut = (x, n) => String(x || '').replace(/\\s+/g, ' ').trim().slice(0, n);
-  const C = o.compact, total = list.length, checksum = checksumOf(list.map((t) => t.id || t.url));
-  let part = list, chunk = null;
-  if (o.chunk !== undefined && o.chunk !== null) { part = list.slice(o.chunk * C.chunk_size, (o.chunk + 1) * C.chunk_size); chunk = { i: o.chunk, size: C.chunk_size, of: Math.max(1, Math.ceil(total / C.chunk_size)) }; }
-  const loginWall = isBlock(reason);
-  const r = { platform: 'facebook', url: o.url, loginWall, ...(loginWall ? { signals: { url: last && last.url, title: last && last.title } } : {}), reason, ...(closed ? { closed: true } : {}), via, steps, seconds: Math.round((Date.now() - t0) / 1000),
-    note: partial ? 'deadline ' + o.deadline + ' s reached' : reason, ...(partial ? { partial: true } : {}), total, checksum, ...(chunk ? { chunk } : {}),
-    tiles: part.map((t) => ({ id: t.id, url: t.url, image_urls: t.image_urls.slice(0, C.images), caption: cut(t.caption, C.caption), author: cut(t.author, C.author), date_text: cut(t.date_text, 40), ...(t.utime ? { utime: t.utime } : {}), ...(t.via ? { via: t.via } : {}) })) };
-  if (o.b64) { const p = packB64(r); return { platform: 'facebook', total: r.total, reason: r.reason, loginWall, partial: !!r.partial, seconds: r.seconds, tag: p.tag, b64: p.line }; }
-  return r;
+  const r = await page.evaluate((o) => {
+    const extractFeed = ${extractFeed};
+    const extractGrid = ${extractGrid};
+    const wallSignals = ${wallSignals};
+    const fbReason = ${fbReason};
+    const postIds = ${postIds};
+    const fbPostKeys = ${fbPostKeys};
+    const isClosedPage = ${isClosedPage};
+    const sig = wallSignals(document, o.wall);
+    const block = fbReason(sig, 1);
+    const grid = /\\/(photos|photos_by|reels|videos)\\/?$/.test(location.pathname);
+    const seen = new Set(o.seen || []);
+    const all = [];
+    if (!o.blocks.includes(block)) {
+      if (grid) for (const t of extractGrid(document, o.sel).tiles) { const id = postIds(t.url)[0] || ''; if (id) all.push({ id, alt: [], url: t.url, image_urls: t.thumb ? [t.thumb] : [], caption: '', date_text: '', utime: 0 }); }
+      else for (const p of extractFeed(document, o.sel).posts) { const k = fbPostKeys(p.post_url, p.alt_urls); if (k.id) all.push({ id: k.id, alt: k.aliases, alt_urls: p.alt_urls, url: p.post_url, image_urls: p.images.map((x) => x.src), caption: p.caption, date_text: p.date_text, utime: p.utime }); }
+    }
+    const byId = new Map(); for (const t of all) if (!byId.has(t.id)) byId.set(t.id, t);
+    let list = [...byId.values()].filter((t) => !seen.has(t.id) && !t.alt.some((a) => seen.has(a)));
+    if (o.max) list = list.slice(0, o.max);
+    const h1 = document.querySelector('[role="main"] h1') || document.querySelector('h1');
+    const author = (h1 && h1.textContent.trim()) || (location.pathname.split('/').filter(Boolean)[0] || '');
+    const reason = o.blocks.includes(block) ? block : fbReason(sig, byId.size);
+    const cut = (x, n) => String(x || '').replace(/\\s+/g, ' ').trim().slice(0, n);
+    const C = o.compact;
+    return { platform: 'facebook', url: location.href, loginWall: o.blocks.includes(reason), reason, ...(isClosedPage(sig.text) ? { closed: true } : {}), view: grid ? 'grid' : 'feed',
+      total: list.length, total_on_page: byId.size, checksum: checksumOf(list.map((t) => t.id)),
+      tiles: list.map((t) => ({ id: t.id, ...(t.alt.length ? { alt: t.alt } : {}), url: t.url, ...(t.alt_urls && t.alt_urls.length ? { alt_urls: t.alt_urls.slice(0, 4) } : {}), image_urls: t.image_urls.slice(0, C.images), caption: cut(t.caption, C.caption), author: cut(author, C.author), date_text: cut(t.date_text, 40), ...(t.utime ? { utime: t.utime } : {}) })) };
+  }, o);
+  const p = packB64(r);
+  return { platform: 'facebook', total: r.total, total_on_page: r.total_on_page, reason: r.reason, ...(r.closed ? { closed: true } : {}), tag: p.tag, b64: p.line };
 }`;
 }

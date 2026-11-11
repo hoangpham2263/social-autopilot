@@ -49,7 +49,7 @@ test('registry: every platform has an adapter with the full contract; status is 
     assert.ok(STATUSES.includes(e.status), id);
     if (e.status !== 'untested') assert.match(e.checked, /^\d{4}-\d{2}-\d{2}$/, `${id}: ok needs the date it was checked`);
     else assert.equal(e.checked, '', id); // ok and broken both carry the date of the live check
-    for (const f of ['searchUrl', 'isLoginWall', 'extract', 'postId']) assert.equal(typeof a[f], 'function', `${id}.${f}`);
+    for (const f of ['searchUrl', 'pageScript', 'toPost', 'postId']) assert.equal(typeof a[f], 'function', `${id}.${f}`);
     assert.ok(a.SELECTORS && typeof a.SELECTORS === 'object', `${id}: selectors in one block`);
   }
   assert.equal(adapterStatus('myspace').status, 'missing');

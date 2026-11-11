@@ -2,7 +2,7 @@
 // An adapter keeps ALL its selectors in one SELECTORS block at the top of its file; this module only holds the generic
 // logic that reads them. extractTiles / wallSignals are PURE and SELF-CONTAINED (no imports, no outer variables): the
 // collector sends their source text into the page (page.evaluate) and the tests run them on saved HTML (linkedom).
-// They only READ the DOM: no click, no hover, no typing. The collector's only page action besides reading is scrolling.
+// They only READ the DOM: no click, no hover, no typing. Scrolling is done by the agent (Playwright MCP), never by a script.
 
 // Search/grid tiles on the current page -> { tiles: [{ url, image_urls[], caption, author }], signals }.
 // cfg: { base, link[], url_pattern (regex source), container (selector or ''), img[], img_skip[], author[], caption[] }
@@ -99,19 +99,6 @@ export function classifyWall(sig = {}, rules = {}) {
   return hit ? `blocked: "${(hay.match(hit) || [''])[0].slice(0, 80)}"` : '';
 }
 
-// Browser side of isLoginWall(page).
-export async function pageWall(page, S) {
-  const cfg = { login_form: S.wall.login_form, captcha: S.wall.captcha, dialog: S.wall.dialog };
-  const sig = await page.evaluate(`(${wallSignals})(document, ${JSON.stringify(cfg)})`);
-  return classifyWall(sig, S.wall);
-}
-
-// Browser side of a grid adapter's extract(page): one read of the tiles visible now (the collector scrolls between reads).
-export async function gridExtract(page, S, finish, ctx = {}) {
-  const cfg = { link: S.link, url_pattern: S.url_pattern, container: S.container, img: S.img, img_skip: S.img_skip, author: S.author, caption: S.caption, base: page.url() };
-  const d = await page.evaluate(`(${extractTiles})(document, ${JSON.stringify(cfg)})`);
-  return d.tiles.map((t) => finish(t, ctx)).filter(Boolean);
-}
 
 // Tracking parameters and fragments off a link.
 export function stripTracking(url) {
@@ -139,7 +126,7 @@ export function checksumOf(ids) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h.toString(36);
 }
-export const COMPACT = { caption: 100, author: 40, images: 2, chunk_size: 6 };
+export const COMPACT = { caption: 100, author: 40, images: 2 };
 
 // Single-line transport of a page result: base64url(JSON) ~ one 2-char tag per 100-char segment ~ 4-char tag of the whole.
 // SELF-CONTAINED (embedded in the page script): the agent pastes the one line, from-page checks every segment, so a paste
@@ -166,62 +153,42 @@ export function unpackB64(text) {
   return { obj: JSON.parse(Buffer.from(b64, 'base64url').toString('utf8')), tag };
 }
 
-// ---- in-page mode. The agent pastes this into Playwright MCP browser_run_code_unsafe (one call per keyword/page).
-// A string `async (page) => {...}`: goes to the URL, scrolls with random pauses (delay [lo,hi] s, from collect.mjs: never below 5-15 s),
-// reads the tiles after every pause (lazy images get time to load), and, when the adapter says post_fallback and a tile still has
-// no image, reads that post's own page (GET only, same site) for og:image / og:description. Returns JSON
-// { platform, url, loginWall, signals, tiles:[{id,url,image_urls,caption,author,found_by}], steps, note }. Read only.
-// opts: { platform, url, found_by, max, steps, delay:[lo,hi], id_re (regex source, group 1 = id) }
+// ---- extract script (the ONE research path). The agent opens the page and scrolls with normal Playwright MCP actions;
+// this string `async (page) => {...}` (browser_run_code_unsafe) only READS the tiles on the page right now and returns at once:
+// no navigation, no scrolling, no pauses. opts.seen = ids already returned in this task (`collect.mjs script --seen`): those
+// tiles are left out, so the result holds only NEW tiles plus total_on_page. When the adapter says post_fallback and a new
+// tile has no image, its post page is read (GET, same site, AbortSignal.timeout 3 s) for og:image / og:description.
+// -> one line { platform, total, total_on_page, reason, tag, b64 } (b64 holds tiles + checksum). Read only.
+// opts: { platform, found_by, max, seen[], id_re (regex source, group 1 = id) }
 export function buildPageScript(S, opts) {
   const cfg = { link: S.link, url_pattern: S.url_pattern, container: S.container, img: S.img, img_skip: S.img_skip, author: S.author, caption: S.caption };
   const wall = { login_form: S.wall.login_form, captcha: S.wall.captcha, dialog: S.wall.dialog, url: S.wall.url };
-  const o = { compact: COMPACT, deadline: 120, b64: true, ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
+  const o = { compact: COMPACT, seen: [], ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
   return `async (page) => {
   const packB64 = ${packB64};
   const o = ${JSON.stringify(o)};
-  await page.goto(o.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   const r = await page.evaluate(async (o) => {
     const extractTiles = ${extractTiles};
     const checksumOf = ${checksumOf};
     const wallSignals = ${wallSignals};
-    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-    const pause = () => sleep(1000 * (o.delay[0] + Math.random() * (o.delay[1] - o.delay[0])));
-    const wallNow = () => {
-      const sig = wallSignals(document, o.wall);
-      const urlHit = (o.wall.url || []).some((x) => new RegExp(x, 'i').test(sig.url));
-      return { sig, loginWall: urlHit || sig.captcha || sig.login_form || sig.dialog };
-    };
+    const sig = wallSignals(document, o.wall);
+    const loginWall = (o.wall.url || []).some((x) => new RegExp(x, 'i').test(sig.url)) || sig.captcha || sig.login_form || sig.dialog;
+    const reason = loginWall ? (sig.captcha ? 'captcha' : 'login_wall') : '';
     const id = (u) => ((String(u).match(new RegExp(o.id_re, 'i')) || [])[1]) || '';
+    const seen = new Set(o.seen || []);
     const tiles = new Map();
-    const t0 = Date.now(), over = () => Date.now() - t0 > o.deadline * 1000;
-    let steps = 0, idle = 0, loginWall = false, signals = null, note = '', partial = false;
-    await pause();
-    for (; steps < o.steps; steps++) {
-      if (over()) { partial = true; note = 'deadline ' + o.deadline + ' s reached'; break; }
-      const w = wallNow();
-      signals = { url: w.sig.url, title: w.sig.title, captcha: w.sig.captcha, login_form: w.sig.login_form, dialog: w.sig.dialog, text: w.sig.text.slice(0, 300) };
-      if (w.loginWall) { loginWall = true; break; }
-      const d = extractTiles(document, Object.assign({ base: location.href }, o.cfg));
-      let fresh = 0;
-      for (const t of d.tiles) {
-        const k = id(t.url) || t.url;
-        const old = tiles.get(k);
-        if (!old) { tiles.set(k, { id: id(t.url), ...t, found_by: o.found_by }); fresh++; }
-        else if (t.image_urls.length > old.image_urls.length) { old.image_urls = t.image_urls; if (!old.caption) old.caption = t.caption; if (!old.author) old.author = t.author; }
-      }
-      if (tiles.size >= o.max) break;
-      idle = fresh ? 0 : idle + 1;
-      if (idle >= 3) break;
-      window.scrollBy(0, Math.round(innerHeight * 0.9));
-      await pause();
+    if (!loginWall) for (const t of extractTiles(document, Object.assign({ base: location.href }, o.cfg)).tiles) {
+      const k = id(t.url) || t.url;
+      if (!tiles.has(k)) tiles.set(k, { id: id(t.url), ...t, found_by: o.found_by });
     }
-    let list = [...tiles.values()].slice(0, o.max);
+    const onPage = tiles.size;
+    let list = [...tiles.values()].filter((t) => !seen.has(t.id || t.url));
+    if (o.max) list = list.slice(0, o.max);
+    let note = '';
     if (o.post_fallback && !loginWall) {
-      for (const t of list.filter((x) => !x.image_urls.length)) {
-        if (over()) { partial = true; note = note || 'deadline ' + o.deadline + ' s reached'; break; }
-        await pause();
+      await Promise.all(list.filter((x) => !x.image_urls.length).slice(0, 4).map(async (t) => {
         try {
-          const res = await fetch(t.url, { credentials: 'include', headers: { Accept: 'text/html' } });
+          const res = await fetch(t.url, { credentials: 'include', headers: { Accept: 'text/html' }, signal: AbortSignal.timeout(3000) });
           const html = new DOMParser().parseFromString(await res.text(), 'text/html');
           const meta = (p) => (html.querySelector('meta[property="' + p + '"]') || {}).content || '';
           const img = meta('og:image');
@@ -229,22 +196,27 @@ export function buildPageScript(S, opts) {
           if (!t.caption) t.caption = meta('og:description') || meta('og:title');
           t.via_post_page = true;
         } catch (e) { note = 'post page read failed: ' + String(e.message || e).slice(0, 80); }
-      }
+      }));
     }
     if (o.caption_strip) for (const t of list) t.caption = String(t.caption || '').replace(new RegExp(o.caption_strip, 'i'), '').trim();
-    // COMPACT result (short enough to read back and paste as is): fixed caption/author length, shortest url, first images only.
+    // COMPACT result: fixed caption/author length, shortest url, first images only.
     const cut = (x, n) => String(x || '').replace(/\\s+/g, ' ').trim().slice(0, n);
     const shortUrl = (u) => { try { const x = new URL(u); x.hash = ''; if (!/[?&]v=/.test(x.search)) x.search = ''; return x.href; } catch (e) { return String(u || ''); } };
-    // Image url: only what the downloader needs. Signed urls (oh/oe/sig/token ...) keep their query, every other one loses it.
+    // Image url: signed urls (oh/oe/sig/token ...) keep their query, every other one loses it.
     const imgUrl = (u) => { try { const x = new URL(u); x.hash = ''; if (!/[?&](oh|oe|sig|signature|token|expires|x-expires|hmac|key)=/i.test(x.search)) x.search = ''; return x.href; } catch (e) { return String(u || ''); } };
     const C = o.compact;
-    const total = list.length, checksum = checksumOf(list.map((t) => t.id || t.url));
-    let part = list, chunk = null;
-    if (o.chunk !== undefined && o.chunk !== null) { part = list.slice(o.chunk * C.chunk_size, (o.chunk + 1) * C.chunk_size); chunk = { i: o.chunk, size: C.chunk_size, of: Math.max(1, Math.ceil(total / C.chunk_size)) }; }
-    return { platform: o.platform, url: shortUrl(location.href), loginWall, signals: loginWall ? signals : null, steps, note: cut(note, 80), ...(partial ? { partial: true } : {}), total, checksum, ...(chunk ? { chunk } : {}),
-      tiles: part.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images).map(imgUrl), caption: cut(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
+    return { platform: o.platform, url: shortUrl(location.href), loginWall, reason, signals: loginWall ? { url: sig.url, title: sig.title, captcha: sig.captcha, login_form: sig.login_form, dialog: sig.dialog } : null,
+      note: cut(note, 80), total: list.length, total_on_page: onPage, checksum: checksumOf(list.map((t) => t.id || t.url)),
+      tiles: list.map((t) => ({ id: t.id, url: shortUrl(t.url), image_urls: (t.image_urls || []).slice(0, C.images).map(imgUrl), caption: cut(t.caption, C.caption), author: cut(t.author, C.author), ...(t.via_post_page ? { via_post_page: 1 } : {}) })) };
   }, o);
-  if (o.b64) { const p = packB64(r); return r.loginWall ? { platform: r.platform, loginWall: true, signals: r.signals, tag: p.tag, b64: p.line } : { platform: r.platform, total: r.total, partial: !!r.partial, tag: p.tag, b64: p.line }; }
-  return r;
+  const p = packB64(r);
+  return { platform: r.platform, total: r.total, total_on_page: r.total_on_page, reason: r.reason, tag: p.tag, b64: p.line };
 }`;
+}
+
+// Pure twin of the script's `seen` filter (tests): tiles + ids already returned -> { tiles (new only), total_on_page }.
+export function filterSeen(tiles, seen = []) {
+  const s = new Set((seen || []).map(String));
+  const list = tiles || [];
+  return { tiles: list.filter((t) => !s.has(String(t.id || t.url))), total_on_page: list.length };
 }
