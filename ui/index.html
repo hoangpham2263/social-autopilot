@@ -296,6 +296,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
     </div>
+    <!-- Chrome check (read only, GET /api/chrome-check): the last check of the browser the Playwright MCP is connected to. -->
+    <div class="run-sum" id="prChrome"><span class="meta">Chrome check: loading…</span></div>
     <!-- Run progress of the selected mode (scripts/progress.mjs, GET /api/progress): steps, counter, time, last message. -->
     <fieldset class="run-panel" id="prRun"><legend>Run progress</legend>
       <div class="run-sum" id="prRunSum"><span class="meta">Loading…</span></div>
@@ -988,8 +990,40 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const clock = (t) => (t ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
   const took = (a, b) => { const s = Math.max(0, Math.round(((b ? Date.parse(b) : Date.now()) - Date.parse(a)) / 1000)); return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`; };
   let runTimer = 0, shownRunMode = "";
+  // ----- Chrome check line: read only, refreshed every 3 s while the Prompt tab is open; never touches Chrome -----
+  const CHROME_PROMPT = [
+    "Test the Chrome connection only (read only: never sign in, click, type or accept anything; stop on a login wall and report it).",
+    "1. Run: node scripts/collect.mjs check-chrome --brand all (it prints the path of a small file).",
+    "2. Run that file with browser_run_code_unsafe using the filename parameter (never paste it); it starts with page.bringToFront().",
+    "3. Save the JSON it returns to a file and record it: node scripts/research.mjs chrome-record --state ok --result-file <file> (hidden:true: bringToFront again and re-run; browser not answering: --state fail --note \"<reason>\").",
+    "4. Report one line per platform (signed in / signed out / blocked) and whether the tab was hidden.",
+  ].join("\n");
+  let chromeTimer = 0;
+  const loadChrome = safely("#prChrome", async () => {
+    clearTimeout(chromeTimer); chromeTimer = 0;
+    const r = await getJson("/api/chrome-check").catch(() => offline);
+    const el = $("#prChrome");
+    if (r.error || !r.status) { el.innerHTML = '<span class="meta">Chrome check: unavailable</span>'; }
+    else {
+      const st = r.status, rec = r.record;
+      const prof = st.expected_profile ? `<span class="meta">expected profile: ${esc(st.expected_profile)}</span>` : "";
+      if (!st.ok) el.innerHTML = `<span class="warn-text">Chrome check: ${esc(st.reason === "not run" ? "not run / expired" : st.reason === "expired" ? "not run / expired" : st.reason)}</span>${prof}`;
+      else {
+        const chips = Object.entries(rec.platforms || {}).map(([id, p]) => {
+          const bad = p.wall || p.signed_in === false;
+          const txt = p.wall && p.wall !== "login" ? p.wall : p.signed_in === false || p.wall === "login" ? "signed out" : "";
+          return `<span class="status-tag ${bad ? "c-amber" : p.signed_in === true ? "c-green" : ""}">${esc(platformName(id))} ${bad ? "✗ " + txt : "✓"}</span>`;
+        }).join(" ");
+        el.innerHTML = `<span>Chrome check: ${st.age_minutes === 0 ? "just now" : st.age_minutes + " min ago"}</span>${chips}${prof}`;
+      }
+    }
+    el.insertAdjacentHTML("beforeend", ' <button class="btn" type="button" id="prChromeCopy" title="Copies a short prompt that tests the Chrome connection and records the result">Copy check prompt</button>');
+    $("#prChromeCopy").onclick = async () => { try { await navigator.clipboard.writeText(CHROME_PROMPT); } catch { /* ignore */ } flash("Copied."); };
+    if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000);
+  });
   const loadProgress = safely("#prRunSum", async () => {
     clearTimeout(runTimer); runTimer = 0;
+    loadChrome();
     if (!prMode) return;
     const mode = modeKey(prMode);
     shownRunMode = mode;

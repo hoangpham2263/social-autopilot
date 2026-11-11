@@ -23,6 +23,7 @@ import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
+import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 
@@ -277,6 +278,8 @@ async function handle(req, res) {
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));
   // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
   // current-<mode>.json) and the last run log of the mode. POST = Copy prompt: a new pending run (resets the panel).
+  // Prompt tab, Chrome check line: reads workspace/runs/chrome-check.json only (never touches Chrome).
+  if (path === "/api/chrome-check" && req.method === "GET") return api(res, () => { const record = readCheck(); return { record, status: checkStatus(record) }; });
   if (path === "/api/progress" && req.method === "GET") return api(res, () => {
     const view = progressView(get("mode"));
     const last = listLogs({ mode: view.mode, limit: 1 })[0];
