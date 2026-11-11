@@ -84,9 +84,9 @@ export const isClosedPage = (text) => /permanently closed|đã đóng cửa vĩn
 // READS the posts on the page now and returns at once: no navigation, no scroll, no pause, no click, no hover, no DOM marks.
 // Timeline/search -> extractFeed (post permalink id, photo fbids as aliases, caption of the post container, date text);
 // photos/reels tab -> extractGrid. opts: { found_by, max, seen[] (ids AND aliases already returned) }.
-// The feed renders lazily: after bringToFront poll (Node side, no waitForFunction) up to ~8 s, 500 ms apart, and extract as soon as a post
+// The feed renders lazily: after bringToFront poll (Node side, no waitForFunction) up to ~2 s (4 x 500 ms: only the short render delay right after the agent's scroll; the feed does not render without a real scroll), and extract as soon as a post
 // (aria-posinset) or a post/photo/reel link shows; stops at once when the count is > 0.
-export const WAIT_FEED_JS = `for (let i = 0; i < 16; i++) {
+export const WAIT_FEED_JS = `for (let i = 0; i < 4; i++) {
     const n = await page.evaluate(() => document.querySelectorAll('[aria-posinset], a[href*="/posts/"], a[href*="/permalink"], a[href*="/photo"], a[href*="/reel/"], a[href*="/videos/"]').length).catch(() => 0);
     if (n > 0) break;
     await page.waitForTimeout(500);
