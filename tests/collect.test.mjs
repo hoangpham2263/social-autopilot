@@ -273,3 +273,27 @@ test('CLI: collector raw.json (query and reference page) is accepted by research
     assert.equal(run('collect.mjs', '--platform', 'myspace', '--query', 'x').ok, false);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+// Counters: the stop rule counts posts KEPT after the fit filter (pure, no network).
+test('counters + fitStop: kept decides, not posts read', async () => {
+  const { counters, counterLine, fitStop, applyDecisions } = await import('../scripts/collect.mjs');
+  const post = (id) => ({ collector_id: id, post_url: `u/${id}` });
+  // 3 read, none fitted yet: pending_fit 3, never "target" even though read >= need
+  let c = counters({ posts: [post('a'), post('b'), post('c')], rejected: [] }, 3, 3);
+  assert.deepEqual([c.read, c.pending_fit, c.kept, c.rejected, c.need_more], [3, 3, 0, 0, 3]);
+  assert.equal(fitStop(c), '');
+  // after fit: 1 kept, 2 rejected -> still short, no stop
+  const r = applyDecisions({ posts: [post('a'), post('b'), post('c')], rejected: [] }, [{ id: 'a', fit: true, type: 'card' }, { id: 'b', fit: false, reason: 'x' }, { id: 'c', fit: false, reason: 'y' }]);
+  c = counters(r.raw, 3, 3);
+  assert.deepEqual([c.pending_fit, c.kept, c.rejected, c.need_more], [0, 1, 2, 2]);
+  assert.equal(fitStop(c), '');
+  assert.equal(counterLine(c), 'read 3 · kept 1 · rejected 2 · need 3 · missing 2');
+  // enough kept -> target
+  c = counters({ posts: [1, 2, 3].map((i) => ({ ...post(i), product_fit: { type: 't' } })), rejected: [] }, 3, 3);
+  assert.equal(fitStop(c), 'target');
+  // read >= 3 x need and short -> poor_source (factor configurable)
+  c = counters({ posts: [{ ...post('k'), product_fit: { type: 't' } }], rejected: Array.from({ length: 8 }, (_, i) => ({ post_url: `r${i}` })) }, 9, 3);
+  assert.deepEqual([c.pending_fit, c.need_more], [0, 2]);
+  assert.equal(fitStop(c), 'poor_source');
+  assert.equal(fitStop(c, 4), '');
+});
