@@ -1,4 +1,4 @@
-// Page -> tool transfer of the extract result (docs/research.md). The extract script POSTs its compact result to the app's own
+// Page -> tool transfer of the extract result (docs/research.md). The extract script's Node side POSTs its compact result to the app's own
 // loopback server instead of making the agent retype b64; `collect.mjs script` issues a ONE-TIME token per task (15 minutes),
 // src/server.mjs redeems it on POST /api/collect-result and writes <task dir>/page-result.json, `collect.mjs from-page` reads it.
 // The token lives only in the script file (script_dir) and, as a sha256 hash, in workspace/collect-tokens/. Never logged.
@@ -62,17 +62,18 @@ export function redeem({ token, task, body, now = Date.now(), dir = tokenDir(), 
   return { ok: true, status: 200 };
 }
 
-// Code that goes into the extract script (inside `async (page) => {...}`, after `r` and `p = packB64(r)`): POST r, return only a summary.
+// Code that goes into the extract script (inside `async (page) => {...}`, after `r` and `p = packB64(r)`): the script's NODE side
+// (the Playwright MCP process, outside page.evaluate: no page CSP, no CORS, no Private Network Access) POSTs r to the app and returns
+// only a summary; if that fails it returns saved:false + reason + the b64 line.
 export const POST_JS = `const post = o.post;
   const summary = (x) => Object.assign({ platform: r.platform, total: r.total, total_on_page: r.total_on_page, reason: r.reason }, x);
+  let why = 'standalone task: no transfer token';
   if (post && post.url && post.token) {
     try {
       const body = JSON.stringify(Object.assign({}, r, { tag: p.tag }));
-      const ok = await page.evaluate(async (a) => {
-        const res = await fetch(a.url, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'text/plain', 'X-Collect-Token': a.token }, body: a.body, signal: AbortSignal.timeout(8000) });
-        return res.ok;
-      }, { url: post.url, token: post.token, body });
-      if (ok) return summary({ saved: true, tag: p.tag, bytes: body.length });
-    } catch (e) { /* blocked or not reachable: fall back to b64 below */ }
+      const res = await page.context().request.post(post.url, { headers: { 'X-Collect-Token': post.token, 'content-type': 'text/plain' }, data: body, timeout: 10000 });
+      if (res.ok()) return summary({ saved: true, status: res.status(), tag: p.tag, bytes: body.length });
+      why = 'app answered HTTP ' + res.status();
+    } catch (e) { why = 'post failed: ' + String((e && e.message) || e).slice(0, 120); }
   }
-  return summary({ saved: false, tag: p.tag, b64: p.line });`;
+  return summary({ saved: false, reason_saved: why, tag: p.tag, b64: p.line });`;

@@ -88,6 +88,7 @@ export function pageScript(opts) {
   const o = { platform: 'facebook', max: 0, seen: [], compact: COMPACT, ...opts, sel: { ...FB, done_attr: '' },
     wall: { login_form: SELECTORS.wall.login_form, captcha: SELECTORS.wall.captcha, dialog: SELECTORS.wall.dialog }, blocks: BLOCK_REASONS };
   return `async (page) => {
+  await page.bringToFront();
   const packB64 = ${packB64};
   const o = ${JSON.stringify(o)};
   const r = await page.evaluate((o) => {
