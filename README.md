@@ -44,7 +44,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 |---|---|
 | Overview | Brand, skill, trạng thái, số bài |
 | Library | Bài tham khảo đã crawl: Available (còn dùng được, thẻ ghi "new" hoặc "used N×") / Removed (không dùng nữa, kèm lý do); một bài có thể gợi ý nhiều bài (mỗi lần góc mới); Preview: **Make a post from this** (sang Prompt: Create & publish, 1 bài, `--items`, tuỳ chọn Scene-swap), Remove (lý do tuỳ chọn), Restore |
-| Posts | Bài của mình: To review · Approved (chờ gửi) · Scheduled (trên Metricool) · Posted |
+| Posts | Bài của mình: To review · Approved (chờ gửi) · Scheduled (trên Metricool) · Posted; bài album xem trước đủ mọi ảnh, ảnh bìa trước |
 | Prompt | Lấy prompt để chạy |
 | Settings | Tài khoản, yêu cầu, cài đặt tool |
 
@@ -67,6 +67,7 @@ Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**.
 | `research.dedupe` | ngưỡng trùng: `image_distance` (/256), `caption_similarity` (0–1) |
 | `codex.command`, `codex.timeout_minutes` | lệnh chạy Codex, thời gian chờ tối đa |
 | `codex.concurrency`, `codex.retry_wait_seconds` | số ảnh Codex làm cùng lúc trên cả máy (3), giây chờ trước khi thử lại khi Codex báo hết lượt (60) |
+| `posts.images_per_post` | `[min, max]` số ảnh mỗi bài, chọn ngẫu nhiên (mặc định `[1, 3]`); thương hiệu đè trong `workspace/brands/<id>.json` `posts.images_per_post`. 1 ảnh = `image.png`; nhiều ảnh = `image-01.png` (bìa), `image-02.png`...; chữ trên ảnh luôn tiếng Anh |
 | `ffmpeg.command` | lệnh ffmpeg (watermark, đọc WebP khi dedupe) |
 | `skillsRoot` | thư mục chứa các skill thương hiệu |
 | `remove_watermark.script` | script xoá metadata ảnh |
