@@ -19,6 +19,7 @@ import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar } from "../scripts/store.mjs";
 import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
+import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
@@ -238,6 +239,12 @@ async function handle(req, res) {
         sources: listItems(b.id, { status: "new" }).items.reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
       }];
     })) };
+  });
+  // Research platforms: the adapter registry (status, short note) + the linked brands whose skill enables each platform (same source as /api/prompts discovery_platforms).
+  if (path === "/api/research-platforms" && req.method === "GET") return api(res, () => {
+    const brands = discovered().brands.filter((b) => b.usable);
+    const short = (n) => { const t = String(n || "").split(/[.;]| \(/)[0].trim(); return t.length > 110 ? `${t.slice(0, 107)}...` : t; };
+    return { platforms: Object.entries(PLATFORM_REGISTRY).map(([id, e]) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), status: e.status, checked: e.checked || "", note: short(e.note), enabled_for: brands.filter((b) => (b.discovery_platforms || []).includes(id)).map((b) => b.id) })), brands: brands.map((b) => ({ id: b.id, name: b.brand })) };
   });
   if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], discovery_platforms: b.discovery_platforms || [], posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.

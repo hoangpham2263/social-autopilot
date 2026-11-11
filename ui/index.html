@@ -278,6 +278,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
       <div class="field" data-opt="research" hidden><span class="label" title="The brand's reference pages (social.json research.sources), collected first; none ticked = all">Reference pages</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
       <div class="field" data-opt="research" hidden><span class="label" title="Search more posts by the brand's keywords/hashtags on these platforms after the reference pages (default: every enabled platform of the skill)">Discovery platforms</span><details class="select" id="prPlatBox"><summary id="prPlatSum">All</summary><div class="options" id="prPlat"></div></details></div>
+      <div class="field" data-opt="research" hidden><span class="label" title="Research crawl adapters: whether each platform is ready, and which brands have it on in their skill">Platforms</span><div id="prPlatInfo"></div></div>
       <div class="field" data-opt="research" hidden><label for="prKw" title="Comma-separated; empty = the skill's keywords and hashtags">Keywords</label><input type="text" id="prKw" placeholder="from the skill"></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run: reference pages first, then discovery until it is met">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="research" hidden><label for="prKind" title="How the reference pages are read">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
@@ -825,6 +826,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#prPlat").innerHTML = plats.map((p) => `<label><input type="checkbox" value="${esc(p)}"${prPlatOff.has(p) ? "" : " checked"}>${esc(platformName(p))}</label>`).join("") || `<div class="meta">No discovery platforms in the skill.</div>`;
     for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) prPlatOff.delete(c.value); else prPlatOff.add(c.value); platLabel(); regenerate(); };
     platLabel();
+    drawPlatInfo();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
     $("#prCount").placeholder = publishOnly ? "all" : "auto";
     $("#prCount").title = publishOnly ? "Empty = every approved post not sent yet; N = at most N per brand, oldest approved first" : `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
@@ -841,6 +843,22 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (modeKey(prMode) !== shownRunMode || !runTimer) loadProgress();
   }
   let prPlatOff = new Set();
+  // Read-only "Platforms" block (Research mode): adapter status + which brands have each platform on. Silent if the endpoint fails.
+  let platInfo = null;
+  const PLAT_CHIP = { ok: ["Ready", "c-green"], untested: ["Needs check", "c-amber"], broken: ["Blocked", "c-red"] };
+  function drawPlatInfo() {
+    const box = $("#prPlatInfo");
+    if (!box) return;
+    const sel = $("#prBrand").value, names = Object.fromEntries(arr(platInfo?.brands).map((b) => [b.id, b.name || b.id]));
+    box.innerHTML = arr(platInfo?.platforms).map((p) => {
+      const [t, c] = PLAT_CHIP[p.status] || [p.status || "?", ""], on = arr(p.enabled_for), one = sel && names[sel];
+      const who = one ? (on.includes(sel) ? "on" : "off") : (on.length ? on.map((id) => names[id] || id).join(", ") : "off");
+      const tip = [p.note, p.checked ? `checked ${p.checked}` : ""].filter(Boolean).join(" · ");
+      return `<div class="meta" title="${esc(tip)}"><span class="status-tag ${c}">${esc(t)}</span> ${esc(PLATFORM_TEXT[p.id] || p.name)}: ${esc(who)}</div>`;
+    }).join("");
+  }
+  getJson("/api/research-platforms").then((r) => { platInfo = r; drawPlatInfo(); }).catch(() => {});
+
   function platLabel() {
     const all = $$("#prPlat input"), on = all.filter((x) => x.checked).map((x) => platformName(x.value));
     $("#prPlatSum").textContent = !all.length ? "None" : on.length === all.length ? "All" : on.length ? on.join(", ") : "None";
