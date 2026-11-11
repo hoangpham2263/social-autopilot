@@ -42,7 +42,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, latestRun, brandSources, inside, brandDiscovery, DISCOVERY_PLATFORMS, RETIRED_PLATFORMS } from './lib.mjs';
 import { adapterStatus } from './platforms/index.mjs';
-import { scrollWait, scrollHint } from './collect-pagemode.mjs';
+import { scrollWait, scrollHint, BROWSER_RULES } from './collect-pagemode.mjs';
 import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf } from './store.mjs';
 
 const logFile = () => path.join(workspace, 'research-log.json');
@@ -137,7 +137,7 @@ export function collectInfo(brand, kind, id, platform, share = 0, url = '') {
     stop_rules: 'stop when: the time limit (research.source_minutes, default 3) is over; the target is reached; 3 extracts in a row bring no new posts; every post is already known; a login wall / captcha / checkpoint / closed page shows (result --state blocked|end|known). Fallback: ' + FALLBACK,
     adapter: { platform, ...a } };
 }
-const doText = (brand, kind, id, extra, states) => `ONE path: open the "open" URL with Playwright MCP (browser_navigate); then loop: run the script command (it writes extract.js and prints its path), run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste (it only reads the page now and returns at once), pass the one-line b64 to from_page AS IS (never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json and says stop or scroll), scroll as in "scroll", extract again, until a stop rule (stop_rules) holds${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and extract again. At most the time limit per source (see time_limit_minutes / elapsed). ${FALLBACK}`;
+const doText = (brand, kind, id, extra, states) => `ONE path: open the "open" URL with Playwright MCP (browser_navigate); then loop: run the script command (it writes extract.js and prints its path), run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste (it only reads the page now and returns at once), pass the one-line b64 to from_page AS IS (never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json and says stop or scroll), scroll as in "scroll", extract again, until a stop rule (stop_rules) holds${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and extract again. At most the time limit per source (see time_limit_minutes / elapsed). ${FALLBACK} ${BROWSER_RULES}`;
 // Per-source time cap: next stamps issued_at the first time it issues a source/query; every later call prints elapsed and, over the limit, stop "time".
 export const sourceMinutes = (cfg = settings().research?.source_minutes) => (Number(cfg) > 0 ? Number(cfg) : 3);
 export const TIME_NEXT = "over the time limit: record research.mjs result --state partial --note 'time limit', keep what you already have, and go to the next source";

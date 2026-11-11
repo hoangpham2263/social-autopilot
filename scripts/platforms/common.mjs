@@ -175,6 +175,7 @@ export function buildPageScript(S, opts) {
   const wall = { login_form: S.wall.login_form, captcha: S.wall.captcha, dialog: S.wall.dialog, url: S.wall.url };
   const o = { compact: COMPACT, seen: [], ...opts, cfg, wall, post_fallback: !!S.post_fallback, author_fallback: !!S.author_fallback, caption_strip: S.caption_strip || '' };
   return `async (page) => {
+  await page.bringToFront();
   const packB64 = ${packB64};
   const o = ${JSON.stringify(o)};
   const r = await page.evaluate(async (o) => {

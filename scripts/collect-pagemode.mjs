@@ -105,9 +105,8 @@ const seenFile = (task) => path.join(task.dir, 'seen.json');
 const forArgOf = (task, brand) => `${brand ? `--brand ${brand.id} ` : ''}${task.kind === 'query' ? `--for-query ${task.id}` : task.kind === 'source' ? `--for-source ${task.id}` : `--platform ${task.platform}`}`;
 
 // One scroll wording for every place that prints it (research.mjs next, collect.mjs script). Facebook's feed does not load on End.
-export const scrollHint = (platform, lo, hi) => (platform === 'facebook'
-  ? 'Playwright MCP: scroll with browser_run_code_unsafe running `async (page) => { for (let i=0;i<3;i++){ await page.mouse.wheel(0,900); await page.waitForTimeout(1200);} await page.waitForTimeout(3500); }` (there is no browser_mouse_wheel tool); the End key does not load the Facebook feed'
-  : `Playwright MCP: press End (or the browser_run_code_unsafe page.mouse.wheel snippet) 1-2 times, then wait ${lo}-${hi} s before the next extract`);
+export const BROWSER_RULES = "Browser rules: start every browser_run_code_unsafe with `await page.bringToFront();` (a hidden tab never gets animation frames, so rAF-based waits and mouse.wheel hang); work in ONE tab: close tabs left over from earlier runs and open the source in a new tab; never use waitForFunction for page readiness (use waitForLoadState('domcontentloaded') with a short timeout, or waitForTimeout; if waitForFunction is unavoidable use { polling: 250, timeout: 10000 }); any single browser call that takes more than 30 s counts as stuck: stop using it and go on (fallback: read the page yourself). Scrolling: scrollBy first, page.mouse.wheel(0,900) only as fallback AFTER bringToFront (Facebook sometimes needs real scrolling to render its feed).";
+export const scrollHint = (platform, lo, hi) => `Playwright MCP: scroll with browser_run_code_unsafe running "async (page) => { await page.bringToFront(); for (let i=0;i<3;i++){ await page.evaluate(() => window.scrollBy(0, 900)); await page.waitForTimeout(1200);} await page.waitForTimeout(3500); }" (no mouse.wheel first: it waits for frames; only if the feed still does not render, page.mouse.wheel(0,900) AFTER bringToFront; the End key does not load the Facebook feed), then wait ${lo}-${hi} s before the next extract`;
 
 export function script(args) {
   const { brand, task } = taskOf(args);
