@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { issueToken, redeem, scriptDir, scriptFile, MAX_BODY, TOKEN_TTL_MS, ttlMs, maskToken } from '../scripts/collect-transfer.mjs';
+import { issueToken, tokenFor, findTaskDir, redeem, scriptDir, scriptFile, MAX_BODY, TOKEN_TTL_MS, ttlMs, maskToken } from '../scripts/collect-transfer.mjs';
 
 const setup = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-'));
@@ -56,4 +56,19 @@ test('token: a rejected attempt for another task spends it; masked form hides th
   assert.equal(again.status, 403);
   assert.match(again.error, /already used or expired/);
   assert.equal(maskToken('abcdef123456'), '****3456');
+});
+
+test('tokenFor: only without Sec-Fetch-Site and for a task of an open run; one token per task', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-'));
+  const runsRoot = path.join(root, 'runs'), dir = path.join(root, 'tok'), day = path.join(runsRoot, 'b', '2026-01-01'), td = path.join(day, 'src1');
+  fs.mkdirSync(td, { recursive: true });
+  fs.writeFileSync(path.join(day, 'run.json'), JSON.stringify({ sources: [{ id: 'src1', dir: td }] }));
+  assert.equal(findTaskDir('src1', runsRoot), td);
+  assert.equal(tokenFor({ headers: { 'sec-fetch-site': 'cross-site' }, task: 'src1', dir, runsRoot }).status, 403);
+  assert.equal(tokenFor({ headers: {}, task: 'nope', dir, runsRoot }).status, 404);
+  const a = tokenFor({ headers: {}, task: 'src1', dir, runsRoot }), b = tokenFor({ headers: {}, task: 'src1', dir, runsRoot });
+  assert.ok(a.ok && b.ok && a.token !== b.token);
+  assert.equal(fs.readdirSync(dir).length, 1); // the newer token replaced the older one
+  assert.equal(redeem({ token: a.token, task: 'src1', body, dir, runsRoot }).status, 403);
+  assert.equal(redeem({ token: b.token, task: 'src1', body, dir, runsRoot }).ok, true);
 });

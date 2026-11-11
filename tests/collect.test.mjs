@@ -273,3 +273,24 @@ test('counters + fitStop: kept decides, not posts read', async () => {
   assert.equal(fitStop(c), 'poor_source');
   assert.equal(fitStop(c, 4), '');
 });
+
+test('counterLine: source need / brand target / brand kept; will_ingest = all kept', async () => {
+  const { counters, counterLine } = await import('../scripts/collect.mjs');
+  const post = (i) => ({ collector_id: String(i), post_url: `u/${i}`, product_fit: { type: 't' } });
+  const c = counters({ posts: [1, 2, 3, 4, 5].map(post), rejected: [] }, 5, 3);
+  assert.equal(c.will_ingest, 5);
+  assert.equal(counterLine(c, { target: 10, kept: 5 }), 'read 5 · kept 5 · rejected 0 · source need 3 · brand target 10 · brand kept 5');
+});
+
+test('pendingFitOf: unjudged collect posts count; judged or non-collect raw do not', async () => {
+  const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+  const { pendingFitOf } = await import('../scripts/research.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-'));
+  const raw = (posts, rejected = []) => fs.writeFileSync(path.join(dir, 'raw.json'), JSON.stringify({ tool: 'collect', posts, rejected }));
+  raw([{ collector_id: 'a' }, { collector_id: 'b', product_fit: { type: 't' } }]);
+  assert.equal(pendingFitOf(dir), 1);
+  raw([{ collector_id: 'b', product_fit: { type: 't' } }], [{ post_url: 'x' }]);
+  assert.equal(pendingFitOf(dir), 0);
+  fs.writeFileSync(path.join(dir, 'raw.json'), JSON.stringify({ posts: [{ x: 1 }] }));
+  assert.equal(pendingFitOf(dir), 0);
+});

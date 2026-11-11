@@ -251,3 +251,12 @@ test('timeInfo: elapsed under the limit, stop "time" over it, nothing without a 
   assert.equal(over.stop, 'time'); assert.equal(over.next, TIME_NEXT);
   assert.deepEqual(timeInfo('', now, 3), {});
 });
+
+test('facebook script waits for the lazy feed on the Node side (no waitForFunction)', async () => {
+  const { pageScript } = await import('../scripts/platforms/facebook.mjs');
+  const code = pageScript({ found_by: 'x', max: 3, seen: [] });
+  assert.match(code, /waitForTimeout\(500\)/);
+  assert.match(code, /aria-posinset/);
+  assert.doesNotMatch(code, /waitForFunction/);
+  assert.doesNotMatch(code, /X-Collect-Token'?: ?post\.token\b.*saved:true.*token=/s);
+});
