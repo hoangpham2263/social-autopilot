@@ -56,7 +56,7 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .card.todo { border-color: #b06000; }
 .card .card-msg:empty { display: none; }
 .plats { margin: 0 0 24px; }
-.plat-row { display: flex; flex-wrap: wrap; gap: 12px; min-height: 100px; }
+.plat-row { display: flex; flex-wrap: wrap; gap: 12px; min-height: 80px; }
 .plat { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 104px; padding: 8px; border: 1px solid var(--line); background: #fff; }
 .plat-name { font-size: 12px; color: var(--muted); }
 .plat.blocked .plat-logo { opacity: .35; }
@@ -255,6 +255,9 @@ details.sec[open] > summary { margin-bottom: 12px; }
 }
 /* Soft corners: a small, uniform radius on controls and boxes. */
 :root { --r: 6px; }
+/* Everything clickable shows the pointer. */
+button:not(:disabled), .btn:not(:disabled), a[href], select:not(:disabled), summary, label[for], input[type=checkbox]:not(:disabled), input[type=radio]:not(:disabled), [data-act], [data-card], [data-page], .open-card, .linkbtn, [role=button] { cursor: pointer; }
+button:disabled, .btn:disabled { cursor: default; }
 nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); margin: 0 0 0 16px; }
 .btn, a.btn, button.btn, nav.tabs button, input:not([type=checkbox]):not([type=radio]), select, textarea, .card, fieldset, .plat, .status-tag, .setup-status, .reject-box, .ar-panel, .run-panel { border-radius: var(--r); }
 .status-tag { border-radius: 999px; }
@@ -913,6 +916,7 @@ nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--lin
   }
   let prPlatOff = new Set();
   // Overview "Research": one logo tile per research platform (GET /api/research-platforms), status chip; silent if the endpoint fails.
+  const DOT_OF = { "c-green": "dot-green", "c-amber": "dot-amber", "c-red": "dot-red", "": "dot-grey" };
   const PLAT_CHIP = { ok: ["Ready", "c-green"], untested: ["Needs check", "c-amber"], broken: ["Blocked", "c-red"] };
   // Official platform marks (Simple Icons, CC0 paths) in each brand colour; a platform without one gets a neutral letter.
   const PLAT_LOGO = {
@@ -931,8 +935,8 @@ nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--lin
       const names = Object.fromEntries(arr(r.brands).map((x) => [x.id, x.name || x.id])), list = arr(r.platforms).map((p, i) => [p, i]).sort((a, b) => (PLAT_ORDER[a[0].status] ?? 1) - (PLAT_ORDER[b[0].status] ?? 1) || a[1] - b[1]).map((x) => x[0]); // Ready first, then Needs check, then Blocked
       box.innerHTML = list.map((p) => {
         const [t, c] = PLAT_CHIP[p.status] || [p.status || "?", ""], on = arr(p.enabled_for), name = PLATFORM_TEXT[p.id] || p.name || p.id;
-        const tip = [name, p.note, p.checked ? "Checked " + p.checked : "", ...Object.keys(names).map((id) => names[id] + ": " + (on.includes(id) ? "on" : "off"))].filter(Boolean).join("\n");
-        return '<div class="plat' + (p.status === "broken" ? " blocked" : "") + '" title="' + esc(tip) + '">' + platLogo(p.id, name) + '<span class="plat-name">' + esc(name) + '</span><span class="status-tag ' + c + '">' + esc(t) + '</span></div>';
+        const tip = [name + " - " + t, p.note, p.checked ? "Checked " + p.checked : "", ...Object.keys(names).map((id) => names[id] + ": " + (on.includes(id) ? "on" : "off"))].filter(Boolean).join("\n");
+        return '<div class="plat' + (p.status === "broken" ? " blocked" : "") + '" title="' + esc(tip) + '">' + platLogo(p.id, name) + '<span class="plat-name"><span class="dot ' + DOT_OF[c] + '" title="' + esc(t) + '"></span>' + esc(name) + '</span></div>';
       }).join("");
       box.closest("fieldset").style.visibility = list.length ? "" : "hidden";
     } catch { /* quiet */ }
