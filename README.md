@@ -55,7 +55,7 @@ Tab Prompt có nút **Run now** cạnh **Copy prompt** (Copy vẫn như cũ). Ap
 
 ## Connecting Chrome
 1. Install the **Playwright MCP Bridge** extension in the Chrome profile you want to use.
-2. In the app, Prompt tab, open **Chrome connection** and choose that profile.
+2. In the app, Run tab, open **Chrome connection** and choose that profile.
 3. Click **Open Chrome**. The first time (and once per session), click **Connect** on the Playwright MCP Bridge page; if the agent says it is not connected it runs `node scripts/chrome-connect.mjs --url "<connect url>"` and waits for you to click Connect and say "connected".
 4. Click **Check**: instant, done by the app (Chrome found, profile exists, extension installed; it cannot see logins). **Full check in Claude Code** also tests the connection and which sites are signed in.
 Nothing is machine-specific: Chrome and its profiles are discovered; override with `research.chrome_path` and `research.chrome_user_data_dir` in `workspace/settings.json` if needed.

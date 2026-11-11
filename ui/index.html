@@ -261,7 +261,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
     <button type="button" data-page="overview">Overview</button>
     <button type="button" data-page="store">Library</button>
     <button type="button" data-page="posts">Posts</button>
-    <button type="button" data-page="prompt">Prompt</button>
+    <button type="button" data-page="prompt">Run</button>
     <button type="button" data-page="log">Log</button>
     <button type="button" data-page="settings">Settings</button>
   </nav>
@@ -785,7 +785,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
           ${usesN(it) ? `<dt>Used for</dt><dd><ul class="sp-dups">${arr(it.uses).map((u) => `<li>${esc(u.draft || u.idea || "?")}${u.scene ? ` · ${esc(u.scene)}` : ""}${u.sign_text ? ` · "${esc(u.sign_text)}"` : ""}${u.image_mode === "scene-swap" ? " · scene-swap" : ""} · ${esc(String(u.at || "").slice(0, 10))}</li>`).join("")}</ul></dd>` : ""}
         </dl>
         <div><div class="meta">Duplicates</div>${dups.length || merged > 1 ? `<ul class="sp-dups">${merged > 1 ? `<li>One post, ${merged} links (merged when captured)</li>` : ""}${dups.map((x) => `<li>${esc(x.reason)}${x.detail ? ` (${esc(x.detail)})` : ""} · ${esc(x.source)} · ${esc(String(x.at).slice(0, 10))}${x.post_url ? ` · ${link(x.post_url, "duplicate")}` : ""}</li>`).join("")}</ul>` : `<div class="meta">No duplicates.</div>`}</div>
-        <div class="row-actions">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn primary" type="button" data-make title="Prompt tab: Create & publish, this brand, 1 post from this item (--items ${esc(it.id)})">Make a post from this</button><button class="btn" type="button" data-reject title="Not used anymore (not suitable, or used enough); Restore brings it back">Remove</button>` : ""}</div>
+        <div class="row-actions">${it.status === "rejected" ? `<button class="btn" type="button" data-restore>Restore</button>` : it.status === "new" ? `<button class="btn primary" type="button" data-make title="Run tab: Create & publish, this brand, 1 post from this item (--items ${esc(it.id)})">Make a post from this</button><button class="btn" type="button" data-reject title="Not used anymore (not suitable, or used enough); Restore brings it back">Remove</button>` : ""}</div>
         <div class="reject-box" data-box="rejected" hidden><input type="text" placeholder="Reason (optional, e.g. used enough)"><button class="btn" type="button" data-confirm>Confirm remove</button></div>
         <div class="msg">${msg}</div>`;
       openOverlay(`Library ${esc(brand)} · ${esc(it.id)}`, `<div class="pv-layout sp-layout">${stage}<div class="pv-side">${side}</div></div>`,
@@ -1125,7 +1125,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
   const clock = (t) => (t ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
   const took = (a, b) => { const s = Math.max(0, Math.round(((b ? Date.parse(b) : Date.now()) - Date.parse(a)) / 1000)); return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`; };
   let runTimer = 0, shownRunMode = "";
-  // ----- Chrome check line: read only, refreshed every 3 s while the Prompt tab is open; never touches Chrome -----
+  // ----- Chrome check line: read only, refreshed every 3 s while the Run tab is open; never touches Chrome -----
   const CHROME_PROMPT = [
     "Test the Chrome connection only (read only: never sign in, click, type or accept anything; stop on a login wall and report it).",
     "0. Connect: if browser_tabs shows a connect.html?mcpRelayUrl= tab, or the browser tools say they are not connected, run node scripts/chrome-connect.mjs --url \"<that exact url from browser_tabs>\" (it opens the profile chosen in the app), then STOP and tell the user to click Connect in the window that opened and to say \"connected\". Never click Connect or sign in for the user.",
@@ -1259,7 +1259,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
     $("#prRunDetail").textContent = active || run?.finished ? run?.detail || "" : "";
     $("#prRunDetail").title = $("#prRunDetail").textContent;
     for (const a of $$("#prRunSum [data-goto-log]")) a.onclick = (e) => { e.preventDefault(); lgMode = mode; store.set("lgMode", mode); show("log"); };
-    // Poll while the run is active and the Prompt tab is open.
+    // Poll while the run is active and the Run tab is open.
     if (active && !$("#page-prompt").hidden) runTimer = setTimeout(loadProgress, 3000);
   });
 

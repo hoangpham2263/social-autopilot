@@ -11,7 +11,7 @@ Các quyết định của người dùng dưới đây thắng mọi chỗ khá
 | **Mode 3: Publish approved** | Claude Code hoặc Codex (ChatGPT từ JSON payload) | `pipeline.mjs publish`: chỉ hẹn giờ các bài Approved chưa gửi (Start From tomorrow / From today, chừa 15 phút) → `record` → đối chiếu; không làm bài |
 | **App** | Người dùng | Overview (brand Metricool ↔ skill), Library, Posts (Approve / Drop), Prompt, Settings |
 
-- Prompt ở tab Prompt ngắn (tối đa 18 dòng, mẫu TASK/OPTIONS/TOOL/SKILL/STEPS/STOP IF/NEVER, bước đánh số khớp 1:1 với RUNBOOK); mọi chi tiết ở RUNBOOK. Đường chính Mode 2/3: `scripts/pipeline.mjs`.
+- Prompt ở tab Run ngắn (tối đa 18 dòng, mẫu TASK/OPTIONS/TOOL/SKILL/STEPS/STOP IF/NEVER, bước đánh số khớp 1:1 với RUNBOOK); mọi chi tiết ở RUNBOOK. Đường chính Mode 2/3: `scripts/pipeline.mjs`.
 - Trạng thái người dùng thấy: To review → Approved (chờ gửi) → Scheduled (trên Metricool, không bao giờ gửi lại) → Posted; lỗi hiện dấu đỏ.
 - Hai agent hoặc agent và app có thể chồng nhau: mọi đọc-sửa-ghi file chung có khoá và ghi nguyên tử.
 
