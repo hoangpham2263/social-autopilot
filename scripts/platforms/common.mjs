@@ -77,7 +77,7 @@ export function wallSignals(root, cfg) {
   };
   const body = doc.body || doc.documentElement;
   return {
-    url: (doc.location && doc.location.href) || cfg.url || '',
+    url: (doc.location && doc.location.href) || (typeof cfg.url === 'string' ? cfg.url : ''),
     title: String(doc.title || ''),
     text: String((body && body.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 3000),
     login_form: has(cfg.login_form), captcha: has(cfg.captcha, true), dialog: has(cfg.dialog),

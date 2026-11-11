@@ -54,7 +54,7 @@ test('page result -> posts: dedupe by id, known posts dropped before download, l
   assert.equal(pageResultPosts({ loginWall: true, tiles }, pinterest).loginWall, true);
   assert.equal(pageResultPosts({ tiles }, pinterest, { max: 1 }).posts.length, 1);
   assert.deepEqual(parsePageResult('### Result\n{"a":1}\n### Ran'), { a: 1 });
-  assert.throws(() => parsePageResult('nothing'), /JSON/);
+  assert.throws(() => parsePageResult('nothing'), /không có {/);
 });
 
 test('extract script: self-contained, read only, no navigation / scroll / pause; carries the seen ids', () => {
@@ -63,7 +63,9 @@ test('extract script: self-contained, read only, no navigation / scroll / pause;
     assert.match(s, /^async \(page\) => \{/);
     assert.doesNotThrow(() => new Function(`return (${s});`), 'valid JS');
     assert.match(s, /"seen":\["111","222"\]/);
-    assert.doesNotMatch(s, /page\.goto|scrollBy|scrollTo|setTimeout|\.click\(|\.fill\(|dispatchEvent|method:\s*'POST'/i, 'extract only');
+    // the only timer is the 250 ms stagger between the GET reads of post pages (pinterest/instagram); the transfer POST is Node side (collect-transfer.mjs)
+    const noStagger = s.replace(/await new Promise\(\(r\) => setTimeout\(r, 250 \* n\)\);/g, '');
+    assert.doesNotMatch(noStagger, /page\.goto|scrollBy|scrollTo|setTimeout|\.click\(|\.fill\(|dispatchEvent|method:\s*'POST'/i, 'extract only');
   }
   assert.match(instagram.pageScript({ found_by: '' }), /"post_fallback":true/);
   assert.match(instagram.pageScript({ found_by: '' }), /AbortSignal\.timeout/);
@@ -178,7 +180,7 @@ test('facebook: reason codes, closed page, tile -> post', async () => {
   assert.equal(fb.isClosedPage('Urban Hardwoods · Permanently closed'), true);
   assert.equal(fb.isClosedPage('Open now'), false);
   const p = fb.toPost({ url: 'https://www.facebook.com/photo/?fbid=1333219135645308&set=pcb.1333219525645269', image_urls: ['https://scontent.x.fbcdn.net/a.jpg'], caption: 'Neon', author: 'Hineon' }, { found_by: 'reference page' });
-  assert.deepEqual([p.id, p.image_urls.length, p.caption, p.author], ['1333219135645308', 1, 'Neon', 'Hineon']);
+  assert.deepEqual([p.id, p.image_urls.length, p.caption, p.author], ['1333219525645269', 1, 'Neon', 'Hineon']);
   const { parseHTML } = await import('linkedom');
   const { document: login } = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-login.html'), 'utf8'));
   const { wallSignals } = await import('../scripts/platforms/common.mjs');
@@ -187,18 +189,18 @@ test('facebook: reason codes, closed page, tile -> post', async () => {
 
 test('facebook: post permalink id with photo fbids as aliases, caption of the post container, date text (fixture fb-album.html)', async () => {
   const fb = getAdapter('facebook');
-  assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/photo/?fbid=111111', ['https://www.facebook.com/x/posts/pfbid0abcdefghijkl']), { id: 'pfbid0abcdefghijkl', aliases: ['111111'] });
+  assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/photo/?fbid=111111', ['https://www.facebook.com/x/posts/pfbid0abcdefghijkl']), { id: 'pfbid0abcdefghijkl', aliases: ['111111'], kind: 'post' });
   assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/permalink.php?story_fbid=222222&id=9', []).id, '222222');
-  assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/photo/?fbid=333333', []), { id: '333333', aliases: [] });
+  assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/photo/?fbid=333333', []), { id: '333333', aliases: [], kind: 'photo' });
   const { parseHTML } = await import('linkedom');
   const { extractFeed, SELECTORS } = await import('../scripts/fb-extract.mjs');
   const { document } = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-album.html'), 'utf8'));
   const posts = extractFeed(document, { ...SELECTORS, done_attr: '' }).posts;
   const got = posts.map((p) => [fb.fbPostKeys(p.post_url, p.alt_urls), p.caption, p.date_text]);
   assert.deepEqual(got, [
-    [{ id: 'pfbid02AbCdEfGhIjKlMnOpQrStUv', aliases: ['1333219135645308', '1333219135645399'] }, 'Our new neon sign album for weddings', 'November 2, 2024 at 10:00 AM'],
-    [{ id: '1444444444444444', aliases: [] }, 'Single photo post', 'Monday, October 7, 2024 at 9:15 AM'],
-    [{ id: '9876543210123', aliases: [] }, 'No date here', ''],
+    [{ id: 'pfbid02AbCdEfGhIjKlMnOpQrStUv', aliases: ['1333219525645269', '1333219135645308', '1333219135645399'], kind: 'post' }, 'Our new neon sign album for weddings', 'November 2, 2024 at 10:00 AM'],
+    [{ id: '1444444444444444', aliases: [], kind: 'photo' }, 'Single photo post', 'Monday, October 7, 2024 at 9:15 AM'],
+    [{ id: '9876543210123', aliases: [], kind: 'post' }, 'No date here', ''],
   ]);
   assert.equal(document.querySelectorAll('[data-sa-seen]').length, 0, 'the extract leaves no mark in the DOM');
   // the stored post carries the photo fbids as links, so the known-post check matches either id
@@ -212,6 +214,8 @@ test('facebook: post permalink id with photo fbids as aliases, caption of the po
 test('facebook feed: real permalink first, set=pcb id as post key, date from aria-label, cut at a word', async () => {
   const fb = getAdapter('facebook');
   const { cutWords } = await import('../scripts/platforms/common.mjs');
+  const { parseHTML } = await import('linkedom');
+  const { extractFeed, SELECTORS: FB } = await import('../scripts/fb-extract.mjs');
   const doc = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-photo-posts.html'), 'utf8')).document;
   const posts = extractFeed(doc, FB).posts;
   const k0 = fb.fbPostKeys(posts[0].post_url, posts[0].alt_urls);
