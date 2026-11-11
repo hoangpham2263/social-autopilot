@@ -2,6 +2,7 @@
   "version": 1,
   "skillsRoot": "../vaniecom-workspace/skills",
   "research": {
+    "source_minutes": 3,
     "delay_seconds": [
       5,
       15

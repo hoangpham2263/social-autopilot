@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { out, fail, need, settings, loadBrand, readJson, writeJson } from './lib.mjs';
 import { track } from './progress.mjs';
-import { openRun } from './research.mjs';
+import { openRun, timeInfo, TIME_NEXT } from './research.mjs';
 import { counters, counterLine, fitStop, progressFile } from './collect.mjs';
 import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
@@ -125,7 +125,7 @@ export function script(args) {
   const [lo, hi] = scrollWait(task.platform);
   process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, seen_ids: seen.length,
     run: 'browser_run_code_unsafe with the filename parameter = file (do not paste the script); it reads the page as it is now and returns ONE line {b64, tag}',
-    from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)} --b64 <b64>`, scroll: scrollHint(task.platform, lo, hi) }) + '\n');
+    from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)} --b64 <b64>`, scroll: scrollHint(task.platform, lo, hi), ...timeInfo(task.started) }) + '\n');
 }
 
 export async function fromPage(args) {
@@ -182,7 +182,8 @@ export async function fromPage(args) {
   const poor = fs0 === 'poor_source';
   const summary = counterLine(cnt);
   const stop = blocked ? 'blocked' : target ? 'target' : poor ? 'poor_source' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
-  const state = blocked ? 'blocked' : suggestedState(task.kind, { blocked, error: /^error/.test(note) || !loaded.verified, limit: target, read: all.length, stop: task.kind === 'source' ? (allKnown ? 'known' : stop === 'no_new' ? 'end' : '') : '' });
+  const tm = timeInfo(task.started);
+  const state = blocked ? 'blocked' : suggestedState(task.kind, { blocked, error: /^error/.test(note), limit: target, read: all.length, stop: task.kind === 'source' ? (allKnown ? 'known' : stop === 'no_new' ? 'end' : '') : '' });
   const idArg = task.kind === 'query' ? `--query ${task.id}` : task.kind === 'source' ? `--source ${task.id}` : '';
   const b = brand?.id || '<id>';
   const trust = isTrusted(task.platform) && !/^error/.test(note);
@@ -190,12 +191,13 @@ export async function fromPage(args) {
     : `node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`;
   const [lo, hi] = scrollWait(task.platform);
   const next = blocked ? `Bị chặn (${reason || 'login wall'}): node scripts/research.mjs result --brand ${b} ${idArg} --state blocked --note "${note.replace(/"/g, "'")}" (dừng nền tảng này).`
+    : tm.time_over && !stop ? (cnt.pending_fit > 0 && task.max ? 'Nhìn ảnh review[] và chạy collect.mjs fit ngay, rồi: ' : '') + TIME_NEXT
     : !blocked && cnt.pending_fit > 0 && task.max ? `Nhìn ảnh review[] rồi chạy ngay: node scripts/collect.mjs fit --brand ${b} ${task.kind === 'query' ? '--for-query' : '--for-source'} ${task.id} --file <decisions.json>, rồi đọc need_more (run collect.mjs fit on review[], then check need_more).`
       : stop ? `Dừng (${stop}): ${done}`
       : `Cuộn tiếp (End / con lăn 1-2 lần, chờ ${lo}-${hi} s), rồi chạy lại script (node scripts/collect.mjs script ${forArgOf(task, brand)}) và from-page.${trust ? '' : ` Adapter ${st.status}: so kết quả với trang thật trước khi tin.`}`;
   if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: extract ${extracts}, +${posts.length} · ${summary}` });
   out({ brand: brand?.id || '', platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, adapter: st, trusted: trust,
     verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0, counters: cnt, summary,
-    skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || '', suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
+    ...(loaded.verified ? {} : { warning: 'hand-made result (no total/checksum): not verified, check the posts against the page' }), ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || (tm.time_over ? 'time' : ''), suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
     review: posts.map((p, i) => ({ n: prevPosts.length + i + 1, id: p.collector_id, url: p.post_url, author: p.author, date: p.posted_date, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
 }

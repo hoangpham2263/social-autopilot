@@ -18,7 +18,7 @@
 // page = state blocked, nothing more opened. Cookies stay in Chrome; nothing secret is written.
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
-import { openRun, nextTask } from './research.mjs';
+import { openRun, nextTask, timeInfo, TIME_NEXT } from './research.mjs';
 import { track } from './progress.mjs';
 import { REGISTRY, STATUSES, getAdapter, adapterStatus, platformIds } from './platforms/index.mjs';
 
@@ -37,12 +37,12 @@ export function resolveTask(args, run = null) {
       const q = run.discovery?.queries?.find((x) => x.id === String(args['for-query']));
       if (!q) throw new Error(`Truy vấn "${args['for-query']}" không có trong lượt này.`);
       const share = nxt.step === 'discovery' && nxt.query === q.id ? nxt.share : 0;
-      return { kind: 'query', id: q.id, platform: q.platform, url: q.url, found_by: q.found_by, dir: q.dir, raw_file: q.raw_file, max: num(args.max) || share || 30, mode: { full: true }, known_file: '' };
+      return { kind: 'query', id: q.id, platform: q.platform, url: q.url, found_by: q.found_by, dir: q.dir, raw_file: q.raw_file, max: num(args.max) || share || 30, mode: { full: true }, known_file: '', started: q.issued_at || '' };
     }
     const s = run.sources?.find((x) => x.id === String(args['for-source']));
     if (!s) throw new Error(`Nguồn "${args['for-source']}" không có trong lượt này.`);
     const share = nxt.step === 'reference' && nxt.source === s.id ? nxt.share : 0;
-    return { kind: 'source', id: s.id, platform: s.platform || '', url: s.url, found_by: 'reference page', name: s.name, dir: s.dir, raw_file: s.raw_file, max: num(args.max) || share || 0, mode: run.mode || {}, known_file: s.known_file || '' };
+    return { kind: 'source', id: s.id, platform: s.platform || '', url: s.url, found_by: 'reference page', name: s.name, dir: s.dir, raw_file: s.raw_file, max: num(args.max) || share || 0, mode: run.mode || {}, known_file: s.known_file || '', started: s.issued_at || '' };
   }
   const platform = String(args.platform && args.platform !== true ? args.platform : '').toLowerCase();
   if (!platform) throw new Error('Thiếu --platform (hoặc --for-query / --for-source).');
@@ -121,8 +121,9 @@ function fit(args) {
   const stop = fitStop(c, settings().research?.max_read_factor);
   const summary = counterLine(c);
   if (task.kind !== 'standalone') track('crawl', { brand: brand.id, detail: `${task.id}: ${summary}` });
-  out({ brand: brand.id, raw_file: task.raw_file, fit: r.fit, off_brand: r.off, undecided: r.undecided, ...c, summary, stop,
-    next: stop === 'target' ? 'Đủ bài giữ lại (need_more 0): dừng, rồi ingest + result.' : stop === 'poor_source' ? 'Nguồn này ít bài hợp thương hiệu: dừng, chuyển nguồn khác (ingest + result).' : c.need_more > 0 && !r.undecided.length ? 'Còn thiếu bài: cuộn tiếp, extract, from-page, nhìn ảnh, fit lại.' : r.undecided.length ? 'Còn bài chưa có quyết định: ingest sẽ từ chối bài thiếu product_fit.type; quyết nốt rồi chạy lại fit.' : 'node scripts/research.mjs ingest ... rồi result ...' });
+  const tm = timeInfo(task.started);
+  out({ brand: brand.id, raw_file: task.raw_file, fit: r.fit, off_brand: r.off, undecided: r.undecided, ...c, summary, stop, ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), ...(tm.time_over && !stop ? { stop: 'time' } : {}),
+    next: tm.time_over && !stop ? TIME_NEXT : stop === 'target' ? 'Đủ bài giữ lại (need_more 0): dừng, rồi ingest + result.' : stop === 'poor_source' ? 'Nguồn này ít bài hợp thương hiệu: dừng, chuyển nguồn khác (ingest + result).' : c.need_more > 0 && !r.undecided.length ? 'Còn thiếu bài: cuộn tiếp, extract, from-page, nhìn ảnh, fit lại.' : r.undecided.length ? 'Còn bài chưa có quyết định: ingest sẽ từ chối bài thiếu product_fit.type; quyết nốt rồi chạy lại fit.' : 'node scripts/research.mjs ingest ... rồi result ...' });
 }
 
 if (isMain(import.meta.url)) main(async () => {

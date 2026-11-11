@@ -145,7 +145,7 @@ export function saveSettings(input = {}) {
       // Plan ahead (days): Create & publish makes enough posts to cover this many days at posts_per_day.
       planning: { ahead_days: int(pl.ahead_days ?? cur.planning?.ahead_days ?? 7, 'planning.ahead_days', 1) },
       // Research: only the human-like pause between page actions; there are no run or post limits.
-      research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay },
+      research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay, source_minutes: int(r.source_minutes ?? cr.source_minutes ?? 3, 'research.source_minutes', 1) },
       metricool: Object.fromEntries(Object.entries(cur.metricool || {}).filter(([k]) => k !== 'default_mode')),
       codex: { command: str(cx.command ?? cur.codex?.command, 'codex.command'), timeout_minutes: int(cx.timeout_minutes ?? cur.codex?.timeout_minutes, 'codex.timeout_minutes', 1), concurrency: int(cx.concurrency ?? cur.codex?.concurrency ?? 3, 'codex.concurrency', 1), retry_wait_seconds: int(cx.retry_wait_seconds ?? cur.codex?.retry_wait_seconds ?? 60, 'codex.retry_wait_seconds', 0) },
       ffmpeg: { command: str(ff.command ?? cur.ffmpeg?.command, 'ffmpeg.command') },

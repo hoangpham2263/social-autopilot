@@ -134,10 +134,20 @@ export function collectInfo(brand, kind, id, platform, share = 0, url = '') {
   const f = `--brand ${brand} --for-${kind} ${id}`;
   return { open: url, scroll: scrollHint(platform, lo, hi), scroll_wait_seconds: [lo, hi],
     script: `node scripts/collect.mjs script ${f}`, script_run: 'that command WRITES the extract script to <step dir>/extract.js and prints its path; run it with browser_run_code_unsafe using the filename parameter (never paste it)', from_page: `node scripts/collect.mjs from-page ${f} --b64 <b64>`, target: share || 0,
-    stop_rules: 'stop when: the target is reached; 3 extracts in a row bring no new posts; every post is already known; a login wall / captcha / checkpoint / closed page shows (result --state blocked|end|known)',
+    stop_rules: 'stop when: the time limit (research.source_minutes, default 3) is over; the target is reached; 3 extracts in a row bring no new posts; every post is already known; a login wall / captcha / checkpoint / closed page shows (result --state blocked|end|known). Fallback: ' + FALLBACK,
     adapter: { platform, ...a } };
 }
-const doText = (brand, kind, id, extra, states) => `ONE path: open the "open" URL with Playwright MCP (browser_navigate); then loop: run the script command (it writes extract.js and prints its path), run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste (it only reads the page now and returns at once), pass the one-line b64 to from_page AS IS (never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json and says stop or scroll), scroll as in "scroll", extract again, until a stop rule (stop_rules) holds${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and extract again`;
+const doText = (brand, kind, id, extra, states) => `ONE path: open the "open" URL with Playwright MCP (browser_navigate); then loop: run the script command (it writes extract.js and prints its path), run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste (it only reads the page now and returns at once), pass the one-line b64 to from_page AS IS (never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json and says stop or scroll), scroll as in "scroll", extract again, until a stop rule (stop_rules) holds${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and extract again. At most the time limit per source (see time_limit_minutes / elapsed). ${FALLBACK}`;
+// Per-source time cap: next stamps issued_at the first time it issues a source/query; every later call prints elapsed and, over the limit, stop "time".
+export const sourceMinutes = (cfg = settings().research?.source_minutes) => (Number(cfg) > 0 ? Number(cfg) : 3);
+export const TIME_NEXT = "over the time limit: record research.mjs result --state partial --note 'time limit', keep what you already have, and go to the next source";
+export function timeInfo(issuedAt, now = Date.now(), limit = sourceMinutes()) {
+  const t0 = Date.parse(issuedAt || '');
+  if (!Number.isFinite(t0)) return {};
+  const sec = Math.max(0, Math.round((now - t0) / 1000)), over = sec >= limit * 60;
+  return { time_limit_minutes: limit, started: issuedAt, elapsed: `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`, ...(over ? { stop: 'time', time_over: true, next: TIME_NEXT } : {}) };
+}
+const FALLBACK = "If the extract script errors, or returns 0 posts / total_on_page 0 twice in a row on a page that visibly has posts, STOP using the script for that source: read the page yourself (Playwright MCP snapshot, a small browser_evaluate, or a screenshot), write the posts you see in the same small JSON the script returns ({platform, url, tiles:[{id, url, image_urls, caption, author, date_text}]}, no checksum) and pass it to collect.mjs from-page --json '<that>' (the tool downloads the images, skips known posts, writes raw.json; verified:false is expected); then the same loop (look at images, fit, counters, stop rules, time cap).";
 export function nextTask(run) {
   const target = run.mode?.max_posts || 0, total = brandTotal(run), left = target ? Math.max(0, target - total) : 0;
   const waiting = (run.sources || []).filter((x) => !x.result);
@@ -146,7 +156,7 @@ export function nextTask(run) {
     if (target && !left) return { step: 'reference', source: src.id, share: 0, skip: true, total, target, do: `target reached: node scripts/research.mjs result --brand ${run.brand} --source ${src.id} --state skipped` };
     return { step: 'reference', source: src.id, name: src.name, platform: src.platform || platformOf({ source_url: src.url }) || '', url: src.url, what_to_take: src.what_to_take || '', dir: src.dir, raw_file: src.raw_file, downloads: src.downloads, known_file: src.known_file, stop_rule: src.stop_rule, share: target ? Math.ceil(left / waiting.length) : 0, total, target,
       found_by: 'reference page', ...collectInfo(run.brand, 'source', src.id, src.platform || platformOf({ source_url: src.url }) || '', target ? Math.ceil(left / waiting.length) : 0, src.url),
-      do: doText(run.brand, 'source', src.id, '', 'end|known|since|limit|blocked|partial') };
+      ...timeInfo(src.issued_at, undefined, undefined), do: doText(run.brand, 'source', src.id, '', 'end|known|since|limit|blocked|partial') };
   }
   if (target && !left) return { step: 'done', reason: `target reached (${total}/${target})`, total, target };
   const d = run.discovery;
@@ -158,7 +168,7 @@ export function nextTask(run) {
   const q = d.queries.find((x) => x.platform === pick.id && x.state === 'pending');
   const share = Math.max(0, Math.min(d.max_per_platform - pick.kept, target ? left : Infinity));
   return { step: 'discovery', query: q.id, platform: q.platform, kind: q.kind, term: q.term, found_by: q.found_by, url: q.url, dir: q.dir, raw_file: q.raw_file, downloads: q.downloads, share, platform_notes: pick.notes, product_fit: d.product_fit, total, target, ...collectInfo(run.brand, 'query', q.id, q.platform, share, q.url),
-    do: doText(run.brand, 'query', q.id, `; LOOK at the images and keep only posts whose product is one of product_fit.types (collect.mjs fit; from-page downloads at most ${share} posts)`, 'done|limit|empty|blocked|partial') };
+    ...timeInfo(q.issued_at), do: doText(run.brand, 'query', q.id, `; LOOK at the images and keep only posts whose product is one of product_fit.types (collect.mjs fit; from-page downloads at most ${share} posts)`, 'done|limit|empty|blocked|partial') };
 }
 
 function start(args, s) {
@@ -438,9 +448,9 @@ function result(args) {
   const state = need(args, 'state');
   if (!STATES[state]) throw new Error(`--state phải là: ${Object.keys(STATES).join(', ')}.`);
   const note = args.note && args.note !== true ? cleanText(args.note).text : '';
-  if (['blocked', 'partial'].includes(state) && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
+  if (state === 'blocked' && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
   if (state === 'known' && run.mode?.backfill) throw new Error('Lượt --backfill không dừng ở bài đã có: dùng end (hết trang), since, limit, partial hoặc blocked.');
-  src.result = { state, label: STATES[state], note, reached_end: state === 'end', new: src.new || 0, new_on_top: src.new_on_top || 0, backfilled: src.backfilled || 0, at: stamp() };
+  src.result = { state, label: STATES[state], note, ...(/time limit/i.test(note) ? { time_limited: true } : {}), reached_end: state === 'end', new: src.new || 0, new_on_top: src.new_on_top || 0, backfilled: src.backfilled || 0, at: stamp() };
   const progress = recordProgress(brand.id, sid, src.result, { date: run.date, mode: crawlMode(run.mode) });
   run.status = runStatus(run);
   writeJson(runFile, run);
@@ -451,7 +461,10 @@ function result(args) {
 function next(args) {
   const brand = loadBrand(need(args, 'brand'));
   const { runFile, run } = openRun(args, brand);
-  const task = nextTask(run);
+  let task = nextTask(run);
+  // first issue of a source / query: stamp the moment (it stays in the run file)
+  const item = task.step === 'reference' && !task.skip ? run.sources.find((x) => x.id === task.source) : task.step === 'discovery' ? run.discovery.queries.find((x) => x.id === task.query) : null;
+  if (item && !item.issued_at) { item.issued_at = new Date().toISOString(); writeJson(runFile, run); task = nextTask(run); }
   if (task.step === 'discovery') fs.mkdirSync(task.downloads, { recursive: true });
   if (task.step === 'done' && runDone(run)) { run.status = runStatus(run); writeJson(runFile, run); }
   out({ brand: brand.id, ...task, ...(task.step === 'done' ? { do: `node scripts/store.mjs classify --brand ${brand.id} (1.3), then research.mjs report` } : {}) });
@@ -476,7 +489,8 @@ export function filterCounts(items) {
 
 // The end-of-crawl report: new posts per source, sources done, blocked, not finished; store totals.
 // One summary line per brand for the final message: target N · kept Y · rejected Z · duplicates D · Library available A
-export const reportLine = (r) => `target ${r.target || 0} · kept ${r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}`;
+const sidList = (xs) => xs.map((x) => x.id).join(',');
+export const reportLine = (r) => `target ${r.target || 0} · kept ${r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
 export function researchReport(brandId, date) {
   const r = researchReportBase(brandId, date);
   return { ...r, summary_line: reportLine(r) };
@@ -511,6 +525,8 @@ function researchReportBase(brandId, date) {
     target: run.mode?.max_posts || 0, discovery_kept_total: discKept,
     rejected_off_brand_total: sources.reduce((a, x) => a + x.rejected_off_brand, 0) + (d ? d.queries.reduce((a, q) => a + (q.rejected_off_brand || 0), 0) : 0),
     new_on_top_total: sources.reduce((a, x) => a + x.new_on_top, 0), backfilled_total: sources.reduce((a, x) => a + x.backfilled, 0), new_total: sources.reduce((a, x) => a + x.new, 0) + discKept, kept_total: sources.reduce((a, x) => a + x.kept, 0) + (discovery ? discovery.platforms.reduce((a, p) => a + p.kept_filter, 0) : 0), filtered_total: sources.reduce((a, x) => a + x.filtered, 0) + (discovery ? discovery.platforms.reduce((a, p) => a + p.filtered, 0) : 0), low_keep: sources.filter((x) => x.low_keep).map((x) => x.id), duplicates_total: sources.reduce((a, x) => a + x.duplicates, 0), store: counts(store.items), sources,
+    time_limited: sources.filter((x) => run.sources.find((s) => s.id === x.id)?.result?.time_limited).map((x) => ({ id: x.id, note: x.note })),
+    skipped_sources: sources.filter((x) => ['skipped', 'blocked'].includes(x.state)).map((x) => ({ id: x.id, state: x.state, note: x.note })),
     done: sources.filter((x) => !['pending', 'blocked', 'partial'].includes(x.state)).map((x) => x.id),
     blocked: sources.filter((x) => x.state === 'blocked').map((x) => `${x.id}: ${x.note}`),
     pending: [...sources.filter((x) => ['pending', 'partial'].includes(x.state)).map((x) => x.id), ...(d ? d.queries.filter((q) => q.state === 'pending').map((q) => q.id) : [])],
