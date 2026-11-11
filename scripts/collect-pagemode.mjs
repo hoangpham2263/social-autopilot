@@ -103,15 +103,28 @@ const taskOf = (args) => {
 const seenFile = (task) => path.join(task.dir, 'seen.json');
 const forArgOf = (task, brand) => `${brand ? `--brand ${brand.id} ` : ''}${task.kind === 'query' ? `--for-query ${task.id}` : task.kind === 'source' ? `--for-source ${task.id}` : `--platform ${task.platform}`}`;
 
+// One scroll wording for every place that prints it (research.mjs next, collect.mjs script). Facebook's feed does not load on End.
+export const scrollHint = (platform, lo, hi) => (platform === 'facebook'
+  ? 'Playwright MCP: scroll with the mouse wheel 3 times (browser_mouse_wheel), then wait 3-5 s before the next extract; the End key does not load the Facebook feed'
+  : `Playwright MCP: press End (or mouse wheel) 1-2 times, then wait ${lo}-${hi} s before the next extract`);
+
 export function script(args) {
   const { brand, task } = taskOf(args);
   const adapter = getAdapter(task.platform);
   if (!adapter?.pageScript) throw new Error(`Nền tảng "${task.platform}" chưa có script trích xuất: viết scripts/platforms/${task.platform}.mjs (docs/research.md "Adapter").`);
   const seen = readSeen(args.seen && args.seen !== true ? path.resolve(String(args.seen)) : seenFile(task));
   const max = Number(args.max) > 0 ? Number(args.max) : 0;
-  process.stdout.write(adapter.pageScript({ found_by: task.found_by, max, seen }) + '\n');
+  const code = adapter.pageScript({ found_by: task.found_by, max, seen });
+  // The script is ~9-16K chars: never hand-paste it. It goes to <step dir>/extract.js (exactly the async function browser_run_code_unsafe
+  // needs, nothing else in the file) and the agent runs it with browser_run_code_unsafe { filename }. --stdout prints it instead.
+  if (args.stdout) { process.stdout.write(code + '\n'); return; }
+  const file = path.join(task.dir, 'extract.js');
+  fs.mkdirSync(task.dir, { recursive: true });
+  fs.writeFileSync(file, code + '\n');
   const [lo, hi] = scrollWait(task.platform);
-  process.stderr.write(`# ${task.platform} ${task.url}: open the page (browser_navigate), scroll (press End / mouse wheel 1-2 times, wait ${lo}-${hi} s), then paste this into browser_run_code_unsafe; it reads the page as it is now (${seen.length} ids already returned are left out). The result is ONE line {b64, tag}: node scripts/collect.mjs from-page ${forArgOf(task, brand)} --b64 <b64> (or --file <result.json>); read back its 4-character tag.\n`);
+  process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, seen_ids: seen.length,
+    run: 'browser_run_code_unsafe with the filename parameter = file (do not paste the script); it reads the page as it is now and returns ONE line {b64, tag}',
+    from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)} --b64 <b64>`, scroll: scrollHint(task.platform, lo, hi) }) + '\n');
 }
 
 export async function fromPage(args) {

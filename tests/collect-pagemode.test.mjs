@@ -112,7 +112,7 @@ test('CLI: from-page downloads images and writes a raw.json that research.mjs in
     const n = await run('research.mjs', 'next', '--brand', 'dv');
     assert.equal(n.step, 'discovery');
     assert.match(n.script, /collect\.mjs script --brand dv --for-query/);
-    const sc = spawn(process.execPath, [path.join(tool, 'scripts', 'collect.mjs'), 'script', '--brand', 'dv', '--for-query', n.query], { env });
+    const sc = spawn(process.execPath, [path.join(tool, 'scripts', 'collect.mjs'), 'script', '--brand', 'dv', '--for-query', n.query, '--stdout'], { env });
     let src = ''; sc.stdout.on('data', (d) => { src += d; });
     await new Promise((r) => sc.on('close', r));
     assert.match(src, /^async \(page\) =>/);

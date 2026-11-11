@@ -42,7 +42,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, runDir, today, stamp, readJson, writeJson, withLock, cleanText, parseCsv, toCsv, latestRun, brandSources, inside, brandDiscovery, DISCOVERY_PLATFORMS } from './lib.mjs';
 import { adapterStatus } from './platforms/index.mjs';
-import { scrollWait } from './collect-pagemode.mjs';
+import { scrollWait, scrollHint } from './collect-pagemode.mjs';
 import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf } from './store.mjs';
 
 const logFile = () => path.join(workspace, 'research-log.json');
@@ -135,12 +135,12 @@ export function collectInfo(brand, kind, id, platform, share = 0, url = '') {
   const a = adapterStatus(platform);
   const [lo, hi] = scrollWait(platform);
   const f = `--brand ${brand} --for-${kind} ${id}`;
-  return { open: url, scroll: `Playwright MCP: press End (or mouse wheel) 1-2 times, then wait ${lo}-${hi} s before the next extract`, scroll_wait_seconds: [lo, hi],
-    script: `node scripts/collect.mjs script ${f}`, from_page: `node scripts/collect.mjs from-page ${f} --b64 <b64>`, target: share || 0,
+  return { open: url, scroll: scrollHint(platform, lo, hi), scroll_wait_seconds: [lo, hi],
+    script: `node scripts/collect.mjs script ${f}`, script_run: 'that command WRITES the extract script to <step dir>/extract.js and prints its path; run it with browser_run_code_unsafe using the filename parameter (never paste it)', from_page: `node scripts/collect.mjs from-page ${f} --b64 <b64>`, target: share || 0,
     stop_rules: 'stop when: the target is reached; 3 extracts in a row bring no new posts; every post is already known; a login wall / captcha / checkpoint / closed page shows (result --state blocked|end|known)',
     adapter: { platform, ...a } };
 }
-const doText = (brand, kind, id, extra, states) => `ONE path: open the "open" URL with Playwright MCP (browser_navigate); then loop: print the extract script (see script), paste it into ONE browser_run_code_unsafe call (it only reads the page now and returns at once), pass the one-line b64 to from_page AS IS (never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json and says stop or scroll), scroll as in "scroll", extract again, until a stop rule (stop_rules) holds${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and extract again`;
+const doText = (brand, kind, id, extra, states) => `ONE path: open the "open" URL with Playwright MCP (browser_navigate); then loop: run the script command (it writes extract.js and prints its path), run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste (it only reads the page now and returns at once), pass the one-line b64 to from_page AS IS (never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json and says stop or scroll), scroll as in "scroll", extract again, until a stop rule (stop_rules) holds${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and extract again`;
 export function nextTask(run) {
   const target = run.mode?.max_posts || 0, total = brandTotal(run), left = target ? Math.max(0, target - total) : 0;
   const waiting = (run.sources || []).filter((x) => !x.result);
@@ -251,7 +251,7 @@ function start(args, s) {
   log.runs.push({ brand: brand.id, date, started: stamp(), mode });
   writeJson(logFile(), log);
   const next = !crawl.length && !queries.length ? 'Không còn source nào để backfill (xem run.skipped). Chạy research.mjs report.'
-    : `Lặp: node scripts/research.mjs next --brand ${brand.id} → lấy đúng nguồn/truy vấn đó bằng Playwright MCP (docs/research.md) → ingest → result, tới khi next trả "done" (RUNBOOK 1.2). Trang tham khảo trước (${crawl.length}), rồi ${queries.length} truy vấn discovery xoay vòng ${platforms.length} nền tảng.${mode.backfill ? ' Backfill: cuộn nhanh qua bài đã có, bắt đầu lấy sau oldest_seen.' : ''} Trang Facebook chưa có script in-page: lấy tay bằng Playwright MCP.`;
+    : `Lặp: node scripts/research.mjs next --brand ${brand.id} → lấy đúng nguồn/truy vấn đó bằng Playwright MCP (docs/research.md) → ingest → result, tới khi next trả "done" (RUNBOOK 1.2). Trang tham khảo trước (${crawl.length}), rồi ${queries.length} truy vấn discovery xoay vòng ${platforms.length} nền tảng.${mode.backfill ? ' Backfill: cuộn nhanh qua bài đã có, bắt đầu lấy sau oldest_seen.' : ''}`;
   out({ reused: !!before, archived, dir, run: { ...run, discovery: run.discovery ? { ...run.discovery, queries: run.discovery.queries.length } : null }, discovery: run.discovery ? { platforms, keywords, hashtags, queries: queries.length, max_per_platform: disc.max_per_platform, ...(platformsIgnored.length ? { platforms_ignored: platformsIgnored } : {}) } : null, next });
 }
 

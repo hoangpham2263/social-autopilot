@@ -14,7 +14,7 @@ Mỗi bước `research.mjs next` in: `open` (URL cần mở), `scroll` (cách c
 1. **Mở** `open` bằng `browser_navigate`.
 2. **Trích xuất:** `node scripts/collect.mjs script --brand <id> --for-query|--for-source <id>` in script; dán vào MỘT lần gọi `browser_run_code_unsafe`. Kết quả là MỘT dòng `{total, total_on_page, reason, tag, b64}`; chỉ có các bài **mới** (id đã trả trong bước này nằm ở `<thư mục bước>/seen.json`, script bỏ qua; `--seen <file>` để dùng danh sách khác).
 3. **Ghi:** `node scripts/collect.mjs from-page --brand <id> --for-query|--for-source <id> --b64 <cả dòng b64>` (hoặc `--file <result.json>`). Không gõ lại JSON; đọc lại 4 ký tự `tag`. from-page kiểm `total` + checksum + tag, bỏ bài đã có trong kho, tải ảnh, **cộng thêm** vào `raw.json` (nhiều lần trích xuất của cùng bước cộng dồn), trả `added`, `collected`, `extracts_without_new`, `stop`, `review[]`, `next`.
-4. **Cuộn** (phím End hoặc con lăn, 1-2 lần, chờ `scroll_wait_seconds`), rồi trích xuất lại (bước 2-3).
+4. **Cuộn** (phím End hoặc con lăn, 1-2 lần, chờ `scroll_wait_seconds`; Facebook: con lăn chuột 3 lần rồi chờ 3-5 giây, phím End không tải feed), rồi trích xuất lại (bước 2-3).
 5. **Dừng** khi: đủ `target`; 3 lần trích xuất liền không có bài mới; mọi bài đều đã có (`known`); tường đăng nhập / captcha / checkpoint / trang đóng (`reason`) → `result --state blocked|end|known`. Rồi (discovery) nhìn ảnh `review[].image`, ghi `[{ "id", "fit": true, "type": "<một chuỗi trong product_fit.types>", "reason" } | { "id", "fit": false, "reason" }]`, `collect.mjs fit --brand <id> --for-query <qid> --file <f>`; `ingest`; `result --state <suggested_state>`.
 6. Script **chỉ đọc**: không bấm, không hover, không gõ, không like/lưu/theo dõi/bình luận/nhắn tin/tham gia/đăng/đăng nhập; không ghi token/cookie. Instagram: bài mới còn thiếu ảnh thì đọc trang bài `/p/<code>/` (GET, giới hạn 3 giây).
 
@@ -33,7 +33,7 @@ node scripts/research.mjs start --brand <id> [OPTIONS]            # 1.1 mở lư
 node scripts/store.mjs known --brand <id>                         # một lần: brand_post_urls / brand_post_ids (bài đã có: không mở, không tải)
 lặp:
   node scripts/research.mjs next --brand <id>                     # việc tiếp theo: step reference | discovery | done
-  → mở `open` (browser_navigate); lặp: collect.mjs script → browser_run_code_unsafe → collect.mjs from-page --b64 → cuộn (End, chờ scroll_wait_seconds), tới khi một stop_rule đúng
+  → mở `open` (browser_navigate); lặp: collect.mjs script (ghi extract.js, in đường dẫn) → browser_run_code_unsafe với `filename` (không dán) → collect.mjs from-page --b64 → cuộn (End / con lăn; Facebook: con lăn 3 lần, chờ 3-5 giây), tới khi một stop_rule đúng
   → (discovery) nhìn ảnh, node scripts/collect.mjs fit --brand <id> --for-query <qid> --file <decisions.json>
   → node scripts/research.mjs ingest --brand <id> --source <sid>  |  --query <qid>
   → node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|blocked|partial
