@@ -92,11 +92,12 @@ export function checkDraft(dir, draft, status = {}) {
     if (!draft.ref_text) problems.push('keep-scene: thiếu ref_text (chữ đang có trên sản phẩm trong ảnh tham khảo)');
     else if (sameSignText(draft.sign_text, draft.ref_text)) problems.push(`keep-scene: sign_text "${draft.sign_text}" trùng chữ của ảnh tham khảo; phải là chữ mới`);
   }
+  problems.push(...albumProblems(dir, draft, status));
   if (draft.image_mode === 'scene-swap') {
-    const image = path.join(dir, 'image.png');
-    const hash = fs.existsSync(image) ? crypto.createHash('sha1').update(fs.readFileSync(image)).digest('hex') : '';
+    // Album: one confirmation covers every image of the post (albumHash); a single image keeps its own sha1.
+    const hash = albumHash(dir, draft);
     if (draft.require_logo_removal !== false && (!status.logo_check || status.logo_check.image_sha1 !== hash)) {
-      problems.push(`scene-swap: xem image.png và xác nhận không còn tên shop "${draft.inspiration.source_shop || draft.inspiration.source}", logo, watermark, nhãn size, số điện thoại (draft.mjs confirm-clean --id ${draft.id} --by <tên>${mode === 'new-scene' ? ' --no-people' : ''})`);
+      problems.push(`scene-swap: xem ${draftImages(draft).join(", ")} và xác nhận không còn tên shop "${draft.inspiration.source_shop || draft.inspiration.source}", logo, watermark, nhãn size, số điện thoại (draft.mjs confirm-clean --id ${draft.id} --by <tên>${mode === 'new-scene' ? ' --no-people' : ''})`);
     }
     // new-scene: the reference showed a person; the agent confirms nobody is left in the new image (confirm-clean --no-people).
     if (mode === 'new-scene' && status.logo_check?.image_sha1 === hash && status.logo_check.no_people !== true) problems.push(`new-scene: xem image.png và xác nhận không còn người nào (draft.mjs confirm-clean --id ${draft.id} --by <tên> --no-people)`);
@@ -128,7 +129,7 @@ export function summary({ dir, draft, status }) {
   const langs = draftLangs(draft);
   const read = (list) => { const o = {}; for (const l of list) { const f = langs.file(l); const file = path.join(dir, f); if (fs.existsSync(file)) o[f] = fs.readFileSync(file, 'utf8'); } return o; };
   const captions = read(langs.posted), review_captions = read(langs.review);
-  return { id: draft.id, brand: draft.brand, status: status.status, dir, image: path.join(dir, 'image.png'), idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}`, inspiration: draft.inspiration.post_url || draft.inspiration.source_url, networks: draft.networks.map((n) => n.network), problems: status.problems || [], note: status.note || '', captions,
+  return { id: draft.id, brand: draft.brand, status: status.status, dir, image: path.join(dir, 'image.png'), images: draftImages(draft).map((f) => path.join(dir, f)).filter((f) => fs.existsSync(f)), image_count: draftImages(draft).length, idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}`, inspiration: draft.inspiration.post_url || draft.inspiration.source_url, networks: draft.networks.map((n) => n.network), problems: status.problems || [], note: status.note || '', captions,
     posted_languages: langs.posted, review_languages: langs.review, review_captions,
     product_size: draft.product_size || '', size_compare: draft.size_compare || '', size_check: refModeOf(draft) === 'keep-scene' ? null : sizeShown(dir, status.size_check),
     ...(refModeOf(draft) === 'keep-scene' ? { framing: 'kept original framing' } : {}),
@@ -149,10 +150,28 @@ export const pickImageCount = ([min, max], rand = Math.random) => min + Math.flo
 // Brand skill naming: 1 image -> image.png; several -> image-01.png, image-02.png, ... (image-01 = main/cover).
 // Text on images is always English; never image-vn.png / image-en.png.
 export const imageFiles = (n) => (n <= 1 ? ['image.png'] : Array.from({ length: n }, (_, i) => `image-${String(i + 1).padStart(2, '0')}.png`));
-// The images of a draft in post order (cover first). Old drafts with only image.png keep working.
-export function draftImages(dir, draft = {}) {
-  const list = Array.isArray(draft.images) && draft.images.length ? draft.images : imageFiles(Number(draft.image_count) || 1);
-  return list.length > 1 ? list : ['image.png'];
+// Inside the DRAFT folder the main image stays image.png (every check, clean and confirm works on it as before) and the
+// extras are image-02.png, image-03.png, ...; write-back copies them under the published names (imageFiles: image-01..).
+export const draftImageFiles = (n) => imageFiles(n).map((f, i) => (i === 0 ? 'image.png' : f));
+// The images of a draft in post order (cover first). Old drafts (no image_count) keep only image.png.
+export const draftImages = (draft = {}) => draftImageFiles(Math.max(1, Number(draft.image_count) || 1));
+// Published name of each draft image (same order): image.png alone, or image-01.png (cover), image-02.png, ...
+export const publishPairs = (draft = {}) => { const d = draftImages(draft), p = imageFiles(d.length); return d.map((f, i) => ({ from: f, to: p[i] })); };
+// One hash over every image of the post (confirm-clean covers them all). One image: its own sha1, as before.
+export function albumHash(dir, draft = {}) {
+  const hashes = draftImages(draft).map((f) => { try { return crypto.createHash('sha1').update(fs.readFileSync(path.join(dir, f))).digest('hex'); } catch { return 'missing'; } });
+  return hashes.length === 1 ? (hashes[0] === 'missing' ? '' : hashes[0]) : crypto.createHash('sha1').update(hashes.join(',')).digest('hex');
+}
+// Album extras present and metadata-clean (status.images[file].sha1 = the clean copy written by draft.mjs image).
+export function albumProblems(dir, draft = {}, status = {}) {
+  const out = [];
+  for (const f of draftImages(draft).slice(1)) {
+    const file = path.join(dir, f);
+    if (!fs.existsSync(file)) { out.push(`album: chưa có ${f} (draft.mjs image --id ${draft.id})`); continue; }
+    const sha = crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+    if (status.images?.[f]?.sha1 !== sha) out.push(`album: ${f} chưa qua bước xoá metadata (draft.mjs image --id ${draft.id} --force-extras)`);
+  }
+  return out;
 }
 // Which extra shot an album image k (0-based, k >= 1) is: a close-up detail, then a wider/other angle, alternating.
 export const extraShotOf = (k) => (k % 2 === 1 ? 'detail' : 'wide');

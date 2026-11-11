@@ -187,12 +187,16 @@ function spawnImages(st, ids) {
   fs.closeSync(fd);
   st.batch = { pid: p.pid, out: outFile, started: stamp(), drafts: ids };
 }
+// The same product description goes into prompt.txt and every album extra prompt (prompt-02.txt, ...).
 const fillDescription = (dir, text) => {
-  const f = path.join(dir, 'prompt.txt');
-  const p = fs.readFileSync(f, 'utf8');
-  if (!p.includes('{{PRODUCT_DESCRIPTION}}')) return false;
-  fs.writeFileSync(f, p.replace('{{PRODUCT_DESCRIPTION}}', () => text), 'utf8');
-  return true;
+  let filled = false;
+  for (const name of fs.readdirSync(dir).filter((x) => /^prompt(-\d+)?\.txt$/.test(x))) {
+    const f = path.join(dir, name), p = fs.readFileSync(f, 'utf8');
+    if (!p.includes('{{PRODUCT_DESCRIPTION}}')) continue;
+    fs.writeFileSync(f, p.replace('{{PRODUCT_DESCRIPTION}}', () => text), 'utf8');
+    if (name === 'prompt.txt') filled = true;
+  }
+  return filled;
 };
 
 function stageB(st, file) {
