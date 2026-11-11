@@ -22,6 +22,7 @@ import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
+import { chromeInfo, openChromeProfile } from "../core/setup/chrome.mjs";
 import { createPlaywrightMcp } from "../core/setup/playwright-mcp.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
@@ -345,6 +346,9 @@ async function handle(req, res) {
   });
   // Tổng quan, Chọn skill / Đổi skill: the skill folders found in a source folder (default the vaniecom-workspace skills).
   // POST (session token), so no other page can list folders on this machine.
+  // Chrome profiles (read only) and opening a window in one profile (session token via the POST guard, loopback only, no CORS; allow-lists in core/setup/chrome.mjs).
+  if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => chromeInfo({ settings: settings() }));
+  if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
   // Playwright MCP token (core/setup/playwright-mcp.mjs): set through `claude mcp`; saved only in workspace/secrets, answers only masked.
   if (path === "/api/playwright-mcp" && req.method === "GET") return api(res, () => playwrightMcp.status());
   if (path === "/api/playwright-mcp" && req.method === "POST") return api(res, async () => playwrightMcp.apply(await body(req)));

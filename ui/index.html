@@ -1009,6 +1009,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   // ----- Chrome check line: read only, refreshed every 3 s while the Prompt tab is open; never touches Chrome -----
   const CHROME_PROMPT = [
     "Test the Chrome connection only (read only: never sign in, click, type or accept anything; stop on a login wall and report it).",
+    "0. Connect: if browser_tabs shows a connect.html?mcpRelayUrl= tab, or the browser tools say they are not connected, run node scripts/chrome-connect.mjs --url \"<that exact url from browser_tabs>\" (it opens the profile chosen in the app), then STOP and tell the user to click Connect in the window that opened and to say \"connected\". Never click Connect or sign in for the user.",
     "1. Run: node scripts/collect.mjs check-chrome --brand all (it prints the path of a small file).",
     "2. Run that file with browser_run_code_unsafe using the filename parameter (never paste it); it starts with page.bringToFront().",
     "3. Save the JSON it returns to a file and record it: node scripts/research.mjs chrome-record --state ok --result-file <file> (hidden:true: bringToFront again and re-run; browser not answering: --state fail --note \"<reason>\").",
@@ -1017,8 +1018,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   let chromeTimer = 0;
   const loadChrome = safely("#prChrome", async () => {
     clearTimeout(chromeTimer); chromeTimer = 0;
-    const r = await getJson("/api/chrome-check").catch(() => offline);
     const el = $("#prChrome");
+    if (document.activeElement && document.activeElement.id === "prChromeProf") { if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000); return; } // do not redraw while the list is open
+    const r = await getJson("/api/chrome-check").catch(() => offline);
+    const cp = await getJson("/api/chrome-profiles").catch(() => offline);
     if (r.error || !r.status) { el.innerHTML = '<span class="meta">Chrome check: unavailable</span>'; }
     else {
       const st = r.status, rec = r.record;
@@ -1033,6 +1036,12 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
         el.innerHTML = `<span>Chrome check: ${st.age_minutes === 0 ? "just now" : st.age_minutes + " min ago"}</span>${chips}${prof}`;
       }
     }
+    const profs = cp.error ? [] : arr(cp.profiles), sel = cp.error ? "" : String(cp.selected || "");
+    const opts = ['<option value="">choose the Chrome profile Playwright is connected to</option>'].concat(profs.map((p) => `<option value="${esc(p.folder)}"${p.folder === sel ? " selected" : ""}>${esc([p.folder, p.name, p.email].filter(Boolean).join(" · "))}</option>`));
+    if (sel && !profs.some((p) => p.folder === sel)) opts.push(`<option value="${esc(sel)}" selected>${esc(sel)}</option>`);
+    el.insertAdjacentHTML("beforeend", ` <select id="prChromeProf" title="Chrome profile used by Open Chrome and the connect helper">${opts.join("")}</select> <button class="btn" type="button" id="prChromeOpen" title="Opens a Chrome window in the chosen profile">Open Chrome (profile)</button>`);
+    $("#prChromeProf").onchange = async (e) => { const r2 = await postJson("/api/settings", { settings: { research: { chrome_profile: e.target.value } } }).catch(() => offline); flash(r2.error ? "Could not save the profile." : "Profile saved."); e.target.blur(); };
+    $("#prChromeOpen").onclick = async () => { const r2 = await postJson("/api/open-chrome", { profile: $("#prChromeProf").value }).catch(() => offline); flash(r2.error ? r2.error : "Chrome opened."); };
     el.insertAdjacentHTML("beforeend", ' <button class="btn" type="button" id="prChromeCopy" title="Copies a short prompt that tests the Chrome connection and records the result">Copy check prompt</button>');
     $("#prChromeCopy").onclick = async () => { try { await navigator.clipboard.writeText(CHROME_PROMPT); } catch { /* ignore */ } flash("Copied."); };
     if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000);
