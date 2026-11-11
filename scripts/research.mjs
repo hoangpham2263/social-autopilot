@@ -327,6 +327,16 @@ function checkImages(list, base) {
   }
   return { dropped, posts };
 }
+// Posts read but not yet judged by collect.mjs fit (same arithmetic as collect.mjs counters): ingest and result done refuse while > 0.
+export function pendingFitOf(dir, rawFile = '') {
+  const raw = readJson(rawFile || path.join(dir, 'raw.json'), null);
+  if (!raw || Array.isArray(raw) || raw.tool !== 'collect') return 0;
+  const posts = raw.posts || [], rejected = (raw.rejected || []).length;
+  const kept = posts.filter((p) => p.product_fit && String(p.product_fit.type || '').trim()).length;
+  const read = Math.max(Number(readJson(path.join(dir, 'progress.json'), { read: 0 }).read) || 0, posts.length + rejected);
+  return Math.max(0, read - kept - rejected);
+}
+const FIT_FIRST = 'run collect.mjs fit on review[] first (posts are read but not judged yet)';
 // raw.json rejected[]: posts the agent SAW but did not take because the product is off-brand (never downloaded).
 const seenRejected = (raw, extra = {}) => (raw && !Array.isArray(raw) && Array.isArray(raw.rejected) ? raw.rejected : []).filter((x) => x && typeof x === 'object')
   .map((x) => ({ post_url: String(x.post_url || ''), author: cleanText(x.author || '').text, reason: `off-brand: ${cleanText(String(x.reason || 'not a product the brand sells')).text.replace(/^off-brand:\s*/, '').slice(0, 200)}`, ...extra }));
@@ -339,6 +349,7 @@ function ingestQuery(args, brand, { dir, runFile, run }) {
   if (!q) throw new Error(`Truy vấn "${qid}" không có trong lượt này (research.mjs next cho biết truy vấn tiếp theo).`);
   const rawPath = path.join(q.dir, 'raw.json');
   if (!fs.existsSync(rawPath)) return out({ dir, query: qid, added: 0, note: 'chưa có raw.json' });
+  if (pendingFitOf(q.dir) > 0) throw new Error(FIT_FIRST);
   const raw = readJson(rawPath);
   const list = (Array.isArray(raw) ? raw : raw.posts || []).map((p) => ({ ...p, platform: q.platform, found_by: q.found_by }));
   const logPath = path.join(q.dir, 'ingest.json');
@@ -371,6 +382,7 @@ function ingest(args) {
   if (args.source && !run.sources.some((x) => x.id === args.source)) throw new Error(`Source "${args.source}" không có trong lượt này (chỉ source bật trong social.json của ${brand.id}).`);
   if (args.csv && !args.source) throw new Error('--csv cần --source.');
   const mode = run.mode || {};
+  if (mode.max_posts) for (const src of run.sources.filter((x) => !args.source || x.id === args.source)) if (pendingFitOf(src.dir, src.raw_file) > 0) throw new Error(`${src.id}: ${FIT_FIRST}`);
   const log = readLog();
   log.collected[run.date] ||= {};
   const day = log.collected[run.date];
@@ -401,9 +413,11 @@ function ingest(args) {
     const brandNew = run.sources.reduce((a, x) => a + (x.new || 0), 0);
     const waiting = run.sources.filter((x) => x === src || !x.ingested).length || 1;
     const left = mode.max_posts ? Math.min(Math.max(0, mode.max_posts - brandNew), Math.ceil(Math.max(0, mode.max_posts - brandNew) / waiting)) : 0;
+    // Posts that PASSED fit are good posts: all of them are ingested (beyond the share too) and count toward the brand target, so the next shares shrink.
+    const keptFit = posts.filter((p) => p.product_fit && String(p.product_fit.type || '').trim()).length;
     const r = mode.max_posts && !left
       ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0, rejected: [] }
-      : addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left, crawlMode: crawlMode(mode), productFit });
+      : addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left > 0 ? Math.max(left, keptFit) : left, crawlMode: crawlMode(mode), productFit });
     src.rejected_off_brand = (src.rejected_off_brand || 0) + r.rejected.length + seen.length;
     src.unjudged = (src.unjudged || 0) + (r.unjudged || []).length;
     src.new = (src.new || 0) + r.added.length;
@@ -414,7 +428,7 @@ function ingest(args) {
     const unj = new Set((r.unjudged || []).map((x) => x.post_url));
     const entry = { at: stamp(), raw_posts: raw.length, already_ingested: already, unjudged: (r.unjudged || []).length, post_urls: fresh.map((p) => String(p.post_url || '')).filter((u) => u && !unj.has(u)), added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
     writeJson(logPath, { source: src.id, ingests: [...(readJson(logPath, { ingests: [] }).ingests || []), entry] });
-    report.push({ source: src.id, added: r.added.length, unjudged: (r.unjudged || []).length, rejected_off_brand: r.rejected.length + seen.length, ...(r.rejected.length + seen.length ? { rejected_list: [...r.rejected, ...seen] } : {}), ...(already ? { already_ingested: already } : {}), new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}),
+    report.push({ source: src.id, ...(mode.max_posts ? { kept: keptFit, summary: `kept ${keptFit} · added ${r.added.length}` } : {}), added: r.added.length, unjudged: (r.unjudged || []).length, rejected_off_brand: r.rejected.length + seen.length, ...(r.rejected.length + seen.length ? { rejected_list: [...r.rejected, ...seen] } : {}), ...(already ? { already_ingested: already } : {}), new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}),
       // --max-posts: what is left for the brand and the next source's share (a dry source leaves its share to the others).
       ...(mode.max_posts ? (() => { const used = run.sources.reduce((a, x) => a + (x.new || 0), 0), rest = run.sources.filter((x) => !x.ingested).length; return { brand_posts_left: Math.max(0, mode.max_posts - used), next_source_share: rest ? Math.ceil(Math.max(0, mode.max_posts - used) / rest) : 0 }; })() : {}) });
   }
@@ -435,6 +449,7 @@ function queryResult(args, brand, runFile, run) {
   if (!QUERY_STATES[state]) throw new Error(`--state (truy vấn) phải là: ${Object.keys(QUERY_STATES).join(', ')}.`);
   const note = args.note && args.note !== true ? cleanText(args.note).text : '';
   if (state === 'blocked' && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
+  if (!['blocked', 'skipped', 'partial', 'empty'].includes(state) && pendingFitOf(q.dir) > 0) throw new Error(FIT_FIRST);
   Object.assign(q, { state, label: QUERY_STATES[state], note, at: stamp() });
   // A login wall / captcha on a platform: its other queries are skipped this run (other platforms go on).
   const skipped = [];
@@ -455,6 +470,7 @@ function result(args) {
   if (!STATES[state]) throw new Error(`--state phải là: ${Object.keys(STATES).join(', ')}.`);
   const note = args.note && args.note !== true ? cleanText(args.note).text : '';
   if (state === 'blocked' && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
+  if (run.mode?.max_posts && !['blocked', 'skipped', 'partial'].includes(state) && pendingFitOf(src.dir, src.raw_file) > 0) throw new Error(FIT_FIRST);
   if (state === 'known' && run.mode?.backfill) throw new Error('Lượt --backfill không dừng ở bài đã có: dùng end (hết trang), since, limit, partial hoặc blocked.');
   src.result = { state, label: STATES[state], note, ...(/time limit/i.test(note) ? { time_limited: true } : {}), reached_end: state === 'end', new: src.new || 0, new_on_top: src.new_on_top || 0, backfilled: src.backfilled || 0, at: stamp() };
   const progress = recordProgress(brand.id, sid, src.result, { date: run.date, mode: crawlMode(run.mode) });
@@ -496,8 +512,9 @@ export function filterCounts(items) {
 // The end-of-crawl report: new posts per source, sources done, blocked, not finished; store totals.
 // kept = what ingest really ADDED to the Library (new_total), not the per-task fit count.
 // One summary line per brand for the final message: target N · kept Y · rejected Z · duplicates D · Library available A
+// Library available = store counts().new, the same figure as the app Library / Overview (never used + used, cooling included); ready now = cooldown over.
 const sidList = (xs) => xs.map((x) => x.id).join(',');
-export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0}${r.unjudged_total ? ` · unjudged ${r.unjudged_total}` : ''} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
+export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0}${r.unjudged_total ? ` · unjudged ${r.unjudged_total}` : ''} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.new ?? 0} (ready now ${r.store?.ready ?? 0}, cooling ${r.store?.cooling ?? 0})${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
 export function researchReport(brandId, date) {
   const r = researchReportBase(brandId, date);
   return { ...r, summary_line: reportLine(r) };

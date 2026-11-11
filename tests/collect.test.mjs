@@ -263,7 +263,7 @@ test('counters + fitStop: kept decides, not posts read', async () => {
   c = counters(r.raw, 3, 3);
   assert.deepEqual([c.pending_fit, c.kept, c.rejected, c.need_more], [0, 1, 2, 2]);
   assert.equal(fitStop(c), '');
-  assert.equal(counterLine(c), 'read 3 · kept 1 · rejected 2 · need 3 · missing 2');
+  assert.equal(counterLine(c), 'read 3 · kept 1 · rejected 2 · source need 3');
   // enough kept -> target
   c = counters({ posts: [1, 2, 3].map((i) => ({ ...post(i), product_fit: { type: 't' } })), rejected: [] }, 3, 3);
   assert.equal(fitStop(c), 'target');

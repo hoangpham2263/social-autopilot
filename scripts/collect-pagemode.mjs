@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { out, fail, need, settings, loadBrand, readJson, writeJson } from './lib.mjs';
 import { track } from './progress.mjs';
-import { openRun, timeInfo, TIME_NEXT } from './research.mjs';
+import { openRun, timeInfo, brandTotal, TIME_NEXT } from './research.mjs';
 import { counters, counterLine, fitStop, progressFile } from './collect.mjs';
 import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
@@ -101,7 +101,7 @@ export async function downloadPlain(url, fileBase, referer) {
 const taskOf = (args) => {
   const brand = args.brand && args.brand !== true ? loadBrand(String(args.brand)) : null;
   const run = args['for-query'] || args['for-source'] ? openRun(args, brand || loadBrand(need(args, 'brand'))).run : null;
-  return { brand, task: resolveTask(args, run) };
+  return { brand, run, task: resolveTask(args, run) };
 };
 const seenFile = (task) => path.join(task.dir, 'seen.json');
 const forArgOf = (task, brand) => `${brand ? `--brand ${brand.id} ` : ''}${task.kind === 'query' ? `--for-query ${task.id}` : task.kind === 'source' ? `--for-source ${task.id}` : `--platform ${task.platform}`}`;
@@ -138,7 +138,7 @@ export function script(args) {
 
 export async function fromPage(args) {
   const t0 = Date.now();
-  const { brand, task } = taskOf(args);
+  const { brand, task, run } = taskOf(args);
   const adapter = getAdapter(task.platform);
   if (!adapter) return fail(`Chưa có adapter cho nền tảng "${task.platform}".`, { platform: task.platform });
   let loaded;
@@ -189,7 +189,7 @@ export async function fromPage(args) {
   const fs0 = task.max ? fitStop(cnt, factor) : '';
   const target = fs0 === 'target';
   const poor = fs0 === 'poor_source';
-  const summary = counterLine(cnt);
+  const summary = counterLine(cnt, { target: run?.mode?.max_posts || 0, kept: (run ? brandTotal(run) : 0) + cnt.kept });
   const stop = blocked ? 'blocked' : target ? 'target' : poor ? 'poor_source' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
   const tm = timeInfo(task.started);
   const state = blocked ? 'blocked' : suggestedState(task.kind, { blocked, error: /^error/.test(note), limit: target, read: all.length, stop: task.kind === 'source' ? (allKnown ? 'known' : stop === 'no_new' ? 'end' : '') : '' });

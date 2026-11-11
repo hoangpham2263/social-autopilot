@@ -19,7 +19,7 @@
 // page = state blocked, nothing more opened. Cookies stay in Chrome; nothing secret is written.
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
-import { openRun, nextTask, timeInfo, TIME_NEXT } from './research.mjs';
+import { openRun, nextTask, timeInfo, brandTotal, TIME_NEXT } from './research.mjs';
 import { track } from './progress.mjs';
 import { REGISTRY, STATUSES, getAdapter, adapterStatus, platformIds } from './platforms/index.mjs';
 
@@ -83,7 +83,7 @@ export function applyDecisions(raw, decisions) {
   return { raw: { ...raw, posts, rejected }, fit, off, undecided };
 }
 // Counters per task (cumulative; <task dir>/progress.json holds read + need, kept / rejected come from raw.json).
-// kept here = fit kept per task; ingest takes at most the share (will_ingest), and `report` counts what ingest really added.
+// kept here = fit kept per task; ingest takes ALL of them (will_ingest = kept) and `report` counts what ingest really added.
 // need = the task's share; need_more = max(0, need - kept). One definition for from-page, fit and the run progress.
 export function counters(raw, read, need = 0) {
   const posts = raw?.posts || [];
@@ -91,9 +91,10 @@ export function counters(raw, read, need = 0) {
   const rejected = (raw?.rejected || []).length;
   const r = Math.max(Number(read) || 0, posts.length + rejected);
   const n = Math.max(0, Number(need) || 0);
-  return { read: r, pending_fit: Math.max(0, r - kept - rejected), kept, rejected, need: n, need_more: Math.max(0, n - kept), will_ingest: n ? Math.min(kept, n) : kept };
+  return { read: r, pending_fit: Math.max(0, r - kept - rejected), kept, rejected, need: n, need_more: Math.max(0, n - kept), will_ingest: kept };
 }
-export const counterLine = (c) => `read ${c.read} · kept ${c.kept} · rejected ${c.rejected}${c.pending_fit ? ` · to fit ${c.pending_fit}` : ''}${c.need ? ` · need ${c.need} · missing ${c.need_more}` : ''}${c.need && c.kept > c.need ? ` · will ingest ${c.need} (share ${c.need})` : ''}`;
+// brand = { target, kept } of the whole brand run (kept = already ingested + this task's fit kept): source need N · brand target T · brand kept K.
+export const counterLine = (c, brand = null) => `read ${c.read} · kept ${c.kept} · rejected ${c.rejected}${c.pending_fit ? ` · to fit ${c.pending_fit}` : ''}${c.need ? ` · source need ${c.need}` : ''}${brand?.target ? ` · brand target ${brand.target} · brand kept ${brand.kept}` : ''}`;
 // Stop by KEPT posts: target once enough are kept (none waiting for fit); poor_source when read >= factor * need and kept is still short.
 export function fitStop(c, factor = 3) {
   if (c.pending_fit > 0) return '';
@@ -112,7 +113,8 @@ export function suggestedState(kind, { blocked, error, limit, read, stop }) {
 
 function fit(args) {
   const brand = loadBrand(need(args, 'brand'));
-  const task = resolveTask(args, openRun(args, brand).run);
+  const run = openRun(args, brand).run;
+  const task = resolveTask(args, run);
   const raw = readJson(task.raw_file, null);
   if (!raw) throw new Error(`Chưa có ${task.raw_file}: chạy collect.mjs trước.`);
   const file = path.resolve(need(args, 'file'));
@@ -121,7 +123,7 @@ function fit(args) {
   const c = counters(r.raw, readJson(progressFile(task), { read: 0 }).read, task.max);
   writeJson(progressFile(task), { read: c.read, need: c.need });
   const stop = fitStop(c, settings().research?.max_read_factor);
-  const summary = counterLine(c);
+  const summary = counterLine(c, { target: run.mode?.max_posts || 0, kept: brandTotal(run) + c.kept });
   if (task.kind !== 'standalone') track('crawl', { brand: brand.id, detail: `${task.id}: ${summary}` });
   const tm = timeInfo(task.started);
   out({ brand: brand.id, raw_file: task.raw_file, fit: r.fit, off_brand: r.off, undecided: r.undecided, ...c, summary, stop, ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), ...(tm.time_over && !stop ? { stop: 'time' } : {}),
