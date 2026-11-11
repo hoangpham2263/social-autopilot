@@ -105,13 +105,15 @@ details[open] > summary { margin-bottom: 6px; }
 .slot input[type=text], .src-url { flex: 1 1 auto; min-width: 0; }
 .card .head-row { display: flex; align-items: center; gap: 8px; } .card .head-row h3 { flex: 1 1 auto; margin: 0 0 4px; }
 /* Prompt: one options row, then Copy / Edit / Reset, then the prompt filling the rest of the window. */
-#page-prompt:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+#page-prompt:not([hidden]) { display: flex; flex-direction: column; overflow: auto; }
 #page-prompt .fields, #page-prompt .actions { flex: 0 0 auto; }
 #page-prompt .field:has(#prStart) { width: 250px; }
-#prText { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
+#prText { display: block; height: 220px; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
+#prTextFirst { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#prMsg.copied { color: var(--ink); }
 #prText[readonly] { background: #fafafa; }
 /* Prompt, Run progress: the fixed steps of the mode (numbered like the prompt), one dot each; the current step framed. */
-#page-prompt .run-panel { flex: 0 0 auto; margin: 0 0 16px; display: grid; gap: 8px; }
+#page-prompt .run-panel { flex: 0 0 auto; margin: 0 0 12px; display: grid; gap: 8px; }
 .run-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; }
 .run-steps li { display: flex; align-items: center; padding: 2px 8px; border: 1px solid transparent; font-size: 12.5px; white-space: nowrap; }
 .run-steps li .dot { margin-right: 6px; width: 8px; height: 8px; }
@@ -338,7 +340,11 @@ details.sec[open] > summary { margin-bottom: 12px; }
       <ol class="run-steps" id="prRunSteps"></ol>
       <div class="meta run-detail" id="prRunDetail"></div>
     </fieldset>
-    <textarea class="prompt" id="prText" spellcheck="false" readonly></textarea>
+    <!-- The full prompt: collapsed, people mainly copy it. -->
+    <details class="sec" id="prTextBox">
+      <summary><span>Prompt</span><span id="prTextCount" class="meta"></span><span id="prTextFirst" class="meta"></span></summary>
+      <textarea class="prompt" id="prText" spellcheck="false" readonly></textarea>
+    </details>
   </section>
 
   <section class="page" id="page-settings" hidden>
@@ -877,6 +883,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
     syncSub();
     prBase = p ? p.text : "";
     $("#prText").value = buildPrompt();
+    prBoxSync();
     fitPrompt();
     // The panel follows the selected mode (reloaded when the mode changes, or when nothing is polling).
     if (modeKey(prMode) !== shownRunMode || !runTimer) loadProgress();
@@ -965,9 +972,15 @@ details.sec[open] > summary { margin-bottom: 12px; }
     return prBase.replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
   // The box is as tall as the window allows (flex) and never shorter than its text when there is room.
+  function prBoxSync() {
+    const v = $("#prText").value, n = v ? v.split("\n").length : 0, first = (v.split("\n")[0] || "").trim();
+    $("#prTextCount").textContent = `${v.length.toLocaleString("en-US")} characters · ${n} lines`;
+    $("#prTextFirst").textContent = first.length > 90 ? first.slice(0, 89) + "…" : first;
+  }
+  { const b = $("#prTextBox"); b.open = store.get("prTextOpen") === "1"; b.addEventListener("toggle", () => store.set("prTextOpen", b.open ? "1" : "0")); }
   function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
   // An option changed: the prompt is rebuilt (read-only; no hand edits).
-  function regenerate() { $("#prText").value = buildPrompt(); try { arDraw(); } catch {} }
+  function regenerate() { $("#prText").value = buildPrompt(); prBoxSync(); try { arDraw(); } catch {} }
   // Mode button counts (selected brand, or all brands), each = items in that state now: Research = available library items;
   // Create = posts to review; Publish = approved posts not sent yet. Posts still needed for Plan ahead: Overview card.
   const modeKey = (m) => (/research/i.test(m) ? "research" : /publish approved/i.test(m) ? "publish" : "create");
@@ -993,7 +1006,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
   const loadPrompts = safely("#prMsg", async () => {
     loadModeCounts();
     const r = await getJson("/api/prompts").catch(() => offline);
-    if (r.error) { $("#prText").value = r.error; return; }
+    if (r.error) { $("#prText").value = r.error; prBoxSync(); return; }
     if (!Array.isArray(r.prompts)) throw new Error("prompts missing");
     promptData = r;
     hint = baseHint.replace("the tool folder", r.tool_root || "the tool folder"); $("#prMsg").textContent = hint;
@@ -1010,7 +1023,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
   const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
   $("#prCopy").onclick = async () => {
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
-    flash("Copied.");
+    { const v = $("#prText").value; clearTimeout(flash.t); $("#prMsg").classList.add("copied"); $("#prMsg").textContent = `Copied · ${v.length.toLocaleString("en-US")} characters`; flash.t = setTimeout(() => { $("#prMsg").classList.remove("copied"); $("#prMsg").textContent = hint; }, 3000); }
     // A new pending run of this mode: the panel starts over and waits for the agent (brands.mjs --run, Setup).
     const brandSel = $("#prBrand").value;
     const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
