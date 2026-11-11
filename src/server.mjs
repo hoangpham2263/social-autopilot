@@ -157,10 +157,19 @@ function restart() {
 
 
 // A script of scripts/ in a hidden child process; its one JSON object (or { ok:false, error }).
-const runScript = (script, args, timeout) => new Promise((done) => {
-  execFile(process.execPath, [join(root, "scripts", script), ...args], { cwd: root, env: process.env, timeout, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
-    try { done(JSON.parse(String(stdout))); } catch { done({ ok: false, error: err?.killed ? "Timed out." : String(stdout || err?.message || "Failed.").trim().slice(0, 500) }); }
+// early: answer as soon as the script has printed its result (one complete JSON object), without waiting for the process to exit.
+// Approve prints right after the push and the short link check, then the same process goes on with the slow GitHub Pages check
+// in the background; the page must not wait for that. The process is left to finish (and is still killed at the timeout).
+const runScript = (script, args, timeout, { early = false } = {}) => new Promise((done) => {
+  let settled = false;
+  const finish = (v) => { if (!settled) { settled = true; done(v); } };
+  const child = execFile(process.execPath, [join(root, "scripts", script), ...args], { cwd: root, env: process.env, timeout, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+    try { finish(JSON.parse(String(stdout))); } catch { finish({ ok: false, error: err?.killed ? "Timed out." : String(stdout || err?.message || "Failed.").trim().slice(0, 500) }); }
   });
+  if (early) {
+    let buf = "";
+    child.stdout?.on("data", (d) => { buf += d; try { finish(JSON.parse(buf)); } catch { /* not complete yet */ } });
+  }
 });
 const findDraftOrThrow = (id) => { if (!listDrafts().some((d) => d.id === id)) throw new Error(`Unknown post ${id}.`); };
 
@@ -313,7 +322,7 @@ async function handle(req, res) {
   if (path === "/api/approve" && req.method === "POST") return api(res, async () => {
     const id = draftId(await body(req));
     findDraftOrThrow(id);
-    const r = await runScript("finalize.mjs", ["approve", "--id", id], 15 * 60000);
+    const r = await runScript("finalize.mjs", ["approve", "--id", id], 15 * 60000, { early: true });
     const x = r.results?.[0];
     if (!r.ok) throw new Error(r.error || "Not approved.");
     if (x && !x.ok) throw new Error(x.error || "Not approved.");
