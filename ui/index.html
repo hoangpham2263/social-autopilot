@@ -296,7 +296,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
     </div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div class="field"><label for="prSub" title="Claude Code: hand the whole task to one background sub-agent so the chat stays free">Run in</label><select id="prSub"><option value="main">Main chat</option><option value="sub">Sub-agent</option></select></div>
+      <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
+      <div class="field" id="prSubField"><label for="prSub" title="Claude Code: hand the whole task to one background sub-agent so the chat stays free">Run in</label><select id="prSub"><option value="main">Main chat</option><option value="sub">Sub-agent</option></select></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
       <div class="field" data-opt="research" hidden><span class="label" title="The brand's reference pages (social.json research.sources), collected first; none ticked = all">Reference pages</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
       <div class="field" data-opt="research" hidden><span class="label" title="Search more posts by the brand's keywords/hashtags on these platforms after the reference pages (default: every enabled platform of the skill)">Discovery platforms</span><details class="select" id="prPlatBox"><summary id="prPlatSum">All</summary><div class="options" id="prPlat"></div></details></div>
@@ -312,6 +313,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
       <button class="btn" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
+      <span class="meta" id="prAppHint">Starts Claude Code for you; the live panel below shows progress.</span>
+      <span class="status-tag c-amber" id="prRunPill" hidden>A run is active in the app <button class="linkbtn" type="button" id="prRunPillGo">show</button></span>
     </div>
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
@@ -1010,9 +1013,9 @@ details.sec[open] > summary { margin-bottom: 12px; }
     if (!Array.isArray(r.prompts)) throw new Error("prompts missing");
     promptData = r;
     hint = baseHint.replace("the tool folder", r.tool_root || "the tool folder"); $("#prMsg").textContent = hint;
-    drawPrompt();
+    drawPrompt(); applyHow();
   });
-  $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); };
+  $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
   $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").value === "sub" ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
   for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
@@ -1039,14 +1042,29 @@ details.sec[open] > summary { margin-bottom: 12px; }
   };
   const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
   let arTimer = 0, arState = null;
+  // How to run: "Run in the app" (Run now + live panel) or "Copy prompt" (prompt box + Run in). Default Copy prompt until the user picks the app once. Only hides; #prText keeps being regenerated.
+  const howNow = () => (store.get("prHow") === "app" ? "app" : "copy");
+  function applyHow() {
+    const app = howNow() === "app", busy = !!arState?.active, claude = subAllowed();
+    for (const b of $$("#prHow button")) b.setAttribute("aria-pressed", String(b.dataset.how === howNow()));
+    for (const id of ["#prCopy", "#prMsg", "#prSubField", "#prTextBox"]) $(id).hidden = app;
+    $("#prRunNow").hidden = !app; if (!app) $("#prStop").hidden = true;
+    $("#prAppHint").hidden = !app;
+    $("#prAppHint").textContent = claude ? "Starts Claude Code for you; the live panel below shows progress." : "Run in the app needs Claude Code";
+    $("#prAppHint").style.color = claude ? "" : "#b06000";
+    $("#prRunPill").hidden = app || !busy;
+  }
+  for (const b of $$("#prHow button")) b.onclick = () => { store.set("prHow", b.dataset.how); arDraw(); };
+  $("#prRunPillGo").onclick = () => { store.set("prHow", "app"); arDraw(); };
   const arClock = (n) => (n < 60 ? `${n} s` : `${Math.floor(n / 60)} min ${n % 60} s`);
   function arDraw() {
     const r = arState, claude = subAllowed();
+    applyHow();
     const busy = !!r?.active, noCli = r && r.cli && !r.cli.found;
     setDisabled($("#prRunNow"), busy || noCli || !claude, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found" : "Run now starts Claude Code: choose the Claude Code agent");
-    $("#prStop").hidden = !busy;
+    $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
-    box.hidden = !show; if (!show) return;
+    box.hidden = !show || howNow() !== "app"; if (!show) return;
     if (noCli) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
