@@ -331,10 +331,8 @@ function checkImages(list, base) {
 export function pendingFitOf(dir, rawFile = '') {
   const raw = readJson(rawFile || path.join(dir, 'raw.json'), null);
   if (!raw || Array.isArray(raw) || raw.tool !== 'collect') return 0;
-  const posts = raw.posts || [], rejected = (raw.rejected || []).length;
-  const kept = posts.filter((p) => p.product_fit && String(p.product_fit.type || '').trim()).length;
-  const read = Math.max(Number(readJson(path.join(dir, 'progress.json'), { read: 0 }).read) || 0, posts.length + rejected);
-  return Math.max(0, read - kept - rejected);
+  // pending = downloaded posts (in raw.posts) with no fit decision; tiles dropped by from-page never count
+  return (raw.posts || []).filter((p) => !(p.product_fit && String(p.product_fit.type || '').trim())).length;
 }
 const FIT_FIRST = 'run collect.mjs fit on review[] first (posts are read but not judged yet)';
 // raw.json rejected[]: posts the agent SAW but did not take because the product is off-brand (never downloaded).
@@ -418,6 +416,10 @@ function ingest(args) {
     const r = mode.max_posts && !left
       ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0, rejected: [] }
       : addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left > 0 ? Math.max(left, keptFit) : left, crawlMode: crawlMode(mode), productFit });
+    // truthful counts: kept = fit posts that really passed the store checks (type must be a valid brand type); a repeat ingest keeps the first ingest's numbers
+    const prevIngests = readJson(logPath, { ingests: [] }).ingests || [];
+    const keptNow = Math.max(0, keptFit - r.rejected.length - (r.unjudged || []).length);
+    const keptReport = fresh.length ? keptNow : prevIngests.reduce((a, e) => a + (e.kept || 0), 0);
     src.rejected_off_brand = (src.rejected_off_brand || 0) + r.rejected.length + seen.length;
     src.unjudged = (src.unjudged || 0) + (r.unjudged || []).length;
     src.new = (src.new || 0) + r.added.length;
@@ -426,9 +428,9 @@ function ingest(args) {
     src.duplicates = (src.duplicates || 0) + r.duplicates.length;
     day[`${brand.id}/${src.id}`] = (day[`${brand.id}/${src.id}`] || 0) + r.added.length;
     const unj = new Set((r.unjudged || []).map((x) => x.post_url));
-    const entry = { at: stamp(), raw_posts: raw.length, already_ingested: already, unjudged: (r.unjudged || []).length, post_urls: fresh.map((p) => String(p.post_url || '')).filter((u) => u && !unj.has(u)), added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
+    const entry = { at: stamp(), raw_posts: raw.length, already_ingested: already, kept: keptNow, unjudged: (r.unjudged || []).length, post_urls: fresh.map((p) => String(p.post_url || '')).filter((u) => u && !unj.has(u)), added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
     writeJson(logPath, { source: src.id, ingests: [...(readJson(logPath, { ingests: [] }).ingests || []), entry] });
-    report.push({ source: src.id, ...(mode.max_posts ? { kept: keptFit, summary: `kept ${keptFit} · added ${r.added.length}` } : {}), added: r.added.length, unjudged: (r.unjudged || []).length, rejected_off_brand: r.rejected.length + seen.length, ...(r.rejected.length + seen.length ? { rejected_list: [...r.rejected, ...seen] } : {}), ...(already ? { already_ingested: already } : {}), new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}),
+    report.push({ source: src.id, ...(mode.max_posts ? { kept: keptReport, summary: `kept ${keptReport} · added ${r.added.length} · duplicates ${r.duplicates.length} · rejected_off_brand ${r.rejected.length + seen.length} · unjudged ${(r.unjudged || []).length}${already ? ` · already ingested ${already}` : ''}` } : {}), added: r.added.length, unjudged: (r.unjudged || []).length, rejected_off_brand: r.rejected.length + seen.length, ...(r.rejected.length + seen.length ? { rejected_list: [...r.rejected, ...seen] } : {}), ...(already ? { already_ingested: already } : {}), new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}),
       // --max-posts: what is left for the brand and the next source's share (a dry source leaves its share to the others).
       ...(mode.max_posts ? (() => { const used = run.sources.reduce((a, x) => a + (x.new || 0), 0), rest = run.sources.filter((x) => !x.ingested).length; return { brand_posts_left: Math.max(0, mode.max_posts - used), next_source_share: rest ? Math.ceil(Math.max(0, mode.max_posts - used) / rest) : 0 }; })() : {}) });
   }

@@ -18,7 +18,7 @@
 // Read only: it never likes, saves, follows, comments, messages, joins, posts or signs in. A login wall / captcha / block
 // page = state blocked, nothing more opened. Cookies stay in Chrome; nothing secret is written.
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, settings, loadBrand, readJson, writeJson, workspace, stamp } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, loadBrand, brandDiscovery, readJson, writeJson, workspace, stamp } from './lib.mjs';
 import { openRun, nextTask, timeInfo, brandTotal, TIME_NEXT } from './research.mjs';
 import { track } from './progress.mjs';
 import { REGISTRY, STATUSES, getAdapter, adapterStatus, platformIds } from './platforms/index.mjs';
@@ -68,19 +68,30 @@ export function rawShape(task, posts, { rejected = [], now = stamp() } = {}) {
   return { ...head, platform: task.platform, tool: 'collect', collected: now, posts, rejected };
 }
 // Product-fit decisions (the agent looked at the images) -> raw: fit posts get product_fit, the others go to rejected[].
-export function applyDecisions(raw, decisions) {
+// types = the brand's product_fit.types: a decision type is normalised to the exact valid string, an unknown one lands in `bad` (fit refuses).
+const normType = (x) => String(x || '').toLowerCase().replace(/[^p{L}p{N}]+/gu, ' ').trim();
+export function matchType(type, types = []) {
+  if (!types.length) return String(type || '').trim();
+  const t = String(type || '').trim();
+  if (types.includes(t)) return t;
+  const hit = types.filter((x) => normType(x) === normType(t));
+  return hit.length === 1 && normType(t) ? hit[0] : '';
+}
+export function applyDecisions(raw, decisions, types = []) {
   const by = new Map((Array.isArray(decisions) ? decisions : []).filter((d) => d && d.id).map((d) => [String(d.id), d]));
   const posts = [], rejected = [...(raw.rejected || [])];
   let fit = 0, off = 0;
-  const undecided = [];
+  const undecided = [], bad = [];
   for (const p of raw.posts || []) {
     const d = by.get(String(p.collector_id || p.post_url));
     if (!d) { posts.push(p); undecided.push(p.collector_id || p.post_url); continue; }
     if (d.fit === false) { rejected.push({ post_url: p.post_url, author: p.author || '', reason: String(d.reason || 'not a product the brand sells') }); off++; continue; }
     if (!String(d.type || '').trim()) { posts.push(p); undecided.push(`${p.collector_id}: fit without type`); continue; }
-    posts.push({ ...p, product_fit: { type: String(d.type).trim(), reason: String(d.reason || '') } }); fit++;
+    const type = matchType(d.type, types);
+    if (!type) { bad.push({ id: p.collector_id || p.post_url, type: String(d.type).trim() }); posts.push(p); continue; }
+    posts.push({ ...p, product_fit: { type, reason: String(d.reason || '') } }); fit++;
   }
-  return { raw: { ...raw, posts, rejected }, fit, off, undecided };
+  return { raw: { ...raw, posts, rejected }, fit, off, undecided, bad };
 }
 // Counters per task (cumulative; <task dir>/progress.json holds read + need, kept / rejected come from raw.json).
 // kept here = fit kept per task; ingest takes ALL of them (will_ingest = kept) and `report` counts what ingest really added.
@@ -91,7 +102,7 @@ export function counters(raw, read, need = 0) {
   const rejected = (raw?.rejected || []).length;
   const r = Math.max(Number(read) || 0, posts.length + rejected);
   const n = Math.max(0, Number(need) || 0);
-  return { read: r, pending_fit: Math.max(0, r - kept - rejected), kept, rejected, need: n, need_more: Math.max(0, n - kept), will_ingest: kept };
+  return { read: r, pending_fit: Math.max(0, posts.length - kept), kept, rejected, need: n, need_more: Math.max(0, n - kept), will_ingest: kept };
 }
 // brand = { target, kept } of the whole brand run (kept = already ingested + this task's fit kept): source need N · brand target T · brand kept K.
 export const counterLine = (c, brand = null) => `read ${c.read} · kept ${c.kept} · rejected ${c.rejected}${c.pending_fit ? ` · to fit ${c.pending_fit}` : ''}${c.need ? ` · source need ${c.need}` : ''}${brand?.target ? ` · brand target ${brand.target} · brand kept ${brand.kept}` : ''}`;
@@ -118,7 +129,9 @@ function fit(args) {
   const raw = readJson(task.raw_file, null);
   if (!raw) throw new Error(`Chưa có ${task.raw_file}: chạy collect.mjs trước.`);
   const file = path.resolve(need(args, 'file'));
-  const r = applyDecisions(raw, readJson(file, []));
+  const types = brandDiscovery(brand.social).product_fit.types || [];
+  const r = applyDecisions(raw, readJson(file, []), types);
+  if (r.bad.length) throw new Error(`fit refused: type not in the brand's product_fit.types for ${r.bad.map((x) => `${x.id} ("${x.type}")`).join(', ')}. Valid types (use the exact string): ${types.map((x) => `"${x}"`).join(' | ')}. Nothing was written.`);
   writeJson(task.raw_file, r.raw);
   const c = counters(r.raw, readJson(progressFile(task), { read: 0 }).read, task.max);
   writeJson(progressFile(task), { read: c.read, need: c.need });
