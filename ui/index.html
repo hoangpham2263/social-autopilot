@@ -128,7 +128,8 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .tile .tile-title { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .tile .tile-title .t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tile .tile-title .status-tag { flex: 0 0 auto; }
-.tile .tile-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .tile-sub { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
+.tile .tile-sub .ts-l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; } .tile .tile-sub .ts-r { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
 .tile .tile-foot { margin-top: auto; display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 24px; }
 .tile .tile-foot .who { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
 .tile .tile-foot .btn { height: 24px; padding: 0 8px 2px; font-size: 12px; flex: 0 0 auto; }
@@ -628,7 +629,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   const tile = (x) => `<div class="tile" data-id="${esc(x.id)}" tabindex="0">
     ${x.img ? `<img class="tile-img" loading="lazy" src="${img(x.img)}" alt="">` : `<div class="tile-img none">No image</div>`}
     <div class="tile-title"><span class="t" title="${esc(x.title)}">${esc(x.title)}</span>${x.status || ""}</div>
-    ${x.sub ? `<div class="tile-sub" title="${esc(x.sub)}">${esc(x.sub)}</div>` : ""}
+    ${x.sub || x.subRight ? `<div class="tile-sub"><span class="ts-l" title="${esc(x.sub || "")}">${esc(x.sub || "")}</span>${x.subRight ? `<span class="ts-r" title="${esc(x.subRightTip || "")}">${esc(x.subRight)}</span>` : ""}</div>` : ""}
     <div class="tile-foot"><span class="who" title="${esc(x.whoTip || x.who)}">${x.whoHtml || esc(x.who)}</span>${x.actions || ""}</div>
     <div class="msg"></div></div>`;
   // A whole card opens its preview (click or Enter); its buttons do their own thing.
@@ -669,6 +670,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div class="tiles spaced">${list.map((it) => tile({ id: it.id, img: arr(it.image_paths)[0] || "",
         title: String(it.caption || "").split(/\r?\n/).find((l) => l.trim()) || it.id,
         status: it.status === "rejected" ? `<span class="meta" title="${esc(removedWhy(it))}">Removed</span>` : "",
+        subRight: String(it.captured || "").slice(0, 10), subRightTip: it.captured ? `Collected ${String(it.captured).slice(0, 16).replace("T", " ")}` : "",
         sub: it.status === "rejected" ? [removedWhy(it), usedTimes(it)].filter(Boolean).join(" · ") : useTag(it),
         who: pageOf(it), whoHtml: `${it.platform ? `<span class="status-tag" title="${esc(platformName(it.platform))} · found by ${esc(foundBy(it))}">${esc(platformName(it.platform))}</span> ` : ""}${esc(pageOf(it))}`,
         whoTip: `${platformName(it.platform) ? platformName(it.platform) + " · " : ""}${pageOf(it)} · ${it.id} · found by ${foundBy(it)}${it.posted_date ? ` · ${it.posted_date}` : ""}${it.status === "rejected" && it.note ? ` · ${it.note}` : ""}`,
