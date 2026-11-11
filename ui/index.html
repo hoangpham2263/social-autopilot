@@ -94,7 +94,7 @@ table.edit td { padding: 3px 4px; vertical-align: middle; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 12px; }
 .msg { white-space: pre-wrap; }
 .msg:empty { display: none; }
-textarea.prompt { min-height: 200px; font: 12.5px/1.5 Consolas, ui-monospace, monospace; }
+textarea.prompt { min-height: 0; font: 12.5px/1.5 Consolas, ui-monospace, monospace; }
 details > summary { cursor: default; color: var(--muted); font-size: 12px; }
 details[open] > summary { margin-bottom: 6px; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
@@ -106,10 +106,12 @@ details[open] > summary { margin-bottom: 6px; }
 .card .head-row { display: flex; align-items: center; gap: 8px; } .card .head-row h3 { flex: 1 1 auto; margin: 0 0 4px; }
 /* Prompt: one options row, then Copy / Edit / Reset, then the prompt filling the rest of the window. */
 #page-prompt:not([hidden]) { display: flex; flex-direction: column; overflow: auto; }
-#page-prompt .fields, #page-prompt .actions { flex: 0 0 auto; }
+#page-prompt > * { flex: 0 0 auto; }
+#page-prompt > #prTextBox, #page-prompt > #prAgentRun { flex: 1 1 auto; min-height: 140px; display: flex; flex-direction: column; }
+#page-prompt > [hidden] { display: none; }
+.pr-text-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
 #page-prompt .field:has(#prStart) { width: 250px; }
-#prText { display: block; height: 220px; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
-#prTextFirst { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#prText { display: block; flex: 1 1 auto; height: 100%; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prMsg.copied { color: var(--ink); }
 #prText[readonly] { background: #fafafa; }
 /* Prompt, Run progress: the fixed steps of the mode (numbered like the prompt), one dot each; the current step framed. */
@@ -119,8 +121,10 @@ details[open] > summary { margin-bottom: 6px; }
 .run-steps li .dot { margin-right: 6px; width: 8px; height: 8px; }
 .run-steps li.now { border-color: var(--accent); }
 .run-steps li.skipped, .run-steps li.pending { color: var(--muted); }
-#page-prompt .ar-panel { display: grid; gap: 6px; margin: 0 0 12px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
-.ar-log { margin: 6px 0 0; padding: 8px; border: 1px solid var(--line); max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+#page-prompt .ar-panel { gap: 6px; margin: 0 0 12px; }
+.ar-logbox[hidden] { display: none; }
+.ar-logbox { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
+.ar-log { margin: 0; flex: 1 1 auto; min-height: 0; padding: 8px; border: 1px solid var(--line); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .dot-run { background: var(--accent); }
 .run-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .run-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -319,7 +323,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
       <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span> <span id="arLast" class="ar-last"></span></div>
-      <details id="arLogBox"><summary class="meta">Live log</summary><pre class="ar-log" id="arLog"></pre></details>
+      <div class="ar-logbox" id="arLogBox"><span class="label">Live log</span><pre class="ar-log" id="arLog"></pre></div>
     </div>
     <!-- Chrome connection (read only status from GET /api/chrome-check; profile + helpers inside). -->
     <details class="sec" id="prChrome">
@@ -343,11 +347,11 @@ details.sec[open] > summary { margin-bottom: 12px; }
       <ol class="run-steps" id="prRunSteps"></ol>
       <div class="meta run-detail" id="prRunDetail"></div>
     </fieldset>
-    <!-- The full prompt: collapsed, people mainly copy it. -->
-    <details class="sec" id="prTextBox">
-      <summary><span>Prompt</span><span id="prTextCount" class="meta"></span><span id="prTextFirst" class="meta"></span></summary>
+    <!-- The full prompt: always visible, takes the leftover height of the page. -->
+    <div id="prTextBox">
+      <div class="pr-text-head"><span class="label">Prompt</span><span id="prTextCount" class="meta"></span></div>
       <textarea class="prompt" id="prText" spellcheck="false" readonly></textarea>
-    </details>
+    </div>
   </section>
 
   <section class="page" id="page-settings" hidden>
@@ -974,13 +978,11 @@ details.sec[open] > summary { margin-bottom: 12px; }
     const skills = scope.map((x) => `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
     return prBase.replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
-  // The box is as tall as the window allows (flex) and never shorter than its text when there is room.
+  // Count line above the prompt box (the box itself fills the leftover page height by CSS).
   function prBoxSync() {
     const v = $("#prText").value, n = v ? v.split("\n").length : 0, first = (v.split("\n")[0] || "").trim();
     $("#prTextCount").textContent = `${v.length.toLocaleString("en-US")} characters · ${n} lines`;
-    $("#prTextFirst").textContent = first.length > 90 ? first.slice(0, 89) + "…" : first;
   }
-  { const b = $("#prTextBox"); b.open = store.get("prTextOpen") === "1"; b.addEventListener("toggle", () => store.set("prTextOpen", b.open ? "1" : "0")); }
   function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
   // An option changed: the prompt is rebuilt (read-only; no hand edits).
   function regenerate() { $("#prText").value = buildPrompt(); prBoxSync(); try { arDraw(); } catch {} }
@@ -1064,7 +1066,9 @@ details.sec[open] > summary { margin-bottom: 12px; }
     setDisabled($("#prRunNow"), busy || noCli || !claude, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found" : "Run now starts Claude Code: choose the Claude Code agent");
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
-    box.hidden = !show || howNow() !== "app"; if (!show) return;
+    box.hidden = howNow() !== "app";
+    if (!show) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last"; $("#arLogBox").hidden = true; return; }
+    $("#arLast").className = "ar-last"; $("#arLogBox").hidden = false;
     if (noCli) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
