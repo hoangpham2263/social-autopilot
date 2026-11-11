@@ -218,13 +218,10 @@ export async function fromPage(args) {
 // `collect.mjs install`: ONE file with the extractors of every platform; run it once per Research session (browser_run_code_unsafe + filename).
 export function install(args) {
   const code = installScript();
-  if (args.stdout) { process.stdout.write(code + '
-'); return; }
+  if (args.stdout) { process.stdout.write(code + '\n'); return; }
   const dir = scriptDir();
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, INSTALL_FILE);
-  fs.writeFileSync(file, code + '
-');
-  process.stdout.write(JSON.stringify({ file, chars: code.length, run: 'once per session: browser_run_code_unsafe with filename = file; it returns {installed:true}. Pages loaded AFTER that have window.__sa: open the page (after install), scroll, run the small file of "collect.mjs script"; {error:"not_installed"} = run install.js, then reload the page.' }) + '
-');
+  fs.writeFileSync(file, code + '\n');
+  process.stdout.write(JSON.stringify({ file, chars: code.length, run: 'once per session: browser_run_code_unsafe with filename = file; it returns {installed:true}. Pages loaded AFTER that have window.__sa: open the page (after install), scroll, run the small file of "collect.mjs script"; {error:"not_installed"} = run install.js, then reload the page.' }) + '\n');
 }
