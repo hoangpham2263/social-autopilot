@@ -48,7 +48,7 @@ tới khi next trả "done" → 1.3 lọc (store.mjs classify / verdict) → 1.4
 
 ## Luật chung trên mọi nền tảng
 - **Chỉ xem:** mở trang, cuộn, mở bài, đọc. **Không bao giờ** like, thả tim, lưu/save/pin, theo dõi, bình luận, nhắn tin, chia sẻ, tham gia nhóm, đăng hay tải lên gì. Không đăng nhập hộ, không nhập mật khẩu, không lưu cookie. Một trình duyệt = một agent (Chrome đã đăng nhập qua Playwright MCP).
-- **Nhịp lịch sự:** chờ giữa hai lần cuộn theo `research.scroll_wait_seconds` (Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook 5-10 giây). Cuộn bằng phím End hoặc con lăn (`browser_press_key` End / `browser_mouse_wheel`), 1-2 lần mỗi vòng, rồi trích xuất. Dừng theo `stop_rules` của `next`.
+- **Nhịp lịch sự:** chờ giữa hai lần cuộn theo `research.scroll_wait_seconds` (Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook 5-10 giây). Cuộn bằng phím End hoặc con lăn (`browser_press_key` End / `browser_run_code_unsafe` running `async (page) => { for (let i=0;i<3;i++){ await page.mouse.wheel(0,900); await page.waitForTimeout(1200);} await page.waitForTimeout(3500); }` (there is no browser_mouse_wheel tool)), 1-2 lần mỗi vòng, rồi trích xuất. Dừng theo `stop_rules` của `next`.
 - **Dừng ngay** khi gặp tường đăng nhập, captcha, "checkpoint", "unusual activity", "try again later", trang trống bất thường: `result --state blocked --note "<thấy gì>"`, không thử lại nền tảng đó trong lượt.
 - **Đọc gọn:** đọc dữ liệu bằng script trích xuất của bước (một lần gọi, chỉ bài mới); snapshot/screenshot chỉ để nhìn sản phẩm khi cần phán đoán hoặc để sửa selector.
 - **Bỏ bài đã có:** link hoặc mã bài nằm trong `brand_post_urls` / `brand_post_ids` (lệnh `store.mjs known`) thì bỏ qua, không mở, không tải.

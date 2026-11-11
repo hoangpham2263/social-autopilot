@@ -106,8 +106,8 @@ const forArgOf = (task, brand) => `${brand ? `--brand ${brand.id} ` : ''}${task.
 
 // One scroll wording for every place that prints it (research.mjs next, collect.mjs script). Facebook's feed does not load on End.
 export const scrollHint = (platform, lo, hi) => (platform === 'facebook'
-  ? 'Playwright MCP: scroll with the mouse wheel 3 times (browser_mouse_wheel), then wait 3-5 s before the next extract; the End key does not load the Facebook feed'
-  : `Playwright MCP: press End (or mouse wheel) 1-2 times, then wait ${lo}-${hi} s before the next extract`);
+  ? 'Playwright MCP: scroll with browser_run_code_unsafe running `async (page) => { for (let i=0;i<3;i++){ await page.mouse.wheel(0,900); await page.waitForTimeout(1200);} await page.waitForTimeout(3500); }` (there is no browser_mouse_wheel tool); the End key does not load the Facebook feed'
+  : `Playwright MCP: press End (or the browser_run_code_unsafe page.mouse.wheel snippet) 1-2 times, then wait ${lo}-${hi} s before the next extract`);
 
 export function script(args) {
   const { brand, task } = taskOf(args);
