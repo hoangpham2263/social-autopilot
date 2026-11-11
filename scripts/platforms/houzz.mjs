@@ -1,7 +1,7 @@
 // Houzz adapter (status in scripts/platforms/index.mjs; written from knowledge of the site, NOT yet run on a live page).
 // Photo search (/photos/query/<kw-with-dashes>) is a grid of room photos; each card links to a photo page
 // (/photos/<title>-phvw-vp~<id>) and holds a thumbnail on st.hzcdn.com. Only meaningful for furniture/home brands.
-import { pageWall, gridExtract, makePost, buildPageScript, enc } from './common.mjs';
+import { makePost, buildPageScript, enc } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -30,9 +30,6 @@ export const upgradeImage = (u) => String(u || '').replace(/-w\d+-h\d+(-b\d)/, '
 export const searchUrl = (query) => `https://www.houzz.com/photos/query/${enc(String(query).replace(/^#/, '').trim().toLowerCase().replace(/\s+/g, '-'))}`;
 export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls.map(upgradeImage), caption: t.caption, author: t.author, found_by: ctx.found_by || '' });
 
-// ---- adapter contract ----
-export const isLoginWall = (page) => pageWall(page, SELECTORS);
-export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
 
-// in-page mode: script for Playwright MCP browser_run_code_unsafe
-export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'houzz', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /~(\d{5,})/.source });
+// extract script (Playwright MCP browser_run_code_unsafe): reads the page as it is now
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'houzz', max: 0, ...o, id_re: /~(\d{5,})/.source });

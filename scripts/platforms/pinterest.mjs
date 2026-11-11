@@ -1,6 +1,6 @@
 // Pinterest adapter (status in scripts/platforms/index.mjs; written from knowledge of the site, NOT yet run on a live page).
 // Search (/search/pins/?q=) is a masonry grid; each pin is a link to /pin/<id>/ with an <img> (236x / 474x / 736x in the URL).
-import { pageWall, gridExtract, makePost, enc, isHashtag, buildPageScript } from './common.mjs';
+import { makePost, enc, isHashtag, buildPageScript } from './common.mjs';
 
 // ---- every selector and pattern of this adapter lives in this block ----
 export const SELECTORS = {
@@ -31,9 +31,6 @@ export const searchUrl = (query) => `https://www.pinterest.com/search/pins/?q=${
 export const stripCaption = (c) => String(c || '').replace(new RegExp(SELECTORS.caption_strip, 'i'), '').trim();
 export const toPost = (t, ctx = {}) => makePost({ id: postId(t.url), url: canonicalUrl(t.url), image_urls: t.image_urls.map(upgradeImage), caption: stripCaption(t.caption), author: t.author, found_by: ctx.found_by || '' });
 
-// ---- adapter contract ----
-export const isLoginWall = (page) => pageWall(page, SELECTORS);
-export const extract = (page, ctx) => gridExtract(page, SELECTORS, toPost, ctx);
 
-// in-page mode: script for Playwright MCP browser_run_code_unsafe
-export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'pinterest', steps: 4, max: 12, delay: [5, 15], ...o, id_re: /\/pin\/(?:[\w-]*?--)?(\d{6,})/.source });
+// extract script (Playwright MCP browser_run_code_unsafe): reads the page as it is now
+export const pageScript = (o) => buildPageScript(SELECTORS, { platform: 'pinterest', max: 0, ...o, id_re: /\/pin\/(?:[\w-]*?--)?(\d{6,})/.source });

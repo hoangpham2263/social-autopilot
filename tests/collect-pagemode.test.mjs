@@ -1,4 +1,4 @@
-// In-page mode of the collector (scripts/collect-pagemode.mjs): pure transform, caption/id parsing, the script text, and the
+// Extract path of the collector (scripts/collect-pagemode.mjs): pure transform, seen filter, caption/id parsing, the script text, and the
 // CLI `collect.mjs from-page` -> raw.json -> `research.mjs ingest` in a throw-away workspace (images from a local http server).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -57,17 +57,35 @@ test('page result -> posts: dedupe by id, known posts dropped before download, l
   assert.throws(() => parsePageResult('nothing'), /JSON/);
 });
 
-test('pageScript: self-contained, carries the adapter selectors and the polite pauses; only some platforms have one', () => {
+test('extract script: self-contained, read only, no navigation / scroll / pause; carries the seen ids', () => {
   for (const a of [pinterest, instagram, getAdapter('facebook')]) {
-    const s = a.pageScript({ url: 'https://example.com/', found_by: 'keyword:x', max: 3, steps: 2, delay: [5, 15] });
+    const s = a.pageScript({ found_by: 'keyword:x', max: 3, seen: ['111', '222'] });
     assert.match(s, /^async \(page\) => \{/);
     assert.doesNotThrow(() => new Function(`return (${s});`), 'valid JS');
-    assert.match(s, /"delay":\[5,15\]/);
-    assert.match(s, /window\.scrollBy/);
-    assert.doesNotMatch(s, /\.click\(|\.fill\(|method:\s*'POST'/i, 'read only');
+    assert.match(s, /"seen":\["111","222"\]/);
+    assert.doesNotMatch(s, /page\.goto|scrollBy|scrollTo|setTimeout|\.click\(|\.fill\(|dispatchEvent|method:\s*'POST'/i, 'extract only');
   }
-  assert.match(instagram.pageScript({ url: 'u', found_by: '', max: 1, steps: 1, delay: [5, 15] }), /"post_fallback":true/);
+  assert.match(instagram.pageScript({ found_by: '' }), /"post_fallback":true/);
+  assert.match(instagram.pageScript({ found_by: '' }), /AbortSignal\.timeout/);
   for (const id of platformIds()) assert.ok(['function', 'undefined'].includes(typeof getAdapter(id).pageScript), id);
+});
+
+test('seen filter: only new tiles come back, total_on_page counts all', async () => {
+  const { filterSeen } = await import('../scripts/platforms/common.mjs');
+  const { tileKeys, readSeen } = await import('../scripts/collect-pagemode.mjs');
+  const tiles = [{ id: '1', url: 'u1' }, { id: '2', url: 'u2' }, { id: '', url: 'u3' }];
+  assert.deepEqual(filterSeen(tiles, ['1', 'u3']), { tiles: [{ id: '2', url: 'u2' }], total_on_page: 3 });
+  assert.deepEqual(filterSeen(tiles).tiles.length, 3);
+  assert.deepEqual(tileKeys([{ id: 'pfbid0x', alt: ['123456'] }, { id: '', url: 'u3' }]), ['pfbid0x', '123456', 'u3']);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-seen-'));
+  fs.writeFileSync(path.join(tmp, 'a.json'), JSON.stringify(['1', '1', 2]));
+  fs.writeFileSync(path.join(tmp, 'b.json'), JSON.stringify({ seen: ['x'] }));
+  assert.deepEqual([readSeen(path.join(tmp, 'a.json')), readSeen(path.join(tmp, 'b.json')), readSeen(path.join(tmp, 'none.json'))], [['1', '2'], ['x'], []]);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  // a post seen under its photo fbid (alias) is skipped too
+  const fb = getAdapter('facebook');
+  const r = pageResultPosts({ tiles: [{ id: 'pfbid0abcdefghijk', alt: ['1333219135645308'], url: 'https://www.facebook.com/x/posts/pfbid0abcdefghijk', image_urls: ['i'], caption: 'c' }] }, fb, { skip: ['1333219135645308'] });
+  assert.equal(r.read, 0);
 });
 
 test('CLI: from-page downloads images and writes a raw.json that research.mjs ingest accepts (temp workspace)', async () => {
@@ -98,7 +116,7 @@ test('CLI: from-page downloads images and writes a raw.json that research.mjs in
     let src = ''; sc.stdout.on('data', (d) => { src += d; });
     await new Promise((r) => sc.on('close', r));
     assert.match(src, /^async \(page\) =>/);
-    // The page result as the in-page script returns it; image hosts replaced by the local server (referer/headers path is the same code).
+    // The result as the extract script returns it; image hosts replaced by the local server (referer/headers path is the same code).
     const result = { platform: 'pinterest', loginWall: false, tiles: [1, 2, 3].map((k) => ({ url: `https://www.pinterest.com/pin/${900000000 + k}/`, image_urls: [`${base}/736x/a${k}.png`], caption: `This may contain: Table ${k}`, author: '' })) };
     write(path.join(tmp, 'page.json'), result);
     const fp = await run('collect.mjs', 'from-page', '--brand', 'dv', '--for-query', n.query, '--file', path.join(tmp, 'page.json'));
@@ -114,40 +132,42 @@ test('CLI: from-page downloads images and writes a raw.json that research.mjs in
     assert.equal(ing.ok, true, JSON.stringify(ing));
     assert.deepEqual([ing.added, ing.rejected_off_brand], [2, 1], JSON.stringify(ing));
     // Posts already in the store are dropped before any download on the next from-page.
+    // (a new task run: forget this task's earlier extracts, which would otherwise accumulate)
+    for (const f of ['seen.json', 'extracts.json', 'raw.json']) fs.rmSync(path.join(path.dirname(n.raw_file), f), { force: true });
     const again = await run('collect.mjs', 'from-page', '--brand', 'dv', '--for-query', n.query, '--file', path.join(tmp, 'page.json'));
     assert.equal(again.collected, 1, JSON.stringify(again)); // the off-brand one is not in the store
     assert.equal(again.skipped_known, 2, JSON.stringify(again));
   } finally { server.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('b64 single-line result: round trip, exact mismatch position, 4-char tag; deadline option in the script', async () => {
-  const { packB64, unpackB64, buildPageScript, checksumOf } = await import('../scripts/platforms/common.mjs');
-  const { loadPageResults } = await import('../scripts/collect-pagemode.mjs');
+test('b64 single-line result: round trip, exact mismatch position, 4-char tag', async () => {
+  const { packB64, unpackB64, checksumOf } = await import('../scripts/platforms/common.mjs');
+  const { loadPageResult } = await import('../scripts/collect-pagemode.mjs');
   const obj = { platform: 'etsy', total: 1, checksum: checksumOf(['1']), tiles: [{ id: '1', url: 'https://e/1', image_urls: ['https://i/a.jpg'], caption: 'Café ' + 'long '.repeat(80) }] };
   const p = packB64(obj);
   assert.equal(p.tag.length, 4);
   assert.deepEqual(unpackB64(p.line).obj, obj);
-  assert.deepEqual(loadPageResults({ _: [], b64: p.line }).result.tiles[0].id, '1');
+  assert.deepEqual(loadPageResult({ _: [], b64: p.line }).result.tiles[0].id, '1');
   const bad = p.line.slice(0, 150) + (p.line[150] === 'A' ? 'B' : 'A') + p.line.slice(151);
   assert.throws(() => unpackB64(bad), /characters 101-200/);
   assert.throws(() => unpackB64(p.line.slice(0, 120) + p.line.slice(121)), /characters 101-/);
-  const s = buildPageScript({ link: 'a', url_pattern: '', container: '', img: '', img_skip: '', author: '', caption: '', wall: { login_form: [], captcha: [], dialog: [] } }, { platform: 'x', url: 'https://x', found_by: 'f', max: 8, steps: 2, delay: [5, 15], id_re: '(\d+)' });
-  assert.match(s, /"deadline":120/);
-  assert.match(s, /partial/);
-  assert.doesNotThrow(() => new Function(`return (${s});`));
 });
 
-test('a result without total/checksum is unverified (from-page then suggests partial with a warning)', async () => {
-  const { mergePageResults } = await import('../scripts/collect-pagemode.mjs');
-  assert.equal(mergePageResults([{ platform: 'etsy', tiles: [] }]).verified, false);
+test('a result without total/checksum is unverified; a cut result fails', async () => {
+  const { verifyPageResult } = await import('../scripts/collect-pagemode.mjs');
+  assert.equal(verifyPageResult({ platform: 'etsy', tiles: [] }).verified, false);
+  assert.throws(() => verifyPageResult({ platform: 'etsy', total: 2, checksum: 'x', tiles: [{ id: '1' }] }), /BỊ CẮT/);
 });
 
-test('facebook pageScript: timeline then photos_by/reels fallback, reason codes, tile -> post', async () => {
+test('scroll waits: per platform from config, defaults 2-4 s (grids) and 5-10 s (Instagram/Facebook/TikTok)', async () => {
+  const { scrollWait } = await import('../scripts/collect-pagemode.mjs');
+  assert.deepEqual(scrollWait('pinterest', {}), [2, 4]);
+  assert.deepEqual(scrollWait('facebook', {}), [5, 10]);
+  assert.deepEqual(scrollWait('etsy', { etsy: [3, 6] }), [3, 6]);
+});
+
+test('facebook: reason codes, closed page, tile -> post', async () => {
   const fb = getAdapter('facebook');
-  const s = fb.pageScript({ url: 'https://www.facebook.com/Hineon.net.neon', found_by: 'reference page', max: 8, steps: 2, delay: [5, 15] });
-  assert.ok(s.includes('"photos":"https://www.facebook.com/Hineon.net.neon/photos_by"'));
-  assert.ok(s.includes('"reels":"https://www.facebook.com/Hineon.net.neon/reels"'));
-  assert.ok(s.includes('/\\d/.test(p.date_text)'), 'date filter keeps its backslash');
   assert.equal(fb.fbReason({ url: 'https://www.facebook.com/checkpoint/123' }, 0), 'checkpoint');
   assert.equal(fb.fbReason({ url: 'https://www.facebook.com/login/?next=x' }, 5), 'login_wall');
   assert.equal(fb.fbReason({ url: 'https://www.facebook.com/x', login_form: true }, 0), 'login_wall');
@@ -159,13 +179,32 @@ test('facebook pageScript: timeline then photos_by/reels fallback, reason codes,
   assert.equal(fb.isClosedPage('Open now'), false);
   const p = fb.toPost({ url: 'https://www.facebook.com/photo/?fbid=1333219135645308&set=pcb.1333219525645269', image_urls: ['https://scontent.x.fbcdn.net/a.jpg'], caption: 'Neon', author: 'Hineon' }, { found_by: 'reference page' });
   assert.deepEqual([p.id, p.image_urls.length, p.caption, p.author], ['1333219135645308', 1, 'Neon', 'Hineon']);
-  // the in-page reader on the saved feed fixture (fb-extract, unchanged) still yields ids the page script keys on
   const { parseHTML } = await import('linkedom');
-  const { extractFeed, SELECTORS } = await import('../scripts/fb-extract.mjs');
-  const { document } = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-feed.html'), 'utf8'));
-  const ids = extractFeed(document, SELECTORS).posts.map((x) => fb.postIds(x.post_url)[0] || fb.postIds(x.alt_urls[0])[0]).filter(Boolean);
-  assert.ok(ids.length >= 1, 'feed fixture gives ids');
   const { document: login } = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-login.html'), 'utf8'));
   const { wallSignals } = await import('../scripts/platforms/common.mjs');
   assert.equal(fb.fbReason(wallSignals(login, fb.SELECTORS.wall), 0), 'login_wall');
+});
+
+test('facebook: post permalink id with photo fbids as aliases, caption of the post container, date text (fixture fb-album.html)', async () => {
+  const fb = getAdapter('facebook');
+  assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/photo/?fbid=111111', ['https://www.facebook.com/x/posts/pfbid0abcdefghijkl']), { id: 'pfbid0abcdefghijkl', aliases: ['111111'] });
+  assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/permalink.php?story_fbid=222222&id=9', []).id, '222222');
+  assert.deepEqual(fb.fbPostKeys('https://www.facebook.com/photo/?fbid=333333', []), { id: '333333', aliases: [] });
+  const { parseHTML } = await import('linkedom');
+  const { extractFeed, SELECTORS } = await import('../scripts/fb-extract.mjs');
+  const { document } = parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', 'fb-album.html'), 'utf8'));
+  const posts = extractFeed(document, { ...SELECTORS, done_attr: '' }).posts;
+  const got = posts.map((p) => [fb.fbPostKeys(p.post_url, p.alt_urls), p.caption, p.date_text]);
+  assert.deepEqual(got, [
+    [{ id: 'pfbid02AbCdEfGhIjKlMnOpQrStUv', aliases: ['1333219135645308', '1333219135645399'] }, 'Our new neon sign album for weddings', 'November 2, 2024 at 10:00 AM'],
+    [{ id: '1444444444444444', aliases: [] }, 'Single photo post', 'Monday, October 7, 2024 at 9:15 AM'],
+    [{ id: '9876543210123', aliases: [] }, 'No date here', ''],
+  ]);
+  assert.equal(document.querySelectorAll('[data-sa-seen]').length, 0, 'the extract leaves no mark in the DOM');
+  // the stored post carries the photo fbids as links, so the known-post check matches either id
+  const p = fb.toPost({ id: 'pfbid02AbCdEfGhIjKlMnOpQrStUv', alt: ['1333219135645308'], url: posts[0].post_url, image_urls: ['i'], caption: posts[0].caption, date_text: posts[0].date_text });
+  assert.ok(p.alt_urls.some((u) => u.includes('1333219135645308')));
+  assert.equal(p.posted_date, '2024-11-02');
+  const cursorKnownByPhoto = { take: (x) => ([x.post_url, ...x.alt_urls].some((u) => u.includes('1333219135645308')) ? 'known' : 'collect') };
+  assert.equal(pageResultPosts({ tiles: [{ id: p.id, alt: p.aliases, url: p.url, image_urls: ['i'] }] }, fb, { cursor: cursorKnownByPhoto }).skippedKnown, 1);
 });

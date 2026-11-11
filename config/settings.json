@@ -9,6 +9,40 @@
     "dedupe": {
       "image_distance": 20,
       "caption_similarity": 0.9
+    },
+    "scroll_wait_seconds": {
+      "pinterest": [
+        2,
+        4
+      ],
+      "houzz": [
+        2,
+        4
+      ],
+      "etsy": [
+        2,
+        4
+      ],
+      "reddit": [
+        2,
+        4
+      ],
+      "youtube": [
+        2,
+        4
+      ],
+      "instagram": [
+        5,
+        10
+      ],
+      "facebook": [
+        5,
+        10
+      ],
+      "tiktok": [
+        5,
+        10
+      ]
     }
   },
   "codex": {

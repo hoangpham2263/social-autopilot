@@ -23,7 +23,7 @@ import * as etsy from '../scripts/platforms/etsy.mjs';
 import * as youtube from '../scripts/platforms/youtube.mjs';
 import * as houzz from '../scripts/platforms/houzz.mjs';
 import { SELECTORS as FB, extractFeed } from '../scripts/fb-extract.mjs';
-import { delayRange, resolveTask, rawShape, toRawPost, applyDecisions, suggestedState, fileId } from '../scripts/collect.mjs';
+import { resolveTask, rawShape, toRawPost, applyDecisions, suggestedState, fileId } from '../scripts/collect.mjs';
 import { searchUrl as researchSearchUrl, nextTask, collectInfo } from '../scripts/research.mjs';
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -49,7 +49,7 @@ test('registry: every platform has an adapter with the full contract; status is 
     assert.ok(STATUSES.includes(e.status), id);
     if (e.status !== 'untested') assert.match(e.checked, /^\d{4}-\d{2}-\d{2}$/, `${id}: ok needs the date it was checked`);
     else assert.equal(e.checked, '', id); // ok and broken both carry the date of the live check
-    for (const f of ['searchUrl', 'isLoginWall', 'extract', 'postId']) assert.equal(typeof a[f], 'function', `${id}.${f}`);
+    for (const f of ['searchUrl', 'pageScript', 'toPost', 'postId']) assert.equal(typeof a[f], 'function', `${id}.${f}`);
     assert.ok(a.SELECTORS && typeof a.SELECTORS === 'object', `${id}: selectors in one block`);
   }
   assert.equal(adapterStatus('myspace').status, 'missing');
@@ -159,14 +159,6 @@ test('login wall / captcha / block page detection on saved HTML; ordinary pages 
   assert.match(classifyWall({ title: 'x', text: 'Sorry, unusual traffic from your computer network' }, {}), /unusual traffic/);
 });
 
-test('delay: research.delay_seconds is never lower than the 5-15 s defaults', () => {
-  assert.deepEqual(delayRange([5, 15]), [5, 15]);
-  assert.deepEqual(delayRange([1, 2]), [5, 15]);
-  assert.deepEqual(delayRange([8, 30]), [8, 30]);
-  assert.deepEqual(delayRange(undefined), [5, 15]);
-  assert.deepEqual(delayRange([20, 10]), [20, 20]);
-});
-
 test('resolveTask: from an open run (query / source) or standalone; max defaults to the step share', () => {
   const run = { brand: 'dv', mode: { max_posts: 6 }, sources: [{ id: 'shop', name: 'Shop', platform: 'instagram', url: 'https://www.instagram.com/shop/', dir: '/w/shop', raw_file: '/w/shop/raw.json', known_file: '/w/shop/known.json', result: null, new: 0 }],
     discovery: { max_per_platform: 4, platforms: [{ id: 'etsy' }], queries: [{ id: 'etsy-k-neon', platform: 'etsy', kind: 'keyword', term: 'neon', found_by: 'keyword:neon', url: 'https://www.etsy.com/search?q=neon', state: 'pending', kept: 0, dir: '/w/q', raw_file: '/w/q/raw.json' }] } };
@@ -186,17 +178,21 @@ test('resolveTask: from an open run (query / source) or standalone; max defaults
   assert.throws(() => resolveTask({}), /--platform/);
 });
 
-test('next: every step carries the collect command and the adapter status (collector first)', () => {
+test('next: every step carries the one path (open, scroll, script, from-page, target, stop rules) and the adapter status', () => {
   const run = { brand: 'dv', mode: { max_posts: 5 }, sources: [{ id: 'shop', platform: 'instagram', url: 'https://www.instagram.com/shop/', result: null, new: 0 }],
     discovery: { max_per_platform: 3, platforms: [{ id: 'etsy' }], queries: [{ id: 'etsy-k-neon', platform: 'etsy', found_by: 'keyword:neon', state: 'pending', kept: 0 }] } };
   const a = nextTask(run);
   assert.match(a.script, /^node scripts\/collect\.mjs script --brand dv --for-source shop( --max \d+)?$/);
   assert.equal(a.adapter.platform, 'instagram');
-  assert.match(a.do, /FIRST run the collector/);
-  assert.match(a.do, /only when adapter\.status is not ok/);
+  assert.match(a.do, /ONE path/);
+  assert.equal(a.open, 'https://www.instagram.com/shop/');
+  assert.equal(a.scroll_wait_seconds.length, 2);
+  assert.match(a.stop_rules, /3 extracts in a row/);
+  assert.match(a.from_page, /from-page --brand dv --for-source shop --b64/);
   const b = nextTask({ ...run, sources: [{ ...run.sources[0], result: { state: 'end' } }] });
   assert.equal(b.step, 'discovery');
-  assert.match(b.script, /--for-query etsy-k-neon --max \d+$/);
+  assert.match(b.script, /--for-query etsy-k-neon$/);
+  assert.ok(b.target > 0);
   assert.equal(b.adapter.platform, 'etsy');
   assert.equal(collectInfo('dv', 'query', 'q1', 'myspace').adapter.status, 'missing');
 });

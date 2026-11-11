@@ -1,26 +1,30 @@
-# Mode 1 "Research only": script `collect.mjs` thu thập, agent nhìn ảnh để lọc, rồi lọc
+# Mode 1 "Research only": Claude mở trang, cuộn, gọi script trích xuất; nhìn ảnh để lọc
 
-**Ai làm:** mỗi bước do `research.mjs next` chỉ **trước hết do script `scripts/collect.mjs` lấy** (Chrome **đã đăng nhập của người dùng**, adapter riêng từng nền tảng trong `scripts/platforms/`): script cuộn, đọc hàng loạt, tải ảnh, ghi `raw.json`. Agent (Claude Code / Codex) **nhìn ảnh** để quyết `product_fit`, **viết và sửa adapter**, và chỉ lái Chrome bằng Playwright MCP khi adapter `untested`/hỏng (mục "Adapter workflow" ngay dưới). Facebook chưa có script in-page nên lấy tay bằng Playwright MCP (mục "Facebook" cuối). Lệnh và thứ tự: `RUNBOOK.md`, Mode 1. Kho của mỗi thương hiệu: `workspace/store/<brand>/` (`items.json`, `images/`, `progress.json`, `duplicates.json`, `rejected.json`); kho các thương hiệu không bao giờ trộn.
+**Ai làm:** Claude (Playwright MCP, Chrome **đã đăng nhập của người dùng**) mở trang của bước `research.mjs next`, tự cuộn, tự quyết khi nào dừng, và đọc dữ liệu bằng **một script trích xuất** (`scripts/collect.mjs script`, adapter riêng từng nền tảng trong `scripts/platforms/`) chỉ đọc trang hiện tại rồi trả về ngay; `collect.mjs from-page` tải ảnh và ghi `raw.json`. Claude **nhìn ảnh** để quyết `product_fit` và **sửa adapter** khi script đọc thiếu (mục "Adapter").
 
 **Thứ tự (người dùng, 10/11/2026):**
 1. **Trang tham khảo** của thương hiệu (`research.sources[]` trong `project/social.json` của skill): bài mới chưa có trong kho.
 2. Hết trang tham khảo mà chưa đủ **mục tiêu** của lượt (`--max-posts N` = mục tiêu bài mới mỗi thương hiệu), hoặc không đặt mục tiêu: **tìm thêm (discovery)** theo `research.discovery.keywords` / `hashtags` (tiếng Anh, thị trường Mỹ) trên các nền tảng bật: Instagram, Pinterest, TikTok, Facebook (tìm bài + nhóm công khai), Reddit, Etsy, YouTube/Shorts, Houzz (chỉ thương hiệu nội thất/nhà). Xoay vòng các nền tảng (mỗi lần một truy vấn của nền tảng ít truy vấn nhất), tới khi đủ mục tiêu hoặc hết truy vấn. Mỗi nền tảng tối đa `max_per_platform` bài giữ mỗi lượt.
 3. **Chỉ lấy bài có SẢN PHẨM đúng loại thương hiệu bán** (`research.discovery.product_fit`): `types` (loại sản phẩm, theo project.md mục 5), `must_have`, `must_not`. Bài sai loại bị bỏ **ngay lúc lấy** (không tải ảnh, không lưu; chỉ ghi vào `rejected[]` của raw.json) và lần nữa ở bước lọc. DreamyVows: bảng LED neon theo yêu cầu (chữ, câu, tên, logo, cưới, sự kiện, bar), bảng neon phải có trong ảnh và là chủ thể. GRENHEIM: đồ gỗ tự nhiên (bàn ăn, bàn trà, console live-edge...), không kim loại/nhựa/MDF.
 
-## Adapter workflow (collector trước, lái tay khi cần)
+## Một đường duy nhất: mở, cuộn, trích xuất
 
-**Đường mặc định = in-page.** `node scripts/collect.mjs script --brand <id> --for-query|--for-source <id>` (hoặc `--platform <id> --query|--url ...`) in ra một script tự chứa (selector của adapter + hàm đọc thuần): cuộn nghỉ ngẫu nhiên 5-15 giây, chờ ảnh lazy, đọc ô, (Instagram: ô còn thiếu ảnh thì đọc trang bài `/p/<code>/`, chỉ GET) và trả JSON `{platform,url,loginWall,tiles[]}`. Agent dán vào MỘT lần gọi Playwright MCP `browser_run_code_unsafe` (có thể truyền đường dẫn file qua `filename`), lưu kết quả vào file, rồi `node scripts/collect.mjs from-page ... --b64 <chuỗi>` (hoặc `--file <result.json>`). Kết quả script là MỘT dòng `{b64, tag}` (tối đa 8 bài, dừng ở giới hạn thời gian `--deadline`, mặc định 120 s, `partial:true`): dán nguyên giá trị `b64` vào `from-page --b64 <chuỗi>` (hoặc lưu file, `--file`), không bao giờ gõ lại JSON; `from-page` kiểm từng đoạn 100 ký tự + checksum, sai thì báo đúng vị trí ký tự đầu tiên bị lệch, rồi in thẻ 4 ký tự để đọc lại đối chiếu với `tag` của script; kết quả không có total/checksum hoặc `partial` thì gợi ý state `partial` (kèm cảnh báo), không phải `done`. `from-page`: bỏ bài đã có trong kho trước khi tải, tải ảnh (referer của nền tảng) vào thư mục lượt, ghi raw.json; sau đó nhìn ảnh, `collect.mjs fit`, `ingest`. Chỉ lái tay khi adapter không `ok`. Đã kiểm 10/11/2026: Pinterest 12 ghim ~10 s/từ khoá (tác giả không có trong lưới tìm kiếm), Instagram hashtag 5 bài (trang tìm chỉ hiện ~5 ô). **Fetch (không trình duyệt) là lựa chọn đầu khi nền tảng có đường này** (`research.mjs next` hiện trường `fetch`): `collect.mjs fetch ...` (modules `scripts/platforms/fetch/<platform>.mjs`: reddit Atom RSS, houzz curl HTML, pinterest user/board RSS); throttle ≥5 s/host, backoff mũ cho 5xx, 429/403/captcha = state `blocked` + host bị từ chối 30 phút (`workspace/tmp/fetch-throttle.json`). Kết quả in-page gọn có `total` + `checksum`; `from-page` từ chối JSON bị cắt/sửa; `script --chunk N` chia khi quá dài.
-Mỗi bước `research.mjs next` in `script`/`from_page` (lệnh sẵn, và `fetch` khi có) và `adapter` (`platform`, `status`: `untested` | `ok` | `broken` | `missing`; registry `scripts/platforms/index.mjs`).
-1. **Chạy `script` + `from-page` (hoặc `fetch`).** Kết quả JSON: `read` (bài đọc được), `collected`, `state`/`suggested_state`, `review[]` (id, link, tác giả, caption, `image` = file ảnh đã tải), `note`, `trusted`, `next`.
-2. **Adapter `ok` và collector chạy tốt** (`trusted: true`): nhìn ảnh `review[].image` (đọc file ảnh), ghi `[{ "id", "fit": true, "type": "<một chuỗi trong product_fit.types>", "reason" } | { "id", "fit": false, "reason" }]`, `collect.mjs fit --brand <id> --for-query <qid> --file <f>` (bài sai loại sang `rejected[]`; trang tham khảo không bắt buộc), rồi `ingest` và `result --state <suggested_state>`. Không mở Playwright MCP.
-3. **Tường đăng nhập / captcha** (`state: blocked`): `result --state blocked --note "<thấy gì>"`, dừng nền tảng đó, không thử lại trong lượt.
-4. **Adapter `untested`, `broken`, `missing` hoặc collector hỏng** (0 bài, `note` bắt đầu bằng `error`, ảnh không tải được, kết quả sai so với trang): **fallback lái tay** bằng Playwright MCP (các mục theo nền tảng bên dưới) cho đúng bước đó, đồng thời **sửa adapter**:
-   - Mở đúng `url` bằng Playwright MCP, `browser_snapshot` / `browser_evaluate` xem cấu trúc (link bài, ảnh, caption, tác giả, ô lưới), tìm selector bền (`href` theo mẫu, `role`, `data-*`) thay vì class sinh tự động.
-   - Sửa **chỉ khối `SELECTORS`** ở đầu `scripts/platforms/<nền tảng>.mjs` (và hàm đọc mã bài / ảnh lớn nếu mẫu link đổi). Chưa có adapter: tạo file theo mẫu `etsy.mjs` (xuất `SELECTORS`, `searchUrl(query)`, `isLoginWall(page)`, `extract(page, ctx)` trả `{id, url, image_urls, caption, author, found_by}`, `postId(url)`), đăng ký trong `index.mjs` (`status: 'untested'`).
-   - Thử: `node scripts/collect.mjs --platform <id> --query "<từ khoá>" --max 5` (độc lập, ghi vào `workspace/tmp/collect/`), hoặc `--for-query`/`--for-source`. So `review[]` với trang thật trên Playwright MCP.
-   - Đúng: đặt `status: 'ok'`, `checked: '<YYYY-MM-DD>'` (và `note` nếu có lưu ý) trong `index.mjs`; thêm fixture HTML nếu sửa hàm đọc (`tests/fixtures/collect-*.html`), chạy `npm test`. Không sửa được: `status: 'broken'` + `note`, lấy tay hết bước đó.
-5. Collector **chỉ xem**: không like/lưu/theo dõi/bình luận/nhắn tin/tham gia/đăng/đăng nhập (chỉ cuộn + đọc; Facebook có thêm "Xem thêm" trong chữ bài); nghỉ `research.delay_seconds` (không bao giờ dưới 5-15 giây); không ghi token/cookie.
-Lưu ý: adapter mới viết từ hiểu biết về trang (chưa kiểm trực tiếp) đều `untested`; lần đầu mỗi nền tảng luôn qua bước 4 để kiểm.
+Research chỉ có **một đường**. Claude tự làm: mở trang (hoặc URL tìm kiếm/hashtag) bằng Playwright MCP, tự cuộn bằng thao tác Playwright MCP bình thường, tự quyết khi nào dừng. Để đọc dữ liệu, Claude gọi **một script trích xuất**: script chỉ đọc những gì đang có trên trang lúc đó và trả về ngay (không mở trang, không cuộn, không chờ).
+Mỗi bước `research.mjs next` in: `open` (URL cần mở), `scroll` (cách cuộn), `scroll_wait_seconds` (chờ giữa hai lần cuộn, theo nền tảng: `research.scroll_wait_seconds` trong config; Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook/TikTok 5-10 giây), `script`, `from_page`, `target` (số bài cần), `stop_rules`, `adapter` (`platform`, `status`: `untested` | `ok` | `broken` | `missing`; registry `scripts/platforms/index.mjs`).
+1. **Mở** `open` bằng `browser_navigate`.
+2. **Trích xuất:** `node scripts/collect.mjs script --brand <id> --for-query|--for-source <id>` in script; dán vào MỘT lần gọi `browser_run_code_unsafe`. Kết quả là MỘT dòng `{total, total_on_page, reason, tag, b64}`; chỉ có các bài **mới** (id đã trả trong bước này nằm ở `<thư mục bước>/seen.json`, script bỏ qua; `--seen <file>` để dùng danh sách khác).
+3. **Ghi:** `node scripts/collect.mjs from-page --brand <id> --for-query|--for-source <id> --b64 <cả dòng b64>` (hoặc `--file <result.json>`). Không gõ lại JSON; đọc lại 4 ký tự `tag`. from-page kiểm `total` + checksum + tag, bỏ bài đã có trong kho, tải ảnh, **cộng thêm** vào `raw.json` (nhiều lần trích xuất của cùng bước cộng dồn), trả `added`, `collected`, `extracts_without_new`, `stop`, `review[]`, `next`.
+4. **Cuộn** (phím End hoặc con lăn, 1-2 lần, chờ `scroll_wait_seconds`), rồi trích xuất lại (bước 2-3).
+5. **Dừng** khi: đủ `target`; 3 lần trích xuất liền không có bài mới; mọi bài đều đã có (`known`); tường đăng nhập / captcha / checkpoint / trang đóng (`reason`) → `result --state blocked|end|known`. Rồi (discovery) nhìn ảnh `review[].image`, ghi `[{ "id", "fit": true, "type": "<một chuỗi trong product_fit.types>", "reason" } | { "id", "fit": false, "reason" }]`, `collect.mjs fit --brand <id> --for-query <qid> --file <f>`; `ingest`; `result --state <suggested_state>`.
+6. Script **chỉ đọc**: không bấm, không hover, không gõ, không like/lưu/theo dõi/bình luận/nhắn tin/tham gia/đăng/đăng nhập; không ghi token/cookie. Instagram: bài mới còn thiếu ảnh thì đọc trang bài `/p/<code>/` (GET, giới hạn 3 giây).
+
+## Adapter (Claude sửa SELECTORS)
+Trích xuất thiếu bài đang thấy trên trang, sai id/ảnh/caption, hoặc 0 bài (`note` bắt đầu bằng `error`):
+- `browser_snapshot` / `browser_evaluate` xem DOM (link bài, ảnh, caption, tác giả, ô lưới), tìm selector bền (`href` theo mẫu, `role`, `data-*`) thay vì class sinh tự động.
+- Sửa **chỉ khối `SELECTORS`** ở đầu `scripts/platforms/<nền tảng>.mjs` (Facebook: `scripts/fb-extract.mjs`), rồi chạy lại `script` và trích xuất lại trên cùng trang. Chưa có adapter: tạo file theo mẫu `etsy.mjs` (`SELECTORS`, `searchUrl`, `postId`, `toPost`, `pageScript`), đăng ký trong `index.mjs` (`status: 'untested'`).
+- Đúng: `status: 'ok'`, `checked: '<YYYY-MM-DD>'` trong `index.mjs`; sửa hàm đọc thì thêm fixture HTML (`tests/fixtures/`). Không sửa được: `status: 'broken'` + `note`.
+Adapter viết khi chưa có trình duyệt đều `untested`; lần đầu mỗi nền tảng luôn so `review[]` với trang thật.
+
 
 ## Vòng lặp của agent
 ```
@@ -29,14 +33,14 @@ node scripts/research.mjs start --brand <id> [OPTIONS]            # 1.1 mở lư
 node scripts/store.mjs known --brand <id>                         # một lần: brand_post_urls / brand_post_ids (bài đã có: không mở, không tải)
 lặp:
   node scripts/research.mjs next --brand <id>                     # việc tiếp theo: step reference | discovery | done
-  → chạy lệnh `collect` của bước (collect.mjs ghi <dir>/raw.json + ảnh vào <downloads>; adapter untested/hỏng: lấy tay theo mục theo nền tảng bên dưới)
+  → mở `open` (browser_navigate); lặp: collect.mjs script → browser_run_code_unsafe → collect.mjs from-page --b64 → cuộn (End, chờ scroll_wait_seconds), tới khi một stop_rule đúng
   → (discovery) nhìn ảnh, node scripts/collect.mjs fit --brand <id> --for-query <qid> --file <decisions.json>
   → node scripts/research.mjs ingest --brand <id> --source <sid>  |  --query <qid>
   → node scripts/research.mjs result --brand <id> --source <sid> --state end|known|since|limit|blocked|partial
                                                                   |  --query <qid> --state done|limit|empty|blocked|partial [--note ..]
 tới khi next trả "done" → 1.3 lọc (store.mjs classify / verdict) → 1.4 report
 ```
-- `next` (mọi bước): `script`, `from_page`, `fetch` (lệnh `collect.mjs` của bước), `adapter` (`platform`, `status`, `checked`, `note`).
+- `next` (mọi bước): `open`, `scroll`, `scroll_wait_seconds`, `script`, `from_page`, `target`, `stop_rules`, `adapter` (`platform`, `status`, `checked`, `note`).
 - `next` (reference): `url`, `stop_rule`, `known_file`, `share` (phần của trang trong mục tiêu), `raw_file`, `downloads`.
 - `next` (discovery): `platform`, `kind` (keyword/hashtag), `term`, `found_by`, `url` (trang tìm kiếm/hashtag mở sẵn), `share` (tối đa bài mới cho truy vấn này), `platform_notes`, `product_fit`, `raw_file`, `downloads`.
 - Mục tiêu đã đủ khi còn trang tham khảo chưa làm: `next` trả `skip: true` kèm lệnh `result --state skipped`.
@@ -44,9 +48,9 @@ tới khi next trả "done" → 1.3 lọc (store.mjs classify / verdict) → 1.4
 
 ## Luật chung trên mọi nền tảng
 - **Chỉ xem:** mở trang, cuộn, mở bài, đọc. **Không bao giờ** like, thả tim, lưu/save/pin, theo dõi, bình luận, nhắn tin, chia sẻ, tham gia nhóm, đăng hay tải lên gì. Không đăng nhập hộ, không nhập mật khẩu, không lưu cookie. Một trình duyệt = một agent (Chrome đã đăng nhập qua Playwright MCP).
-- **Nhịp lịch sự:** nghỉ **ngẫu nhiên 5-15 giây** giữa mọi lần mở trang, cuộn, bấm (`browser_wait_for` với thời gian ngẫu nhiên). Cuộn mỗi lần khoảng một màn hình (`browser_press_key` PageDown hoặc `browser_evaluate` `window.scrollBy(0, innerHeight)`). Một truy vấn: tối đa khoảng 8-10 lần cuộn; hết bài mới hoặc kết quả lạc đề thì dừng truy vấn (`done`).
+- **Nhịp lịch sự:** chờ giữa hai lần cuộn theo `research.scroll_wait_seconds` (Pinterest/Houzz/Etsy 2-4 giây, Instagram/Facebook/TikTok 5-10 giây). Cuộn bằng phím End hoặc con lăn (`browser_press_key` End / `browser_mouse_wheel`), 1-2 lần mỗi vòng, rồi trích xuất. Dừng theo `stop_rules` của `next`.
 - **Dừng ngay** khi gặp tường đăng nhập, captcha, "checkpoint", "unusual activity", "try again later", trang trống bất thường: `result --state blocked --note "<thấy gì>"`, không thử lại nền tảng đó trong lượt.
-- **Đọc gọn:** dùng `browser_evaluate` đọc nhiều ô một lần (link, ảnh, chữ) thay vì snapshot từng bài; snapshot/screenshot chỉ để nhìn sản phẩm khi cần phán đoán.
+- **Đọc gọn:** đọc dữ liệu bằng script trích xuất của bước (một lần gọi, chỉ bài mới); snapshot/screenshot chỉ để nhìn sản phẩm khi cần phán đoán hoặc để sửa selector.
 - **Bỏ bài đã có:** link hoặc mã bài nằm trong `brand_post_urls` / `brand_post_ids` (lệnh `store.mjs known`) thì bỏ qua, không mở, không tải.
 - **Kiểm sản phẩm TRƯỚC khi tải** (nhìn ảnh): đúng một loại trong `product_fit.types`, đạt `must_have`, không dính `must_not`. Không đạt → ghi `{ post_url, author, reason }` vào `rejected[]`, không tải. Đạt → ghi `product_fit: { "type": "<đúng một chuỗi trong types>", "reason": "<thấy gì>" }`. `ingest` từ chối bài không có `product_fit.type` hợp lệ (ghi `rejected.json`).
 - **Mỗi bài cần:** `post_url` (permalink của bài/pin/video/listing, không phải link trang tìm kiếm), `alt_urls` (link khác của cùng bài nếu thấy), `images` (file đã tải, ảnh lớn nhất), `caption` (đầy đủ, nguyên văn), `author` (tên tài khoản/trang/shop), `posted_date` (`YYYY-MM-DD` nếu thấy, không thì trống), `likes` (số nếu hiện, không thì bỏ), `product_fit`.
@@ -63,7 +67,7 @@ tới khi next trả "done" → 1.3 lọc (store.mjs classify / verdict) → 1.4
   Trang tham khảo dùng `{ "page": { "name", "avatar" }, "posts": [...], "rejected": [...] }` như cũ (thêm `platform`, `author`, `product_fit` khi agent lấy).
 
 ## Theo nền tảng
-`next` đã đưa sẵn `url`; dưới đây là cách đọc **bằng tay** trên từng trang (fallback khi adapter `untested`/hỏng; cũng là tài liệu để viết adapter: link, ảnh, caption, tác giả, dấu hiệu bị chặn). Selector có thể đổi: không đọc được thì nhìn snapshot và điều chỉnh, rồi sửa adapter (mục "Adapter workflow"); không đoán dữ liệu.
+`next` đã đưa sẵn `open`; dưới đây là ghi chú từng trang (link, ảnh, caption, tác giả, dấu hiệu bị chặn) để Claude kiểm kết quả trích xuất và sửa `SELECTORS` của adapter (mục "Adapter"). Selector có thể đổi: không đọc được thì nhìn DOM rồi sửa adapter; không đoán dữ liệu.
 
 ### instagram
 - Mở: hashtag `instagram.com/explore/tags/<tag>/`, từ khoá `instagram.com/explore/search/keyword/?q=<kw>`. Lưới ô vuông; mỗi ô là `a[href*="/p/"]` hoặc `a[href*="/reel/"]`.
@@ -117,7 +121,7 @@ Bài tìm thêm (discovery) chỉ để **học ý** (bối cảnh, góc chụp,
 - Báo cáo/nhật ký: mỗi trang tham khảo `kept` / `filtered`; trang có ≥ 5 bài đã lọc mà giữ < 30% bị gắn cờ keep rate thấp (xem lại `what_to_take` hoặc thay nguồn). Discovery: mỗi nền tảng và mỗi truy vấn `kept` / `off-brand` (bỏ lúc lấy) / `duplicates`.
 
 ## Trang tham khảo (agent, Playwright MCP)
-Bước 1 của mọi lượt. `next` trả `step: reference` với `url`, `stop_rule`, `known_file` (`known.json`: `post_urls`, `brand_post_urls`, `brand_post_ids`, `newest_seen`, `oldest_seen`), `share`. Nghỉ ngẫu nhiên 5-15 giây giữa **mọi** lần mở trang, cuộn, bấm. Gặp checkpoint/captcha: `research.mjs result --source <sid> --state blocked --note "<lý do>"`, không mở trang tham khảo Facebook nào nữa trong lượt (trang còn lại `--state skipped`); discovery trên nền tảng khác vẫn theo `next`.
+Bước 1 của mọi lượt. `next` trả `step: reference` với `url`, `stop_rule`, `known_file` (`known.json`: `post_urls`, `brand_post_urls`, `brand_post_ids`, `newest_seen`, `oldest_seen`), `share`. Đọc bằng script trích xuất (mục "Một đường duy nhất"); chờ `scroll_wait_seconds` giữa hai lần cuộn. Gặp checkpoint/captcha: `research.mjs result --source <sid> --state blocked --note "<lý do>"`, không mở trang tham khảo Facebook nào nữa trong lượt (trang còn lại `--state skipped`); discovery trên nền tảng khác vẫn theo `next`.
 
 ### Lấy một trang tham khảo
 1. Mở `url` của source. Trang Facebook: vào tab **Bài viết** (hoặc trang chính, phần bài viết). Nếu nguồn chủ yếu đăng ảnh (album sản phẩm), dùng tab **Ảnh** (`/photos` hoặc `/photos_by`), mở từng ảnh để vào bài.
@@ -128,9 +132,9 @@ Bước 1 của mọi lượt. `next` trả `step: reference` với `url`, `stop
    - **đủ phần của nguồn** (`--max-posts N` là tối đa N bài mới cho cả thương hiệu, chia đều cho các nguồn; phần của nguồn ghi trong `stop_rule`, sau mỗi `ingest` xem `next_source_share`): đã lấy đủ phần → `--state limit`;
    - dừng giữa chừng vì lý do khác (hết thời gian, trang lỗi) → `--state partial --note "<lý do>"`.
    - Lượt `--backfill` không có `--state known` (bài đã có là chỗ phải cuộn qua, không phải chỗ dừng).
-3. Với **mỗi bài** trong lúc cuộn (`[data-ad-rendering-role="story_message"]` là phần chữ của bài):
+3. Script trích xuất đọc cho **mỗi bài** những gì dưới đây; Claude kiểm `review[]` với trang (`[data-ad-rendering-role="story_message"]` là phần chữ của bài):
    - Lấy link bài (`https://www.facebook.com/<trang>/posts/<id>`, `/permalink/...`, hoặc `https://www.facebook.com/photo/?fbid=...`). Nếu link hoặc mã số trong link (fbid, story_fbid, `/posts/<id>`, `pfbid...`) có trong `known.json` (`brand_post_urls`, `brand_post_ids`): **bỏ qua, không mở, không tải**.
-   - Bài mới: mở bài (hoặc ảnh → "Xem bài viết"), bấm "Xem thêm" để có **caption đầy đủ**; lưu nguyên văn (U+034F và ký tự ẩn để `ingest` lọc).
+   - Bài mới: caption lấy từ phần chữ của bài (không bấm "Xem thêm"; caption bị cắt thì giữ phần thấy được); lưu nguyên văn (U+034F và ký tự ẩn để `ingest` lọc).
    - **Ngày đăng**: đọc nhãn thời gian của bài, ghi `posted_date` dạng `YYYY-MM-DD` (không rõ thì bỏ trống).
    - **Ảnh**: mỗi ảnh của bài, lấy URL `scontent` lớn nhất (mở ảnh ở chế độ xem lớn), tải bằng curl vào `<source>/raw/<n>-<k>.jpg`. Ưu tiên JPEG/PNG; WebP chỉ khi không có cách khác. Không chụp màn hình thay ảnh. Bài video: lấy ảnh bìa.
    - Ghi mọi link khác của cùng bài thấy được (link `photo/?fbid=...` của từng ảnh, permalink) vào `alt_urls`: Facebook hiện một bài dưới nhiều mã, `ingest` dùng các mã này để bỏ trùng.
@@ -156,7 +160,7 @@ Lượt mặc định dừng sau 3 bài đã có, nên các bài **cũ hơn** nh
 - **Cuộn nhanh qua bài đã có** (từ đầu trang tới `oldest_seen`):
   - Không mở bài, không bấm "Xem thêm", không tải ảnh. Chỉ đọc link/mã của các bài đang hiện trên trang và đối chiếu với `known.json` (`post_urls`, `brand_post_urls`, `brand_post_ids`).
   - Đọc link bằng một lần `browser_evaluate` thay vì snapshot từng bài, vd `[...document.querySelectorAll('a[href*="/posts/"],a[href*="/permalink/"],a[href*="fbid="],a[href*="/videos/"]')].map(a => a.href)`; tìm `oldest_seen.post_id` hoặc `oldest_seen.post_url` trong danh sách đó.
-  - Mỗi lần cuộn nhiều màn hình (phím End hoặc `window.scrollBy(0, 3 * innerHeight)`), nghỉ ở cận dưới `delay_seconds` (vd 3-6 giây; vẫn ngẫu nhiên, không cuộn liên tục). Checkpoint/captcha: dừng như mọi lượt.
+  - Mỗi lần cuộn nhiều màn hình (phím End hoặc con lăn), chờ ở cận dưới `scroll_wait_seconds` ( vẫn ngẫu nhiên, không cuộn liên tục). Checkpoint/captcha: dừng như mọi lượt.
   - Đã thấy `oldest_seen` trên trang (hoặc ngày đăng của bài đang hiện đã cũ hơn `oldest_seen.date`): về nhịp thường.
 - **Từ sau `oldest_seen`**: làm như crawl thường (mục trên, bước 3-5): bài chưa có trong `known.json` thì mở, lấy caption/ngày/ảnh; bài đã có thì bỏ qua. Lấy tới **hết trang** (`--state end`, ghi `reached_end`), tới mốc `--since` (`--state since`) hoặc đủ `--max-posts` bài (`--state limit`).
 - Không thấy được `oldest_seen` (bài đã bị xoá): dùng ngày, lấy từ bài đầu tiên cũ hơn `oldest_seen.date`.
@@ -164,8 +168,8 @@ Lượt mặc định dừng sau 3 bài đã có, nên các bài **cũ hơn** nh
 
 
 
-## Facebook: chưa có script in-page
-Adapter Facebook (`scripts/platforms/facebook.mjs`, status `untested`) chưa có `pageScript`, nên Facebook hiện **lấy tay bằng Playwright MCP** (Chrome đã đăng nhập của người dùng, một agent một lúc) theo mục "Reference pages"; hàm đọc thuần và selector nằm ở `scripts/fb-extract.mjs` (`SELECTORS`). Khi `pageScript` được viết và kiểm trên trang thật thì Facebook đi đường `collect.mjs script` + `from-page` như các nền tảng khác. Chỉ "Xem thêm" trong chữ của bài là thao tác duy nhất ngoài cuộn; không like, bình luận, theo dõi, chia sẻ, nhắn tin.
+## Facebook: script trích xuất
+Adapter Facebook (`scripts/platforms/facebook.mjs`, đọc bằng `extractFeed` / `extractGrid` của `scripts/fb-extract.mjs`, status `untested`: cần kiểm trên trình duyệt) chỉ đọc: không bấm "Xem thêm", không hover. Mã bài = permalink thật của bài (`/posts/pfbid…`, `story_fbid`, `/permalink/`, mã reel/video) khi DOM có, không thì fbid của ảnh; các fbid ảnh khác là **alias** (ghi vào `alt_urls`), nên kiểm bài đã có khớp cả hai dạng. Bài album: caption lấy từ phần chữ của bài, không lấy chữ của từng ảnh. Ngày: `aria-label` / tooltip của link thời gian, hoặc `abbr`/`time`; không có thì để trống. Tab Ảnh/Reels (`/photos_by`, `/reels`): Claude tự mở tab đó rồi trích xuất như thường.
 
 ## Bỏ trùng (tool tự làm khi ingest)
 Kho không bao giờ giữ một bài hai lần, trên mọi nguồn **và mọi nền tảng** của thương hiệu:
@@ -186,5 +190,5 @@ Bài trùng ghi vào `duplicates.json` (khớp bài nào, luật nào); báo cá
 - Dựng lại cảnh từ ảnh đối thủ vẫn là sản phẩm của họ: bài thật dùng ảnh sản phẩm của thương hiệu.
 - Timeline của một số trang (vd ít tương tác) chỉ tải 1-3 bài rồi đứng: tab ảnh bỏ sót reels và bài chữ, nên khi lấy tay phải thử `/posts`, rồi gộp lưới `/photos_by` + `/reels`.
 - Mở lại lượt cùng ngày từng ingest lại `raw.json` cũ và đếm thành bài trùng giả: `start` giờ chuyển dữ liệu cũ vào `archive/`, `ingest` bỏ qua link đã ingest.
-- Agent lái Chrome đã đăng nhập (Playwright MCP) đọc được mọi nền tảng nhưng mất vài phút mỗi từ khoá; script chung `collect.mjs` + adapter nhanh hơn nhiều nhưng selector dễ hỏng khi giao diện đổi: mọi selector gom ở khối `SELECTORS` đầu mỗi adapter, agent sửa ở đó và chỉ lái tay khi adapter `untested`/hỏng.
+- Script trích xuất chỉ đọc trang hiện tại nên trả về ngay; việc cuộn và quyết khi nào dừng là của Claude. Selector dễ hỏng khi giao diện đổi: mọi selector gom ở khối `SELECTORS` đầu mỗi adapter, Claude xem DOM, sửa ở đó rồi trích xuất lại.
 - Tìm theo từ khoá ra nhiều sản phẩm lạc loại (đèn LED dây, đồ kim loại...): kiểm `product_fit` trước khi tải, không lưu bài sai loại.

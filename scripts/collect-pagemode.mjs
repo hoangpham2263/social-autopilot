@@ -1,7 +1,9 @@
-// In-page mode of the collector: `collect.mjs script` prints a script the agent runs with ONE Playwright MCP call
-// (browser_run_code_unsafe) in the user's signed-in Chrome; `collect.mjs from-page` turns its JSON result into the raw.json
-// that ingest reads (drops posts the store already has BEFORE downloading, downloads the images with the platform's referer).
-// Read only. No cookies or tokens are written; images are fetched without cookies.
+// The ONE research path (docs/research.md). The agent opens the page with Playwright MCP and scrolls it with normal
+// Playwright MCP actions; `collect.mjs script` prints the extract script (browser_run_code_unsafe) that only READS the
+// page as it is now and returns at once; `collect.mjs from-page` checks that result (total + checksum + tag), drops posts
+// the store already has BEFORE downloading, downloads the images with the platform's referer and ADDS them to raw.json.
+// Scroll, extract, scroll, extract: every from-page of the same task accumulates (seen.json in the task folder holds the
+// ids and aliases already returned; the next `script` leaves them out). Read only. No cookies or tokens are written.
 import fs from 'node:fs';
 import path from 'node:path';
 import { out, fail, need, settings, loadBrand, readJson, writeJson } from './lib.mjs';
@@ -11,79 +13,73 @@ import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
 import { checksumOf, unpackB64 } from './platforms/common.mjs';
-import { resolveTask, delayRange, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
+import { resolveTask, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
 
-// ---------- pure parts (tests/collect.test.mjs) ----------
-// Result of the in-page script (maybe wrapped in MCP text: first { .. last }) -> object.
+// ---------- pure parts (tests/collect-pagemode.test.mjs) ----------
+// Result of the extract script (maybe wrapped in MCP text) -> object.
 export function parsePageResult(text) {
   const t = String(text || '');
   const bm = t.match(/"b64"\s*:\s*"([^"]+)"/);
   if (bm && /~[a-z0-9]{4}$/.test(bm[1])) return unpackB64(bm[1]).obj;
   try { return JSON.parse(t); } catch { /* wrapped in MCP output, or cut off */ }
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
-  if (a < 0 || b <= a) throw new Error('Không đọc được JSON kết quả của script trong trang (không có { ... }): dán nguyên văn kết quả, không gõ lại.');
+  if (a < 0 || b <= a) throw new Error('Không đọc được kết quả của script trích xuất (không có { ... }): dán nguyên văn giá trị b64 (--b64) hoặc lưu kết quả ra file (--file).');
   try { return JSON.parse(t.slice(a, b + 1)); } catch (e) {
-    throw new Error(`JSON kết quả bị cắt cụt hoặc bị sửa (${String(e.message).slice(0, 80)}): dán lại NGUYÊN VĂN kết quả; nếu quá dài, chạy script với --chunk 0, --chunk 1, ... rồi đưa tất cả các file cho from-page.`);
+    throw new Error(`Kết quả bị cắt cụt hoặc bị sửa (${String(e.message).slice(0, 80)}): dán lại NGUYÊN VĂN giá trị b64 (--b64) hoặc lưu ra file (--file).`);
   }
 }
-// One or several page results (chunks) -> ONE result, verified against the script's own total + checksum of the ids.
-// Throws a clear message when the JSON was cut off / edited (tile count or checksum differs) or a chunk is missing.
-// A result without total/checksum (old script) is accepted but marked verified:false.
-export function mergePageResults(parts) {
-  const list = (Array.isArray(parts) ? parts : [parts]).filter(Boolean);
-  if (!list.length) throw new Error('Không có kết quả nào để đọc.');
-  if (list.some((x) => x.loginWall)) return { result: list.find((x) => x.loginWall), verified: true, chunks: list.length };
-  const chunked = list.some((x) => x.chunk);
-  if (chunked && !list.every((x) => x.chunk)) throw new Error('Trộn kết quả có --chunk với kết quả không chunk: chạy lại cùng một kiểu.');
-  let head = list[0], tiles;
-  if (chunked) {
-    const of = head.chunk.of;
-    const by = new Map();
-    for (const x of list) {
-      if (x.chunk.of !== of || x.total !== head.total || x.checksum !== head.checksum) throw new Error(`Các chunk không cùng một lần chạy (total/checksum/of khác nhau: ${x.chunk.i} so với ${head.chunk.i}): chạy lại tất cả chunk, trang đã đổi giữa các lần.`);
-      by.set(x.chunk.i, x);
-    }
-    const missing = []; for (let i = 0; i < of; i++) if (!by.has(i)) missing.push(i);
-    if (missing.length) throw new Error(`Thiếu chunk ${missing.join(', ')} trên ${of}: chạy script với --chunk ${missing[0]} rồi đưa thêm file đó.`);
-    tiles = [...by.keys()].sort((a, b) => a - b).flatMap((i) => by.get(i).tiles || []);
-  } else {
-    if (list.length > 1) throw new Error('Nhiều kết quả không chunk: chỉ đưa một file, hoặc chạy script với --chunk.');
-    tiles = head.tiles || [];
-  }
-  if (head.total === undefined && head.checksum === undefined) return { result: { ...head, tiles }, verified: false, chunks: list.length };
-  if (tiles.length !== head.total) throw new Error(`Kết quả BỊ CẮT hoặc bị sửa: có ${tiles.length} tile nhưng script báo total ${head.total}. Dán lại nguyên văn (hoặc dùng --chunk).`);
+// One extract result -> verified (tiles.length === total, checksum of the ids). Throws when it was cut off or edited.
+// A result without total/checksum (hand-made) is accepted but marked verified:false.
+export function verifyPageResult(r) {
+  if (!r) throw new Error('Không có kết quả nào để đọc.');
+  if (r.loginWall) return { result: r, verified: true };
+  const tiles = r.tiles || [];
+  if (r.total === undefined && r.checksum === undefined) return { result: { ...r, tiles }, verified: false };
+  if (tiles.length !== r.total) throw new Error(`Kết quả BỊ CẮT hoặc bị sửa: có ${tiles.length} tile nhưng script báo total ${r.total}. Dán lại nguyên văn.`);
   const sum = checksumOf(tiles.map((t) => t.id || t.url));
-  if (sum !== head.checksum) throw new Error(`Checksum sai (${sum} thay vì ${head.checksum}): id trong JSON đã bị sửa, bỏ sót hoặc đổi thứ tự. Dán lại nguyên văn, không gõ lại.`);
-  return { result: { ...head, tiles }, verified: true, chunks: list.length };
+  if (sum !== r.checksum) throw new Error(`Checksum sai (${sum} thay vì ${r.checksum}): id trong kết quả đã bị sửa, bỏ sót hoặc đổi thứ tự. Dán lại nguyên văn, không gõ lại.`);
+  return { result: { ...r, tiles }, verified: true };
 }
-// The result text(s) of the command line: --file a.json [b.json ...] | --stdin | --json '<compact>' -> merged + verified.
-export function loadPageResults(args, readStdin = () => fs.readFileSync(0, 'utf8')) {
-  const texts = [];
-  const files = [args.file, ...(args._ || []).slice(1)].filter((x) => x && x !== true);
-  for (const f of files) texts.push(fs.readFileSync(path.resolve(String(f)), 'utf8'));
-  if (args.stdin) texts.push(readStdin());
-  if (args.json && args.json !== true) texts.push(String(args.json));
-  const objs = texts.map(parsePageResult);
+// --b64 <line> | --file <result> | --stdin | --json '<compact>' -> ONE verified result.
+export function loadPageResult(args, readStdin = () => fs.readFileSync(0, 'utf8')) {
+  const objs = [];
   let tag = '';
+  if (args.file && args.file !== true) objs.push(parsePageResult(fs.readFileSync(path.resolve(String(args.file)), 'utf8')));
+  if (args.stdin) objs.push(parsePageResult(readStdin()));
+  if (args.json && args.json !== true) objs.push(parsePageResult(String(args.json)));
   if (args.b64 && args.b64 !== true) { const u = unpackB64(String(args.b64)); objs.push(u.obj); tag = u.tag; }
-  if (!objs.length) throw new Error("Thiếu kết quả: --b64 <chuỗi b64 một dòng> | --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>'.");
-  return { ...mergePageResults(objs), ...(tag ? { tag } : {}) };
+  if (!objs.length) throw new Error("Thiếu kết quả: --b64 <chuỗi b64 một dòng> | --file <result.json> | --stdin | --json '<compact>'.");
+  if (objs.length > 1) throw new Error('Mỗi lần from-page chỉ nhận MỘT kết quả trích xuất (một lần chạy script).');
+  return { ...verifyPageResult(objs[0]), ...(tag ? { tag } : {}) };
+}
+// Ids (and Facebook aliases) of a page result's tiles: what the next extract leaves out.
+export const tileKeys = (tiles) => (tiles || []).flatMap((t) => [t.id || t.url, ...[].concat(t.alt || [])]).filter(Boolean).map(String);
+// The seen list of a task: --seen <file> (JSON array, or { seen: [] }) or <task dir>/seen.json.
+export function readSeen(file) {
+  const j = readJson(file, null);
+  return [...new Set((Array.isArray(j) ? j : j?.seen || []).map(String))];
 }
 
-// Page result tiles -> adapter posts (id from the URL, caption/image cleaning), deduped; posts the store already has are dropped.
-export function pageResultPosts(result, adapter, { cursor = null, max = 0, found_by = '' } = {}) {
-  const posts = [], seen = new Set();
+// Page result tiles -> adapter posts (id from the URL, caption/image cleaning), deduped; posts the store already has
+// (any of their links, Facebook photo fbids included) are dropped; `skip` = ids already in raw.json (earlier extracts).
+export function pageResultPosts(result, adapter, { cursor = null, max = 0, found_by = '', skip = [] } = {}) {
+  const posts = [], seen = new Set(skip.map(String));
   let read = 0, skippedKnown = 0;
   if (result?.loginWall) return { posts, read, skippedKnown, loginWall: true };
   for (const t of result?.tiles || []) {
-    const p = adapter.toPost({ url: t.url, image_urls: t.image_urls || [], caption: t.caption || '', author: t.author || '' }, { found_by: t.found_by || found_by });
-    if (!p || seen.has(p.id)) continue;
+    const p = adapter.toPost({ id: t.id, alt: t.alt, url: t.url, alt_urls: t.alt_urls || [], image_urls: t.image_urls || [], caption: t.caption || '', author: t.author || '', date_text: t.date_text || '', utime: t.utime || 0 }, { found_by: t.found_by || found_by });
+    if (!p || seen.has(p.id) || (p.aliases || []).some((a) => seen.has(a))) continue;
     seen.add(p.id); read++;
     const v = cursor ? cursor.take({ post_url: p.url, alt_urls: p.alt_urls || [] }) : 'collect';
     if (v === 'known') { skippedKnown++; continue; }
     if (v === 'collect') { posts.push(p); if (max && posts.length >= max) break; }
   }
   return { posts, read, skippedKnown, loginWall: false };
+}
+// research.scroll_wait_seconds[platform] -> [lo, hi] seconds the agent waits between scrolls.
+export function scrollWait(platform, cfg = settings().research?.scroll_wait_seconds) {
+  const v = cfg?.[String(platform || '').toLowerCase()];
+  return Array.isArray(v) && v.length === 2 ? v.map(Number) : ['instagram', 'facebook', 'tiktok'].includes(platform) ? [5, 10] : [2, 4];
 }
 
 // ---------- commands ----------
@@ -104,19 +100,18 @@ const taskOf = (args) => {
   const run = args['for-query'] || args['for-source'] ? openRun(args, brand || loadBrand(need(args, 'brand'))).run : null;
   return { brand, task: resolveTask(args, run) };
 };
+const seenFile = (task) => path.join(task.dir, 'seen.json');
+const forArgOf = (task, brand) => `${brand ? `--brand ${brand.id} ` : ''}${task.kind === 'query' ? `--for-query ${task.id}` : task.kind === 'source' ? `--for-source ${task.id}` : `--platform ${task.platform}`}`;
 
 export function script(args) {
   const { brand, task } = taskOf(args);
   const adapter = getAdapter(task.platform);
-  if (!adapter?.pageScript) throw new Error(`Nền tảng "${task.platform}" chưa có pageScript (in-page): lái tay bằng Playwright MCP (docs/research.md).`);
-  const [lo, hi] = delayRange(settings().research?.delay_seconds);
-  const max = Number(args.max) > 0 ? Number(args.max) : Math.min(task.max || 8, 8);
-  const deadline = Number(args.deadline) > 0 ? Number(args.deadline) : 120;
-  const chunk = args.chunk !== undefined && args.chunk !== true && Number.isFinite(Number(args.chunk)) ? Number(args.chunk) : undefined;
-  const steps = Number(args['max-steps']) || (task.kind === 'source' ? Math.min(Number(settings().research?.browser?.max_scroll_steps) || 40, 40) : 4);
-  process.stdout.write(adapter.pageScript({ url: task.url, found_by: task.found_by, max, steps, delay: [lo, hi], deadline, ...(chunk !== undefined ? { chunk } : {}) }) + '\n');
-  const forArg = task.kind === 'query' ? `--for-query ${task.id}` : task.kind === 'source' ? `--for-source ${task.id}` : `--platform ${task.platform}`;
-  process.stderr.write(`# ${task.platform} ${task.url} max ${max}, up to ${steps} steps, deadline ${deadline} s, pauses ${lo}-${hi}s. Paste into browser_run_code_unsafe${chunk !== undefined ? ` (CHUNK ${chunk}: tiles ${chunk * 6}.., run again with --chunk ${chunk + 1} until the result's chunk.of is reached)` : ''}; the result is ONE line {b64, tag}: paste the whole b64 value with --b64 (or save the result to a file, --file), never retype JSON; read back its 4-character tag, then: node scripts/collect.mjs from-page ${brand ? `--brand ${brand.id} ` : ''}${forArg} --file <result.json> [<chunk2.json> ...] | --stdin | --json '<compact>'\n`);
+  if (!adapter?.pageScript) throw new Error(`Nền tảng "${task.platform}" chưa có script trích xuất: viết scripts/platforms/${task.platform}.mjs (docs/research.md "Adapter").`);
+  const seen = readSeen(args.seen && args.seen !== true ? path.resolve(String(args.seen)) : seenFile(task));
+  const max = Number(args.max) > 0 ? Number(args.max) : 0;
+  process.stdout.write(adapter.pageScript({ found_by: task.found_by, max, seen }) + '\n');
+  const [lo, hi] = scrollWait(task.platform);
+  process.stderr.write(`# ${task.platform} ${task.url}: open the page (browser_navigate), scroll (press End / mouse wheel 1-2 times, wait ${lo}-${hi} s), then paste this into browser_run_code_unsafe; it reads the page as it is now (${seen.length} ids already returned are left out). The result is ONE line {b64, tag}: node scripts/collect.mjs from-page ${forArgOf(task, brand)} --b64 <b64> (or --file <result.json>); read back its 4-character tag.\n`);
 }
 
 export async function fromPage(args) {
@@ -124,17 +119,23 @@ export async function fromPage(args) {
   const { brand, task } = taskOf(args);
   const adapter = getAdapter(task.platform);
   if (!adapter) return fail(`Chưa có adapter cho nền tảng "${task.platform}".`, { platform: task.platform });
-  let merged;
-  try { merged = loadPageResults(args); } catch (e) { return fail(String(e.message || e), { verified: false }); }
-  const result = merged.result;
+  let loaded;
+  try { loaded = loadPageResult(args); } catch (e) { return fail(String(e.message || e), { verified: false }); }
+  const result = loaded.result;
+  // Accumulate across extracts of the same task: earlier posts stay in raw.json, earlier ids are skipped.
+  const prevRaw = readJson(task.raw_file, null);
+  const prevSeen = readSeen(seenFile(task));
+  const state0 = readJson(path.join(task.dir, 'extracts.json'), { extracts: 0, idle: 0 });
+  const prevPosts = prevRaw?.posts || [];
   const known = task.known_file ? readJson(task.known_file, { count: 0 }) : brand ? knownPosts(brand.id) : { count: 0 };
-  const r = pageResultPosts(result, adapter, { cursor: makeCursor({ mode: task.mode, known }), max: task.max, found_by: task.found_by });
+  const left = task.max ? Math.max(0, task.max - prevPosts.length) : 0;
+  const r = pageResultPosts(result, adapter, { cursor: makeCursor({ mode: task.mode, known }), max: task.max ? left : 0, found_by: task.found_by, skip: [...prevSeen, ...prevPosts.map((p) => p.collector_id)] });
   const rawDir = path.join(task.dir, 'raw');
   fs.mkdirSync(rawDir, { recursive: true });
   const perPost = Math.max(1, Number(args.images) || 4);
   const posts = [];
   let noImage = 0;
-  if (!r.loginWall) {
+  if (!r.loginWall && (!task.max || left > 0)) {
     for (const p of r.posts) {
       const images = [];
       for (const [k, u] of (p.image_urls || []).slice(0, perPost).entries()) {
@@ -145,25 +146,33 @@ export async function fromPage(args) {
       posts.push(toRawPost(p, images, task.platform));
     }
   }
+  const all = [...prevPosts, ...posts];
+  const seen = [...new Set([...prevSeen, ...tileKeys(result?.tiles)])];
+  writeJson(seenFile(task), seen);
+  const idle = posts.length ? 0 : state0.idle + 1;
+  const extracts = state0.extracts + 1;
+  writeJson(path.join(task.dir, 'extracts.json'), { extracts, idle });
   const st = adapterStatus(task.platform);
-  const blocked = r.loginWall;
-  const suspect = !blocked && !r.read;
-  const note = blocked ? `login wall / block page: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : suspect ? 'error: 0 posts in the page result (page empty or selectors no longer fit)' : noImage && !posts.length ? 'error: posts read but no image could be downloaded' : '';
-  writeJson(task.raw_file, rawShape(task, posts, { rejected: [] }));
-  const partialRun = !blocked && (result?.partial === true || !merged.verified);
-  const warning = partialRun ? (result?.partial ? `partial: the page script stopped at its time limit (${result?.note || 'deadline'}); only what was gathered is here` : 'result has no total/checksum (old script or hand-made): cannot tell if it is complete') : '';
-  const state = suggestedState(task.kind, { blocked, error: /^error/.test(note) || partialRun, limit: !!task.max && r.posts.length >= task.max, read: r.read, stop: '' });
+  const blocked = !!r.loginWall;
+  const reason = String(result?.reason || '');
+  const allKnown = !blocked && r.read > 0 && r.skippedKnown === r.read && !posts.length;
+  const note = blocked ? `${reason || 'login wall / block page'}: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : !all.length && !r.read && !(result?.total_on_page) ? 'error: 0 posts on the page (page empty or selectors no longer fit)' : noImage && !posts.length && r.read ? 'error: posts read but no image could be downloaded' : '';
+  writeJson(task.raw_file, { ...rawShape(task, all, { rejected: prevRaw?.rejected || [] }) });
+  const target = !!task.max && all.length >= task.max;
+  const stop = blocked ? 'blocked' : target ? 'target' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
+  const state = blocked ? 'blocked' : suggestedState(task.kind, { blocked, error: /^error/.test(note) || !loaded.verified, limit: target, read: all.length, stop: task.kind === 'source' ? (allKnown ? 'known' : stop === 'no_new' ? 'end' : '') : '' });
   const idArg = task.kind === 'query' ? `--query ${task.id}` : task.kind === 'source' ? `--source ${task.id}` : '';
-  const forArg = task.kind === 'query' ? `--for-query ${task.id}` : `--for-source ${task.id}`;
   const b = brand?.id || '<id>';
-  const trust = isTrusted(task.platform) && !suspect && !/^error/.test(note);
-  const next = blocked ? `Bị chặn: node scripts/research.mjs result --brand ${b} ${idArg} --state blocked --note "${note.replace(/"/g, "'")}" (dừng nền tảng này).`
-    : !trust ? `Chưa tin được kết quả (adapter ${st.status}${note ? `, ${note.slice(0, 80)}` : ''}): so với trang thật, sửa adapter hoặc lấy tay (docs/research.md).`
-      : task.kind === 'query' ? `Nhìn ảnh review[].image, ghi decisions: node scripts/collect.mjs fit --brand ${b} ${forArg} --file <decisions.json>; node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`
-        : `node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`;
-  if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: from-page ${posts.length} (${state})` });
+  const trust = isTrusted(task.platform) && !/^error/.test(note);
+  const done = task.kind === 'query' ? `Nhìn ảnh review[].image, ghi decisions: node scripts/collect.mjs fit --brand ${b} --for-query ${task.id} --file <decisions.json>; node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`
+    : `node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state ${state}`;
+  const [lo, hi] = scrollWait(task.platform);
+  const next = blocked ? `Bị chặn (${reason || 'login wall'}): node scripts/research.mjs result --brand ${b} ${idArg} --state blocked --note "${note.replace(/"/g, "'")}" (dừng nền tảng này).`
+    : stop ? `Dừng (${stop}): ${done}`
+      : `Cuộn tiếp (End / con lăn 1-2 lần, chờ ${lo}-${hi} s), rồi chạy lại script (node scripts/collect.mjs script ${forArgOf(task, brand)}) và from-page.${trust ? '' : ` Adapter ${st.status}: so kết quả với trang thật trước khi tin.`}`;
+  if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: extract ${extracts}, +${posts.length} (${all.length} total)` });
   out({ brand: brand?.id || '', platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, adapter: st, trusted: trust,
-    verified: merged.verified, ...(merged.tag ? { tag: merged.tag } : {}), ...(warning ? { warning } : {}), chunks: merged.chunks, read: r.read, collected: posts.length, skipped_known: r.skippedKnown, dropped_no_image: noImage, via_post_page: (result?.tiles || []).filter((t) => t.via_post_page).length,
-    seconds: Math.round((Date.now() - t0) / 1000), suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
-    review: posts.map((p, i) => ({ n: i + 1, id: p.collector_id, url: p.post_url, author: p.author, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
+    verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0,
+    skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || '', suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
+    review: posts.map((p, i) => ({ n: prevPosts.length + i + 1, id: p.collector_id, url: p.post_url, author: p.author, date: p.posted_date, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
 }
