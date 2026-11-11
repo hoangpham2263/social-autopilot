@@ -125,12 +125,12 @@ details[open] > summary { margin-bottom: 6px; }
 .run-steps li.now { border-color: var(--accent); }
 .run-steps li.skipped, .run-steps li.pending { color: var(--muted); }
 #page-prompt .ar-panel { gap: 8px; margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--line); background: #fff; box-sizing: border-box; }
-#page-prompt > #prAgentRun { min-height: 0; }
-#page-prompt > #prAgentRun.has-log { min-height: 140px; }
+#page-prompt > #prAgentRun { flex: 0 1 auto; min-height: 0; max-height: 100%; }
+#page-prompt > #prAgentRun.has-log { min-height: 0; }
 .ar-logbox > .label { font-size: 12px; color: var(--muted); }
 .ar-logbox[hidden] { display: none; }
-.ar-logbox { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
-.ar-log { margin: 0; flex: 1 1 auto; min-height: 0; padding: 8px; border: 1px solid var(--line); background: #fafafa; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.ar-logbox { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
+.ar-log { margin: 0; flex: 0 1 auto; min-height: 4.5em; max-height: 40vh; padding: 8px; border: 1px solid var(--line); background: #fafafa; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .dot-run { background: var(--accent); }
 .run-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .run-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1067,6 +1067,9 @@ details.sec[open] > summary { margin-bottom: 12px; }
   }
   for (const b of $$("#prHow button")) b.onclick = () => { store.set("prHow", b.dataset.how); arDraw(); };
   $("#prRunPillGo").onclick = () => { store.set("prHow", "app"); arDraw(); };
+  // Run progress: Copy prompt mode keeps "waiting or going"; Run in the app shows it only for an app run or recent steps.
+  let progState = null;
+  function prRunVis() { const p = progState; $("#prRun").hidden = !p || (howNow() === "app" ? !(arState?.active || p.stepped) : !p.active); }
   const arClock = (n) => (n < 60 ? `${n} s` : `${Math.floor(n / 60)} min ${n % 60} s`);
   function arDraw() {
     const r = arState, claude = subAllowed();
@@ -1075,10 +1078,16 @@ details.sec[open] > summary { margin-bottom: 12px; }
     setDisabled($("#prRunNow"), busy || noCli || !claude, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found" : "Run now starts Claude Code: choose the Claude Code agent");
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
-    box.hidden = howNow() !== "app";
+    box.hidden = howNow() !== "app"; prRunVis();
     if (!show) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
     $("#arLast").className = "ar-last"; $("#arLogBox").hidden = false; box.classList.add("has-log");
     if (noCli) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
+    const endedAt = r.started ? Date.parse(r.started) + (r.elapsed_s || 0) * 1000 : 0;
+    if (!busy && endedAt && Date.now() - endedAt > 10 * 60000) { // stale result: one quiet line instead of the result block
+      $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last";
+      $("#arLast").textContent = `Last run ${(AR_CHIP[r.status]?.[0] || r.status).toLowerCase()} ${when(new Date(endedAt).toISOString())}`;
+      $("#arLogBox").hidden = true; box.classList.remove("has-log"); return;
+    }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
     $("#arElapsed").textContent = `${r.mode} · ${arClock(r.elapsed_s || 0)}${r.turns ? ` · ${r.turns} turns` : ""}`;
@@ -1245,7 +1254,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
     } else parts.push(`<span class="meta">No run yet. Copy the prompt and paste it into the agent.</span>`);
     $("#prRunSum").innerHTML = parts.join("");
     // Run progress only shows while a run is waiting or going (after Copy prompt or from a running agent); the history is in the Log tab.
-    $("#prRun").hidden = !active;
+    progState = { active, stepped: !!run && run.steps.some((x) => x.state !== "pending") && Date.now() - Date.parse(run.updated || run.created || 0) < 5 * 60000 };
+    prRunVis();
     $("#prRunDetail").textContent = active || run?.finished ? run?.detail || "" : "";
     $("#prRunDetail").title = $("#prRunDetail").textContent;
     for (const a of $$("#prRunSum [data-goto-log]")) a.onclick = (e) => { e.preventDefault(); lgMode = mode; store.set("lgMode", mode); show("log"); };
