@@ -150,7 +150,10 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     child.on("error", (e) => finish(run, null, e.message));
     child.on("close", (code) => finish(run, code));
     child.stdin?.on("error", () => {});
-    try { child.stdin?.end(prompt); } catch {}
+    // Started from the app (Run now): the person is at the screen and will click Connect in Chrome, so help the connect page appear
+    // and wait for it instead of stopping. This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
+    const waitNote = mode === "research" ? "RUN-NOW NOTE: this run was started from the app, so the person is at the computer and will click Connect in Chrome.\nIf the browser is not connected yet (browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail):\n1) when browser_tabs shows a tab whose URL starts with chrome-extension:// and contains connect.html?mcpRelayUrl=, run ONCE:\n   node scripts/chrome-connect.mjs --url \"<that exact URL>\"\n   (it opens the connect page in the Chrome profile chosen in the app, in front of the person), then tell the person in one line to click Connect;\n2) do NOT stop: wait up to 3 minutes calling browser_tabs about every 15 seconds until a real page tab appears;\n3) only if nothing connects after 3 minutes, follow the normal stop rule of step 1.0.\n\n" : "";
+    try { child.stdin?.end(waitNote + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
     run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
     run.timer.unref?.();

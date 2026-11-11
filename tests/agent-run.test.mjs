@@ -45,7 +45,9 @@ test('argv has no prompt, stdin gets it, flags and per-mode tools', async () => 
   assert.equal(runner.start({ mode: 'research', prompt: PROMPT }).ok, true);
   await done(runner);
   const rec = recorded(out);
-  assert.equal(rec.stdin, PROMPT);
+  // A research run started from the app gets the wait-for-Connect note in front of the exact prompt the Copy button gives.
+  assert.ok(rec.stdin.endsWith(PROMPT), 'stdin ends with the unchanged prompt');
+  assert.match(rec.stdin.slice(0, rec.stdin.length - PROMPT.length), /RUN-NOW NOTE[sS]*chrome-connect.mjs/);
   assert.ok(!rec.args.some((a) => a.includes('TASK:')));
   for (const f of ['-p', '--verbose', '--strict-mcp-config', '--add-dir', '--mcp-config']) assert.ok(rec.args.includes(f), f);
   assert.equal(rec.args[rec.args.indexOf('--output-format') + 1], 'stream-json');
