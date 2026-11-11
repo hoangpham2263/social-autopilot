@@ -666,11 +666,9 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#resStatus").innerHTML = SHOW.map(([v, t, n, tip]) => `<button class="btn" type="button" data-show="${v}" aria-pressed="${v === resStatus}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(withCount(t, n))}</button>`).join("");
     for (const b of $$("#resStatus button")) b.onclick = () => { resStatus = b.dataset.show; store.set("resStatus", resStatus); resShown = 60; loadResearch(); };
     const items = arr(c.items);
-    const prog = Object.entries(c.progress || {});
-    const progress = prog.length ? `<details><summary>Crawl progress by source</summary><div class="table-wrap"><table class="edit"><thead><tr><th>Source</th><th>Last run</th><th>Result</th><th>Reached end</th><th>In library</th><th>Newest</th></tr></thead><tbody>${prog.map(([id, p]) => `<tr><td>${esc(id)}</td><td>${esc(String(p.last_crawl || "").slice(0, 16).replace("T", " "))}</td><td class="${p.blocked ? "bad-text" : ""}">${esc(STATE_TEXT[p.last_result?.state] || p.last_result?.state || "-")}${p.last_result?.note ? `: ${esc(p.last_result.note)}` : ""} (${esc(p.last_result?.new ?? 0)} new)</td><td>${p.reached_end ? "yes" : "no"}</td><td>${esc(p.items)}</td><td>${esc(p.newest_posted_date || "-")}</td></tr>`).join("")}</tbody></table></div></details>` : "";
     const list = items.slice(0, resShown);
     const pageOf = (it) => it.author || it.store || it.source_id || "";
-    $("#resBody").innerHTML = `${progress}
+    $("#resBody").innerHTML = `
       <div class="tiles spaced">${list.map((it) => tile({ id: it.id, img: arr(it.image_paths)[0] || "",
         title: String(it.caption || "").split(/\r?\n/).find((l) => l.trim()) || it.id,
         status: it.status === "rejected" ? `<span class="meta" title="${esc(removedWhy(it))}">Removed</span>` : "",
