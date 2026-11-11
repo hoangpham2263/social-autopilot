@@ -15,6 +15,7 @@ import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
 import { checksumOf, unpackB64 } from './platforms/common.mjs';
 import { scriptDir, scriptFile, serverBase, resultFile } from './collect-transfer.mjs';
+import { installScript, callScript, INSTALL_FILE } from './collect-install.mjs';
 import { resolveTask, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
 
 // ---------- pure parts (tests/collect-pagemode.test.mjs) ----------
@@ -123,7 +124,9 @@ export function script(args) {
   const base = args.stdout || task.kind === 'standalone' ? '' : serverBase();
   // the file carries no secret: the Node side of the script fetches a one-time token from token_url when it runs
   const post = base ? { url: `${base}/api/collect-result?task=${encodeURIComponent(task.id)}`, token_url: `${base}/api/collect-token?task=${encodeURIComponent(task.id)}` } : null;
-  const code = adapter.pageScript({ found_by: task.found_by, max, seen, ...(post ? { post } : {}) });
+  const callArgs = { found_by: task.found_by, max, seen, ...(post ? { post } : {}) };
+  // default: TINY call file (window.__sa from install.js does the work); --inline = the old single file with the whole extractor
+  const code = args.inline ? adapter.pageScript(callArgs) : callScript(task.platform, callArgs);
   if (args.stdout) { process.stdout.write(code + '\n'); return; }
   const dir = scriptDir();
   fs.mkdirSync(dir, { recursive: true });
@@ -132,6 +135,7 @@ export function script(args) {
   fs.rmSync(resultFile(task.dir), { force: true });
   const [lo, hi] = scrollWait(task.platform);
   process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, seen_ids: seen.length, transfer: post ? 'post' : 'b64',
+    ...(args.inline ? {} : { install: 'once per session run install.js first (node scripts/collect.mjs install writes it), then open the page (after install), scroll, run this small file' }),
     run: post ? 'browser_run_code_unsafe with filename = file (do not paste or copy the script). It reads the page; the Node side of the script posts the result to the app and returns {saved:true,total,tag,bytes}; then run from-page with no --b64. saved:false with HTTP 403: run collect.mjs script again. Other saved:false: use the b64 it returns (pass it as --b64; reason_saved says why).' : 'browser_run_code_unsafe with filename = file (do not paste the script); it returns ONE line {b64, tag}: pass b64 to from-page --b64 (copy it, never retype). '+(args.stdout ? '--stdout: no transfer token, the b64 path is used.' : task.kind === 'standalone' ? 'Standalone task: no transfer token, the b64 path is used.' : 'The app is not running (workspace/server-address.json missing), so the result cannot be sent automatically.'),
     from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)}${post ? '' : ' --b64 <b64>'}`, scroll: scrollHint(task.platform, lo, hi), ...timeInfo(task.started) }) + '\n');
 }
@@ -209,4 +213,18 @@ export async function fromPage(args) {
     verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0, counters: cnt, summary,
     ...(loaded.verified ? {} : { warning: 'hand-made result (no total/checksum): not verified, check the posts against the page' }), ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || (tm.time_over ? 'time' : ''), suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
     review: posts.map((p, i) => ({ n: prevPosts.length + i + 1, id: p.collector_id, url: p.post_url, author: p.author, date: p.posted_date, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
+}
+
+// `collect.mjs install`: ONE file with the extractors of every platform; run it once per Research session (browser_run_code_unsafe + filename).
+export function install(args) {
+  const code = installScript();
+  if (args.stdout) { process.stdout.write(code + '
+'); return; }
+  const dir = scriptDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, INSTALL_FILE);
+  fs.writeFileSync(file, code + '
+');
+  process.stdout.write(JSON.stringify({ file, chars: code.length, run: 'once per session: browser_run_code_unsafe with filename = file; it returns {installed:true}. Pages loaded AFTER that have window.__sa: open the page (after install), scroll, run the small file of "collect.mjs script"; {error:"not_installed"} = run install.js, then reload the page.' }) + '
+');
 }
