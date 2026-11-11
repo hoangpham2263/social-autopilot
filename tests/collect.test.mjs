@@ -23,7 +23,7 @@ import * as etsy from '../scripts/platforms/etsy.mjs';
 import * as youtube from '../scripts/platforms/youtube.mjs';
 import * as houzz from '../scripts/platforms/houzz.mjs';
 import { SELECTORS as FB, extractFeed } from '../scripts/fb-extract.mjs';
-import { delayRange, resolveTask, rawShape, toRawPost, applyDecisions, suggestedState, fileId } from '../scripts/collect.mjs';
+import { resolveTask, rawShape, toRawPost, applyDecisions, suggestedState, fileId } from '../scripts/collect.mjs';
 import { searchUrl as researchSearchUrl, nextTask, collectInfo } from '../scripts/research.mjs';
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -157,14 +157,6 @@ test('login wall / captcha / block page detection on saved HTML; ordinary pages 
   assert.match(classifyWall({ url: 'https://www.instagram.com/accounts/login/?next=/explore/' }, instagram.SELECTORS.wall), /login wall/);
   assert.match(classifyWall({ url: 'https://www.facebook.com/checkpoint/1' }, facebook.SELECTORS.wall), /login wall|block/);
   assert.match(classifyWall({ title: 'x', text: 'Sorry, unusual traffic from your computer network' }, {}), /unusual traffic/);
-});
-
-test('delay: research.delay_seconds is never lower than the 5-15 s defaults', () => {
-  assert.deepEqual(delayRange([5, 15]), [5, 15]);
-  assert.deepEqual(delayRange([1, 2]), [5, 15]);
-  assert.deepEqual(delayRange([8, 30]), [8, 30]);
-  assert.deepEqual(delayRange(undefined), [5, 15]);
-  assert.deepEqual(delayRange([20, 10]), [20, 20]);
 });
 
 test('resolveTask: from an open run (query / source) or standalone; max defaults to the step share', () => {

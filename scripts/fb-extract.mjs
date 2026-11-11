@@ -12,10 +12,10 @@ export const SELECTORS = {
   message: ['[data-ad-rendering-role="story_message"]', '[data-ad-preview="message"]', '[data-ad-comet-preview="message"]'],
   // Links that carry a post id (the permalink is usually the timestamp).
   post_link: ['a[href*="/posts/"]', 'a[href*="/permalink/"]', 'a[href*="story_fbid="]', 'a[href*="/videos/"]', 'a[href*="/reel/"]', 'a[href*="/watch/?v="]', 'a[href*="/photo/?fbid="]', 'a[href*="/photo.php?fbid="]', 'a[href*="/photos/"]'],
-  // "See more" inside a post's text (clicked to expand; nothing else is ever clicked).
+  // "See more" inside a post's text (read only: its label is cut off the caption, never clicked).
   see_more: ['div[role="button"]', 'span[role="button"]'],
   see_more_text: ['See more', 'Xem thêm', 'Voir plus', 'Mehr ansehen', 'Ver más', 'Mostra altro'],
-  // Timestamps whose link appears only on hover (href="#").
+  // Timestamps whose link appears only on hover (href="#"); the extract script does not hover, it reads aria-label / abbr / time.
   hover: ['a[role="link"][href="#"]', 'a[role="link"]:not([href])', 'span[id] a[href="#"]'],
   timestamp: ['abbr[data-utime]', '[data-utime]', 'time[datetime]', 'abbr[title]'],
   image_host: ['scontent', 'fbcdn.net'],
