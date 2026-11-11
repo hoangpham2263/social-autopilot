@@ -264,6 +264,18 @@ button:disabled, .btn:disabled { cursor: default; }
 #page-store > .fields, #page-posts > .fields, #page-log > .fields { position: sticky; top: 0; z-index: 5; background: var(--control); padding: 0 0 12px; margin-bottom: 0; }
 #page-store > .fields + *, #page-posts > .fields + *, #page-log > .fields + * { margin-top: 2px; }
 .seg { gap: 6px; } .seg .btn { margin-right: 0; }
+/* Soft palette (try-out): pastel buttons, tinted selected state, quieter borders. */
+:root { --control: #f6f5fb; --line: #d9d6e8; --ctl-border: 1px solid #cfcbe3; --soft: #ece9f8; --soft-hover: #e0dbf4; --soft-on: #e3f3ea; }
+.btn, nav.tabs button, select { background-color: var(--soft); border-color: #cfcbe3; color: #2b2840; }
+.btn:hover, nav.tabs button:hover, select:hover { background-color: var(--soft-hover); border-color: #9b8fd8; }
+.btn:active { background: #d4cdf0; border-color: #7d6fc4; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn[aria-pressed="true"], nav.tabs button[aria-pressed="true"] { background: var(--soft-on); border-color: var(--accent); color: #17432a; }
+input:not([type=checkbox]):not([type=radio]), textarea { border-color: #cfcbe3; }
+input:hover, textarea:hover { border-color: #9b8fd8; }
+.card, fieldset, .plat, .log-row { border-color: #dcd9ea; }
+.btn:disabled { background: #eceaf3; border-color: #dcd9ea; color: #9a97a8; }
 nav.tabs button { margin-right: 0; }
 .log-row { margin-bottom: 6px; }
 nav.tabs { gap: 6px; margin: 0 0 0 20px; }
