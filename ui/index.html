@@ -18,7 +18,7 @@ b, strong, h1, h2, h3, th { font-weight: 400; }
 a { color: #0b57d0; }
 html, body { height: 100%; }
 main { height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
-main > header, main > nav { flex: 0 0 auto; }
+main > header { flex: 0 0 auto; }
 /* The setup banner floats over the page: it appears after a slow check and must never push the tabs or content down. */
 main > .setup-status { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 20; max-width: min(720px, calc(100vw - 32px)); margin: 0; }
 .page { flex: 1 1 auto; min-height: 0; overflow: auto; }
@@ -255,7 +255,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
 }
 /* Soft corners: a small, uniform radius on controls and boxes. */
 :root { --r: 6px; }
-nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); margin-bottom: 16px; align-self: flex-start; }
+nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); margin: 0 0 0 16px; }
 .btn, a.btn, button.btn, nav.tabs button, input:not([type=checkbox]):not([type=radio]), select, textarea, .card, fieldset, .plat, .status-tag, .setup-status, .reject-box, .ar-panel, .run-panel { border-radius: var(--r); }
 .status-tag { border-radius: 999px; }
 .pv:not(.ig) { border-radius: 8px; }
@@ -263,16 +263,17 @@ nav.tabs { gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--lin
 </head>
 <body>
 <main>
-  <header><img src="/icon.svg" alt=""><h1>Social Autopilot</h1></header>
+  <header><img src="/icon.svg" alt=""><h1>Social Autopilot</h1>
+    <nav class="tabs" id="tabs">
+      <button type="button" data-page="overview">Overview</button>
+      <button type="button" data-page="store">Library</button>
+      <button type="button" data-page="posts">Posts</button>
+      <button type="button" data-page="prompt">Run</button>
+      <button type="button" data-page="log">Log</button>
+      <button type="button" data-page="settings">Settings</button>
+    </nav>
+  </header>
   <div id="setupStatus" class="setup-status" hidden></div>
-  <nav class="tabs" id="tabs">
-    <button type="button" data-page="overview">Overview</button>
-    <button type="button" data-page="store">Library</button>
-    <button type="button" data-page="posts">Posts</button>
-    <button type="button" data-page="prompt">Run</button>
-    <button type="button" data-page="log">Log</button>
-    <button type="button" data-page="settings">Settings</button>
-  </nav>
 
   <section class="page" id="page-overview" hidden>
     <fieldset class="plats"><legend>Research</legend><div class="plat-row" id="ovPlat"></div></fieldset>
