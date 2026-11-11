@@ -18,7 +18,9 @@ b, strong, h1, h2, h3, th { font-weight: 400; }
 a { color: #0b57d0; }
 html, body { height: 100%; }
 main { height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
-main > header, main > nav, main > .setup-status { flex: 0 0 auto; }
+main > header, main > nav { flex: 0 0 auto; }
+/* The setup banner floats over the page: it appears after a slow check and must never push the tabs or content down. */
+main > .setup-status { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 20; max-width: min(720px, calc(100vw - 32px)); margin: 0; }
 .page { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .page[hidden] { display: none; }
 .page:not([hidden]) { display: flex; flex-direction: column; }
@@ -53,7 +55,7 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .card.ok { border-color: var(--accent); }
 .card.todo { border-color: #b06000; }
 .card .card-msg:empty { display: none; }
-.plats { margin: 0 0 24px; }
+.plats { margin: 0 0 24px; min-height: 120px; }
 .plat-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .plat { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 104px; padding: 8px; border: 1px solid var(--line); background: #fff; }
 .plat-name { font-size: 12px; color: var(--muted); }
@@ -267,7 +269,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
   </nav>
 
   <section class="page" id="page-overview" hidden>
-    <fieldset class="plats" hidden><legend>Research</legend><div class="plat-row" id="ovPlat"></div></fieldset>
+    <fieldset class="plats"><legend>Research</legend><div class="plat-row" id="ovPlat"></div></fieldset>
     <div class="cards" id="ovList"><div class="meta">Loading…</div></div>
   </section>
 
@@ -925,7 +927,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
         const tip = [name, p.note, p.checked ? "Checked " + p.checked : "", ...Object.keys(names).map((id) => names[id] + ": " + (on.includes(id) ? "on" : "off"))].filter(Boolean).join("\n");
         return '<div class="plat' + (p.status === "broken" ? " blocked" : "") + '" title="' + esc(tip) + '">' + platLogo(p.id, name) + '<span class="plat-name">' + esc(name) + '</span><span class="status-tag ' + c + '">' + esc(t) + '</span></div>';
       }).join("");
-      box.closest("fieldset").hidden = !list.length;
+      box.closest("fieldset").style.visibility = list.length ? "" : "hidden";
     } catch { /* quiet */ }
   }
 
@@ -1112,10 +1114,14 @@ details.sec[open] > summary { margin-bottom: 12px; }
     if (!text.startsWith("TASK:")) { flash("Could not build the prompt: it does not start with TASK:."); return; }
     const brandSel = $("#prBrand").value;
     const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
-    const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands }).catch(() => ({ error: "The app did not answer." }));
-    if (r.error) { flash(r.error); await loadAgentRun(); return; }
-    await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
-    await loadAgentRun(); loadProgress();
+    const btn = $("#prRunNow"), label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Starting…"; // instant feedback: the click is registered while the app starts Claude
+    try {
+      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands }).catch(() => ({ error: "The app did not answer." }));
+      if (r.error) { flash(r.error); await loadAgentRun(); return; }
+      await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
+      await loadAgentRun(); loadProgress();
+    } finally { btn.disabled = false; btn.textContent = label; }
   };
   $("#prStop").onclick = async () => { const r = await postJson("/api/agent-run/stop", {}).catch(() => ({ error: "The app did not answer." })); if (r.error) flash(r.error); setTimeout(loadAgentRun, 800); };
 
