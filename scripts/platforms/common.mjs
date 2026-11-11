@@ -173,7 +173,7 @@ export function unpackB64(text) {
 export function buildPageScript(S, opts) {
   const cfg = { link: S.link, url_pattern: S.url_pattern, container: S.container, img: S.img, img_skip: S.img_skip, author: S.author, caption: S.caption };
   const wall = { login_form: S.wall.login_form, captcha: S.wall.captcha, dialog: S.wall.dialog, url: S.wall.url };
-  const o = { compact: COMPACT, seen: [], ...opts, cfg, wall, post_fallback: !!S.post_fallback, caption_strip: S.caption_strip || '' };
+  const o = { compact: COMPACT, seen: [], ...opts, cfg, wall, post_fallback: !!S.post_fallback, author_fallback: !!S.author_fallback, caption_strip: S.caption_strip || '' };
   return `async (page) => {
   const packB64 = ${packB64};
   const o = ${JSON.stringify(o)};
@@ -197,14 +197,25 @@ export function buildPageScript(S, opts) {
     if (o.max) list = list.slice(0, o.max);
     let note = '';
     if (o.post_fallback && !loginWall) {
-      await Promise.all(list.filter((x) => !x.image_urls.length).slice(0, 4).map(async (t) => {
+      // post page read: tile without image, or (author_fallback) without author. Starts are staggered (polite), each bounded by a 3 s timeout.
+      await Promise.all(list.filter((x) => !x.image_urls.length || (o.author_fallback && !x.author)).slice(0, 8).map(async (t, n) => {
         try {
+          await new Promise((r) => setTimeout(r, 250 * n));
           const res = await fetch(t.url, { credentials: 'include', headers: { Accept: 'text/html' }, signal: AbortSignal.timeout(3000) });
           const html = new DOMParser().parseFromString(await res.text(), 'text/html');
           const meta = (p) => (html.querySelector('meta[property="' + p + '"]') || {}).content || '';
           const img = meta('og:image');
-          if (img) t.image_urls.push(img.replace(/&amp;/g, '&'));
-          if (!t.caption) t.caption = meta('og:description') || meta('og:title');
+          if (img && !t.image_urls.length) t.image_urls.push(img.replace(/&amp;/g, '&'));
+          const desc = meta('og:description'), ogt = meta('og:title');
+          if (o.author_fallback && !t.author) {
+            // handle first: og:description "N likes, N comments - user on date: ...", canonical /user/p/code/; else the name of og:title "Name on Instagram: ..."
+            const m1 = desc.match(/ - ([A-Za-z0-9_.]+) on [^:]+:/), canon = (html.querySelector('link[rel="canonical"]') || {}).href || meta('og:url'), m2 = String(canon).match(/instagram[.]com[/]([A-Za-z0-9_.]+)[/](?:p|reels?|tv)[/]/i), m3 = ogt.match(/^(.+?) on Instagram/);
+            const h = (m1 && m1[1]) || (m2 && !/^(explore|p|reels?|tv)$/.test(m2[1]) ? m2[1] : '');
+            t.author = h ? '@' + h : (m3 ? m3[1].trim() : '');
+          }
+          if (!t.caption) t.caption = desc || ogt;
+          // clean "N likes, N comments - user on <date>: "text"." down to the text
+          t.caption = String(t.caption || '').replace(/^[0-9.,KMkm]+ likes?, [0-9.,KMkm]+ comments? - [A-Za-z0-9_.]+ on [^:]+: "/, '').replace(/"[.]?[ ]*$/, '');
           t.via_post_page = true;
         } catch (e) { note = 'post page read failed: ' + String(e.message || e).slice(0, 80); }
       }));

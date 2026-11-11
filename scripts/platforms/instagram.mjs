@@ -12,6 +12,7 @@ export const SELECTORS = {
   img_skip: ['/rsrc\\.php/', 's150x150', 'profile_pic'],
   caption: [],
   author: [],
+  author_fallback: true, // author empty (the grid has none): read the post page for it (og:description / canonical / og:title)
   post_fallback: true, // tile image still empty after the lazy-load wait: read the post page /p/<code>/ (og:image, og:description)
   wall: {
     url: ['/accounts/login', '/challenge/', '/accounts/suspended'],
