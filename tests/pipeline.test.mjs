@@ -40,7 +40,7 @@ test.before(() => {
   for (const it of items) write(path.join(store, it.images[0]), png(16, 16, [n(it), 80, 80]));
   function n(it) { return 40 * Number(it.id.slice(-1)); }
   write(path.join(store, 'items.json'), JSON.stringify({ next: 3, items }));
-  write(path.join(ws, 'settings.json'), JSON.stringify({ planning: { ahead_days: 2 }, codex: { concurrency: 3, timeout_minutes: 2 }, ...(fs.existsSync(strip) ? {} : {}) }));
+  write(path.join(ws, 'settings.json'), JSON.stringify({ planning: { ahead_days: 2 }, posts: { images_per_post: [1, 1] }, codex: { concurrency: 3, timeout_minutes: 2 }, ...(fs.existsSync(strip) ? {} : {}) }));
 });
 
 test('pipeline create: two stops (ideas, captions), images in the background, same checks; timings', { skip: !fs.existsSync(strip) && 'no remove-watermark-skill strip script on this machine' }, () => {
