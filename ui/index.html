@@ -1168,8 +1168,7 @@ function sizeLine(d) {
 function draftTags(d) {
     const bp = d.brand_post, tag = (t, c = "") => `<span class="status-tag ${c}">${esc(t)}</span>`;
     return tag(STATUS_TEXT[d.status] || d.status, STATUS_COLOR[d.status]) + (arr(d.problems).length ? tag(`${d.problems.length} check problems`, "c-red") : "")
-      + (bp ? tag(bp.media_url ? "Image hosted" : "Image not hosted", bp.media_url ? "c-green" : "c-amber") + tag(MC_TEXT[bp.metricool] || bp.metricool || "-", MC_COLOR[bp.metricool]) : "")
-      + (d.image_mode === "scene-swap" ? tag(d.ref_mode && d.ref_mode !== "legacy" ? `scene-swap · ${d.ref_mode}` : "scene-swap") : "");
+      + (bp ? tag(bp.media_url ? "Image hosted" : "Image not hosted", bp.media_url ? "c-green" : "c-amber") + tag(MC_TEXT[bp.metricool] || bp.metricool || "-", MC_COLOR[bp.metricool]) : "");
   }
   // Planned time: what Metricool was given (metricool_sent publication), else nothing yet.
   const plannedOf = (d) => { const m = arr(d.brand_post?.metricool_sent).find((x) => x.publication); return m ? `${String(m.publication).slice(0, 16).replace("T", " ")}${m.draft ? " (old draft)" : ""}` : "-"; };
