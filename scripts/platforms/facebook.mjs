@@ -84,6 +84,13 @@ export const isClosedPage = (text) => /permanently closed|đã đóng cửa vĩn
 // READS the posts on the page now and returns at once: no navigation, no scroll, no pause, no click, no hover, no DOM marks.
 // Timeline/search -> extractFeed (post permalink id, photo fbids as aliases, caption of the post container, date text);
 // photos/reels tab -> extractGrid. opts: { found_by, max, seen[] (ids AND aliases already returned) }.
+// The feed renders lazily: after bringToFront poll (Node side, no waitForFunction) up to ~8 s, 500 ms apart, and extract as soon as a post
+// (aria-posinset) or a post/photo/reel link shows; stops at once when the count is > 0.
+export const WAIT_FEED_JS = `for (let i = 0; i < 16; i++) {
+    const n = await page.evaluate(() => document.querySelectorAll('[aria-posinset], a[href*="/posts/"], a[href*="/permalink"], a[href*="/photo"], a[href*="/reel/"], a[href*="/videos/"]').length).catch(() => 0);
+    if (n > 0) break;
+    await page.waitForTimeout(500);
+  }`;
 export function pageScript(opts) {
   const o = { platform: 'facebook', max: 0, seen: [], compact: COMPACT, ...opts, sel: { ...FB, done_attr: '' },
     wall: { login_form: SELECTORS.wall.login_form, captcha: SELECTORS.wall.captcha, dialog: SELECTORS.wall.dialog }, blocks: BLOCK_REASONS };
@@ -91,6 +98,7 @@ export function pageScript(opts) {
   await page.bringToFront();
   const packB64 = ${packB64};
   const o = ${JSON.stringify(o)};
+  ${WAIT_FEED_JS}
   const r = await page.evaluate((o) => {
     const cutWords = ${cutWords};
     const checksumOf = ${checksumOf}; // inside evaluate: the browser cannot see the outer script scope
@@ -114,7 +122,9 @@ export function pageScript(opts) {
     let list = [...byId.values()].filter((t) => !seen.has(t.id) && !t.alt.some((a) => seen.has(a)));
     if (o.max) list = list.slice(0, o.max);
     const h1 = document.querySelector('[role="main"] h1') || document.querySelector('h1');
-    const author = (h1 && h1.textContent.trim()) || (location.pathname.split('/').filter(Boolean)[0] || '');
+    const generic = /^(kết quả tìm kiếm|search results|results|notifications|thông báo|facebook)$/i;
+    const h1t = (h1 && h1.textContent.trim()) || '';
+    const author = (h1t && !generic.test(h1t) ? h1t : '') || (/^\\/(search|watch|hashtag)\\b/.test(location.pathname) ? '' : (location.pathname.split('/').filter(Boolean)[0] || ''));
     const reason = o.blocks.includes(block) ? block : fbReason(sig, byId.size);
     const cut = (x, n) => String(x || '').replace(/\\s+/g, ' ').trim().slice(0, n);
     const C = o.compact;
