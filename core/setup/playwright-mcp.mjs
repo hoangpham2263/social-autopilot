@@ -33,9 +33,22 @@ export function findClaude({ override = "", env = toolEnv, home = homedir(), win
     const dirs = list(ext).filter((d) => /^anthropic\.claude-code-/.test(d)).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     for (const d of dirs) { const p = join(ext, d, "resources", "native-binary", win ? "claude.exe" : "claude"); if (exists(p)) return p; }
   } catch {}
-  for (const p of win ? [join(home, ".local", "bin", "claude.exe"), join(home, ".local", "bin", "claude")] : [join(home, ".local", "bin", "claude")]) if (exists(p)) return p;
+  const lad = process.env.LOCALAPPDATA || join(home, "AppData", "Local"), appd = process.env.APPDATA || join(home, "AppData", "Roaming");
+  const fixed = win
+    ? [join(home, ".local", "bin", "claude.exe"), join(home, ".local", "bin", "claude"), join(home, ".claude", "local", "claude.exe"), join(appd, "npm", "claude.cmd"), join(lad, "AnthropicClaude", "claude.exe"), join(lad, "Programs", "claude", "claude.exe")]
+    : [join(home, ".local", "bin", "claude"), join(home, ".claude", "local", "claude"), join(home, ".npm-global", "bin", "claude"), "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "/usr/bin/claude"];
+  for (const p of fixed) if (exists(p)) return p;
   return "";
 }
+
+// ----- parsing `claude mcp list` (names only, defensive: a line that does not look like "<name>: <rest>" is skipped) -----
+export function parseList(text) {
+  const names = [];
+  for (const l of String(text || "").split(/\r?\n/)) { const m = /^(\S+?):\s+\S/.exec(l.trim()); if (m && /^[A-Za-z0-9_.:@-]+$/.test(m[1]) && !names.includes(m[1])) names.push(m[1]); }
+  return names;
+}
+export const validName = (n) => /^[A-Za-z0-9_-]{1,40}$/.test(String(n || ""));
+export const guessServer = (names) => names.find((n) => /playwright/i.test(n)) || "";
 
 // ----- parsing `claude mcp get <name>` -----
 // Env values stay inside `_env` (needed to rebuild the command); callers return publicView() only.
@@ -67,6 +80,12 @@ export function buildCommands(p, name, { token = "", profile_dir = "" } = {}, ma
   return { remove: ["mcp", "remove", name, "-s", p.scope], add: ["mcp", "add", name, "-s", p.scope, ...eargs, "--", p.command, ...p.args] };
 }
 
+// Fresh entry: claude mcp add <name> -s user [-e ...] -- npx @playwright/mcp@latest --extension (cmd /c npx on Windows).
+export function buildAdd(name, { token = "", profile_dir = "" } = {}, masked = false, win = onWindows) {
+  const env = [...(token ? [[TOKEN_KEY, masked ? mask(token) : token]] : []), ...(profile_dir ? [[PROFILE_KEY, profile_dir]] : [])];
+  return ["mcp", "add", name, "-s", "user", ...env.flatMap(([k, v]) => ["-e", `${k}=${v}`]), "--", ...(win ? ["cmd", "/c", "npx"] : ["npx"]), "@playwright/mcp@latest", "--extension"];
+}
+
 // ----- backup of the user's MCP config (next to it, never inside this app) -----
 export const configFile = (home = homedir()) => join(home, ".claude.json");
 const stamp = () => new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 17);
@@ -93,23 +112,32 @@ export function restore(home = homedir()) {
 const defaultRun = (cli, args) => new Promise((done) => execFile(cli, args, { windowsHide: true, timeout: 60000, env: toolEnv, maxBuffer: 4 << 20 },
   (err, stdout, stderr) => done({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, out: String(stdout || ""), err: String(stderr || err?.message || "") })));
 
-export function createPlaywrightMcp({ getSettings = () => ({}), run = defaultRun, home = homedir(), workspaceDir, find = findClaude } = {}) {
-  const name = () => String(getSettings().playwright_mcp?.name || "playwright");
+export function createPlaywrightMcp({ getSettings = () => ({}), run = defaultRun, home = homedir(), workspaceDir, find = findClaude, hasNpx = () => !!findTool("npx", toolEnv) } = {}) {
+  let picked = ""; // the server name status/apply work on (set by status({name}) / apply({name}))
+  const name = () => picked || String(getSettings().playwright_mcp?.name || "");
+  const listServers = async (cli) => { const r = await run(cli, ["mcp", "list"]); return parseList(r.out); };
   const cliPath = () => find({ override: String(getSettings().claudeCli?.command || ""), home });
   const current = async (cli) => { const r = await run(cli, ["mcp", "get", name()]); return { r, p: parseGet(r.out) }; };
 
-  async function status() {
+  async function status({ name: want = "" } = {}) {
     const saved = mask(readSaved(workspaceDir));
     const cli = cliPath();
-    if (!cli) return { found: false, cli: "", saved_tail: saved, message: "The claude CLI was not found (PATH, VS Code extension, ~/.local/bin). Set claudeCli.command in workspace/settings.json." };
+    if (!cli) return { found: false, cli: "", servers: [], saved_tail: saved, message: "The claude CLI was not found (PATH, npm global, ~/.local/bin, VS Code extension). Set claudeCli.command in workspace/settings.json." };
+    const servers = await listServers(cli);
+    if (want && validName(want)) picked = want;
+    if (!servers.includes(picked)) { const s = String(getSettings().playwright_mcp?.name || ""); picked = servers.includes(s) ? s : guessServer(servers); }
+    const npx = hasNpx();
+    if (!picked) return { found: false, cli, servers, name: "", no_playwright: true, npx, default_add_name: "playwright-sa", saved_tail: saved, message: "No Playwright MCP server is configured for the claude CLI. Add one here (Add Playwright MCP) or pick another server." };
     const { r, p } = await current(cli);
-    if (r.code !== 0 || !p.found) return { found: false, cli, name: name(), saved_tail: saved, message: `No MCP server "${name()}" found (claude mcp get failed).` };
-    return { ...publicView(p, cli), name: name(), saved_tail: saved };
+    if (r.code !== 0 || !p.found) return { found: false, cli, servers, name: name(), npx, saved_tail: saved, message: `No MCP server "${name()}" found (claude mcp get failed).` };
+    return { ...publicView(p, cli), name: name(), servers, npx, saved_tail: saved };
   }
 
   // token empty: the saved token is used (Re-apply saved token). A new token is saved only after a verified apply.
-  async function apply({ token = "", profile_dir = "", confirm = false, dry_run = false } = {}) {
+  async function apply({ token = "", profile_dir = "", confirm = false, dry_run = false, name: want = "" } = {}) {
     if (confirm !== true) throw new Error("Not confirmed (confirm:true is required).");
+    if (want) { if (!validName(want)) throw new Error("Invalid server name."); picked = want; }
+    if (!name()) throw new Error("Pick the MCP server first (or use Add Playwright MCP).");
     const typed = String(token || "").trim(); profile_dir = String(profile_dir || "").trim();
     const use = typed || readSaved(workspaceDir);
     if (!use && !profile_dir) throw new Error("Enter a token or a Chrome profile folder (no saved token).");
@@ -140,11 +168,38 @@ export function createPlaywrightMcp({ getSettings = () => ({}), run = defaultRun
     } catch (e) { throw new Error(scrub(e.message, secrets)); }
   }
 
+  // New entry when no Playwright server exists. Same safeguards: confirm, preview, config backup, restore on failure, token never echoed.
+  async function add({ name: nm = "playwright-sa", token = "", profile_dir = "", confirm = false, dry_run = false } = {}) {
+    if (confirm !== true) throw new Error("Not confirmed (confirm:true is required).");
+    nm = String(nm || "playwright-sa").trim(); profile_dir = String(profile_dir || "").trim();
+    if (!validName(nm)) throw new Error("The server name may only use letters, digits, - and _ (max 40).");
+    const typed = String(token || "").trim(); const use = typed || readSaved(workspaceDir);
+    if (/\s/.test(use) || /[\r\n]/.test(profile_dir)) throw new Error("The token must not contain spaces or line breaks.");
+    const secrets = [use];
+    try {
+      if (!hasNpx()) throw new Error("npx was not found on PATH. Install Node.js (it includes npx), then try again.");
+      const cli = cliPath();
+      if (!cli) throw new Error("The claude CLI was not found. Set claudeCli.command in workspace/settings.json.");
+      if ((await listServers(cli)).includes(nm)) throw new Error(`An MCP server named "${nm}" already exists; pick another name or use Apply on it.`);
+      const line = (a) => [cli, ...a].map((x) => (/\s/.test(x) ? `"${x}"` : x)).join(" ");
+      if (dry_run) return { ok: true, dry_run: true, commands: [scrub(line(buildAdd(nm, { token: use, profile_dir }, true)), secrets)], note: `Tools will be named mcp__${nm}__* and may need allow rules.` };
+      const bak = existsSync(configFile(home)) ? backup(home) : "";
+      const undo = async (why) => { let restored = false; try { if (bak) restore(home); else await run(cli, ["mcp", "remove", nm, "-s", "user"]); restored = true; } catch {} throw new Error(`${why} ${restored ? "The MCP config was restored." : "Restore FAILED" + (bak ? `; backup is at ${bak}` : "") + "."}`); };
+      const r = await run(cli, buildAdd(nm, { token: use, profile_dir }));
+      if (r.code !== 0) await undo(`claude mcp add failed: ${r.err.split(/\r?\n/)[0]}`);
+      const after = parseGet((await run(cli, ["mcp", "get", nm])).out);
+      if (!after.found || (use && mask(after._env[TOKEN_KEY]) !== mask(use))) await undo("Verification failed after adding.");
+      if (typed) saveToken(workspaceDir, typed);
+      picked = nm;
+      return { ok: true, backup_path: bak, restart_needed: true, name: nm, token_tail: mask(after._env[TOKEN_KEY]), note: `Tools are named mcp__${nm}__* and may need allow rules.` };
+    } catch (e) { throw new Error(scrub(e.message, secrets)); }
+  }
+
   function restoreApi({ confirm = false, dry_run = false } = {}) {
     if (confirm !== true) throw new Error("Not confirmed (confirm:true is required).");
     if (dry_run) return { ok: true, dry_run: true, backup_path: newestBackup(home) };
     return { ok: true, backup_path: restore(home), restart_needed: true };
   }
   const forget = ({ confirm = false } = {}) => { if (confirm !== true) throw new Error("Not confirmed (confirm:true is required)."); forgetToken(workspaceDir); return { ok: true }; };
-  return { status, apply, restore: restoreApi, forget };
+  return { status, apply, add, restore: restoreApi, forget };
 }

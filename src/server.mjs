@@ -350,7 +350,8 @@ async function handle(req, res) {
   if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => chromeInfo({ settings: settings() }));
   if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
   // Playwright MCP token (core/setup/playwright-mcp.mjs): set through `claude mcp`; saved only in workspace/secrets, answers only masked.
-  if (path === "/api/playwright-mcp" && req.method === "GET") return api(res, () => playwrightMcp.status());
+  if (path === "/api/playwright-mcp" && req.method === "GET") return api(res, () => playwrightMcp.status({ name: new URL(req.url, "http://x").searchParams.get("name") || "" }));
+  if (path === "/api/playwright-mcp-add" && req.method === "POST") return api(res, async () => playwrightMcp.add(await body(req)));
   if (path === "/api/playwright-mcp" && req.method === "POST") return api(res, async () => playwrightMcp.apply(await body(req)));
   if (path === "/api/playwright-mcp-restore" && req.method === "POST") return api(res, async () => playwrightMcp.restore(await body(req)));
   if (path === "/api/playwright-mcp-forget" && req.method === "POST") return api(res, async () => playwrightMcp.forget(await body(req)));
