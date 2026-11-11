@@ -245,6 +245,8 @@ export const rejectedFile = (brand) => path.join(storeDir(brand), 'rejected.json
 // Product fit (research.discovery.product_fit of the skill, user 10/11/2026): a post is stored only when its product is a
 // type the brand actually sells. On a post: product_fit { type, reason } (the agent judged it: kept) or { fit: false,
 // reason } (seen, off-brand). required = the post must carry a type (every post the agent captures; a post without one is judged by the filter step). Returns the reason it is off-brand, '' when it fits.
+export const UNJUDGED_REASON = 'unjudged: not stored, not judged because the target was met / not fitted';
+const fitType = (p) => (p?.product_fit && typeof p.product_fit.type === 'string' ? p.product_fit.type.trim() : '');
 export function fitProblem(post, rules = {}, { required = false } = {}) {
   const pf = post?.product_fit && typeof post.product_fit === 'object' ? post.product_fit : null;
   if (pf && pf.fit === false) return `off-brand: ${cleanText(String(pf.reason || 'not a product the brand sells')).text.trim().slice(0, 200)}`;
@@ -269,8 +271,9 @@ export function logRejected(brand, list, extra = {}) {
 // a post may carry its own platform, author, product_fit, likes. productFit = the skill's product_fit rules; requireFit =
 // a post without product_fit.type is off-brand. Off-brand posts are not stored (rejected[], logged in rejected.json).
 export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, log = true, crawlMode = '', productFit = null, requireFit = false } = {}) {
-  const rejected = [];
+  const rejected = [], unjudged = [];
   posts = posts.filter((p) => {
+    if (requireFit && !fitType(p) && !(p.product_fit && p.product_fit.fit === false)) { unjudged.push({ post_url: String(p.post_url || ''), reason: UNJUDGED_REASON }); return false; }
     const why = productFit || requireFit || p.product_fit ? fitProblem(p, productFit || {}, { required: requireFit }) : '';
     if (why) rejected.push({ post_url: String(p.post_url || ''), author: cleanText(p.author || '').text, platform: p.platform || src.platform || platformOfUrl(p.post_url), found_by: p.found_by || src.found_by || 'reference page', reason: why });
     return !why;
@@ -319,7 +322,7 @@ export function addPosts(brand, src, posts, { run = '', since = '', limit = 0, l
       });
       added.push(id);
     }
-    return { added, dropped, duplicates, hidden, unhashed, rejected };
+    return { added, dropped, duplicates, hidden, unhashed, rejected, unjudged };
   });
   if (log) logRejected(brand, rejected, { source: src.id, run, ...(src.query ? { query: src.query } : {}) });
   if (log && result.duplicates.length) {

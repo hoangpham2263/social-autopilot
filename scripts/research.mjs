@@ -115,10 +115,10 @@ export const brandTotal = (run) => (run.sources || []).reduce((a, x) => a + (x.n
 // Per platform: kept, queries done/pending, blocked, capped (kept >= max_per_platform).
 export function platformStats(d) {
   const per = {};
-  for (const p of d?.platforms || []) per[p.id] = { id: p.id, notes: p.notes || '', queries: 0, done: 0, pending: 0, kept: 0, rejected_off_brand: 0, duplicates: 0, blocked: false, capped: false };
+  for (const p of d?.platforms || []) per[p.id] = { id: p.id, notes: p.notes || '', queries: 0, done: 0, pending: 0, kept: 0, rejected_off_brand: 0, unjudged: 0, duplicates: 0, blocked: false, capped: false };
   for (const q of d?.queries || []) {
-    const s = (per[q.platform] ||= { id: q.platform, notes: '', queries: 0, done: 0, pending: 0, kept: 0, rejected_off_brand: 0, duplicates: 0, blocked: false, capped: false });
-    s.queries++; s.kept += q.kept || 0; s.rejected_off_brand += q.rejected_off_brand || 0; s.duplicates += q.duplicates || 0;
+    const s = (per[q.platform] ||= { id: q.platform, notes: '', queries: 0, done: 0, pending: 0, kept: 0, rejected_off_brand: 0, unjudged: 0, duplicates: 0, blocked: false, capped: false });
+    s.queries++; s.kept += q.kept || 0; s.rejected_off_brand += q.rejected_off_brand || 0; s.unjudged += q.unjudged || 0; s.duplicates += q.duplicates || 0;
     if (q.state === 'pending') s.pending++; else s.done++;
     if (q.state === 'blocked') s.blocked = true;
   }
@@ -352,11 +352,12 @@ function ingestQuery(args, brand, { dir, runFile, run }) {
     : { added: [], duplicates: [], unhashed: 0, hidden: 0, rejected: [], dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt max_per_platform / mục tiêu của lượt' })) };
   const seen = before.size ? [] : seenRejected(raw, { platform: q.platform, found_by: q.found_by });
   logRejected(brand.id, seen, { source: src.id, run: run.date, query: q.id });
-  q.kept = (q.kept || 0) + r.added.length; q.rejected_off_brand = (q.rejected_off_brand || 0) + r.rejected.length + seen.length; q.duplicates = (q.duplicates || 0) + r.duplicates.length; q.ingested = stamp();
-  const entry = { at: stamp(), raw_posts: list.length, already_ingested: list.length - fresh.length, post_urls: fresh.map((p) => String(p.post_url || '')).filter(Boolean), added: r.added, duplicates: r.duplicates, rejected_off_brand: [...r.rejected, ...seen], dropped: [...dropped, ...r.dropped] };
+  q.kept = (q.kept || 0) + r.added.length; q.rejected_off_brand = (q.rejected_off_brand || 0) + r.rejected.length + seen.length; q.duplicates = (q.duplicates || 0) + r.duplicates.length; q.unjudged = (q.unjudged || 0) + (r.unjudged || []).length; q.ingested = stamp();
+  const unj = new Set((r.unjudged || []).map((x) => x.post_url));
+  const entry = { at: stamp(), raw_posts: list.length, already_ingested: list.length - fresh.length, post_urls: fresh.map((p) => String(p.post_url || '')).filter((u) => u && !unj.has(u)), added: r.added, duplicates: r.duplicates, unjudged: (r.unjudged || []).length, rejected_off_brand: [...r.rejected, ...seen], dropped: [...dropped, ...r.dropped] };
   writeJson(logPath, { query: q.id, ingests: [...(readJson(logPath, { ingests: [] }).ingests || []), entry] });
   writeJson(runFile, run);
-  out({ dir, query: q.id, platform: q.platform, found_by: q.found_by, added: r.added.length, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, rejected_off_brand: entry.rejected_off_brand.length, rejected_list: entry.rejected_off_brand, dropped: entry.dropped,
+  out({ dir, query: q.id, platform: q.platform, found_by: q.found_by, added: r.added.length, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, rejected_off_brand: entry.rejected_off_brand.length, rejected_list: entry.rejected_off_brand, unjudged: (r.unjudged || []).length, ...((r.unjudged || []).length ? { unjudged_list: r.unjudged } : {}), dropped: entry.dropped,
     platform_kept: per.kept + r.added.length, max_per_platform: d.max_per_platform, brand_total: brandTotal(run), target, next: `node scripts/research.mjs result --brand ${brand.id} --query ${q.id} --state <done|limit|empty|blocked|partial>, then research.mjs next` });
 }
 
@@ -403,14 +404,16 @@ function ingest(args) {
       ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0, rejected: [] }
       : addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left, crawlMode: crawlMode(mode), productFit });
     src.rejected_off_brand = (src.rejected_off_brand || 0) + r.rejected.length + seen.length;
+    src.unjudged = (src.unjudged || 0) + (r.unjudged || []).length;
     src.new = (src.new || 0) + r.added.length;
     src.ingested = true;
     if (mode.backfill) src.backfilled = (src.backfilled || 0) + r.added.length; else src.new_on_top = (src.new_on_top || 0) + r.added.length;
     src.duplicates = (src.duplicates || 0) + r.duplicates.length;
     day[`${brand.id}/${src.id}`] = (day[`${brand.id}/${src.id}`] || 0) + r.added.length;
-    const entry = { at: stamp(), raw_posts: raw.length, already_ingested: already, post_urls: fresh.map((p) => String(p.post_url || '')).filter(Boolean), added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
+    const unj = new Set((r.unjudged || []).map((x) => x.post_url));
+    const entry = { at: stamp(), raw_posts: raw.length, already_ingested: already, unjudged: (r.unjudged || []).length, post_urls: fresh.map((p) => String(p.post_url || '')).filter((u) => u && !unj.has(u)), added: r.added, duplicates: r.duplicates, dropped: [...dropped, ...r.dropped], hidden_chars_removed: r.hidden, images_without_phash: r.unhashed };
     writeJson(logPath, { source: src.id, ingests: [...(readJson(logPath, { ingests: [] }).ingests || []), entry] });
-    report.push({ source: src.id, added: r.added.length, rejected_off_brand: r.rejected.length + seen.length, ...(r.rejected.length + seen.length ? { rejected_list: [...r.rejected, ...seen] } : {}), ...(already ? { already_ingested: already } : {}), new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}),
+    report.push({ source: src.id, added: r.added.length, unjudged: (r.unjudged || []).length, rejected_off_brand: r.rejected.length + seen.length, ...(r.rejected.length + seen.length ? { rejected_list: [...r.rejected, ...seen] } : {}), ...(already ? { already_ingested: already } : {}), new_this_crawl: src.new, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, note: `${r.duplicates.length} bài trùng bỏ qua`, hidden_chars_removed: r.hidden, dropped: entry.dropped, ...(r.unhashed ? { images_without_phash: r.unhashed } : {}),
       // --max-posts: what is left for the brand and the next source's share (a dry source leaves its share to the others).
       ...(mode.max_posts ? (() => { const used = run.sources.reduce((a, x) => a + (x.new || 0), 0), rest = run.sources.filter((x) => !x.ingested).length; return { brand_posts_left: Math.max(0, mode.max_posts - used), next_source_share: rest ? Math.ceil(Math.max(0, mode.max_posts - used) / rest) : 0 }; })() : {}) });
   }
@@ -493,7 +496,7 @@ export function filterCounts(items) {
 // kept = what ingest really ADDED to the Library (new_total), not the per-task fit count.
 // One summary line per brand for the final message: target N · kept Y · rejected Z · duplicates D · Library available A
 const sidList = (xs) => xs.map((x) => x.id).join(',');
-export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
+export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0}${r.unjudged_total ? ` · unjudged ${r.unjudged_total}` : ''} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.ready ?? 0}${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
 export function researchReport(brandId, date) {
   const r = researchReportBase(brandId, date);
   return { ...r, summary_line: reportLine(r) };
@@ -514,18 +517,19 @@ function researchReportBase(brandId, date) {
     duplicates: x.duplicates || 0, duplicates_text: `${x.duplicates || 0} bài trùng bỏ qua`, reached_end: !!progress[x.id]?.reached_end, reached_end_text: progress[x.id]?.reached_end ? 'có' : 'chưa',
     older_posts: left(progress[x.id]), oldest_seen: progress[x.id]?.oldest_seen || null, store_items: store.items.filter((i) => i.source_id === x.id).length,
   }));
-  for (const x of sources) x.rejected_off_brand = run.sources.find((s) => s.id === x.id)?.rejected_off_brand || 0;
+  for (const x of sources) { x.rejected_off_brand = run.sources.find((s) => s.id === x.id)?.rejected_off_brand || 0; x.unjudged = run.sources.find((s) => s.id === x.id)?.unjudged || 0; }
   // Discovery: per platform and per query, kept / rejected off-brand / duplicates (+ kept / filtered by the filter step).
   const d = run.discovery;
   const discovery = d ? {
     target: d.target || 0, max_per_platform: d.max_per_platform, keywords: d.keywords, hashtags: d.hashtags,
     platforms: Object.values(platformStats(d)).map((p) => { const fc = filterCounts(store.items.filter((i) => i.run === run.date && i.source_id === `discovery-${p.id}`)); return { ...p, kept_filter: fc.kept, filtered: fc.filtered, unfiltered: fc.unfiltered, low_keep: fc.low_keep }; }),
-    queries: d.queries.map((q) => ({ id: q.id, platform: q.platform, found_by: q.found_by, url: q.url, state: q.state, note: q.note || '', kept: q.kept || 0, rejected_off_brand: q.rejected_off_brand || 0, duplicates: q.duplicates || 0 })),
+    queries: d.queries.map((q) => ({ id: q.id, platform: q.platform, found_by: q.found_by, url: q.url, state: q.state, note: q.note || '', kept: q.kept || 0, rejected_off_brand: q.rejected_off_brand || 0, unjudged: q.unjudged || 0, duplicates: q.duplicates || 0 })),
   } : null;
   const discKept = d ? d.queries.reduce((a, q) => a + (q.kept || 0), 0) : 0;
   return {
     brand: brandId, date: day, status: run.status, mode: run.mode || {}, crawl_mode: crawlMode(run.mode), skipped: run.skipped || [], discovery,
     target: run.mode?.max_posts || 0, discovery_kept_total: discKept,
+    unjudged_total: sources.reduce((a, x) => a + x.unjudged, 0) + (d ? d.queries.reduce((a, q) => a + (q.unjudged || 0), 0) : 0),
     rejected_off_brand_total: sources.reduce((a, x) => a + x.rejected_off_brand, 0) + (d ? d.queries.reduce((a, q) => a + (q.rejected_off_brand || 0), 0) : 0),
     new_on_top_total: sources.reduce((a, x) => a + x.new_on_top, 0), backfilled_total: sources.reduce((a, x) => a + x.backfilled, 0), new_total: sources.reduce((a, x) => a + x.new, 0) + discKept, kept_total: sources.reduce((a, x) => a + x.kept, 0) + (discovery ? discovery.platforms.reduce((a, p) => a + p.kept_filter, 0) : 0), filtered_total: sources.reduce((a, x) => a + x.filtered, 0) + (discovery ? discovery.platforms.reduce((a, p) => a + p.filtered, 0) : 0), low_keep: sources.filter((x) => x.low_keep).map((x) => x.id), duplicates_total: sources.reduce((a, x) => a + x.duplicates, 0), store: counts(store.items), sources,
     time_limited: sources.filter((x) => run.sources.find((s) => s.id === x.id)?.result?.time_limited).map((x) => ({ id: x.id, note: x.note })),
