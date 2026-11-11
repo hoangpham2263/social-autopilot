@@ -34,6 +34,7 @@ Adapter viết khi chưa có trình duyệt đều `untested`; lần đầu mỗ
 ## Vòng lặp của agent
 ```
 node scripts/research.mjs browser --brand <id> --state ok        # 1.0 Playwright MCP đã nối Chrome của người dùng (fail → --state fail --note, dừng)
+node scripts/collect.mjs check-chrome --brand all                # (test, read only) writes the Chrome check file; run it with browser_run_code_unsafe + filename, record: research.mjs chrome-record --state ok --result-file <f>. Gate in start/next (refuse without a fresh check, skip signed-out platforms) stays OFF until research.chrome_check_required is true (research.chrome_check_minutes, research.chrome_profile = reminder only).
 node scripts/research.mjs start --brand <id> [OPTIONS]            # 1.1 mở lượt: trang tham khảo + hàng đợi truy vấn discovery
 node scripts/store.mjs known --brand <id>                         # một lần: brand_post_urls / brand_post_ids (bài đã có: không mở, không tải)
 lặp:
