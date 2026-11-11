@@ -93,9 +93,9 @@ const saPost = () => ({ method: "POST", headers: { "content-type": "application/
     const [status, bar, go, close] = [".status", ".bar", ".btn.primary", ".btn:not(.primary)"].map((s) => shade.querySelector(s));
     close.onclick = () => { if (!close.disabled) shade.remove(); };
     status.textContent = "Checking for a new version…";
-    if (!(await check())) { bar.hidden = true; status.textContent = "Could not check for a new version. Check the network and try again."; return; }
+    if (!(await check())) { bar.hidden = true; status.textContent = "Could not reach GitHub to check for a new version. Check the network and try again."; return; }
     bar.hidden = true;
-    if (!next) { status.textContent = `You have the latest version (${current || "current"}).`; return; }
+    if (!next) { status.textContent = current ? `You have the latest version (${current}).` : "No release has been published yet, so there is nothing to update."; return; }
     status.textContent = `Version ${next} is available (you have ${current || "the current one"}).`;
     go.hidden = false; go.focus();
     go.onclick = async () => {

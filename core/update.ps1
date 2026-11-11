@@ -69,7 +69,13 @@ function Merge-AgentInstructions([string]$Source, [string]$Target) {
 
 function Get-LatestRelease {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    return Invoke-RestMethod -Uri "https://api.github.com/repos/$script:Repo/releases/latest" -Headers @{ 'User-Agent' = 'social-autopilot' } -TimeoutSec 10
+    try {
+        return Invoke-RestMethod -Uri "https://api.github.com/repos/$script:Repo/releases/latest" -Headers @{ 'User-Agent' = 'social-autopilot' } -TimeoutSec 10
+    } catch {
+        # 404 = the repository has no release yet: nothing to update to, which is not a network problem.
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) { return $null }
+        throw
+    }
 }
 
 # The version in use: the release a ZIP install came from, or the newest tag of a git checkout (as Get-AppVersion).
