@@ -137,3 +137,22 @@ export function summary({ dir, draft, status }) {
     ...(draft.image_mode === 'scene-swap' ? { reference_image: draft.reference_image, ref_mode: refModeOf(draft), ref_has_face: draft.ref_has_face ?? null, ref_text: draft.ref_text || '', source_shop: draft.inspiration.source_shop || '', source_url: draft.inspiration.source_url || '', logo_check: status.logo_check || null } : {}) };
 }
 
+
+// Album (user 11/11/2026): every post gets a random number of images in a range, default [1, 3]
+// (settings posts.images_per_post, overridable per brand in workspace/brands/<id>.json posts.images_per_post).
+export function imagesRange(settings = {}, brandCfg = {}) {
+  const ok = (r) => Array.isArray(r) && r.length === 2 && r.every((x) => Number.isInteger(x) && x >= 1 && x <= 10) && r[0] <= r[1];
+  const b = brandCfg?.posts?.images_per_post, s = settings?.posts?.images_per_post;
+  return ok(b) ? b : ok(s) ? s : [1, 3];
+}
+export const pickImageCount = ([min, max], rand = Math.random) => min + Math.floor(rand() * (max - min + 1));
+// Brand skill naming: 1 image -> image.png; several -> image-01.png, image-02.png, ... (image-01 = main/cover).
+// Text on images is always English; never image-vn.png / image-en.png.
+export const imageFiles = (n) => (n <= 1 ? ['image.png'] : Array.from({ length: n }, (_, i) => `image-${String(i + 1).padStart(2, '0')}.png`));
+// The images of a draft in post order (cover first). Old drafts with only image.png keep working.
+export function draftImages(dir, draft = {}) {
+  const list = Array.isArray(draft.images) && draft.images.length ? draft.images : imageFiles(Number(draft.image_count) || 1);
+  return list.length > 1 ? list : ['image.png'];
+}
+// Which extra shot an album image k (0-based, k >= 1) is: a close-up detail, then a wider/other angle, alternating.
+export const extraShotOf = (k) => (k % 2 === 1 ? 'detail' : 'wide');

@@ -46,5 +46,11 @@
   "ideas": {
     "reuse_cooldown_days": 7,
     "suggest_remove_after": 0
+  },
+  "posts": {
+    "images_per_post": [
+      1,
+      3
+    ]
   }
 }

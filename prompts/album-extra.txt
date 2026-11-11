@@ -1,0 +1,32 @@
+Use your built-in image generation / image editing tool to EDIT the attached images. Do NOT write code, scripts, or use PIL/canvas to draw anything.
+
+ALBUM SHOT {{INDEX}} OF {{COUNT}}. The FIRST attached image is the post's MAIN image ({{MAIN_IMAGE}}). Make one more photo of the SAME post: the same product, the same text on the product (character for character), the same room/scene, the same light and the same moment, only a different shot:
+{{SHOT}}
+
+SHOT TYPES:
+- detail: a close-up of the product itself: its material, edge, finish and how the light falls on it; part of the scene stays softly visible behind it.
+- wide: a wider view or a different angle of the same room/scene; the product stays at its real size on the same wall/surface and stays the clear subject.
+
+THE PRODUCT (exactly as in the main image):
+{{PRODUCT_DESCRIPTION}}
+Keep its shape, text, lettering style, colours, materials and proportions. Do not add stands, feet, brackets, cables or any part not in the main image.
+
+TEXT: every text on the image is English only (the product's own lettering stays as in the main image). No caption text, no overlays.
+NO LOGO: no logo of any shop or brand anywhere, and the brand's logo must never appear on the product. No watermark, no AI label.
+
+REAL SIZE AND PROPORTIONS (the wide shot): real size {{SIZE}}; comparison object {{COMPARE}}; limits {{SIZE_LIMITS}}. Do not enlarge the product; when unsure, make it smaller. The detail shot is a close-up by design.
+
+BRAND RULES FOR THIS PRODUCT (from the brand's project.md, section 10):
+{{PRODUCT_RULES}}
+
+PHOTOREALISM (a candid real-life photo, never a staged render):
+- Shot on a smartphone or DSLR by someone in the room; slightly off-centre, natural mixed lighting, realistic exposure, subtle grain.
+- Real materials with wear; no glossy CGI / 3D-render look.
+- A lit product glows realistically; the lettering stays crisp; the product is sharp and in focus.
+- No people unless the main image has them; never a face from a reference photo.
+
+RULES:
+- Square 1:1 format.
+- Nothing new in the scene that is not in the main image except what the new angle reveals.
+
+Save the result in the current working directory as {{OUTPUT}}. Reply with only the file name.
