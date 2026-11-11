@@ -117,6 +117,8 @@ details[open] > summary { margin-bottom: 6px; }
 .run-steps li .dot { margin-right: 6px; width: 8px; height: 8px; }
 .run-steps li.now { border-color: var(--accent); }
 .run-steps li.skipped, .run-steps li.pending { color: var(--muted); }
+#page-prompt .ar-panel { display: grid; gap: 6px; margin: 0 0 12px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
+.ar-log { margin: 6px 0 0; padding: 8px; border: 1px solid var(--line); max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .dot-run { background: var(--accent); }
 .run-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .run-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -304,8 +306,15 @@ details.sec[open] > summary { margin-bottom: 12px; }
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
     </div>
     <div class="actions">
-      <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
+      <button class="btn primary" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
+      <button class="btn" type="button" id="prCopy">Copy prompt</button>
+      <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
+    </div>
+    <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
+    <div class="ar-panel" id="prAgentRun" hidden>
+      <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span> <span id="arLast" class="ar-last"></span></div>
+      <details id="arLogBox"><summary class="meta">Live log</summary><pre class="ar-log" id="arLog"></pre></details>
     </div>
     <!-- Chrome connection (read only status from GET /api/chrome-check; profile + helpers inside). -->
     <details class="sec" id="prChrome">
@@ -958,7 +967,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
   // The box is as tall as the window allows (flex) and never shorter than its text when there is room.
   function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
   // An option changed: the prompt is rebuilt (read-only; no hand edits).
-  function regenerate() { $("#prText").value = buildPrompt(); }
+  function regenerate() { $("#prText").value = buildPrompt(); try { arDraw(); } catch {} }
   // Mode button counts (selected brand, or all brands), each = items in that state now: Research = available library items;
   // Create = posts to review; Publish = approved posts not sent yet. Posts still needed for Plan ahead: Overview card.
   const modeKey = (m) => (/research/i.test(m) ? "research" : /publish approved/i.test(m) ? "publish" : "create");
@@ -1008,6 +1017,49 @@ details.sec[open] > summary { margin-bottom: 12px; }
     await postJson("/api/progress", { mode: modeKey(prMode), brands, agent: $("#prAgent").value || "" }).catch(() => {});
     loadProgress();
   };
+
+  // ----- Run now: starts headless Claude with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
+  const AR_CONFIRM = {
+    research: () => `Research: Claude will open pages in your Chrome (profile ${$("#prChromeProf").value || "default"}) and add posts to the Library. Click Connect in Chrome when asked.`,
+    create: () => "Create: starts image generation (Codex quota) and writes drafts.",
+    publish: () => "Publish approved: will schedule the Approved posts on Metricool.",
+  };
+  const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
+  let arTimer = 0, arState = null;
+  const arClock = (n) => (n < 60 ? `${n} s` : `${Math.floor(n / 60)} min ${n % 60} s`);
+  function arDraw() {
+    const r = arState, claude = subAllowed();
+    const busy = !!r?.active, noCli = r && r.cli && !r.cli.found;
+    setDisabled($("#prRunNow"), busy || noCli || !claude, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found" : "Run now starts Claude Code: choose the Claude Code agent");
+    $("#prStop").hidden = !busy;
+    const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
+    box.hidden = !show; if (!show) return;
+    if (noCli) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
+    const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
+    $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
+    $("#arElapsed").textContent = `${r.mode} · ${arClock(r.elapsed_s || 0)}${r.turns ? ` · ${r.turns} turns` : ""}`;
+    $("#arLast").textContent = r.error && r.status !== "running" ? r.error : r.last_text || (busy ? "Starting…" : "");
+    const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+    log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
+  }
+  async function loadAgentRun() {
+    clearTimeout(arTimer); arTimer = 0;
+    const r = await getJson("/api/agent-run").catch(() => null);
+    if (r && !r.error) { arState = r; arDraw(); }
+    if (arState?.active && !$("#page-prompt").hidden) arTimer = setTimeout(loadAgentRun, 3000);
+  }
+  $("#prRunNow").onclick = async () => {
+    const key = modeKey(prMode);
+    if (!confirm(AR_CONFIRM[key]())) return;
+    const text = buildTask(); // the Copy prompt text without the optional sub-agent line (the headless run is its own agent)
+    const brandSel = $("#prBrand").value;
+    const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
+    const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands }).catch(() => ({ error: "The app did not answer." }));
+    if (r.error) { flash(r.error); await loadAgentRun(); return; }
+    await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
+    await loadAgentRun(); loadProgress();
+  };
+  $("#prStop").onclick = async () => { const r = await postJson("/api/agent-run/stop", {}).catch(() => ({ error: "The app did not answer." })); if (r.error) flash(r.error); setTimeout(loadAgentRun, 800); };
 
   // ----- Run progress: the steps of the selected mode with their state; polls every 3 s while a run is active -----
   const RUN_DOT = { pending: "dot-grey", running: "dot-run", done: "dot-green", failed: "dot-red", stopped: "dot-amber" };
@@ -1109,7 +1161,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
   };
   const loadProgress = safely("#prRunSum", async () => {
     clearTimeout(runTimer); runTimer = 0;
-    loadChrome();
+    loadChrome(); loadAgentRun();
     if (!prMode) return;
     const mode = modeKey(prMode);
     shownRunMode = mode;
