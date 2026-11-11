@@ -306,8 +306,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
     </div>
     <div class="actions">
-      <button class="btn primary" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
-      <button class="btn" type="button" id="prCopy">Copy prompt</button>
+      <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
+      <button class="btn" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
     </div>
@@ -1051,7 +1051,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
   $("#prRunNow").onclick = async () => {
     const key = modeKey(prMode);
     if (!confirm(AR_CONFIRM[key]())) return;
-    const text = buildTask(); // the Copy prompt text without the optional sub-agent line (the headless run is its own agent)
+    const text = $("#prText").value; // exactly what Copy prompt copies
+    if (!text.startsWith("TASK:")) { flash("Run now needs Run in: Main chat (no sub-agent line)."); return; }
     const brandSel = $("#prBrand").value;
     const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
     const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands }).catch(() => ({ error: "The app did not answer." }));
