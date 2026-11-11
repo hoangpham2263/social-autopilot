@@ -22,6 +22,7 @@ import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
+import { createPlaywrightMcp } from "../core/setup/playwright-mcp.mjs";
 import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
@@ -32,6 +33,7 @@ const root = resolve(here, "..");
 const BASE_PORT = Number(process.env.SA_PORT || 47000 + (parseInt(createHash("sha1").update(root).digest("hex").slice(0, 6), 16) % 1000));
 let PORT = BASE_PORT;
 const logs = join(workspace, "logs");
+const playwrightMcp = createPlaywrightMcp({ getSettings: () => { try { return settings(); } catch { return {}; } }, workspaceDir: workspace });
 const configApi = createConfigApi({ hubRoot: root, pwsh: PWSH, env: toolEnv });
 mkdirSync(logs, { recursive: true });
 
@@ -343,6 +345,11 @@ async function handle(req, res) {
   });
   // Tổng quan, Chọn skill / Đổi skill: the skill folders found in a source folder (default the vaniecom-workspace skills).
   // POST (session token), so no other page can list folders on this machine.
+  // Playwright MCP token (core/setup/playwright-mcp.mjs): set through `claude mcp`; saved only in workspace/secrets, answers only masked.
+  if (path === "/api/playwright-mcp" && req.method === "GET") return api(res, () => playwrightMcp.status());
+  if (path === "/api/playwright-mcp" && req.method === "POST") return api(res, async () => playwrightMcp.apply(await body(req)));
+  if (path === "/api/playwright-mcp-restore" && req.method === "POST") return api(res, async () => playwrightMcp.restore(await body(req)));
+  if (path === "/api/playwright-mcp-forget" && req.method === "POST") return api(res, async () => playwrightMcp.forget(await body(req)));
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
   if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: defaultSource() }));

@@ -5,3 +5,6 @@ node_modules/
 
 # per-machine Claude Code permissions
 .claude/settings.local.json
+
+# saved Playwright MCP token (never commit)
+workspace/secrets/
