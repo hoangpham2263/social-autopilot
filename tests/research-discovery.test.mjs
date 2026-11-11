@@ -135,7 +135,9 @@ test('CLI: start with platforms/keywords; reference page, then discovery; produc
   ], rejected: [{ post_url: 'https://www.instagram.com/p/AbCdE9/', author: '@car', reason: 'neon car, no sign' }] });
   const i2 = run('research.mjs', 'ingest', '--brand', 'dv', '--query', n2.query);
   assert.equal(i2.ok, true, JSON.stringify(i2));
-  assert.deepEqual([i2.added, i2.rejected_off_brand, i2.duplicates], [1, 3, 1], JSON.stringify(i2));
+  assert.deepEqual([i2.added, i2.rejected_off_brand, i2.duplicates], [1, 2, 1], JSON.stringify(i2));
+  assert.equal(i2.unjudged, 1, 'a post without a fit decision is unjudged, not off-brand');
+  assert.equal(i2.unjudged_list[0].reason.startsWith('unjudged: '), true);
   assert.equal(i2.duplicate_list[0].rule, 'image_sha1', 'the same photo already came from the reference page');
   const res = run('research.mjs', 'result', '--brand', 'dv', '--query', n2.query, '--state', 'done');
   assert.equal(res.state, 'done');
@@ -168,16 +170,18 @@ test('CLI: start with platforms/keywords; reference page, then discovery; produc
   assert.deepEqual([ig.source_id, ig.author, ig.found_by, ig.product_fit.type, ig.likes, ig.query], ['discovery-instagram', '@neonweddings', 'keyword:custom neon sign', 'name neon sign', 120, 'instagram-k-custom-neon-sign']);
   assert.equal(ig.source_url, 'https://www.instagram.com/explore/search/keyword/?q=custom%20neon%20sign');
   const rejected = JSON.parse(fs.readFileSync(path.join(ws, 'store', 'dv', 'rejected.json'), 'utf8')).rejected;
-  assert.equal(rejected.length, 5);
+  assert.equal(rejected.length, 4, 'unjudged posts are not written to rejected.json');
   assert.ok(rejected.every((x) => /^off-brand: /.test(x.reason)), JSON.stringify(rejected));
   assert.ok(rejected.some((x) => x.post_url.endsWith('AbCdE9/') && x.query === 'instagram-k-custom-neon-sign' && x.found_by === 'keyword:custom neon sign'));
 
   // Report: per platform / query counts.
   const rep = run('research.mjs', 'report', '--brand', 'dv');
   const igp = rep.discovery.platforms.find((p) => p.id === 'instagram');
-  assert.deepEqual([igp.kept, igp.rejected_off_brand, igp.duplicates, igp.done], [1, 3, 1, 1]);
+  assert.deepEqual([igp.kept, igp.rejected_off_brand, igp.duplicates, igp.done], [1, 2, 1, 1]);
   assert.equal(rep.discovery.platforms.find((p) => p.id === 'etsy').blocked, true);
-  assert.deepEqual([rep.new_total, rep.discovery_kept_total, rep.rejected_off_brand_total], [3, 2, 5]);
+  assert.deepEqual([rep.new_total, rep.discovery_kept_total, rep.rejected_off_brand_total], [3, 2, 4]);
+  assert.equal(rep.unjudged_total, 1);
+  assert.match(rep.summary_line, /rejected 4 · unjudged 1/);
 
   // Library: filter by platform.
   const lib = run('store.mjs', 'list', '--brand', 'dv', '--platform', 'pinterest');

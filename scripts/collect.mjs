@@ -125,7 +125,7 @@ function fit(args) {
   if (task.kind !== 'standalone') track('crawl', { brand: brand.id, detail: `${task.id}: ${summary}` });
   const tm = timeInfo(task.started);
   out({ brand: brand.id, raw_file: task.raw_file, fit: r.fit, off_brand: r.off, undecided: r.undecided, ...c, summary, stop, ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), ...(tm.time_over && !stop ? { stop: 'time' } : {}),
-    next: tm.time_over && !stop ? TIME_NEXT : stop === 'target' ? 'Đủ bài giữ lại (need_more 0): dừng, rồi ingest + result.' : stop === 'poor_source' ? 'Nguồn này ít bài hợp thương hiệu: dừng, chuyển nguồn khác (ingest + result).' : c.need_more > 0 && !r.undecided.length ? 'Còn thiếu bài: cuộn tiếp, extract, from-page, nhìn ảnh, fit lại.' : r.undecided.length ? 'Còn bài chưa có quyết định: ingest sẽ từ chối bài thiếu product_fit.type; quyết nốt rồi chạy lại fit.' : 'node scripts/research.mjs ingest ... rồi result ...' });
+    next: tm.time_over && !stop ? TIME_NEXT : stop === 'target' ? 'Đủ bài giữ lại (need_more 0): dừng, rồi ingest + result.' : stop === 'poor_source' ? 'Nguồn này ít bài hợp thương hiệu: dừng, chuyển nguồn khác (ingest + result).' : c.need_more > 0 && !r.undecided.length ? 'Còn thiếu bài: cuộn tiếp, extract, from-page, nhìn ảnh, fit lại.' : r.undecided.length ? 'Còn bài chưa có quyết định: ingest sẽ bỏ bài thiếu product_fit.type vào unjudged (không lưu, lượt sau nhặt lại); quyết nốt rồi chạy lại fit.' : 'node scripts/research.mjs ingest ... rồi result ...' });
 }
 
 if (isMain(import.meta.url)) main(async () => {
