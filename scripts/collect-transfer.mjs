@@ -1,5 +1,5 @@
 // Page -> tool transfer of the extract result (docs/research.md). The extract script's Node side POSTs its compact result to the app's own
-// loopback server instead of making the agent retype b64; `collect.mjs script` issues a ONE-TIME token per task (15 minutes),
+// loopback server instead of making the agent retype b64; `collect.mjs script` issues a ONE-TIME token per task (5 minutes),
 // src/server.mjs redeems it on POST /api/collect-result and writes <task dir>/page-result.json, `collect.mjs from-page` reads it.
 // The token lives only in the script file (script_dir) and, as a sha256 hash, in workspace/collect-tokens/. Never logged.
 import fs from 'node:fs';
@@ -8,7 +8,12 @@ import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { workspace, settings } from './lib.mjs';
 
-export const TOKEN_TTL_MS = 15 * 60 * 1000;
+// Validity: research.token_minutes (default 5). One use: spent by the first accepted post and by a rejected attempt for another task.
+export const tokenMinutes = (cfg = settings().research?.token_minutes) => (Number(cfg) > 0 ? Number(cfg) : 5);
+export const TOKEN_TTL_MS = 5 * 60 * 1000;
+export const ttlMs = (cfg) => tokenMinutes(cfg) * 60 * 1000;
+export const maskToken = (t) => (t ? `****${String(t).slice(-4)}` : '');
+export const TOKEN_RETRY = 'token already used or expired: run `collect.mjs script` again (right before running the file; never reuse an old file)';
 export const MAX_BODY = 512 * 1024;
 export const tokenDir = () => path.join(workspace, 'collect-tokens');
 export const resultFile = (taskDir) => path.join(taskDir, 'page-result.json');
@@ -33,24 +38,24 @@ export function serverBase(file = path.join(workspace, 'server-address.json')) {
 }
 
 // A token for ONE task dir; a newer token for the same task replaces the older one.
-export function issueToken(taskDir, taskId, now = Date.now(), dir = tokenDir()) {
+export function issueToken(taskDir, taskId, now = Date.now(), dir = tokenDir(), ttl = ttlMs()) {
   const token = randomBytes(24).toString('hex');
   fs.mkdirSync(dir, { recursive: true });
   for (const f of fs.readdirSync(dir)) {
     try { const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); if (j.dir === taskDir || j.exp < now) fs.rmSync(path.join(dir, f), { force: true }); } catch { fs.rmSync(path.join(dir, f), { force: true }); }
   }
-  fs.writeFileSync(path.join(dir, `${hash(token)}.json`), JSON.stringify({ task: String(taskId), dir: taskDir, exp: now + TOKEN_TTL_MS }));
+  fs.writeFileSync(path.join(dir, `${hash(token)}.json`), JSON.stringify({ task: String(taskId), dir: taskDir, exp: now + ttl }));
   return token;
 }
 
 // Redeem: valid token + same task id + task dir inside workspace/runs and existing + body below the limit and JSON -> writes page-result.json.
-// -> { ok, status, error? }. The token is spent on success only (a failed attempt may be retried until it expires).
+// -> { ok, status, error? }. The token is spent by the first accepted post AND by a rejected attempt for another task (use `collect.mjs script` again).
 export function redeem({ token, task, body, now = Date.now(), dir = tokenDir(), runsRoot = path.join(workspace, 'runs') }) {
   const f = path.join(dir, `${hash(token || '')}.json`);
   let j;
-  try { j = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return { ok: false, status: 403, error: 'Invalid or used token.' }; }
-  if (!token || j.exp < now) { fs.rmSync(f, { force: true }); return { ok: false, status: 403, error: 'Token expired.' }; }
-  if (String(task || '') !== j.task) return { ok: false, status: 403, error: 'Token is for another task.' };
+  try { j = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return { ok: false, status: 403, error: `Invalid or used token: ${TOKEN_RETRY}.` }; }
+  if (!token || j.exp < now) { fs.rmSync(f, { force: true }); return { ok: false, status: 403, error: `Token expired: ${TOKEN_RETRY}.` }; }
+  if (String(task || '') !== j.task) { fs.rmSync(f, { force: true }); return { ok: false, status: 403, error: `Token is for another task and is now spent: ${TOKEN_RETRY}.` }; }
   const root = path.resolve(runsRoot) + path.sep;
   if (!path.resolve(j.dir).startsWith(root) || !fs.existsSync(j.dir)) return { ok: false, status: 404, error: 'Task is not in an open run.' };
   if (!Buffer.isBuffer(body) || !body.length || body.length > MAX_BODY) return { ok: false, status: 413, error: 'Body empty or above 512 KB.' };
@@ -73,7 +78,7 @@ export const POST_JS = `const post = o.post;
       const body = JSON.stringify(Object.assign({}, r, { tag: p.tag }));
       const res = await page.context().request.post(post.url, { headers: { 'X-Collect-Token': post.token, 'content-type': 'text/plain' }, data: body, timeout: 10000 });
       if (res.ok()) return summary({ saved: true, status: res.status(), tag: p.tag, bytes: body.length });
-      why = 'app answered HTTP ' + res.status();
+      why = 'app answered HTTP ' + res.status() + (res.status() === 403 ? ' (token already used or expired: run collect.mjs script again)' : '');
     } catch (e) { why = 'post failed: ' + String((e && e.message) || e).slice(0, 120); }
   }
   return summary({ saved: false, reason_saved: why, tag: p.tag, b64: p.line });`;

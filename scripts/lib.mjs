@@ -32,6 +32,8 @@ function log(line) {
 }
 // Each result also moves the run progress of the app's Prompt tab (progress.mjs: script + command -> step).
 const progressOf = (ok, data) => { try { trackCli(process.argv[1], parseArgs(), ok, data); } catch {} };
+// A closed pipe (| head) must not crash the script.
+process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0); throw e; });
 export function out(data) { log('ok'); progressOf(true, data); process.stdout.write(JSON.stringify({ ok: true, ...data }, null, 2) + '\n'); }
 export function fail(error, extra = {}) { log('error: ' + error); progressOf(false, { error, ...extra }); process.stdout.write(JSON.stringify({ ok: false, error, ...extra }, null, 2) + '\n'); process.exit(1); }
 // True when the file is the script being run (not imported by another script).

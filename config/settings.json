@@ -3,6 +3,7 @@
   "skillsRoot": "../vaniecom-workspace/skills",
   "research": {
     "source_minutes": 3,
+    "token_minutes": 5,
     "delay_seconds": [
       5,
       15
