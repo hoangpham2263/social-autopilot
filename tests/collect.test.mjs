@@ -178,17 +178,21 @@ test('resolveTask: from an open run (query / source) or standalone; max defaults
   assert.throws(() => resolveTask({}), /--platform/);
 });
 
-test('next: every step carries the collect command and the adapter status (collector first)', () => {
+test('next: every step carries the one path (open, scroll, script, from-page, target, stop rules) and the adapter status', () => {
   const run = { brand: 'dv', mode: { max_posts: 5 }, sources: [{ id: 'shop', platform: 'instagram', url: 'https://www.instagram.com/shop/', result: null, new: 0 }],
     discovery: { max_per_platform: 3, platforms: [{ id: 'etsy' }], queries: [{ id: 'etsy-k-neon', platform: 'etsy', found_by: 'keyword:neon', state: 'pending', kept: 0 }] } };
   const a = nextTask(run);
   assert.match(a.script, /^node scripts\/collect\.mjs script --brand dv --for-source shop( --max \d+)?$/);
   assert.equal(a.adapter.platform, 'instagram');
-  assert.match(a.do, /FIRST run the collector/);
-  assert.match(a.do, /only when adapter\.status is not ok/);
+  assert.match(a.do, /ONE path/);
+  assert.equal(a.open, 'https://www.instagram.com/shop/');
+  assert.equal(a.scroll_wait_seconds.length, 2);
+  assert.match(a.stop_rules, /3 extracts in a row/);
+  assert.match(a.from_page, /from-page --brand dv --for-source shop --b64/);
   const b = nextTask({ ...run, sources: [{ ...run.sources[0], result: { state: 'end' } }] });
   assert.equal(b.step, 'discovery');
-  assert.match(b.script, /--for-query etsy-k-neon --max \d+$/);
+  assert.match(b.script, /--for-query etsy-k-neon$/);
+  assert.ok(b.target > 0);
   assert.equal(b.adapter.platform, 'etsy');
   assert.equal(collectInfo('dv', 'query', 'q1', 'myspace').adapter.status, 'missing');
 });
