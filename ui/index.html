@@ -1038,7 +1038,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
     $("#arElapsed").textContent = `${r.mode} · ${arClock(r.elapsed_s || 0)}${r.turns ? ` · ${r.turns} turns` : ""}`;
-    $("#arLast").textContent = r.error && r.status !== "running" ? r.error : r.last_text || (busy ? "Starting…" : "");
+    const startMsg = r.mode === "research" ? `Starting… Claude opens pages in your Chrome (profile ${$("#prChromeProf").value || "default"}). Click Connect in Chrome when asked.` : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
+    $("#arLast").textContent = r.error && r.status !== "running" ? r.error : r.last_text || (busy ? startMsg : "");
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
   }
@@ -1050,7 +1051,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
   }
   $("#prRunNow").onclick = async () => {
     const key = modeKey(prMode);
-    if (!confirm(AR_CONFIRM[key]())) return;
+    // Only Publish approved asks first (it schedules real posts on Metricool); Research and Create start at once and say what they do in the live panel.
+    if (key === "publish" && !confirm(AR_CONFIRM[key]())) return;
     const text = $("#prText").value; // exactly what Copy prompt copies
     if (!text.startsWith("TASK:")) { flash("Run now needs Run in: Main chat (no sub-agent line)."); return; }
     const brandSel = $("#prBrand").value;
