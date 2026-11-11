@@ -264,18 +264,34 @@ button:disabled, .btn:disabled { cursor: default; }
 #page-store > .fields, #page-posts > .fields, #page-log > .fields { position: sticky; top: 0; z-index: 5; background: var(--control); padding: 0 0 12px; margin-bottom: 0; }
 #page-store > .fields + *, #page-posts > .fields + *, #page-log > .fields + * { margin-top: 2px; }
 .seg { gap: 6px; } .seg .btn { margin-right: 0; }
-/* Soft palette (try-out): pastel buttons, tinted selected state, quieter borders. */
-:root { --control: #f6f5fb; --line: #d9d6e8; --ctl-border: 1px solid #cfcbe3; --soft: #ece9f8; --soft-hover: #e0dbf4; --soft-on: #e3f3ea; }
-.btn, nav.tabs button, select { background-color: var(--soft); border-color: #cfcbe3; color: #2b2840; }
-.btn:hover, nav.tabs button:hover, select:hover { background-color: var(--soft-hover); border-color: #9b8fd8; }
-.btn:active { background: #d4cdf0; border-color: #7d6fc4; }
+/* hoanhoi.com palette: blue #1877f2 on cool grey #f0f2f5, white cards, 10px controls / 14px cards, states shown by border colour. */
+:root { --control: #f0f2f5; --line: #dadde1; --ctl-border: 1px solid #ccd0d5; --accent: #1877f2; --accent-dark: #1565c0; --r: 10px; --soft: #fff; --soft-hover: #f5f8ff; --soft-on: #e7f0fe; }
+.btn, nav.tabs button, select { background-color: var(--soft); border-color: #ccd0d5; color: #1c1e21; }
+.btn:hover, nav.tabs button:hover, select:hover { background-color: var(--soft-hover); border-color: var(--accent); }
+.btn:active { background: var(--soft-on); border-color: var(--accent-dark); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
-.btn[aria-pressed="true"], nav.tabs button[aria-pressed="true"] { background: var(--soft-on); border-color: var(--accent); color: #17432a; }
-input:not([type=checkbox]):not([type=radio]), textarea { border-color: #cfcbe3; }
-input:hover, textarea:hover { border-color: #9b8fd8; }
-.card, fieldset, .plat, .log-row { border-color: #dcd9ea; }
-.btn:disabled { background: #eceaf3; border-color: #dcd9ea; color: #9a97a8; }
+.btn[aria-pressed="true"], nav.tabs button[aria-pressed="true"] { background: var(--soft-on); border-color: var(--accent); color: #0b4fb3; }
+input:not([type=checkbox]):not([type=radio]), textarea { border-color: #ccd0d5; }
+input:hover, textarea:hover { border-color: #8a8d91; } input:focus, textarea:focus, select:focus { border-color: var(--accent); outline: 0; }
+.card, fieldset, .plat, .log-row, .setup-status { border-color: var(--line); }
+.card, fieldset { border-radius: 14px; }
+.btn:disabled { background: #e4e6eb; border-color: #dadde1; color: #bcc0c4; }
+a, .linkbtn { color: var(--accent); }
+/* Buttons coloured by what they do: green = confirm/save, red = remove/stop, amber = undo, blue = run/copy, plain = the rest. */
+.btn[data-act=approve], .btn[data-restore], .btn[data-install], .btn[data-link], .btn[data-make], #settingsSave, #brandSave, #addSrc { background: #e6f4ea; border-color: #34a853; color: #14532d; }
+.btn[data-act=approve]:hover, .btn[data-restore]:hover, .btn[data-install]:hover, .btn[data-link]:hover, .btn[data-make]:hover, #settingsSave:hover, #brandSave:hover, #addSrc:hover { background: #d3ecdb; border-color: #1e7e34; }
+.btn[data-reject], .btn[data-act=drop], .btn[data-act=cancel], .btn[data-act=cancel-go], .btn[data-confirm], .btn[data-rmsrc], .btn[data-unlink], #prStop { background: #fdecea; border-color: #e5857c; color: #8a1c13; }
+.btn[data-reject]:hover, .btn[data-act=drop]:hover, .btn[data-act=cancel]:hover, .btn[data-act=cancel-go]:hover, .btn[data-confirm]:hover, .btn[data-rmsrc]:hover, .btn[data-unlink]:hover, #prStop:hover { background: #fadad6; border-color: #d93025; }
+.btn[data-act=unreview], #prItemClear { background: #fff4e0; border-color: #e0a63a; color: #7a4b00; }
+.btn[data-act=unreview]:hover, #prItemClear:hover { background: #ffe9c2; border-color: #c98a0a; }
+.btn.primary, #prRunNow, #prCopy, #prChromeCheck { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover, #prRunNow:hover, #prCopy:hover, #prChromeCheck:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn[data-edit], .btn[data-pick], #settingsEdit, #prChromeOpen, .btn[data-find], .btn[data-copy], header .reload, header .config { background: #e7f0fe; border-color: #8ab4f8; color: #0b4fb3; }
+.btn[data-edit]:hover, .btn[data-pick]:hover, #settingsEdit:hover, #prChromeOpen:hover, .btn[data-find]:hover, .btn[data-copy]:hover, header .reload:hover, header .config:hover { background: #d2e3fc; border-color: var(--accent); }
+/* green wins over the generic blue primary */
+main .btn[data-act=approve], main .btn[data-link], main .btn[data-install], main .btn[data-make], main #settingsSave, main #brandSave { background: #e6f4ea; border-color: #34a853; color: #14532d; }
+main .btn[data-act=approve]:hover, main .btn[data-link]:hover, main .btn[data-install]:hover, main .btn[data-make]:hover, main #settingsSave:hover, main #brandSave:hover { background: #d3ecdb; border-color: #1e7e34; }
 nav.tabs button { margin-right: 0; }
 .log-row { margin-bottom: 6px; }
 nav.tabs { gap: 6px; margin: 0 0 0 20px; }
