@@ -190,5 +190,5 @@ Bài trùng ghi vào `duplicates.json` (khớp bài nào, luật nào); báo cá
 - Dựng lại cảnh từ ảnh đối thủ vẫn là sản phẩm của họ: bài thật dùng ảnh sản phẩm của thương hiệu.
 - Timeline của một số trang (vd ít tương tác) chỉ tải 1-3 bài rồi đứng: tab ảnh bỏ sót reels và bài chữ, nên khi lấy tay phải thử `/posts`, rồi gộp lưới `/photos_by` + `/reels`.
 - Mở lại lượt cùng ngày từng ingest lại `raw.json` cũ và đếm thành bài trùng giả: `start` giờ chuyển dữ liệu cũ vào `archive/`, `ingest` bỏ qua link đã ingest.
-- Agent lái Chrome đã đăng nhập (Playwright MCP) đọc được mọi nền tảng nhưng mất vài phút mỗi từ khoá; script chung `collect.mjs` + adapter nhanh hơn nhiều nhưng selector dễ hỏng khi giao diện đổi: mọi selector gom ở khối `SELECTORS` đầu mỗi adapter, agent sửa ở đó và chỉ lái tay khi adapter `untested`/hỏng.
+- Script trích xuất chỉ đọc trang hiện tại nên trả về ngay; việc cuộn và quyết khi nào dừng là của Claude. Selector dễ hỏng khi giao diện đổi: mọi selector gom ở khối `SELECTORS` đầu mỗi adapter, Claude xem DOM, sửa ở đó rồi trích xuất lại.
 - Tìm theo từ khoá ra nhiều sản phẩm lạc loại (đèn LED dây, đồ kim loại...): kiểm `product_fit` trước khi tải, không lưu bài sai loại.
