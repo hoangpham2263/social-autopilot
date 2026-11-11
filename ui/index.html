@@ -53,6 +53,11 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .card.ok { border-color: var(--accent); }
 .card.todo { border-color: #b06000; }
 .card .card-msg:empty { display: none; }
+.plats { margin: 0 0 24px; }
+.plat-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.plat { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 104px; padding: 8px; border: 1px solid var(--line); background: #fff; }
+.plat-name { font-size: 12px; color: var(--muted); }
+.plat.blocked .plat-logo { opacity: .35; }
 .unlinked { margin-top: 24px; }
 .unlinked .row { display: flex; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .unlinked .row .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -236,6 +241,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
   </nav>
 
   <section class="page" id="page-overview" hidden>
+    <fieldset class="plats" hidden><legend>Research</legend><div class="plat-row" id="ovPlat"></div></fieldset>
     <div class="cards" id="ovList"><div class="meta">Loading…</div></div>
   </section>
 
@@ -279,7 +285,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
       <div class="field" data-opt="research" hidden><span class="label" title="The brand's reference pages (social.json research.sources), collected first; none ticked = all">Reference pages</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
       <div class="field" data-opt="research" hidden><span class="label" title="Search more posts by the brand's keywords/hashtags on these platforms after the reference pages (default: every enabled platform of the skill)">Discovery platforms</span><details class="select" id="prPlatBox"><summary id="prPlatSum">All</summary><div class="options" id="prPlat"></div></details></div>
-      <div class="field" data-opt="research" hidden><span class="label" title="Research crawl adapters: whether each platform is ready, and which brands have it on in their skill">Platforms</span><div id="prPlatInfo"></div></div>
       <div class="field" data-opt="research" hidden><label for="prKw" title="Comma-separated; empty = the skill's keywords and hashtags">Keywords</label><input type="text" id="prKw" placeholder="from the skill"></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run: reference pages first, then discovery until it is met">Max posts per brand</label><input type="number" id="prMax" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="research" hidden><label for="prKind" title="How the reference pages are read">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
@@ -370,7 +375,7 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $(`#page-${page}`).append($("#appFoot")); // footer sits after the page content, not pinned to the window
     for (const b of $$("#tabs button")) b.setAttribute("aria-pressed", String(b.dataset.page === (page === "brand" ? "overview" : page)));
     store.set("page", page === "brand" ? "overview" : page);
-    ({ overview: loadOverview, store: loadResearch, posts: loadDrafts, log: loadLogs, prompt: loadPrompts, settings: loadSettings })[page]?.();
+    ({ overview: () => { loadOverview(); loadPlatforms(); }, store: loadResearch, posts: loadDrafts, log: loadLogs, prompt: loadPrompts, settings: loadSettings })[page]?.();
   }
   for (const b of $$("#tabs button")) b.onclick = () => show(b.dataset.page);
   // core/assets/hub.js opens Settings when the setup is incomplete (its banner's button too).
@@ -828,7 +833,6 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     $("#prPlat").innerHTML = plats.map((p) => `<label><input type="checkbox" value="${esc(p)}"${prPlatOff.has(p) ? "" : " checked"}>${esc(platformName(p))}</label>`).join("") || `<div class="meta">No discovery platforms in the skill.</div>`;
     for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) prPlatOff.delete(c.value); else prPlatOff.add(c.value); platLabel(); regenerate(); };
     platLabel();
-    drawPlatInfo();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
     $("#prCount").placeholder = publishOnly ? "all" : "auto";
     $("#prCount").title = publishOnly ? "Empty = every approved post not sent yet; N = at most N per brand, oldest approved first" : `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
@@ -845,21 +849,32 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
     if (modeKey(prMode) !== shownRunMode || !runTimer) loadProgress();
   }
   let prPlatOff = new Set();
-  // Read-only "Platforms" block (Research mode): adapter status + which brands have each platform on. Silent if the endpoint fails.
-  let platInfo = null;
+  // Overview "Research": one logo tile per research platform (GET /api/research-platforms), status chip; silent if the endpoint fails.
   const PLAT_CHIP = { ok: ["Ready", "c-green"], untested: ["Needs check", "c-amber"], broken: ["Blocked", "c-red"] };
-  function drawPlatInfo() {
-    const box = $("#prPlatInfo");
-    if (!box) return;
-    const sel = $("#prBrand").value, names = Object.fromEntries(arr(platInfo?.brands).map((b) => [b.id, b.name || b.id]));
-    box.innerHTML = arr(platInfo?.platforms).map((p) => {
-      const [t, c] = PLAT_CHIP[p.status] || [p.status || "?", ""], on = arr(p.enabled_for), one = sel && names[sel];
-      const who = one ? (on.includes(sel) ? "on" : "off") : (on.length ? on.map((id) => names[id] || id).join(", ") : "off");
-      const tip = [p.note, p.checked ? `checked ${p.checked}` : ""].filter(Boolean).join(" · ");
-      return `<div class="meta" title="${esc(tip)}"><span class="status-tag ${c}">${esc(t)}</span> ${esc(PLATFORM_TEXT[p.id] || p.name)}: ${esc(who)}</div>`;
-    }).join("");
+  const PLAT_LOGO = {
+    instagram: '<rect x="4" y="4" width="16" height="16" rx="5"/><circle cx="12" cy="12" r="3.6"/><circle cx="17" cy="7" r=".6"/>',
+    pinterest: '<circle cx="12" cy="12" r="9"/><path d="M11 17.5L12.5 10M9 11c0-2 1.5-3 3.2-3 1.8 0 3 1.2 3 2.8 0 2-1.2 3.2-2.7 3.2-.8 0-1.3-.5-1.3-1.2"/>',
+    facebook: '<circle cx="12" cy="12" r="9"/><path d="M13.5 20v-7.5M10.5 12.5h5M13.5 12.5V10c0-1.2.7-1.8 1.8-1.8h.7"/>',
+    etsy: '<path d="M9 5v14M9 5h7M9 11.5h5M9 19h7"/>',
+    houzz: '<path d="M8 4v16M8 12.5h8V20M8 4l8 5v3.5"/>',
+    reddit: '<ellipse cx="12" cy="14" rx="7" ry="5"/><circle cx="9.5" cy="13.5" r=".8"/><circle cx="14.5" cy="13.5" r=".8"/><path d="M10 16.3c1.2.7 2.8.7 4 0M12 9l1-4 4 1"/><circle cx="18" cy="6.5" r="1.2"/>',
+    youtube: '<rect x="3" y="6" width="18" height="12" rx="4"/><path d="M10.5 9.5v5l4.2-2.5z"/>',
+    tiktok: '<path d="M14 4v10.5a3.5 3.5 0 1 1-3.5-3.5M14 4c.4 2.2 1.8 3.6 4 3.8"/>',
+  };
+  const platLogo = (id, name) => '<svg class="plat-logo" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (PLAT_LOGO[id] || '<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" fill="currentColor" stroke="none">' + esc(String(name || id || "?").charAt(0).toUpperCase()) + '</text>') + '</svg>';
+  async function loadPlatforms() {
+    const box = $("#ovPlat");
+    try {
+      const r = await getJson("/api/research-platforms");
+      const names = Object.fromEntries(arr(r.brands).map((x) => [x.id, x.name || x.id])), list = arr(r.platforms);
+      box.innerHTML = list.map((p) => {
+        const [t, c] = PLAT_CHIP[p.status] || [p.status || "?", ""], on = arr(p.enabled_for), name = PLATFORM_TEXT[p.id] || p.name || p.id;
+        const tip = [name, p.note, p.checked ? "Checked " + p.checked : "", ...Object.keys(names).map((id) => names[id] + ": " + (on.includes(id) ? "on" : "off"))].filter(Boolean).join("\n");
+        return '<div class="plat' + (p.status === "broken" ? " blocked" : "") + '" title="' + esc(tip) + '">' + platLogo(p.id, name) + '<span class="plat-name">' + esc(name) + '</span><span class="status-tag ' + c + '">' + esc(t) + '</span></div>';
+      }).join("");
+      box.closest("fieldset").hidden = !list.length;
+    } catch { /* quiet */ }
   }
-  getJson("/api/research-platforms").then((r) => { platInfo = r; drawPlatInfo(); }).catch(() => {});
 
   function platLabel() {
     const all = $$("#prPlat input"), on = all.filter((x) => x.checked).map((x) => platformName(x.value));
