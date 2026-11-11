@@ -311,11 +311,12 @@ details.sec[open] > summary { margin-bottom: 12px; }
     <details class="sec" id="prChrome">
       <summary><span>Chrome connection</span><span id="prChromeSum" class="meta">· loading…</span></summary>
       <div class="fields">
-        <div class="field"><label for="prChromeProf">Chrome profile</label><select id="prChromeProf" title="Chrome profile Playwright is connected to; used by Open Chrome and the connect helper"><option value="">choose the profile</option></select></div>
+        <div class="field"><label for="prChromeProf">Chrome profile</label><select id="prChromeProf" style="min-width:360px;width:auto;max-width:100%" title="Chrome profile Playwright is connected to; used by Open Chrome and the connect helper"><option value="">choose the profile</option></select></div>
       </div>
       <div class="row-actions">
+        <button class="btn primary" type="button" id="prChromeCheck" title="Instant check: Chrome, profile and the Playwright MCP Bridge extension">Check</button>
         <button class="btn" type="button" id="prChromeOpen" title="Opens that profile's window">Open Chrome</button>
-        <button class="btn" type="button" id="prChromeCopy" title="Paste into Claude Code to test the connection and see which sites are signed in">Copy check prompt</button>
+        <button class="linkbtn" type="button" id="prChromeCopy" title="Also checks which sites you are signed in to (paste into Claude Code)">Full check in Claude Code</button>
       </div>
       <div class="chips" id="prChromeChips"></div>
     </details>
@@ -1027,12 +1028,24 @@ details.sec[open] > summary { margin-bottom: 12px; }
     if (document.activeElement === prof) { if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000); return; } // do not redraw while the list is open
     const r = await getJson("/api/chrome-check").catch(() => offline);
     const cp = await getJson("/api/chrome-profiles").catch(() => offline);
+    const profs = cp.error ? [] : arr(cp.profiles), sel = cp.error ? "" : String(cp.selected || "");
+    const cur = prof.value || sel;
+    const sc = await getJson("/api/chrome-setup-check?profile=" + encodeURIComponent(cur)).catch(() => offline);
+    const setup = [];
+    let setupSum = "";
+    if (!sc.error && sc.browser) {
+      const chip = (ok, good, bad) => setup.push(`<span class="status-tag ${ok ? "c-green" : "c-amber"}">${esc(ok ? good + " ✓" : bad)}</span>`);
+      chip(sc.browser.found, "Chrome found", "Chrome not found: set research.chrome_path");
+      if (cur) { chip(sc.profile.exists, `Profile "${cur}"`, `Profile "${cur}" not found: choose another`); if (sc.profile.exists) chip(sc.extension.installed, "Playwright MCP Bridge installed", "Playwright MCP Bridge missing: install the extension in this profile"); }
+      else setup.push('<span class="status-tag c-amber">Choose a profile</span>');
+      setupSum = !sc.browser.found ? "Chrome not found" : !cur ? "choose a profile" : !sc.profile.exists ? "profile not found" : !sc.extension.installed ? "extension missing" : "ready to connect";
+    }
     let chips = "";
     if (r.error || !r.status) sum.innerHTML = '<span class="status-tag c-amber">· unavailable</span>';
     else {
       const st = r.status, rec = r.record;
       const exp = st.expected_profile ? `<span class="meta">expected profile: ${esc(st.expected_profile)}</span>` : "";
-      if (!st.ok) { sum.innerHTML = `<span class="status-tag c-amber">· ${esc(st.reason === "not run" || st.reason === "expired" ? "not checked" : st.reason)}</span>`; chips = exp; }
+      if (!st.ok) { sum.innerHTML = setupSum ? `<span class="status-tag ${setupSum === "ready to connect" ? "c-green" : "c-amber"}">· ${esc(setupSum)}</span>` : `<span class="status-tag c-amber">· ${esc(st.reason === "not run" || st.reason === "expired" ? "not checked" : st.reason)}</span>`; chips = setup.join("") + exp; }
       else {
         const list = Object.entries(rec.platforms || {}).map(([id, p]) => {
           const bad = p.wall || p.signed_in === false;
@@ -1041,17 +1054,17 @@ details.sec[open] > summary { margin-bottom: 12px; }
         });
         const ago = st.age_minutes === 0 ? "just now" : st.age_minutes + " min ago";
         sum.innerHTML = list.length ? `<span class="meta">·</span> ${list.join(" ")}` : `<span class="status-tag c-green">· checked ${ago}</span>`;
-        chips = `<span class="meta">checked ${ago}</span>${list.join("")}${exp}`;
+        chips = setup.join("") + `<span class="meta">full check ${ago}</span>${list.join("")}${exp}`;
       }
     }
-    chipsEl.innerHTML = chips;
-    const profs = cp.error ? [] : arr(cp.profiles), sel = cp.error ? "" : String(cp.selected || "");
+    chipsEl.innerHTML = chips || setup.join("");
     const opts = ['<option value="">choose the profile</option>'].concat(profs.map((p) => `<option value="${esc(p.folder)}"${p.folder === sel ? " selected" : ""}>${esc([p.folder, p.name, p.email].filter(Boolean).join(" · "))}</option>`));
     if (sel && !profs.some((p) => p.folder === sel)) opts.push(`<option value="${esc(sel)}" selected>${esc(sel)}</option>`);
     prof.innerHTML = opts.join("");
     if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000);
   });
-  $("#prChromeProf").onchange = async (e) => { const r2 = await postJson("/api/settings", { settings: { research: { chrome_profile: e.target.value } } }).catch(() => offline); flash(r2.error ? "Could not save the profile." : "Profile saved."); e.target.blur(); };
+  $("#prChromeCheck").onclick = () => { loadChrome(); flash("Checked."); };
+  $("#prChromeProf").onchange = async (e) => { const r2 = await postJson("/api/settings", { settings: { research: { chrome_profile: e.target.value } } }).catch(() => offline); flash(r2.error ? "Could not save the profile." : "Profile saved."); e.target.blur(); loadChrome(); };
   $("#prChromeOpen").onclick = async () => { const r2 = await postJson("/api/open-chrome", { profile: $("#prChromeProf").value }).catch(() => offline); flash(r2.error ? r2.error : "Chrome opened."); };
   $("#prChromeCopy").onclick = async () => { try { await navigator.clipboard.writeText(CHROME_PROMPT); } catch { /* ignore */ } flash("Copied."); };
   const loadProgress = safely("#prRunSum", async () => {
