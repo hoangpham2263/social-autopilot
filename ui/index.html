@@ -116,6 +116,7 @@ details[open] > summary { margin-bottom: 6px; }
 #prText[readonly] { background: #fafafa; }
 /* Prompt, Run progress: the fixed steps of the mode (numbered like the prompt), one dot each; the current step framed. */
 #page-prompt .run-panel { flex: 0 0 auto; margin: 0 0 12px; display: grid; gap: 8px; }
+#page-prompt .run-panel[hidden] { display: none; }
 .run-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; }
 .run-steps li { display: flex; align-items: center; padding: 2px 8px; border: 1px solid transparent; font-size: 12.5px; white-space: nowrap; }
 .run-steps li .dot { margin-right: 6px; width: 8px; height: 8px; }
@@ -1050,6 +1051,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
     const app = howNow() === "app", busy = !!arState?.active, claude = subAllowed();
     for (const b of $$("#prHow button")) b.setAttribute("aria-pressed", String(b.dataset.how === howNow()));
     for (const id of ["#prCopy", "#prMsg", "#prSubField", "#prTextBox"]) $(id).hidden = app;
+    // The Chrome connection section is for Run in the app (Run now needs the connection); with Copy prompt it is not shown.
+    $("#prChrome").hidden = !app;
     $("#prRunNow").hidden = !app; if (!app) $("#prStop").hidden = true;
     $("#prAppHint").hidden = !app;
     $("#prAppHint").textContent = claude ? "Starts Claude Code for you; the live panel below shows progress." : "Run in the app needs Claude Code";
@@ -1233,6 +1236,8 @@ details.sec[open] > summary { margin-bottom: 12px; }
       parts.push(`<span>Last run finished ${esc(when(r.last_log.ended))} — ${logLink}</span>`);
     } else parts.push(`<span class="meta">No run yet. Copy the prompt and paste it into the agent.</span>`);
     $("#prRunSum").innerHTML = parts.join("");
+    // Run progress only shows while a run is waiting or going (after Copy prompt or from a running agent); the history is in the Log tab.
+    $("#prRun").hidden = !r.active;
     $("#prRunDetail").textContent = r.active || run?.finished ? run?.detail || "" : "";
     $("#prRunDetail").title = $("#prRunDetail").textContent;
     for (const a of $$("#prRunSum [data-goto-log]")) a.onclick = (e) => { e.preventDefault(); lgMode = mode; store.set("lgMode", mode); show("log"); };
