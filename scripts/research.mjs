@@ -85,7 +85,6 @@ export function searchUrl(platform, kind, term) {
     instagram: kind === 'hashtag' ? `https://www.instagram.com/explore/tags/${enc(tag.toLowerCase())}/` : `https://www.instagram.com/explore/search/keyword/?q=${enc(t)}`,
     pinterest: `https://www.pinterest.com/search/pins/?q=${enc(kind === 'hashtag' ? '#' + tag : t)}`,
     facebook: kind === 'hashtag' ? `https://www.facebook.com/hashtag/${enc(tag.toLowerCase())}` : `https://www.facebook.com/search/posts/?q=${enc(t)}`,
-    reddit: `https://www.reddit.com/search/?q=${enc(t)}&type=posts`,
     etsy: `https://www.etsy.com/search?q=${enc(t)}`,
     houzz: `https://www.houzz.com/photos/query/${enc(t.toLowerCase().replace(/\s+/g, '-'))}`,
   };

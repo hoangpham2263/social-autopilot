@@ -17,7 +17,6 @@ import { extractTiles, wallSignals, classifyWall } from '../scripts/platforms/co
 import * as instagram from '../scripts/platforms/instagram.mjs';
 import * as pinterest from '../scripts/platforms/pinterest.mjs';
 import * as facebook from '../scripts/platforms/facebook.mjs';
-import * as reddit from '../scripts/platforms/reddit.mjs';
 import * as etsy from '../scripts/platforms/etsy.mjs';
 import * as houzz from '../scripts/platforms/houzz.mjs';
 import { SELECTORS as FB, extractFeed } from '../scripts/fb-extract.mjs';
@@ -26,8 +25,8 @@ import { searchUrl as researchSearchUrl, nextTask, collectInfo } from '../script
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = (n) => parseHTML(fs.readFileSync(path.join(tool, 'tests', 'fixtures', `collect-${n}.html`), 'utf8')).document;
-const MODS = { instagram, pinterest, facebook, reddit, etsy, houzz };
-const GRID = { instagram, pinterest, reddit, etsy, houzz };
+const MODS = { instagram, pinterest, facebook, etsy, houzz };
+const GRID = { instagram, pinterest, etsy, houzz };
 // Every grid adapter's tiles on a fixture, as the adapter turns them into posts.
 const tilesOf = (id, name, base) => {
   const S = GRID[id].SELECTORS;
@@ -41,7 +40,7 @@ const wall = (id, name) => {
 };
 
 test('registry: every platform has an adapter with the full contract; status is untested until checked on a live page', () => {
-  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'houzz', 'instagram', 'pinterest', 'reddit']);
+  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'houzz', 'instagram', 'pinterest']);
   for (const id of platformIds()) {
     const e = REGISTRY[id], a = getAdapter(id);
     assert.ok(STATUSES.includes(e.status), id);
@@ -71,9 +70,6 @@ test('post id / url parsing per platform (pure)', () => {
   assert.equal(pinterest.postId('https://www.pinterest.com/pin/some-title--987654321098/'), '987654321098');
   assert.equal(pinterest.canonicalUrl('https://www.pinterest.com/pin/123456789012/?x=1'), 'https://www.pinterest.com/pin/123456789012/');
   assert.equal(pinterest.upgradeImage('https://i.pinimg.com/236x/ab/cd/x.jpg'), 'https://i.pinimg.com/736x/ab/cd/x.jpg');
-  assert.equal(reddit.postId('https://www.reddit.com/r/NeonSigns/comments/1ABC2de/my_new_sign/'), '1abc2de');
-  assert.equal(reddit.subredditOf('https://www.reddit.com/r/NeonSigns/comments/1abc2de/x/'), 'r/NeonSigns');
-  assert.equal(reddit.upgradeImage('https://preview.redd.it/abcd1234.jpg?width=640&s=x'), 'https://i.redd.it/abcd1234.jpg');
   assert.equal(etsy.postId('https://www.etsy.com/uk/listing/1234567890/custom-neon?ref=x'), '1234567890');
   assert.equal(etsy.canonicalUrl('https://www.etsy.com/listing/1234567890/custom-neon?ref=x'), 'https://www.etsy.com/listing/1234567890');
   assert.equal(etsy.upgradeImage('https://i.etsystatic.com/1/r/il/ab/5/il_340x270.5_ab.jpg'), 'https://i.etsystatic.com/1/r/il/ab/5/il_794xN.5_ab.jpg');
@@ -98,12 +94,6 @@ test('tiles on saved pages become adapter posts: id, canonical url, images, capt
   assert.equal(pin[0].image_urls[0], 'https://i.pinimg.com/736x/ab/cd/ef/abcdef.jpg');
   assert.equal(pin[1].image_urls[0], 'https://i.pinimg.com/736x/11/22/33/x.jpg', 'the largest srcset entry');
   assert.equal(pin[0].caption, 'Custom neon sign wedding');
-  const rd = tilesOf('reddit', 'reddit-grid', 'https://www.reddit.com/search/?q=neon');
-  assert.equal(rd.length, 2);
-  assert.equal(rd[0].url, 'https://www.reddit.com/r/neonsigns/comments/1abc2de/');
-  assert.deepEqual(rd[0].image_urls, ['https://i.redd.it/abcd1234.jpg']);
-  assert.equal(rd[0].author, 'r/neonsigns');
-  assert.deepEqual(rd[1].image_urls, [], 'a text-only post has no image (the collector drops it)');
   const et = tilesOf('etsy', 'etsy-grid', 'https://www.etsy.com/search?q=neon');
   assert.deepEqual(et.map((p) => p.url), ['https://www.etsy.com/listing/1234567890', 'https://www.etsy.com/listing/2222222222']);
   assert.match(et[0].image_urls[0], /il_794xN\.5555_abcd\.jpg$/);
@@ -130,11 +120,10 @@ test('facebook adapter reads posts through fb-extract (reused, not copied)', () 
 test('login wall / captcha / block page detection on saved HTML; ordinary pages pass', () => {
   assert.match(wall('instagram', 'instagram-wall'), /login/i);
   assert.match(wall('pinterest', 'pinterest-wall'), /sign-in dialog|blocked|login/i);
-  assert.match(wall('reddit', 'reddit-wall'), /blocked/i);
   assert.equal(wall('etsy', 'etsy-wall'), 'captcha');
   assert.match(wall('houzz', 'houzz-wall'), /captcha/);
   for (const id of Object.keys(MODS)) assert.equal(wall(id, 'ok-page'), '', `${id}: a normal page is not a wall`);
-  for (const [id, name] of [['instagram', 'instagram-grid'], ['pinterest', 'pinterest-grid'], ['etsy', 'etsy-grid'], ['reddit', 'reddit-grid']]) assert.equal(wall(id, name), '', `${id} grid`);
+  for (const [id, name] of [['instagram', 'instagram-grid'], ['pinterest', 'pinterest-grid'], ['etsy', 'etsy-grid']]) assert.equal(wall(id, name), '', `${id} grid`);
   assert.match(classifyWall({ url: 'https://www.instagram.com/accounts/login/?next=/explore/' }, instagram.SELECTORS.wall), /login wall/);
   assert.match(classifyWall({ url: 'https://www.facebook.com/checkpoint/1' }, facebook.SELECTORS.wall), /login wall|block/);
   assert.match(classifyWall({ title: 'x', text: 'Sorry, unusual traffic from your computer network' }, {}), /unusual traffic/);

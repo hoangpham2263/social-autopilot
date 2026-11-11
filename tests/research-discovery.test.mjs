@@ -48,7 +48,6 @@ test('discovery queries: keywords and hashtags interleaved per platform, hashtag
   assert.equal(searchUrl('instagram', 'hashtag', 'CustomNeonSign'), 'https://www.instagram.com/explore/tags/customneonsign/');
   assert.equal(searchUrl('etsy', 'keyword', 'custom neon sign'), 'https://www.etsy.com/search?q=custom%20neon%20sign');
   assert.equal(searchUrl('houzz', 'keyword', 'live edge dining table'), 'https://www.houzz.com/photos/query/live-edge-dining-table');
-  assert.match(searchUrl('reddit', 'keyword', 'walnut desk'), /reddit\.com\/search\/\?q=walnut%20desk/);
 });
 
 test('next: reference pages first, then discovery round-robin across platforms; caps, blocked platforms and the target', () => {
