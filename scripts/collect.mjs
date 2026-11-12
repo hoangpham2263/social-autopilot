@@ -2,7 +2,9 @@
 // scrolls it with normal Playwright MCP actions (scrollBy from next.scroll, mouse.wheel only as the fallback, 1-2 times, research.scroll_wait_seconds) and decides when
 // to stop; to read the data it runs ONE extract script that reads what is on the page now and returns at once. The AI writes
 // / fixes the platform adapters (scripts/platforms/<platform>.mjs, SELECTORS) and judges the images.
-//   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--seen <file>] [--max N]
+//   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--seen <file>] [--max N] [--once]
+//        (for a task of an open run the file SCROLLS THE PAGE BY ITSELF until 3 known posts in a row (complete source), the end of the page,
+//        its round time or a block, and returns ONE result per round; --once = one plain extract, no scrolling)
 //        writes the extract script to research.script_dir (~/.playwright-mcp/social-autopilot/<brand>-<task>.js, readable by the Playwright
 //        MCP) and prints its path; run it with browser_run_code_unsafe filename=: no navigation, no scroll, no pause; it POSTs its result to the
 //        app (one-time token, 15 min) and returns { saved:true, total, tag, bytes } (b64 only when the POST failed) with only the tiles whose id is not in the task's seen list
@@ -19,7 +21,7 @@
 // page = state blocked, nothing more opened. Cookies stay in Chrome; nothing secret is written.
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, brandDiscovery, readJson, writeJson, workspace, stamp } from './lib.mjs';
-import { openRun, nextTask, timeInfo, brandTotal, TIME_NEXT } from './research.mjs';
+import { openRun, nextTask, timeInfo, brandTotal, TIME_NEXT, srcMode } from './research.mjs';
 import { track } from './progress.mjs';
 import { REGISTRY, STATUSES, getAdapter, adapterStatus, platformIds } from './platforms/index.mjs';
 
@@ -43,7 +45,7 @@ export function resolveTask(args, run = null) {
     const s = run.sources?.find((x) => x.id === String(args['for-source']));
     if (!s) throw new Error(`Nguồn "${args['for-source']}" không có trong lượt này.`);
     const share = nxt.step === 'reference' && nxt.source === s.id ? nxt.share : 0;
-    return { kind: 'source', id: s.id, platform: s.platform || '', url: s.url, found_by: 'reference page', name: s.name, dir: s.dir, raw_file: s.raw_file, max: num(args.max) || share || 0, mode: run.mode || {}, known_file: s.known_file || '', started: s.issued_at || '' };
+    return { kind: 'source', id: s.id, platform: s.platform || '', url: s.url, found_by: 'reference page', name: s.name, dir: s.dir, raw_file: s.raw_file, max: num(args.max) || share || 0, mode: srcMode(run, s), crawl: s.crawl || '', resume: s.registry_before?.resume || null, known_file: s.known_file || '', started: s.issued_at || '' };
   }
   const platform = String(args.platform && args.platform !== true ? args.platform : '').toLowerCase();
   if (!platform) throw new Error('Thiếu --platform (hoặc --for-query / --for-source).');

@@ -100,7 +100,7 @@ export function redeem({ token, task, body, now = Date.now(), dir = tokenDir(), 
 // (the Playwright MCP process, outside page.evaluate: no page CSP, no CORS, no Private Network Access) POSTs r to the app and returns
 // only a summary; if that fails it returns saved:false + reason + the b64 line.
 export const POST_JS = `const post = o.post;
-  const summary = (x) => Object.assign({ platform: r.platform, total: r.total, total_on_page: r.total_on_page, reason: r.reason }, x);
+  const summary = (x) => Object.assign({ platform: r.platform, total: r.total, total_on_page: r.total_on_page, reason: r.reason, crawl: r.crawl }, x);
   let why = 'standalone task: no transfer';
   if (post && post.url && post.token_url) {
     try {

@@ -7,13 +7,20 @@
 // reports. Order (user, 10/11/2026): (1) the brand's reference pages (social.json research.sources[]: new posts not in
 // the library yet); (2) when they are done and the run's target is not reached, DISCOVERY by the brand's keywords /
 // hashtags (research.discovery), round-robin across its platforms, until the target is met or every query is done.
+// Discovery follows ONLY the brand's skill config (research.discovery.enabled; its keywords, hashtags, platforms, max_per_platform): enabled runs
+// after the picked sources, disabled does not run (the Run tab has no Discovery choice; --platforms / --keywords / --hashtags stay as CLI overrides). A run otherwise
+// collects the sources the user picked (--source a,b; none given = every enabled source of the brand). There are no default links:
+// the brand's sources are the user's own list (workspace/brands/<id>.json, Overview > Edit).
+// The crawl is always SMART, decided per source from the crawl registry (store.mjs registryOf: status none|partial|complete):
+// none -> crawl to the END of the page; partial -> continue (skip known posts, to the end), the resume cursor saved by the last
+// session; complete -> only check the top and stop at the first known posts. --full / --backfill stay as internal CLI options.
 // Only posts whose PRODUCT is a type the brand sells (research.discovery.product_fit) are stored; off-brand posts are
 // logged (store rejected.json) with the reason. No ideas or drafts in this mode.
 //   node scripts/research.mjs browser --brand <id> --state ok|fail [--note ..]   step 1.0: the agent's Playwright MCP check
-//   node scripts/research.mjs start  --brand <id> [--source a,b|none] [--since YYYY-MM-DD] [--max-posts N] [--full | --backfill]
+//   node scripts/research.mjs start  --brand <id> [--source a,b|none] [--since YYYY-MM-DD] [--max-posts N] [--full | --backfill (internal)]
 //        [--platforms a,b|none] [--keywords "k1,k2"] [--hashtags "t1,t2"]
 //        --max-posts N = the brand's TARGET of new posts in this run: reference pages first (shared evenly by them), the
-//        rest from discovery. --platforms: discovery platforms (default: every enabled platform of the skill; none = no
+//        rest from discovery. --platforms: discovery platforms (default: every platform the skill enables; none = no
 //        discovery); --keywords / --hashtags override the skill's lists for this run.
 //   node scripts/research.mjs next   --brand <id>   what to collect next: a reference page (with its stop rule and share),
 //        then a discovery query (platform, keyword/hashtag, search URL, folder, share), or done (target met / all done)
@@ -24,7 +31,8 @@
 //        --max-posts N = at most N new posts for the BRAND in this run, shared evenly by its sources: each source gets
 //        ceil(left / sources not yet ingested); a source that runs dry leaves its share to the next ones.
 //        open (or reopen) today's crawl; writes <source>/known.json (posts already in the store) and each source's stop rule.
-//        Default: only new posts on top (stop after 3 known in a row). --backfill: the OLDER posts not crawled yet (the
+//        Default (smart, per source from the registry): complete -> only new posts on top (stop after 3 known in a row); none/partial ->
+//        crawl to the end of the page, skipping known posts. --backfill: the OLDER posts not crawled yet (the
 //        first crawl was cut by --max-posts/--since or stopped early): scroll fast past known posts without opening them,
 //        collect once past the source's oldest_seen, until the end of the page / --since / --max-posts. A source whose
 //        progress says reached_end is skipped by --backfill (nothing older left).
@@ -45,20 +53,29 @@ import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, run
 import { assertGate, unavailableLines, recordCheck, saveCheck, parseResult } from './chrome-check.mjs';
 import { adapterStatus } from './platforms/index.mjs';
 import { scrollWait, scrollHint, BROWSER_RULES } from './collect-pagemode.mjs';
-import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf } from './store.mjs';
+import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf, registryOf } from './store.mjs';
 
 const logFile = () => path.join(workspace, 'research-log.json');
 const readLog = () => { const l = readJson(logFile(), {}); return { runs: l.runs || [], collected: l.collected || {} }; };
 export const STATES = { end: 'cuộn tới hết trang', known: 'dừng ở bài đã có trong kho', since: 'tới mốc --since', limit: 'đủ phần --max-posts của nguồn', blocked: 'bị chặn (checkpoint/captcha/đăng nhập)', partial: 'dừng giữa chừng', skipped: 'không mở: hết phần --max-posts (quota)' };
 
 export const crawlMode = (mode = {}) => (mode.backfill ? 'backfill' : mode.full ? 'full' : 'new');
+// The smart crawl of one source, decided from its registry status (never from a user selector):
+//   complete -> top check ('top': stop at 3 known in a row); partial -> 'resume' (to the end, known posts skipped, from the saved cursor);
+//   none -> 'full' (to the end of the page).
+export const smartCrawl = (reg = {}) => (reg.status === 'complete' ? { crawl: 'top', mode: {} } : reg.status === 'partial' ? { crawl: 'resume', mode: { full: true } } : { crawl: 'full', mode: { full: true } });
+// The mode the cursor and the stop rules use for one source of an open run: an explicit --full / --backfill of the run wins, else the source's own smart mode.
+export const srcMode = (run, src) => ({ ...(run?.mode || {}), ...(run?.mode?.full || run?.mode?.backfill ? {} : (src?.mode || {})) });
+// The label stored with the items: a resumed crawl brings the OLDER posts, so it counts as 'backfill' for the bounds of the source.
+export const itemCrawlMode = (run, src) => (!run?.mode?.full && !run?.mode?.backfill && src?.crawl === 'resume' ? 'backfill' : crawlMode(srcMode(run, src)));
 const seenText = (p) => (p ? [p.date || 'không rõ ngày', p.post_id ? `mã ${p.post_id}` : '', p.post_url || ''].filter(Boolean).join(', ') : 'không rõ');
 
 // Where the crawling agent stops on a source (docs/research.md, "Khi nào dừng").
 // share: this source's part of the brand's --max-posts (start: the even split; ingest gives the exact remainder).
-export function stopRule(mode, known, share = 0) {
+export function stopRule(mode, known, share = 0, crawl = '') {
   const rules = [];
-  if (mode.backfill && known.count) rules.push(`backfill: cuộn NHANH qua các bài đã có trong known.json (không mở, không tải, chỉ đối chiếu link/mã), bắt đầu lấy khi đã qua bài cũ nhất trong kho (oldest_seen: ${seenText(known.oldest_seen)}); từ đó lấy mọi bài chưa có, cuộn tới hết trang`);
+  if (crawl === 'resume' && known.count) rules.push(`resume: this source is only partly collected (${known.count} posts in the Library, oldest ${seenText(known.oldest_seen)}): scroll on to the END of the page, skipping known posts without opening them (not a stop point), collect every post that is not in known.json; when the session time budget ends first, record result --state partial (the tool saves the resume cursor, the next run continues from it)`);
+  else if (mode.backfill && known.count) rules.push(`backfill: cuộn NHANH qua các bài đã có trong known.json (không mở, không tải, chỉ đối chiếu link/mã), bắt đầu lấy khi đã qua bài cũ nhất trong kho (oldest_seen: ${seenText(known.oldest_seen)}); từ đó lấy mọi bài chưa có, cuộn tới hết trang`);
   else if (mode.full || !known.count) rules.push(known.count ? 'cuộn tới hết trang (--full: không dừng ở bài đã có; bài đã có vẫn bị bỏ khi ingest)' : 'kho chưa có bài của nguồn này: cuộn tới hết trang');
   else rules.push(`dừng khi gặp 3 bài liên tiếp đã có trong known.json (bài ghim đầu trang có thể cũ: bỏ qua, đi tiếp); bài mới nhất trong kho: ${known.newest_posted_date || 'không rõ ngày'}`);
   if (mode.since) rules.push(`dừng khi tới bài đăng trước ${mode.since}`);
@@ -135,14 +152,14 @@ export function collectInfo(brand, kind, id, platform, share = 0, url = '') {
   const [lo, hi] = scrollWait(platform);
   const f = `--brand ${brand} --for-${kind} ${id}`;
   return { open: url, scroll: scrollHint(platform, lo, hi), scroll_wait_seconds: [lo, hi],
-    script: `node scripts/collect.mjs script ${f}`, script_run: 'Once per session run install.js (node scripts/collect.mjs install; browser_run_code_unsafe + filename); then open the page (after install), scroll, run the small file. That command WRITES the extract script to research.script_dir (~/.playwright-mcp/social-autopilot, the app must be running) and prints its path; run it with browser_run_code_unsafe using the filename parameter (never paste or copy it): the Node side of the script posts the result to the app and returns {saved:true,total,tag,bytes}; if it returns saved:false use the b64 it returns', from_page: `node scripts/collect.mjs from-page ${f}` /* no --b64: only when the script returned saved:false with a b64 */, target: share || 0,
-    stop_rules: 'stop when: the time limit (research.source_minutes, default 3) is over; the target is reached; 3 extracts in a row bring no new posts; every post is already known; a login wall / captcha / checkpoint / closed page shows (result --state blocked|end|known). Fallback: ' + FALLBACK,
+    script: `node scripts/collect.mjs script ${f}`, script_run: 'Once per session run install.js (node scripts/collect.mjs install; browser_run_code_unsafe + filename); then open the page (after install) and run the small file: it scrolls the page BY ITSELF (polite waits) and returns ONE result per round. That command WRITES the extract script to research.script_dir (~/.playwright-mcp/social-autopilot, the app must be running) and prints its path; run it with browser_run_code_unsafe using the filename parameter (never paste or copy it): the Node side of the script posts the result to the app and returns {saved:true,total,tag,bytes}; if it returns saved:false use the b64 it returns', from_page: `node scripts/collect.mjs from-page ${f}` /* no --b64: only when the script returned saved:false with a b64 */, target: share || 0,
+    stop_rules: 'stop when: the script says crawl.stop end | known | blocked; the session time budget (research.source_minutes, default 3 per source, RESUMABLE) is over -> result --state partial (the resume cursor is saved, nothing is lost); the target is reached; every post is already known (top check). A new or partial source is NOT stopped at known posts: it goes to the end of the page. crawl.stop time = only this round is over: run the same file again. Fallback: ' + FALLBACK,
     adapter: { platform, ...a } };
 }
-const doText = (brand, kind, id, extra, states) => `ONE path: once per session run install.js (node scripts/collect.mjs install); then open the "open" URL with Playwright MCP (browser_navigate, after install), scroll, run the small file; loop: run the script command (it writes the file under research.script_dir and prints its path; the app must be running), run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste or copy it (it only reads the page now; the script's Node side posts the result to the app and returns {saved:true,total,tag,bytes}), run from_page with no --b64 (only if the script returned saved:false with a b64, pass that b64 AS IS, never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json and says stop or scroll), scroll as in "scroll", extract again, until a stop rule (stop_rules) holds${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and extract again. At most the time limit per source (see time_limit_minutes / elapsed). ${FALLBACK} ${BROWSER_RULES}`;
+const doText = (brand, kind, id, extra, states) => `ONE path: once per session run install.js (node scripts/collect.mjs install); open the "open" URL with Playwright MCP (browser_navigate, after install); run the script command (it writes the file under research.script_dir and prints its path; the app must be running); run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste or copy it. The script SCROLLS BY ITSELF (polite waits, bringToFront, scrollBy, no waitForFunction) until it meets 3 known posts in a row (top check, only for a complete source), reaches the end of the page, uses its round time (about 24 s) or detects a block (login wall / captcha), then returns ONE result (its Node side posts it to the app and returns {saved:true,total,tag,bytes,crawl:{stop,...}}). Then run from_page with no --b64 (only if the script returned saved:false with a b64, pass it AS IS, never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json, says stop or run again). crawl.stop "time" means only the ROUND is over: run the SAME file again (the page keeps its state; no new script command) and from_page again; stop on crawl.stop end | known | blocked or when from_page says stop${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and run again. The per-source time budget is per SESSION and resumable: over it, record --state partial (the tool saves the resume cursor; the next run continues). ${FALLBACK} ${BROWSER_RULES}`;
 // Per-source time cap: next stamps issued_at the first time it issues a source/query; every later call prints elapsed and, over the limit, stop "time".
 export const sourceMinutes = (cfg = settings().research?.source_minutes) => (Number(cfg) > 0 ? Number(cfg) : 3);
-export const TIME_NEXT = "over the time limit: record research.mjs result --state partial --note 'time limit', keep what you already have, and go to the next source";
+export const TIME_NEXT = "over the session time budget of this source: record research.mjs result --state partial --note 'time limit' (nothing is lost: the registry saves a resume cursor and the next run continues from it), keep what you already have, and go to the next source";
 export function timeInfo(issuedAt, now = Date.now(), limit = sourceMinutes()) {
   const t0 = Date.parse(issuedAt || '');
   if (!Number.isFinite(t0)) return {};
@@ -157,7 +174,7 @@ export function nextTask(run) {
   if (waiting.length) {
     const src = waiting[0];
     if (target && !left) return { step: 'reference', source: src.id, share: 0, skip: true, total, target, do: `target reached: node scripts/research.mjs result --brand ${run.brand} --source ${src.id} --state skipped` };
-    return { step: 'reference', source: src.id, name: src.name, platform: src.platform || platformOf({ source_url: src.url }) || '', url: src.url, what_to_take: src.what_to_take || '', dir: src.dir, raw_file: src.raw_file, downloads: src.downloads, known_file: src.known_file, stop_rule: src.stop_rule, share: target ? Math.ceil(left / waiting.length) : 0, total, target,
+    return { step: 'reference', source: src.id, name: src.name, platform: src.platform || platformOf({ source_url: src.url }) || '', url: src.url, what_to_take: src.what_to_take || '', dir: src.dir, raw_file: src.raw_file, downloads: src.downloads, known_file: src.known_file, crawl: src.crawl || '', registry: src.registry_before || null, stop_rule: src.stop_rule, share: target ? Math.ceil(left / waiting.length) : 0, total, target,
       found_by: 'reference page', ...collectInfo(run.brand, 'source', src.id, src.platform || platformOf({ source_url: src.url }) || '', target ? Math.ceil(left / waiting.length) : 0, src.url),
       ...timeInfo(src.issued_at, undefined, undefined), rule: REFERENCE_RULE, do: doText(run.brand, 'source', src.id, '', 'end|known|since|limit|blocked|partial') };
   }
@@ -186,9 +203,11 @@ function start(args, s) {
   const only = args.source && args.source !== true ? String(args.source).split(',').map((x) => x.trim()).filter(Boolean) : [];
   const noRef = only.length === 1 && only[0] === 'none';
   const all = brandSources(brand.social);
-  // Discovery: the skill's enabled platforms (or --platforms, only among them), keywords / hashtags (or the overrides).
-  const disc = brandDiscovery(brand.social);
+  // Discovery follows the skill config: research.discovery.enabled (platforms, keywords, hashtags, max_per_platform); explicit CLI overrides only refine it.
   const askedPlatforms = listArg(args.platforms);
+  const disc = brandDiscovery(brand.social);
+  const discOn = disc.enabled;
+
   const unknownPlatforms = (askedPlatforms || []).filter((p) => p !== 'none' && !DISCOVERY_PLATFORMS.includes(p) && !RETIRED_PLATFORMS.includes(p));
   const retiredNotes = [...new Set([...(disc.retired || []), ...(askedPlatforms || []).filter((p) => RETIRED_PLATFORMS.includes(p))])].map((p) => `${p}: not supported, skipped`);
   if (unknownPlatforms.length) throw new Error(`--platforms: không biết ${unknownPlatforms.join(', ')} (chỉ ${DISCOVERY_PLATFORMS.join(', ')}, hoặc none).`);
@@ -198,9 +217,9 @@ function start(args, s) {
   const platformsIgnored = (askedPlatforms || []).filter((p) => p !== 'none' && !skillPlatforms.includes(p) && !RETIRED_PLATFORMS.includes(p));
   const keywords = listArg(args.keywords) || disc.keywords, hashtags = (listArg(args.hashtags) || disc.hashtags).map((h) => h.replace(/^#/, ''));
   const queries = discoveryQueries(platforms, keywords, hashtags);
-  if (!all.length && !queries.length) throw new Error(`${brand.id}: không có research.sources nào bật (có url) và không có truy vấn discovery (research.discovery tắt, không có nền tảng hoặc từ khoá).`);
+  if (!all.length && !queries.length) throw new Error(`${brand.id}: No sources yet: add page links in the brand's Edit page (Overview), tick the ones to crawl, or enable research.discovery in the brand's skill.`);
   const bad = only.filter((id) => id !== 'none' && !all.some((x) => x.id === id));
-  if (bad.length) throw new Error(`Source không có hoặc đang tắt trong social.json của ${brand.id}: ${bad.join(', ')}.`);
+  if (bad.length) throw new Error(`Source is not in ${brand.id}'s source list or is switched off: ${bad.join(', ')} (Overview > Edit).`);
   const srcPlatform = (x) => x.platform || platformOf({ source_url: x.url }) || '';
   const sources = noRef ? [] : all.filter((x) => (!only.length || only.includes(x.id)) && !unav[srcPlatform(x)]);
   const chromeSkipped = unavailableLines(Object.fromEntries(Object.entries(unav).filter(([id]) => platformsAll.includes(id) || all.some((x) => srcPlatform(x) === id))));
@@ -211,7 +230,7 @@ function start(args, s) {
   const before = readJson(runFile, null);
   const progress = readProgress(brand.id).sources || {};
   const skipped = [];
-  const crawl = sources.map((x) => ({ x, known: knownPosts(brand.id, x.id) })).filter(({ x, known }) => {
+  const crawl = sources.map((x) => ({ x, known: knownPosts(brand.id, x.id), reg: registryOf(brand.id, x.id) })).filter(({ x, known }) => {
     const why = backfillSkip(mode, known, progress[x.id]);
     if (why) skipped.push({ id: x.id, name: x.name, reason: why, oldest_seen: known.oldest_seen });
     return !why;
@@ -243,17 +262,19 @@ function start(args, s) {
     archived.push({ source: x.id, to });
   }
   const run = {
-    ...(before || {}), brand: brand.id, date, started: before?.started || stamp(), restarted: before ? stamp() : undefined, status: crawl.length ? 'open' : 'done', mode, crawl_mode: crawlMode(mode),
+    ...(before || {}), brand: brand.id, date, started: before?.started || stamp(), restarted: before ? stamp() : undefined, status: crawl.length ? 'open' : 'done', mode, crawl_mode: mode.full || mode.backfill ? crawlMode(mode) : 'smart', discovery_on: discOn,
     fb_account: brand.social.research?.fb_account || '', delay_seconds: s.research.delay_seconds, store: storeDir(brand.id), skipped,
-    sources: crawl.map(({ x, known }) => {
+    sources: crawl.map(({ x, known, reg }) => {
       const sdir = path.join(dir, x.id);
+      const sm = mode.full || mode.backfill ? { crawl: crawlMode(mode), mode: {} } : smartCrawl(reg);
       fs.mkdirSync(path.join(sdir, 'raw'), { recursive: true });
       const knownFile = path.join(sdir, 'known.json');
       // known.json: this source's links (stop rule) + every link and Facebook id of the brand's store (skip before downloading).
       writeJson(knownFile, { brand: brand.id, source: x.id, written: stamp(), ...known });
       return { ...x, dir: sdir, raw_file: path.join(sdir, 'raw.json'), downloads: path.join(sdir, 'raw'), known_file: knownFile, known_count: known.count,
-        reached_end_before: !!progress[x.id]?.reached_end, newest_seen: known.newest_seen, oldest_seen: known.oldest_seen,
-        stop_rule: stopRule(mode, known, mode.max_posts ? Math.ceil(mode.max_posts / crawl.length) : 0), result: null, new: 0, new_on_top: 0, backfilled: 0, duplicates: 0 }; // each start is a new crawl of the source
+        crawl: sm.crawl, mode: sm.mode, registry_before: { status: reg.status, posts_total: reg.posts_total, last_run: reg.last_run, resume: reg.resume },
+        reached_end_before: reg.status === 'complete', newest_seen: known.newest_seen, oldest_seen: known.oldest_seen,
+        stop_rule: stopRule({ ...mode, ...sm.mode }, known, mode.max_posts ? Math.ceil(mode.max_posts / crawl.length) : 0, sm.crawl), result: null, new: 0, new_on_top: 0, backfilled: 0, duplicates: 0 }; // each start is a new crawl of the source
     }),
   };
   delete run.budget;
@@ -270,8 +291,8 @@ function start(args, s) {
   log.runs.push({ brand: brand.id, date, started: stamp(), mode });
   writeJson(logFile(), log);
   const next = !crawl.length && !queries.length ? 'Không còn source nào để backfill (xem run.skipped). Chạy research.mjs report.'
-    : `Lặp: node scripts/research.mjs next --brand ${brand.id} → lấy đúng nguồn/truy vấn đó bằng Playwright MCP (docs/research.md) → ingest → result, tới khi next trả "done" (RUNBOOK 1.2). Trang tham khảo trước (${crawl.length}), rồi ${queries.length} truy vấn discovery xoay vòng ${platforms.length} nền tảng.${mode.backfill ? ' Backfill: cuộn nhanh qua bài đã có, bắt đầu lấy sau oldest_seen.' : ''}`;
-  out({ reused: !!before, archived, dir, run: { ...run, discovery: run.discovery ? { ...run.discovery, queries: run.discovery.queries.length } : null }, discovery: run.discovery ? { platforms, keywords, hashtags, queries: queries.length, max_per_platform: disc.max_per_platform, ...(platformsIgnored.length ? { platforms_ignored: platformsIgnored } : {}) } : null, ...(retiredNotes.length || chromeSkipped.length ? { notes: [...retiredNotes, ...chromeSkipped] } : {}), next });
+    : `Loop: node scripts/research.mjs next --brand ${brand.id} → collect exactly that source/query with Playwright MCP (docs/research.md) → ingest → result, until next says "done" (RUNBOOK 1.2). All enabled sources first (${crawl.length}: ${crawl.map(({ x, reg }) => `${x.id} ${reg.status}`).join(', ') || 'none'}), then ${queries.length} discovery queries over ${platforms.length} platforms${discOn ? '' : ' (Discovery is off in the skill)'}.${mode.backfill ? ' Backfill: scroll fast past known posts, start collecting after oldest_seen.' : ''}`;
+  out({ reused: !!before, archived, dir, run: { ...run, discovery: run.discovery ? { ...run.discovery, queries: run.discovery.queries.length } : null }, discovery: run.discovery ? { on: true, platforms, keywords, hashtags, queries: queries.length, max_per_platform: disc.max_per_platform, ...(platformsIgnored.length ? { platforms_ignored: platformsIgnored } : {}) } : null, ...(retiredNotes.length || chromeSkipped.length ? { notes: [...retiredNotes, ...chromeSkipped] } : {}), next });
 }
 
 // The source page's profile picture: raw.json as an object may carry { page: { name, avatar: "raw/avatar.jpg" } } (or
@@ -416,6 +437,7 @@ function ingest(args) {
     const seen = already ? [] : seenRejected(rawObj, { platform: src.platform || '', found_by: 'reference page' });
     logRejected(brand.id, seen, { source: src.id, run: run.date });
     // Brand-level cap shared fairly: what is left for the brand, split over this source and the sources not ingested yet.
+    const sMode = srcMode(run, src), itemMode = itemCrawlMode(run, src);
     const brandNew = run.sources.reduce((a, x) => a + (x.new || 0), 0);
     const waiting = run.sources.filter((x) => x === src || !x.ingested).length || 1;
     const left = mode.max_posts ? Math.min(Math.max(0, mode.max_posts - brandNew), Math.ceil(Math.max(0, mode.max_posts - brandNew) / waiting)) : 0;
@@ -423,7 +445,7 @@ function ingest(args) {
     const keptFit = posts.filter((p) => p.product_fit && String(p.product_fit.type || '').trim()).length;
     const r = mode.max_posts && !left
       ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0, rejected: [] }
-      : addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left > 0 ? Math.max(left, keptFit) : left, crawlMode: crawlMode(mode), productFit });
+      : addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left > 0 ? Math.max(left, keptFit) : left, crawlMode: itemMode, productFit });
     // truthful counts: kept = fit posts that really passed the store checks (type must be a valid brand type); a repeat ingest keeps the first ingest's numbers
     const prevIngests = readJson(logPath, { ingests: [] }).ingests || [];
     const keptNow = Math.max(0, keptFit - r.rejected.length - (r.unjudged || []).length);
@@ -432,7 +454,7 @@ function ingest(args) {
     src.unjudged = (src.unjudged || 0) + (r.unjudged || []).length;
     src.new = (src.new || 0) + r.added.length;
     src.ingested = true;
-    if (mode.backfill) src.backfilled = (src.backfilled || 0) + r.added.length; else src.new_on_top = (src.new_on_top || 0) + r.added.length;
+    if (itemMode === 'backfill') src.backfilled = (src.backfilled || 0) + r.added.length; else src.new_on_top = (src.new_on_top || 0) + r.added.length;
     src.duplicates = (src.duplicates || 0) + r.duplicates.length;
     day[`${brand.id}/${src.id}`] = (day[`${brand.id}/${src.id}`] || 0) + r.added.length;
     const unj = new Set((r.unjudged || []).map((x) => x.post_url));
@@ -481,12 +503,13 @@ function result(args) {
   const note = args.note && args.note !== true ? cleanText(args.note).text : '';
   if (state === 'blocked' && !note) throw new Error(`--state ${state} cần --note "<lý do>".`);
   if (run.mode?.max_posts && !['blocked', 'skipped', 'partial'].includes(state) && pendingFitOf(src.dir, src.raw_file) > 0) throw new Error(FIT_FIRST);
-  if (state === 'known' && run.mode?.backfill) throw new Error('Lượt --backfill không dừng ở bài đã có: dùng end (hết trang), since, limit, partial hoặc blocked.');
+  if (state === 'known' && run.mode?.backfill) throw new Error('A --backfill run does not stop at known posts: use end (end of the page), since, limit, partial or blocked.');
   src.result = { state, label: STATES[state], note, ...(/time limit/i.test(note) ? { time_limited: true } : {}), reached_end: state === 'end', new: src.new || 0, new_on_top: src.new_on_top || 0, backfilled: src.backfilled || 0, at: stamp() };
-  const progress = recordProgress(brand.id, sid, src.result, { date: run.date, mode: crawlMode(run.mode) });
+  const progress = recordProgress(brand.id, sid, src.result, { date: run.date, mode: itemCrawlMode(run, src) });
+  const registry = registryOf(brand.id, sid);
   run.status = runStatus(run);
   writeJson(runFile, run);
-  out({ source: sid, result: src.result, progress, run_status: run.status, next: state === 'blocked' ? 'Source blocked (login wall / captcha): go on with the other sources (research.mjs next); re-check THIS source once at the end of the brand run (the user Chrome may have been signed in meanwhile). Do not skip other sources: skipped is only for a reached target/quota.' : 'node scripts/research.mjs next' });
+  out({ source: sid, result: src.result, registry: { status: registry.status, posts_total: registry.posts_total, new_last_run: registry.new_last_run, last_run: registry.last_run, resume: registry.resume, reached_end_text: registry.reached_end_text }, progress, run_status: run.status, next: state === 'blocked' ? 'Source blocked (login wall / captcha): go on with the other sources (research.mjs next); re-check THIS source once at the end of the brand run (the user Chrome may have been signed in meanwhile). Do not skip other sources: skipped is only for a reached target/quota.' : 'node scripts/research.mjs next' });
 }
 
 // What to collect next (nextTask), with the query's folders made.
@@ -544,14 +567,14 @@ function researchReportBase(brandId, date) {
   const store = readStore(brandId);
   const progress = readProgress(brandId).sources || {};
   if (!run) return { brand: brandId, date: null, store: counts(store.items), sources: [], skipped: [], done: [], blocked: [], pending: [] };
-  const left = (p) => (p?.reached_end ? 'đã lấy tới bài cũ nhất của trang' : 'còn bài cũ hơn chưa lấy: chạy research.mjs start --backfill');
+  const left = (p) => (p?.status === 'complete' || (!p?.status && p?.reached_end) ? 'collected to the end of the page' : 'not at the end of the page yet: the next run continues from the resume cursor (registry partial)');
   // Batch filter (store.mjs classify / verdict) of the posts this crawl added: kept (fit) / filtered (dropped).
   const mine = (id) => store.items.filter((i) => i.source_id === id && i.run === run.date);
   const sources = run.sources.map((x) => ({
     ...filterCounts(mine(x.id)),
-    id: x.id, name: x.name, url: x.url, crawl_mode: crawlMode(run.mode), new: x.new || 0, new_on_top: x.new_on_top || 0, backfilled: x.backfilled || 0,
+    id: x.id, name: x.name, url: x.url, crawl_mode: itemCrawlMode(run, run.sources.find((s) => s.id === x.id)), crawl: run.sources.find((s) => s.id === x.id)?.crawl || '', registry: (() => { const r = registryOf(brandId, x.id); return { status: r.status, posts_total: r.posts_total, new_last_run: r.new_last_run, last_run: r.last_run, resume: r.resume, reached_end_text: r.reached_end_text }; })(), new: x.new || 0, new_on_top: x.new_on_top || 0, backfilled: x.backfilled || 0,
     state: x.result?.state || 'pending', label: x.result?.label || 'chưa xong', note: x.result?.note || '',
-    duplicates: x.duplicates || 0, duplicates_text: `${x.duplicates || 0} bài trùng bỏ qua`, reached_end: !!progress[x.id]?.reached_end, reached_end_text: progress[x.id]?.reached_end ? 'có' : 'chưa',
+    duplicates: x.duplicates || 0, duplicates_text: `${x.duplicates || 0} bài trùng bỏ qua`, reached_end: registryOf(brandId, x.id).status === 'complete', reached_end_text: registryOf(brandId, x.id).status === 'complete' ? 'có' : 'chưa',
     older_posts: left(progress[x.id]), oldest_seen: progress[x.id]?.oldest_seen || null, store_items: store.items.filter((i) => i.source_id === x.id).length,
   }));
   for (const x of sources) { x.rejected_off_brand = run.sources.find((s) => s.id === x.id)?.rejected_off_brand || 0; x.unjudged = run.sources.find((s) => s.id === x.id)?.unjudged || 0; }

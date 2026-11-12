@@ -8,7 +8,9 @@ import path from 'node:path';
 import { main, out, isMain, parseArgs, need, toolRoot, discoverBrands } from './lib.mjs';
 
 // One at a time or in parallel is said by each mode's STEPS line (Research: one at a time; Create / Publish: may run in
-// parallel).
+// parallel). Research wording (docs/scheduled-prompt.md): the sources are ALL the enabled ones of the brand (no --source in the Run tab prompt), collected fully by a
+// smart crawl decided from the registry (new/partial to the end of the page, complete = top check, resumable time budget); Discovery only
+// when OPTIONS say so; the extract script scrolls by itself (one browser call per round).
 export const ALL_BRANDS = 'all usable brands';
 export function promptList(md = fs.readFileSync(path.join(toolRoot, 'docs', 'scheduled-prompt.md'), 'utf8')) {
   const list = [];

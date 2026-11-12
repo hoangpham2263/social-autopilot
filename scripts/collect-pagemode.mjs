@@ -8,14 +8,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { out, fail, need, settings, loadBrand, readJson, writeJson } from './lib.mjs';
 import { track } from './progress.mjs';
-import { openRun, timeInfo, brandTotal, TIME_NEXT } from './research.mjs';
+import { openRun, timeInfo, brandTotal, TIME_NEXT, sourceMinutes } from './research.mjs';
 import { counters, counterLine, fitStop, progressFile } from './collect.mjs';
 import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
 import { checksumOf, unpackB64 } from './platforms/common.mjs';
 import { scriptDir, scriptFile, serverBase, resultFile } from './collect-transfer.mjs';
-import { installScript, callScript, INSTALL_FILE } from './collect-install.mjs';
+import { installScript, callScript, INSTALL_FILE, knownKey } from './collect-install.mjs';
 import { resolveTask, toRawPost, rawShape, suggestedState, fileId } from './collect.mjs';
 
 // ---------- pure parts (tests/collect-pagemode.test.mjs) ----------
@@ -69,7 +69,7 @@ export function readSeen(file) {
 export function pageResultPosts(result, adapter, { cursor = null, max = 0, found_by = '', skip = [] } = {}) {
   const posts = [], seen = new Set(skip.map(String));
   let read = 0, skippedKnown = 0;
-  if (result?.loginWall) return { posts, read, skippedKnown, loginWall: true };
+  if (result?.loginWall && !(result.tiles || []).length) return { posts, read, skippedKnown, loginWall: true };
   for (const t of result?.tiles || []) {
     const p = adapter.toPost({ id: t.id, alt: t.alt, url: t.url, alt_urls: t.alt_urls || [], image_urls: t.image_urls || [], caption: t.caption || '', author: t.author || '', date_text: t.date_text || '', utime: t.utime || 0 }, { found_by: t.found_by || found_by });
     if (!p || seen.has(p.id) || (p.aliases || []).some((a) => seen.has(a))) continue;
@@ -78,7 +78,7 @@ export function pageResultPosts(result, adapter, { cursor = null, max = 0, found
     if (v === 'known') { skippedKnown++; continue; }
     if (v === 'collect') { posts.push(p); if (max && posts.length >= max) break; }
   }
-  return { posts, read, skippedKnown, loginWall: false };
+  return { posts, read, skippedKnown, loginWall: !!result?.loginWall };
 }
 // research.scroll_wait_seconds[platform] -> [lo, hi] seconds the agent waits between scrolls.
 export function scrollWait(platform, cfg = settings().research?.scroll_wait_seconds) {
@@ -124,7 +124,16 @@ export function script(args) {
   const base = args.stdout || task.kind === 'standalone' ? '' : serverBase();
   // the file carries no secret: the Node side of the script fetches a one-time token from token_url when it runs
   const post = base ? { url: `${base}/api/collect-result?task=${encodeURIComponent(task.id)}`, token_url: `${base}/api/collect-token?task=${encodeURIComponent(task.id)}` } : null;
-  const callArgs = { found_by: task.found_by, max, seen, ...(post ? { post } : {}) };
+  // The page-side crawl (collect-install.mjs crawlFactory): for every task of an open run the file scrolls the page by itself and returns ONE result per round.
+  // stop_known: only a source the registry says is complete (top check: 3 known posts in a row); a new or partial source goes to the end of the page.
+  const known = task.known_file ? readJson(task.known_file, { count: 0 }) : brand ? knownPosts(brand.id) : { count: 0 };
+  const [lo, hi] = scrollWait(task.platform);
+  const limitMs = sourceMinutes() * 60000, t0 = Date.parse(task.started || ''), remaining = Number.isFinite(t0) ? limitMs - (Date.now() - t0) : limitMs;
+  const topCheck = task.kind === 'source' && !task.mode.full && !task.mode.backfill && known.count > 0;
+  const resumeIds = task.resume ? [task.resume.post_id, task.resume.post_url ? knownKey(task.resume.post_url) : ''].filter(Boolean) : [];
+  const crawl = args.once || task.kind === 'standalone' ? null : { task: task.id, known: [...new Set([...(known.brand_post_ids || []), ...[...(known.brand_post_urls || []), ...(known.post_urls || [])].map(knownKey)])], stop_known: topCheck ? 3 : 0,
+    budget_ms: Math.max(8000, Math.min(24000, remaining)), wait: [lo, hi], step: 900, fast_step: 1800, pre_scroll: task.platform === 'facebook', resume: resumeIds };
+  const callArgs = { found_by: task.found_by, max, seen, ...(post ? { post } : {}), ...(crawl ? { crawl } : {}) };
   // default: TINY call file (window.__sa from install.js does the work); --inline = the old single file with the whole extractor
   const code = args.inline ? adapter.pageScript(callArgs) : callScript(task.platform, callArgs);
   if (args.stdout) { process.stdout.write(code + '\n'); return; }
@@ -133,11 +142,10 @@ export function script(args) {
   const file = scriptFile(brand?.id || task.platform, task.id, dir);
   fs.writeFileSync(file, code + '\n');
   fs.rmSync(resultFile(task.dir), { force: true });
-  const [lo, hi] = scrollWait(task.platform);
-  process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, seen_ids: seen.length, transfer: post ? 'post' : 'b64',
+  process.stdout.write(JSON.stringify({ platform: task.platform, file, chars: code.length, crawl: crawl ? { mode: topCheck ? 'top check (stops at 3 known posts in a row)' : resumeIds.length ? 'resume (to the end of the page, known posts skipped)' : 'full (to the end of the page)', round_seconds: Math.round(crawl.budget_ms / 1000), wait_seconds: [lo, hi] } : 'once (single extract, no scrolling)', seen_ids: seen.length, transfer: post ? 'post' : 'b64',
     ...(args.inline ? {} : { install: 'once per session run install.js first (node scripts/collect.mjs install writes it), then open the page (after install), scroll, run this small file' }),
     run: post ? 'browser_run_code_unsafe with filename = file (do not paste or copy the script). It reads the page; the Node side of the script posts the result to the app and returns {saved:true,total,tag,bytes}; then run from-page with no --b64. saved:false with HTTP 403: run collect.mjs script again. Other saved:false: use the b64 it returns (pass it as --b64; reason_saved says why).' : 'browser_run_code_unsafe with filename = file (do not paste the script); it returns ONE line {b64, tag}: pass b64 to from-page --b64 (copy it, never retype). '+(args.stdout ? '--stdout: no transfer token, the b64 path is used.' : task.kind === 'standalone' ? 'Standalone task: no transfer token, the b64 path is used.' : 'The app is not running (workspace/server-address.json missing), so the result cannot be sent automatically.'),
-    from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)}${post ? '' : ' --b64 <b64>'}`, scroll: scrollHint(task.platform, lo, hi), ...timeInfo(task.started) }) + '\n');
+    from_page: `node scripts/collect.mjs from-page ${forArgOf(task, brand)}${post ? '' : ' --b64 <b64>'}`, ...(crawl ? { again: 'crawl.stop "time" = this round only is over: run the SAME file again (page state is kept), then from-page again; stop on crawl.stop end | known | blocked' } : { scroll: scrollHint(task.platform, lo, hi) }), ...timeInfo(task.started) }) + '\n');
 }
 
 export async function fromPage(args) {
@@ -165,7 +173,7 @@ export async function fromPage(args) {
   const perPost = Math.max(1, Number(args.images) || 4);
   const posts = [];
   let noImage = 0;
-  if (!r.loginWall && (!task.max || left > 0)) {
+  if (!task.max || left > 0) {
     for (const p of r.posts) {
       const images = [];
       for (const [k, u] of (p.image_urls || []).slice(0, perPost).entries()) {
@@ -179,13 +187,15 @@ export async function fromPage(args) {
   const all = [...prevPosts, ...posts];
   const seen = [...new Set([...prevSeen, ...tileKeys(result?.tiles)])];
   writeJson(seenFile(task), seen);
-  const idle = posts.length ? 0 : state0.idle + 1;
+  const idle = posts.length || crawlInfo ? (posts.length ? 0 : state0.idle) : state0.idle + 1; // a crawl round that only passed known posts is progress, not an idle extract
   const extracts = state0.extracts + 1;
   writeJson(path.join(task.dir, 'extracts.json'), { extracts, idle });
   const st = adapterStatus(task.platform);
   const blocked = !!r.loginWall;
   const reason = String(result?.reason || '');
-  const allKnown = !blocked && r.read > 0 && r.skippedKnown === r.read && !posts.length;
+  const crawlInfo = result?.crawl || null, crawlStop = String(crawlInfo?.stop || '');
+  const skipKnown = !!(task.mode.full || task.mode.backfill); // a new / partial source skips known posts on its way to the end: all-known is not a stop
+  const allKnown = !blocked && !skipKnown && r.read > 0 && r.skippedKnown === r.read && !posts.length;
   const note = blocked ? `${reason || 'login wall / block page'}: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : !all.length && !r.read && !(result?.total_on_page) ? 'error: 0 posts on the page (page empty or selectors no longer fit)' : noImage && !posts.length && r.read ? 'error: posts read but no image could be downloaded' : (allKnown || (!posts.length && !r.read && result?.total_on_page > 0)) ? `all ${r.read || result.total_on_page} posts on the page are already known (stop: known)` : '';
   writeJson(task.raw_file, { ...rawShape(task, all, { rejected: prevRaw?.rejected || [] }) });
   const cnt = counters({ posts: all, rejected: prevRaw?.rejected || [] }, prog0.read + posts.length, task.max);
@@ -194,7 +204,7 @@ export async function fromPage(args) {
   const target = fs0 === 'target';
   const poor = fs0 === 'poor_source';
   const summary = counterLine(cnt, { target: run?.mode?.max_posts || 0, kept: (run ? brandTotal(run) : 0) + cnt.kept });
-  const stop = blocked ? 'blocked' : target ? 'target' : poor ? 'poor_source' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
+  const stop = blocked ? 'blocked' : target ? 'target' : poor ? 'poor_source' : crawlStop === 'end' ? 'end' : crawlStop === 'known' ? 'known' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
   const tm = timeInfo(task.started);
   const state = blocked ? 'blocked' : suggestedState(task.kind, { blocked, error: /^error/.test(note), limit: target, read: all.length, stop: task.kind === 'source' ? (allKnown ? 'known' : stop === 'no_new' ? 'end' : '') : '' });
   const idArg = task.kind === 'query' ? `--query ${task.id}` : task.kind === 'source' ? `--source ${task.id}` : '';
@@ -206,12 +216,13 @@ export async function fromPage(args) {
   const next = blocked ? `Bị chặn (${reason || 'login wall'}): node scripts/research.mjs result --brand ${b} ${idArg} --state blocked --note "${note.replace(/"/g, "'")}" (dừng nền tảng này).`
     : tm.time_over && !stop ? (cnt.pending_fit > 0 && task.max ? 'Nhìn ảnh review[] và chạy collect.mjs fit ngay, rồi: ' : '') + TIME_NEXT
     : !blocked && cnt.pending_fit > 0 && task.max ? `Nhìn ảnh review[] rồi chạy ngay: node scripts/collect.mjs fit --brand ${b} ${task.kind === 'query' ? '--for-query' : '--for-source'} ${task.id} --file <decisions.json>, rồi đọc need_more (run collect.mjs fit on review[], then check need_more).`
-      : stop ? `Dừng (${stop}): ${done}`
-      : `Cuộn tiếp (scrollBy của next.scroll 1-2 lần, chờ ${lo}-${hi} s), rồi chạy lại script (node scripts/collect.mjs script ${forArgOf(task, brand)}) và from-page.${trust ? '' : ` Adapter ${st.status}: so kết quả với trang thật trước khi tin.`}`;
+      : stop ? `Stop (${stop}): ${done}`
+      : crawlInfo ? `Round over (crawl.stop ${crawlStop || 'time'}, ${crawlInfo.rounds} extracts, ${crawlInfo.scrolls} scrolls): run the SAME file again with browser_run_code_unsafe (the page keeps its state), then from-page again.${trust ? '' : ` Adapter ${st.status}: compare the result with the real page before trusting it.`}`
+      : `Scroll on (scrollBy of next.scroll 1-2 times, wait ${lo}-${hi} s), then run the script again (node scripts/collect.mjs script ${forArgOf(task, brand)}) and from-page.${trust ? '' : ` Adapter ${st.status}: compare the result with the real page before trusting it.`}`;
   if (task.kind !== 'standalone') track('crawl', { brand: b, detail: `${task.id}: extract ${extracts}, +${posts.length} · ${summary}` });
   out({ brand: brand?.id || '', platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, adapter: st, trusted: trust,
     verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0, counters: cnt, summary,
-    ...(loaded.verified ? {} : { warning: 'hand-made result (no total/checksum): not verified, check the posts against the page' }), ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || (tm.time_over ? 'time' : ''), suggested_state: state, ...(note ? { note } : {}), raw_file: task.raw_file,
+    ...(loaded.verified ? {} : { warning: 'hand-made result (no total/checksum): not verified, check the posts against the page' }), ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || (tm.time_over ? 'time' : ''), suggested_state: state, ...(crawlInfo ? { crawl: crawlInfo } : {}), ...(note ? { note } : {}), raw_file: task.raw_file,
     review: posts.map((p, i) => ({ n: prevPosts.length + i + 1, id: p.collector_id, url: p.post_url, author: p.author, date: p.posted_date, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
 }
 

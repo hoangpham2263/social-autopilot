@@ -547,7 +547,7 @@ test('backfill: progress tracks newest/oldest seen, reached_end; backfill collec
   const caps = ['Kệ gỗ sồi treo tường ba tầng cho phòng khách nhỏ, hoàn thiện dầu tự nhiên', 'Bàn trà gỗ óc chó chân sắt sơn tĩnh điện, mặt bàn dày bốn phân', 'Tủ giày gỗ thông cửa lùa, có ngăn kéo nhỏ để chìa khoá và ví'];
   const first = run('research.mjs', 'start', '--brand', 'grenheim', '--max-posts', '2');
   const w = first.run.sources[0];
-  assert.equal(first.run.crawl_mode, 'new');
+  assert.equal(first.run.crawl_mode, 'smart');
   [0, 1].forEach((n) => write(path.join(w.dir, 'raw', `b${n}.png`), pattern([n * 40, 7, 90, n, 33, 210])));
   write(w.raw_file, JSON.stringify([
     { post_url: 'https://www.facebook.com/wooda/posts/30000005', caption: caps[0], image: 'raw/b0.png', posted_date: '2026-11-05' },
