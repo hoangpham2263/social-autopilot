@@ -17,7 +17,7 @@ import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial, saveOverride } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar } from "../scripts/store.mjs";
-import { promptList, ALL_BRANDS } from "../scripts/prompts.mjs";
+import { promptList, skillLine, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
@@ -287,7 +287,7 @@ async function handle(req, res) {
     const short = (n) => { const t = String(n || "").split(/[.;]| \(/)[0].trim(); return t.length > 110 ? `${t.slice(0, 107)}...` : t; };
     return { platforms: Object.entries(PLATFORM_REGISTRY).map(([id, e]) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), status: e.status, checked: e.checked || "", note: short(e.note), enabled_for: brands.filter((b) => (b.discovery_platforms || []).includes(id)).map((b) => b.id) })), brands: brands.map((b) => ({ id: b.id, name: b.brand })) };
   });
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], discovery_platforms: b.discovery_platforms || [], posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, skill_root: b.skillRoot || b.dir, shared: !!b.shared, skill_line: skillLine(b), metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], discovery_platforms: b.discovery_platforms || [], posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));

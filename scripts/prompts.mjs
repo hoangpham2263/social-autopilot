@@ -19,9 +19,17 @@ export function promptList(md = fs.readFileSync(path.join(toolRoot, 'docs', 'sch
 // {{TOOL}} = this tool's folder (never a fixed path), {{BRAND}} = the brand or all, {{OPTIONS}} = this run's options.
 // One SKILL line per brand in scope (all usable brands when none is given), A-Z, with its linked skill folder: the
 // terminal agent cannot pick a skill, so the prompt says where each one is.
+// Legacy brand skill (<id>-skills): everything is in its folder. Shared skill (brand-content-skills/brands/<id>): the skill root
+// holds SKILL.md, references/ and the scripts once for all brands; the agent reads ONLY this brand's folder and runs shared
+// scripts with --brand <id>.
+export function skillLine(b) {
+  if (!b.shared) return `SKILL: ${b.id} → ${b.dir} (read its SKILL.md + project/project.md + project/social.json)`;
+  const sh = (f) => path.join(b.skillRoot, f);
+  return `SKILL: ${b.id} → brand folder ${b.dir}; skill root ${b.skillRoot}. Read ${sh('SKILL.md')} and ${sh('references')} (shared rules), then ONLY this brand's files: ${path.join(b.dir, 'project', 'project.md')}, project/social.json, workspace/. Never read another brand's folder. Run shared scripts from the skill root with --brand ${b.id}, e.g. node ${sh('scripts/check-skill.mjs')} --brand ${b.id} --tool-ready (clean-image.mjs takes no --brand).`;
+}
 export function skillLines(brand = '', brands = discoverBrands().brands) {
   const list = brands.filter((b) => (brand ? b.id === brand : b.usable)).sort((a, b) => a.id.localeCompare(b.id));
-  return list.map((b) => `SKILL: ${b.id} → ${b.dir} (read its SKILL.md + project/project.md + project/social.json)`).join('\n') || 'SKILL: (no linked, usable brand)';
+  return list.map(skillLine).join('\n') || 'SKILL: (no linked, usable brand)';
 }
 export const fillPrompt = (text, brand, options = 'defaults', skills = skillLines(brand)) => String(text).replace(/\{\{TOOL\}\}/g, toolRoot).replace(/\{\{BRAND\}\}/g, brand || ALL_BRANDS).replace(/\{\{OPTIONS\}\}/g, options).replace(/\{\{SKILLS\}\}/g, skills);
 
