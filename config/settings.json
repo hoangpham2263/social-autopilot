@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "skillsRoot": "../vaniecom-workspace/skills",
+  "skillsRoot": "../vaniecom-workspace",
   "research": {
     "source_minutes": 3,
     "token_minutes": 5,

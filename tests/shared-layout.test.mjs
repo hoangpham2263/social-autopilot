@@ -1,4 +1,5 @@
-// Shared skill layout (skills/brand-content-skills/brands/<id>) next to the legacy one (skills/<id>-skills): discovery, shared
+// Shared skill layout (<skillsRoot>/brand-content-skills/brands/<id>, skillsRoot = the repo folder; data inside the brand folder) next to the
+// interim (<repo>/brands/<id>) and legacy (<skillsRoot>/<id>-skills) ones: discovery (folders without SKILL.md are ignored), shared
 // script + --brand, the brand picker, the prompt line and the relink migration. Temp dirs only, no network.
 // npm test
 import test from 'node:test';
@@ -11,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-shared-test-'));
-const newRoot = path.join(tmp, 'new', 'skills'), oldRoot = path.join(tmp, 'old', 'skills'), ws = path.join(tmp, 'workspace');
+const newRoot = path.join(tmp, 'new'), oldRoot = path.join(tmp, 'old', 'skills'), ws = path.join(tmp, 'workspace');
 const write = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 const social = (brand, blog) => JSON.stringify({ brand, enabled: true, metricool: { blog_id: blog }, cadence: { timezone: 'Asia/Ho_Chi_Minh' }, channels: [{ network: 'facebook', enabled: true, lang: ['en'] }] });
 // The shared check-skill needs --brand <id> (as the real one does) and reports OK only for a brand folder that exists.
@@ -34,6 +35,8 @@ function legacySkill(dir, name, blog) {
   write(path.join(dir, 'scripts', 'check-skill.mjs'), "console.log('ĐẠT');\n");
 }
 const skill = sharedSkill(newRoot, [['alpha', 'Alpha', '111'], ['beta', 'Beta', '222']]);
+write(path.join(newRoot, 'banner-library', 'a.txt'), 'not a skill'); // a sibling folder without SKILL.md must be ignored
+write(path.join(newRoot, 'logo-library', 'project', 'x.txt'), 'not a skill');
 legacySkill(path.join(oldRoot, 'alpha-skills'), 'Alpha', '111');
 legacySkill(path.join(oldRoot, 'beta-skills'), 'Beta', '222');
 write(path.join(ws, 'metricool-brands.json'), JSON.stringify({ version: 1, account: {}, brands: [
@@ -73,6 +76,7 @@ test('discovery finds the brands of the shared skill (dir = brand folder, skillR
     assert.equal(b.skillRoot, skill);
     assert.equal(b.ready, true, JSON.stringify(b.problems));
   }
+  assert.deepEqual(r.skipped, []); // banner-library / logo-library are ignored, not reported
 });
 
 test('the legacy layout still works (dir === skillRoot)', () => {
@@ -136,7 +140,7 @@ test('relink --apply refuses when a target brand folder is missing', () => {
   assert.ok(!fs.existsSync(`${file}.bak`));
 });
 
-// ----- current layout: <repo>/brands/<id> (project + data in one folder), one shared skill in <repo>/skills -----
+// ----- interim layout: <repo>/brands/<id> (project + data in one folder), the shared skill in <repo>/skills -----
 const repoDir = path.join(tmp, 'cur'), curSkills = path.join(repoDir, 'skills'), curSkill = path.join(curSkills, 'brand-content-skills');
 const CUR_CHECK = "import fs from 'node:fs'; import path from 'node:path'; const a = process.argv, i = a.indexOf('--brand'); const id = i > 0 ? a[i + 1] : ''; const ok = id && fs.existsSync(path.join(import.meta.dirname, '..', '..', '..', 'brands', id, 'project', 'social.json')); console.log(ok ? 'ĐẠT' : '  - missing: --brand'); process.exit(ok ? 0 : 1);\n";
 write(path.join(curSkill, 'SKILL.md'), '---\nname: brand-content-skills\n---\n');
@@ -148,7 +152,7 @@ for (const [id, name, blog] of [['alpha', 'Alpha', '111'], ['beta', 'Beta', '222
   write(path.join(repoDir, 'brands', id, 'catalog.json'), '{"posts":[]}\n');
 }
 
-test('current layout: brands/<id> is the brand folder, the shared skill (not a brand) is found beside it', async () => {
+test('interim layout: brands/<id> is the brand folder, the shared skill (not a brand) is found beside it', async () => {
   const L = await lib();
   const b = path.join(repoDir, 'brands', 'alpha');
   assert.equal(L.sharedSkillRoot(curSkills), curSkill);
@@ -183,5 +187,20 @@ test('relink --to-brands: dry-run by default, rewrites old shared and legacy ski
   const j = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(j.brands[0].skill_path, path.join(to, 'alpha').split(path.sep).join('/'));
   assert.equal(j.brands[1].skill_path, path.join(to, 'beta').split(path.sep).join('/'));
+  assert.equal(go().changed, 0); // idempotent
+});
+
+test('relink --to-brands without a path: default target is <skillsRoot>/brand-content-skills/brands/<id> (from interim brands/<id> and <id>-skills)', () => {
+  const file = path.join(tmp, 'relink4', 'metricool-brands.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const interim = path.join(newRoot, 'brands', 'alpha').split(path.sep).join('/'), leg = path.join(oldRoot, 'beta-skills').split(path.sep).join('/');
+  fs.writeFileSync(file, JSON.stringify({ version: 1, account: {}, brands: [{ name: 'Alpha', blog_id: '111', skill_id: 'alpha', skill_path: interim }, { name: 'Beta', blog_id: '222', skill_id: 'beta', skill_path: leg }] }));
+  const env = { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: newRoot };
+  const go = (...a) => JSON.parse(spawnSync(process.execPath, [path.join(tool, 'scripts', 'skills.mjs'), 'relink', '--to-brands', '--file', file, ...a], { env, encoding: 'utf8' }).stdout);
+  const dry = go();
+  assert.equal(dry.dry_run, true); assert.equal(dry.changed, 2); assert.equal(dry.missing_targets, 0);
+  assert.equal(dry.changes[0].to, path.join(skill, 'brands', 'alpha').split(path.sep).join('/'));
+  go('--apply');
+  assert.ok(fs.existsSync(`${file}.bak`));
   assert.equal(go().changed, 0); // idempotent
 });

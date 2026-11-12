@@ -20,7 +20,7 @@ export function promptList(md = fs.readFileSync(path.join(toolRoot, 'docs', 'sch
 // One SKILL line per brand in scope (all usable brands when none is given), A-Z, with its linked skill folder: the
 // terminal agent cannot pick a skill, so the prompt says where each one is.
 // Legacy brand skill (<id>-skills): everything is in its folder. Shared skill (current layout): the skill root
-// holds SKILL.md, references/ and the scripts once for all brands; each brand is ONE folder <repo>/brands/<id>/ with its project/
+// holds SKILL.md, references/, scripts/ once for all brands; each brand is ONE folder <skillsRoot>/<skill>/brands/<id>/ inside the skill with its project/
 // and its working data (posts, published, covers, catalog.json, context.md, local) side by side; the agent reads ONLY that folder
 // and runs shared scripts with --brand <id>.
 export function skillLine(b) {
