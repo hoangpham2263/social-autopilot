@@ -116,6 +116,10 @@ export function settings() {
   return s;
 }
 
+// Image engine for new draft images: codex (Codex CLI, default) or flow (the agent drives Google Flow through the Playwright MCP).
+export const IMAGE_ENGINES = ['codex', 'flow'];
+export const imageEngine = (s = settings()) => (IMAGE_ENGINES.includes(s?.image_engine) ? s.image_engine : 'codex');
+
 // The settings as stored (defaults + this machine's workspace/settings.json), without resolving paths.
 export function rawSettings() {
   return merge(readJson(path.join(toolRoot, 'config', 'settings.json')), readJson(path.join(workspace, 'settings.json'), {}));
@@ -144,6 +148,7 @@ export function saveSettings(input = {}) {
     void mc;
     const changes = {
       skillsRoot: str(input.skillsRoot ?? cur.skillsRoot, 'skillsRoot'),
+      image_engine: (() => { const v = input.image_engine ?? cur.image_engine ?? 'codex'; if (!IMAGE_ENGINES.includes(v)) throw new Error('image_engine phải là codex hoặc flow.'); return v; })(),
       // Plan ahead (days): Create & publish makes enough posts to cover this many days at posts_per_day.
       planning: { ahead_days: int(pl.ahead_days ?? cur.planning?.ahead_days ?? 7, 'planning.ahead_days', 1) },
       // Research: only the human-like pause between page actions; there are no run or post limits.

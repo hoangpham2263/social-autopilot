@@ -1,6 +1,7 @@
 {
   "version": 1,
   "skillsRoot": "../vaniecom-workspace",
+  "image_engine": "codex",
   "research": {
     "source_minutes": 3,
     "token_minutes": 5,

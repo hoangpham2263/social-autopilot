@@ -25,6 +25,11 @@
 //   node scripts/draft.mjs size-check --id <draft> --product-pct N --object-pct N [--wall-pct N] [--accept "<reason>"]
 //        measured proportions of the new image (logged in status.json size_check, shown in the app); over a limit: retry once with reprompt --smaller N
 //   node scripts/draft.mjs image --id <draft> [--force]     runs Codex (prompt.txt must be finished: no {{...}} left)
+//   node scripts/draft.mjs register-image --id <draft> --from <file.jpg|png> [--n 1..3] [--engine flow]
+//        Google Flow images (settings image_engine = flow): the agent saves the download anywhere and runs this ONE command per
+//        image (n = 1 main image.png, 2 = image-02.png, 3 = image-03.png): the raw download is kept (image-generated-flow-original.jpg|png,
+//        extras image-0N-flow-original.*), converted to PNG, Google's sparkle removed locally (scripts/image-unsparkle.mjs), then the
+//        usual metadata clean, watermark when the brand has it on, and the automatic check. Status: image_engine flow, sparkle removed|none.
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
 //                                                           product_images.watermark.enabled (default off; needs ffmpeg)
 //   node scripts/draft.mjs check --id <draft>               automatic checks of image + captions; passed -> ready
@@ -39,6 +44,7 @@ import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText, imagesRange, pickImageCount, draftImages, extraShotOf, albumHash } from './draft-lib.mjs';
 import { cleanDraftImage, cleanExtraImage } from './image-clean.mjs';
+import { unsparkleFile } from './image/unsparkle.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords, readBrandOverride } from './lib.mjs';
 import { readStore, storeDir, storeIdeasFile, markUsed, reuseProblems } from './store.mjs';
 import { track } from './progress.mjs';
@@ -428,6 +434,56 @@ export function image(args, s = settings()) {
   return ({ id: draft.id, image: target, images: draftImages(draft).map((x) => path.join(dir, x)), ...(album ? { album } : {}), ...(album?.failed.length ? { album_failed: album.failed } : {}), ...(retried ? { retried_after_rate_limit: true } : {}), original: cleaned.original, metadata_removed: cleaned.removed, warnings: logoWarnings(prompt), status: st2.status, next: `Xem ${album ? 'mọi ảnh (image.png là ảnh bìa)' : 'ảnh'}; nếu đạt, viết caption theo brief.md rồi chạy draft.mjs check --id ${draft.id}.` });
 }
 
+// Google Flow image (image_engine = flow): the file the agent downloaded from Flow (JPEG, sometimes PNG) becomes one image of the draft.
+// Raw download kept aside, converted to PNG, sparkle removed, then the same steps as a Codex image (metadata clean; extras: the clean
+// copy; watermark when on; check). The source file is only read. n = 1 main image (image.png), 2 and 3 album extras.
+const sniffExt = (buf) => (buf[0] === 0xff && buf[1] === 0xd8 ? 'jpg' : buf.subarray(1, 4).toString('latin1') === 'PNG' ? 'png' : '');
+export function registerImage(args, s = settings()) {
+  const engine = args.engine && args.engine !== true ? String(args.engine) : 'flow';
+  if (engine !== 'flow') throw new Error('register-image: only --engine flow (Codex images come from draft.mjs image).');
+  const { dir, draft } = findDraft(need(args, 'id'));
+  const n = args.n && args.n !== true ? Number(args.n) : 1;
+  const files = draftImages(draft);
+  if (!Number.isInteger(n) || n < 1 || n > files.length) throw new Error(`--n must be 1..${files.length} (this draft has ${files.length} image(s)).`);
+  const from = path.resolve(String(need(args, 'from')));
+  if (!fs.existsSync(from) || !fs.statSync(from).isFile()) throw new Error(`Không thấy file: ${from}`);
+  const raw = fs.readFileSync(from), ext = sniffExt(raw);
+  if (!ext) throw new Error('--from must be a PNG or JPEG file (the Flow download).');
+  const statusFile = path.join(dir, 'status.json');
+  const target = path.join(dir, files[n - 1]);
+  const keep = path.join(dir, n === 1 ? `image-generated-flow-original.${ext}` : `image-${String(n).padStart(2, '0')}-flow-original.${ext}`);
+  const generated = path.join(dir, n === 1 ? 'image-generated.png' : `image-${String(n).padStart(2, '0')}-generated.png`);
+  // An earlier image of this slot is kept aside (image-old-<time>-...), like draft.mjs image --force.
+  const stampNow = Date.now();
+  for (const f of [generated, target]) if (fs.existsSync(f)) fs.renameSync(f, path.join(dir, `image-old-${stampNow}-${path.basename(f)}`));
+  const keepPrefix = path.basename(keep).replace(/\.[a-z]+$/, '.');
+  for (const f of fs.readdirSync(dir)) if (f.startsWith(keepPrefix) && path.join(dir, f) !== keep) fs.renameSync(path.join(dir, f), path.join(dir, `image-old-${stampNow}-${f}`));
+  fs.writeFileSync(keep, raw);
+  const sparkle = unsparkleFile(keep, generated);
+  const mark = sparkle.applied ? 'removed' : 'none';
+  const st0 = readJson(statusFile, {});
+  const per = { ...(st0.flow_images || {}), [path.basename(target)]: { original: path.basename(keep), sparkle: mark, alpha: sparkle.alpha, at: stamp() } };
+  let cleaned = null;
+  if (n === 1) {
+    for (const f of ['image-watermarked.png', 'image-clean-report.json']) fs.rmSync(path.join(dir, f), { force: true });
+    setStatus(dir, st0.status && !['preparing', 'generating', 'image_failed'].includes(st0.status) ? st0.status : 'needs_caption', { error: '', watermark: null, logo_check: null, metadata_clean: null, size_check: null, image_engine: 'flow', sparkle: mark, flow_images: per });
+    // The cleaning step works on a PNG whatever made it ('codex' = the skill's metadata-only clean; Flow output is our own PNG).
+    cleaned = cleanDraftImage(dir, { generator: 'codex', force: true }, s);
+  } else {
+    const sha = cleanExtraImage(generated, target, s);
+    const st = readJson(statusFile, {});
+    setStatus(dir, st.status || 'needs_caption', { images: { ...(st.images || {}), [path.basename(target)]: { state: 'ok', sha1: sha, updated: stamp(), engine: 'flow' } }, logo_check: null, image_engine: 'flow', flow_images: per });
+  }
+  // Watermark overlay when the brand has it on (main image), then the automatic check.
+  let watermarked = null;
+  try { if (n === 1 && loadBrand(draft.brand, { allowDisabled: true }).social.product_images?.watermark?.enabled) watermarked = watermark({ id: draft.id, force: true }, s).watermark; } catch (e) { watermarked = { error: e.message }; }
+  let checked;
+  try { checked = check({ id: draft.id }); } catch (e) { checked = { error: e.message }; }
+  const missing = files.filter((f) => !fs.existsSync(path.join(dir, f)));
+  return { id: draft.id, n, image: target, original: keep, engine: 'flow', sparkle: mark, alpha: sparkle.alpha, ...(cleaned ? { metadata_removed: cleaned.removed } : {}), ...(watermarked ? { watermark: watermarked } : {}), status: checked.status, problems: checked.problems || (checked.error ? [checked.error] : []), warnings: checked.warnings || [], ...(missing.length ? { images_missing: missing } : {}),
+    next: missing.length ? `Register the other image(s): ${missing.join(', ')} (draft.mjs register-image --id ${draft.id} --n <k> --from <file>).` : 'LOOK at the image(s) (no Google star left, nothing wrong), then write the captions.' };
+}
+
 // Optional post-processing, default off: the brand's logo as a small overlay in one corner of the finished image, never
 // on the product. Only when the brand's social.json has product_images.watermark { enabled: true, position
 // (top-left|top-right|bottom-left|bottom-right), opacity (0-1), file (logo inside the skill folder) }. The Codex image
@@ -554,6 +610,7 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'new') return out(newDraft(args));
   if (cmd === 'image') return out(image(args, s));
   if (cmd === 'image-batch') return out(await imageBatch(args, s));
+  if (cmd === 'register-image') return out(registerImage(args, s));
   if (cmd === 'reprompt') return out(reprompt(args));
   if (cmd === 'check') return out(check(args));
   if (cmd === 'watermark') return out(watermark(args, s));
@@ -562,7 +619,7 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'contact-sheet') return out(contactSheets(args, s));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
-  throw new Error('Lệnh: new | reprompt | image | image-batch | watermark | confirm-clean | size-check | check | show | list');
+  throw new Error('Lệnh: new | reprompt | image | register-image | image-batch | watermark | confirm-clean | size-check | check | show | list');
 });
 
 // Album: one prompt per extra image (prompt-02.txt, ...), filled from prompts/album-extra.txt. {{PRODUCT_DESCRIPTION}}
