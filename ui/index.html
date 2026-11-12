@@ -115,6 +115,7 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt .field:has(#prStart) { width: 220px; }
 #page-prompt .fields { gap: 16px 8px; }
 #page-prompt .fields > .field:not(.auto):not(:has(#prStart)) { width: 146px; flex: 0 1 146px; }
+#page-prompt .pair { display: flex; gap: 6px; } #page-prompt .pair input { width: 0; flex: 1 1 0; min-width: 0; }
 /* Research Sources: a select-like dropdown; the panel floats over the page (no layout jump). */
 #prSrcField, #prPlatField { position: relative; }
 #prSrcBox > summary, #prPlatBox > summary { display: flex; align-items: center; height: var(--ctl-h); box-sizing: border-box; padding: var(--ctl-pad); font-size: var(--ctl-font); color: var(--ink); background: #fff; border: var(--ctl-border); border-radius: var(--r); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; list-style: none; }
@@ -382,7 +383,7 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = no limit)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images of this run only: Codex, or Google Flow in your signed-in Chrome. The default is the tool setting (Settings tab, Image engine); changing it here does not change that setting.">Images</label><select id="prImages" title="This run only. Default = Settings, Image engine."><option value="codex">Codex</option><option value="flow">Google Flow</option></select></div>
-      <div class="field" data-opt="create" hidden><label for="prImgCount" title="How many images each post of this run gets (an album of the same scene). Random 1-4 is the default (Settings tab, Images per post); a number makes every post of this run have exactly that many. This run only.">Images per post</label><select id="prImgCount" title="This run only. Default = random 1-4 (Settings)."><option value="">Random 1-4</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+      <div class="field" data-opt="create" hidden><label for="prImgMin" title="Random between min and max for each post (1 to 4); same number = exactly that many">Images per post</label><span class="pair" title="Random between min and max for each post (1 to 4); same number = exactly that many"><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" placeholder="min" aria-label="Images per post, min" autocomplete="off"><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" placeholder="max" aria-label="Images per post, max" autocomplete="off"></span></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
@@ -763,7 +764,7 @@ header + * { margin-top: 0; }
   // "reference page" or "keyword: …" / "hashtag: #…" (how the item was found).
   const foundBy = (it) => { const f = String(it.found_by || "reference page"); return f.startsWith("hashtag:") ? `hashtag #${f.slice(8)}` : f.startsWith("keyword:") ? `keyword "${f.slice(8)}"` : f; };
   const STATE_TEXT = { end: "end of page", known: "reached known posts", since: "reached the date", limit: "post limit", blocked: "blocked", partial: "stopped midway", skipped: "skipped (quota)" };
-  let resShown = 60, resStatus = store.get("resStatus") ?? "new", resAvatars = {}, resRemoveSuggest = [];
+  let resFilterInit = false, resShown = 60, resStatus = store.get("resStatus") ?? "new", resAvatars = {}, resRemoveSuggest = [];
   if (!["new", "rejected", ""].includes(resStatus)) resStatus = "new";
   // The one card template: { id, img, title, status (html), sub (one meta line, e.g. the Metricool time), who (brand/page name), actions (html), hint }.
   const tile = (x) => `<div class="tile" data-id="${esc(x.id)}" tabindex="0">
@@ -785,7 +786,9 @@ header + * { margin-top: 0; }
   // ‹ Prev / Next › of the overlay header, the same for both lists.
   const itemNav = (i, n) => `<span class="item-nav"><button class="btn" type="button" data-item="-1"${i ? "" : " disabled"}>‹ Prev</button><span class="meta">${i + 1}/${n}</span><button class="btn" type="button" data-item="1"${i < n - 1 ? "" : " disabled"}>Next ›</button></span>`;
   const loadResearch = safely("#resBody", async () => {
-    const brand = $("#resBrand").value || store.get("resBrand"), status = resStatus, source = $("#resSource").value, platform = $("#resPlatform").value;
+    const brand = $("#resBrand").value || store.get("resBrand"), status = resStatus;
+    let source = $("#resSource").value, platform = $("#resPlatform").value;
+    if (!resFilterInit) { resFilterInit = true; const ss = store.get("resSource"), sp = store.get("resPlatform"); source = source || (ss === "all" ? "" : ss); platform = platform || (sp === "all" ? "" : sp); } // Source/Platform filters of this tab are remembered too (an unknown value just shows All)
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}&platform=${encodeURIComponent(platform || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
     $("#resBrand").innerHTML = az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}</option>`).join("");
@@ -896,9 +899,9 @@ header + * { margin-top: 0; }
     };
     draw();
   }
-  $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; $("#resPlatform").value = ""; resShown = 60; loadResearch(); };
-  $("#resSource").onchange = () => { resShown = 60; loadResearch(); };
-  $("#resPlatform").onchange = () => { resShown = 60; loadResearch(); };
+  $("#resBrand").onchange = () => { store.set("resBrand", $("#resBrand").value); $("#resSource").value = ""; $("#resPlatform").value = ""; store.set("resSource", "all"); store.set("resPlatform", "all"); resShown = 60; loadResearch(); };
+  $("#resSource").onchange = () => { store.set("resSource", $("#resSource").value || "all"); resShown = 60; loadResearch(); };
+  $("#resPlatform").onchange = () => { store.set("resPlatform", $("#resPlatform").value || "all"); resShown = 60; loadResearch(); };
 
   // ----- Prompt: the short prompts of docs/scheduled-prompt.md (mode x agent); brand and this run's options filled in.
   // The prompt is read-only: rebuilt from the template and the options whenever one changes. -----
@@ -936,12 +939,37 @@ header + * { margin-top: 0; }
     if (srcScope().total && !srcScope().on) return "Tick at least one source";
     return "";
   }
-  // Sources picker: ticks live in memory only (srcOff = unticked "brand:source"); default = every enabled source ticked.
+  // Sources picker: srcOff = unticked "brand:source" (remembered, see prRestore); default = every enabled source ticked.
   let srcOff = new Set();
   function srcBrands() { const sel = $("#prBrand").value; return az(arr(promptData.brands).filter((x) => (sel ? x.id === sel : x.usable)).filter((x) => arr(x.sources).length), (x) => x.name || x.id); }
-  // Platforms picker: platOff = unticked platforms (memory only, default all ticked). Effective sources = ticked platforms AND ticked sources.
+  // Platforms picker: platOff = unticked platforms (remembered; default all ticked). Effective sources = ticked platforms AND ticked sources.
   const PLATS = ["instagram", "pinterest", "facebook", "etsy", "houzz"];
   let platOff = new Set();
+  // Run tab choices are remembered in this browser (localStorage via store; nothing secret). Keys: prAgent, prHow, prMode (as before),
+  // prBrand_<mode> + prCount_<mode> (mode = research|create|publish), prMax, prSrcOff (unticked "brand:source" ids), prPlatOff (unticked platforms),
+  // prEngine, prImg ([min,max], only when it differs from the Settings default), prWindow, prStart. The library item is never stored.
+  // Restored once on the first draw, then validated (unknown ids dropped, numbers clamped, invalid -> defaults).
+  const jget = (k, d) => { try { const v = JSON.parse(store.get(k)); return v ?? d; } catch { return d; } };
+  let prRestored = false, prLastMk = "";
+  const defIpp = () => { const r = promptData.images_per_post; return Array.isArray(r) && r.length === 2 && r.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && r[0] <= r[1] ? r : [1, 4]; };
+  const clampImg = (v, d) => { const n = Math.round(Number(v)); return v === null || v === undefined || String(v).trim() === "" || !Number.isFinite(n) ? d : Math.min(4, Math.max(1, n)); };
+  // Images per post of this run: [min, max] clamped to 1..4 and min <= max (a typed min above max lifts max, a typed max below min lowers min).
+  function imgPairVal(changed) {
+    const d = defIpp(); let a = clampImg($("#prImgMin").value, d[0]), b = clampImg($("#prImgMax").value, d[1]);
+    if (a > b) { if (changed === "max") a = b; else b = a; }
+    return [a, b];
+  }
+  // The --images value of this run: "" = the tool default (no flag), "N" = exactly N, "min-max" = random range.
+  function imgFlag() { const [a, b] = imgPairVal(), d = defIpp(); return a === d[0] && b === d[1] ? "" : a === b ? String(a) : `${a}-${b}`; }
+  function prRestore(prompts, brands) {
+    srcOff = new Set(jget("prSrcOff", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.sources).includes(v.slice(b.id.length + 1)))));
+    platOff = new Set(jget("prPlatOff", []).filter((p) => PLATS.includes(p)));
+    const mx = parseInt(store.get("prMax"), 10); $("#prMax").value = mx >= 1 ? String(mx) : "";
+    for (const [k, el] of [["prWindow", "#prWindow"], ["prStart", "#prStart"]]) { const v = store.get(k); if (v.startsWith("v:") && [...$(el).options].some((o) => o.value === v.slice(2))) $(el).value = v.slice(2); }
+    const d = defIpp(), st = jget("prImg", null);
+    let a = clampImg(st?.[0], d[0]), b = clampImg(st?.[1], d[1]); if (a > b) b = a;
+    $("#prImgMin").value = a; $("#prImgMax").value = b;
+  }
   const srcPlat = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s); if (info?.platform) return String(info.platform).toLowerCase(); const u = String(info?.url || ""); return PLATS.find((p) => u.includes(p)) || ""; };
   const srcOn = (b, s) => !(platOff.has(srcPlat(b, s)) || srcOff.has(`${b.id}:${s}`));
   function srcScope() {
@@ -958,7 +986,7 @@ header + * { margin-top: 0; }
     for (const b of srcBrands()) for (const s of arr(b.sources)) { const p = srcPlat(b, s); if (p in cnt) cnt[p]++; }
     const logo = (p) => { const l = PLAT_LOGO[p]; return l ? `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="${l[0]}" d="${l[1]}"/></svg>` : ""; };
     $("#prPlat").innerHTML = PLATS.map((p) => `<label><input type="checkbox" value="${p}"${platOff.has(p) ? "" : " checked"}>${logo(p)}<span>${p[0].toUpperCase() + p.slice(1)}</span><span class="meta">${cnt[p]} source${cnt[p] === 1 ? "" : "s"}</span></label>`).join("");
-    for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) platOff.delete(c.value); else platOff.add(c.value); platLabel(); drawSources(); regenerate(); };
+    for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) platOff.delete(c.value); else platOff.add(c.value); store.set("prPlatOff", JSON.stringify([...platOff])); platLabel(); drawSources(); regenerate(); };
     platLabel();
   }
   function srcLabel() {
@@ -969,7 +997,7 @@ header + * { margin-top: 0; }
     const brands = srcBrands(), single = !!$("#prBrand").value;
     const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, reg = modeCounts[b.id]?.registry?.[s], pOff = platOff.has(srcPlat(b, s)); return `<label title="${esc(info?.url || s)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" value="${esc(v)}"${srcOff.has(v) || pOff ? "" : " checked"}${pOff ? " disabled" : ""}><span>${esc(info?.name || s)}</span><span class="meta"><span class="dot ${(REG[reg?.status] || REG.none)[1]}"></span>${esc(regLine(reg))}</span></label>`; };
     $("#prSrc").innerHTML = brands.map((b) => `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${arr(b.sources).map((s) => row(b, s)).join("")}`).join("") || `<div class="meta">No enabled sources.</div>`;
-    for (const c of $$("#prSrc input")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); srcLabel(); regenerate(); };
+    for (const c of $$("#prSrc input")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); store.set("prSrcOff", JSON.stringify([...srcOff])); srcLabel(); regenerate(); };
     srcLabel();
   }
   function drawPrompt() {
@@ -982,8 +1010,17 @@ header + * { margin-top: 0; }
     const agents = prompts.filter((p) => p.mode === prMode).map((p) => p.agent);
     const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
-    const brand = $("#prBrand").value || "";
+    if (!prRestored && prompts.length) { prRestored = true; prRestore(prompts, brands); }
+    let brand = $("#prBrand").value || "";
     const mk = modeKey(prMode), bc = (id) => modeCounts[id]?.[mk];
+    // The mode changed (or first draw): that mode's remembered Brand and Posts (a library item pick keeps what it set).
+    if (prLastMk !== mk) {
+      prLastMk = mk;
+      if (!prItem) {
+        const sb = store.get("prBrand_" + mk); if (sb) brand = sb === "all" ? "" : brands.some((b) => b.id === sb) ? sb : brand;
+        const sc = store.get("prCount_" + mk), n = parseInt(sc.slice(2), 10); $("#prCount").value = sc.startsWith("c:") && n >= 1 ? String(n) : "";
+      }
+    }
     $("#prBrand").innerHTML = `<option value="">All</option>` + az(brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(bc(b.id) !== undefined ? withCount(b.name || b.id, bc(b.id)) : b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
     const research = isResearch(prMode);
     const publishOnly = /publish approved/i.test(prMode);
@@ -991,7 +1028,7 @@ header + * { margin-top: 0; }
     // Create & publish = Posts; Publish approved = Posts, Time, Start.
     for (const el of $$("#page-prompt [data-opt]")) el.hidden = el.dataset.opt === "research" ? !research : el.dataset.opt === "make" ? research : el.dataset.opt === "create" ? research || publishOnly : !publishOnly;
     // Images: starts at the tool setting (image_engine); once the person picks one it stays for this page, never written to the setting.
-    if (!$("#prImages").dataset.touched) $("#prImages").value = promptData.image_engine === "flow" ? "flow" : "codex";
+    if (!$("#prImages").dataset.touched) { const se = store.get("prEngine"), ok = se === "flow" || se === "codex"; $("#prImages").value = ok ? se : promptData.image_engine === "flow" ? "flow" : "codex"; if (ok) $("#prImages").dataset.touched = "1"; }
     // The picked library item belongs to Create & publish for its brand; another mode or brand drops it.
     if (prItem && (modeKey(prMode) !== "create" || brand !== prItem.brand)) prItem = null;
     $("#prItemField").hidden = !prItem;
@@ -1072,7 +1109,8 @@ header + * { margin-top: 0; }
       else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts per brand (pipeline.mjs create --count ${count})`);
       if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
       if (!pub) lines.push(`images by ${chosenEngine() === "flow" ? "Google Flow" : "Codex"} (pipeline.mjs create --image-engine ${chosenEngine()}; this run only)`);
-      if (!pub && $("#prImgCount").value) lines.push(`${$("#prImgCount").value} image(s) per post (pipeline.mjs create --images ${$("#prImgCount").value}; this run only)`);
+      const imf = pub ? "" : imgFlag();
+      if (imf) lines.push(imf.includes("-") ? `images per post random ${imf.replace("-", " to ")} (--images ${imf}; this run only)` : `images per post exactly ${imf} (pipeline.mjs create --images ${imf}; this run only)`);
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");
     }
@@ -1142,9 +1180,21 @@ header + * { margin-top: 0; }
     drawPrompt(); applyHow();
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
-  $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
+  $("#prBrand").onchange = () => { store.set("prBrand_" + modeKey(prMode), $("#prBrand").value || "all"); drawPrompt(); regenerate(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
-  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgCount"]) $(id).onchange = () => { if (id === "#prImages") $(id).dataset.touched = "1"; regenerate(); };
+  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
+    const v = $(id).value;
+    if (id === "#prImages") { $(id).dataset.touched = "1"; store.set("prEngine", v); }
+    else if (id === "#prMax") store.set("prMax", v);
+    else if (id === "#prCount") store.set("prCount_" + modeKey(prMode), "c:" + v);
+    else if (id === "#prWindow" || id === "#prStart") store.set(id === "#prWindow" ? "prWindow" : "prStart", "v:" + v);
+    else if (id === "#prImgMin" || id === "#prImgMax") {
+      const [a, b] = imgPairVal(id === "#prImgMax" ? "max" : "min"), d = defIpp(); $("#prImgMin").value = a; $("#prImgMax").value = b;
+      store.set("prImg", a === d[0] && b === d[1] ? "" : JSON.stringify([a, b]));
+    }
+    regenerate();
+  };
+  for (const id of ["#prImgMin", "#prImgMax"]) $(id).oninput = regenerate;
   $("#prItemClear").onclick = () => { prItem = null; $("#prCount").value = ""; drawPrompt(); };
 
   const baseHint = $("#prMsg").textContent;

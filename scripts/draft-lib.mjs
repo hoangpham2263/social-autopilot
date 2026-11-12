@@ -150,7 +150,7 @@ export function imagesRange(settings = {}, brandCfg = {}) {
 export const IMAGES_MAX = 4;
 export function parseImagesOpt(v) {
   if (v === undefined || v === null || v === '' || v === true) return null;
-  const m = /^(d+)(?:s*-s*(d+))?$/.exec(String(v).trim());
+  const m = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(String(v).trim());
   if (!m) return null;
   const a = Number(m[1]), b = m[2] === undefined ? a : Number(m[2]);
   return a >= 1 && b <= IMAGES_MAX && a <= b ? [a, b] : null;
