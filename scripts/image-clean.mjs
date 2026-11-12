@@ -10,6 +10,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { decodeImage } from './image/unsparkle.mjs';
+import { encodePng } from './image/png.mjs';
 import { main, out, isMain, parseArgs, need, settings, toolRoot, readJson, findDraft, setStatus, stamp } from './lib.mjs';
 
 // Chunks that draw the picture (the skill's KEEP list); anything else left in the output is metadata.
@@ -40,6 +42,30 @@ export function metadataChunks(buf, { allow = [] } = {}) {
   }
   throw new Error('Không phải PNG/JPEG.');
 }
+// Built-in fallback for a machine without the remove-watermark skill folder: the same metadata-only clean, in this tool. PNG: only the
+// PICTURE chunks are copied (bytes unchanged, so the pixels are identical); JPEG: decoded and written as PNG (no metadata carried over,
+// pixels as decoded). Writes the report with the same fields the cleaning checks read, plus cleaner: 'built-in'. The source stays.
+export function builtInClean(source, outFile, reportFile) {
+  const buf = fs.readFileSync(source), removed = metadataChunks(buf);
+  let result;
+  if (buf[0] === 0xff && buf[1] === 0xd8) result = encodePng(decodeImage(buf));
+  else {
+    const parts = [buf.subarray(0, 8)];
+    for (let i = 8; i + 8 <= buf.length;) {
+      const len = buf.readUInt32BE(i), type = buf.toString('latin1', i + 4, i + 8);
+      if (PICTURE.has(type)) parts.push(buf.subarray(i, i + 12 + len));
+      i += 12 + len;
+    }
+    result = Buffer.concat(parts);
+  }
+  fs.writeFileSync(outFile, result);
+  const hash = (b) => crypto.createHash('sha256').update(b).digest('hex');
+  const r = { cleaner: 'built-in', imageDataIdentical: true, removedChunks: removed, outputChunks: metadataChunks(result), sourceHash: hash(buf), outputHash: hash(result), source: path.basename(source), at: stamp() };
+  fs.writeFileSync(reportFile, JSON.stringify(r, null, 2));
+  return r;
+}
+// Is the configured remove-watermark script there? If not, the built-in cleaner is used (and says so in status).
+const haveScript = (s = settings()) => fs.existsSync(scriptPath(s));
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 export const REPORT = 'image-clean-report.json';
 
@@ -77,21 +103,24 @@ export function cleanProblems(dir, status = readJson(path.join(dir, 'status.json
 export function cleanDraftImage(dir, { generator = 'codex', force = false } = {}, s = settings()) {
   const status = readJson(path.join(dir, 'status.json'), {});
   if (!force && !cleanProblems(dir, status).length) return { skipped: true, image: path.join(dir, 'image.png'), report: readJson(path.join(dir, REPORT)) };
+  const builtIn = !haveScript(s);
   const script = scriptPath(s);
-  if (!fs.existsSync(script)) throw new Error(`Không thấy script của remove-watermark-skill: ${script} (settings remove_watermark.script).`);
-  const { provider } = providerFor(generator, s);
+  const provider = builtIn ? 'built-in' : providerFor(generator, s).provider;
   const source = sourceOf(dir, status);
   if (!fs.existsSync(source)) throw new Error(`Thiếu ${path.basename(source)}.`);
   const tmp = path.join(dir, `image.clean.${process.pid}.png`);
-  const r = spawnSync(process.execPath, [script, '--in', source, '--out', tmp, '--report', path.join(dir, REPORT)], { encoding: 'utf8', windowsHide: true });
-  if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); throw new Error(`remove-watermark-skill dừng: ${(r.stderr || r.stdout || '').trim().split('\n').pop()}. Giữ ảnh gốc.`); }
+  if (builtIn) builtInClean(source, tmp, path.join(dir, REPORT));
+  else {
+    const r = spawnSync(process.execPath, [script, '--in', source, '--out', tmp, '--report', path.join(dir, REPORT)], { encoding: 'utf8', windowsHide: true });
+    if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); throw new Error(`remove-watermark-skill dừng: ${(r.stderr || r.stdout || '').trim().split('\n').pop()}. Giữ ảnh gốc.`); }
+  }
   fs.renameSync(tmp, path.join(dir, 'image.png'));
   const report = readJson(path.join(dir, REPORT));
   const problems = cleanProblems(dir, status);
-  setStatus(dir, status.status || 'needs_caption', { metadata_clean: { at: stamp(), provider, source: path.basename(source), removed: report.removedChunks, pixels_identical: report.imageDataIdentical === true, problems } });
+  setStatus(dir, status.status || 'needs_caption', { metadata_clean: { at: stamp(), provider, cleaner: builtIn ? 'built-in' : 'skill', source: path.basename(source), removed: report.removedChunks, pixels_identical: report.imageDataIdentical === true, problems } });
   if (problems.length) throw new Error(`Làm sạch chưa đạt: ${problems.join('; ')}`);
   // Only what the report says: metadata chunks removed. Not a claim that an AI label or detector is bypassed.
-  return { image: path.join(dir, 'image.png'), original: path.join(dir, 'image-generated.png'), provider, removed: report.removedChunks, pixels_identical: true, note: 'Chỉ bỏ metadata; ảnh vẫn là ảnh AI và vẫn khai báo AI.' };
+  return { image: path.join(dir, 'image.png'), original: path.join(dir, 'image-generated.png'), provider, cleaner: builtIn ? 'built-in' : 'skill', removed: report.removedChunks, pixels_identical: true, note: 'Chỉ bỏ metadata; ảnh vẫn là ảnh AI và vẫn khai báo AI.' };
 }
 
 if (isMain(import.meta.url)) main(() => {
@@ -104,10 +133,12 @@ if (isMain(import.meta.url)) main(() => {
 // Returns the clean copy's sha1 (recorded in status.json images[file].sha1 and checked by draft-lib albumProblems).
 export function cleanExtraImage(raw, out, s = settings()) {
   const script = scriptPath(s);
-  if (!fs.existsSync(script)) throw new Error(`Không thấy script của remove-watermark-skill: ${script} (settings remove_watermark.script).`);
   const report = `${out}.clean-report.json`, tmp = `${out}.clean.${process.pid}.png`;
-  const r = spawnSync(process.execPath, [script, '--in', raw, '--out', tmp, '--report', report], { encoding: 'utf8', windowsHide: true });
-  if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); throw new Error(`remove-watermark-skill dừng (${path.basename(out)}): ${(r.stderr || r.stdout || '').trim().split('\n').pop()}`); }
+  if (!haveScript(s)) builtInClean(raw, tmp, report);
+  else {
+    const r = spawnSync(process.execPath, [script, '--in', raw, '--out', tmp, '--report', report], { encoding: 'utf8', windowsHide: true });
+    if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); throw new Error(`remove-watermark-skill dừng (${path.basename(out)}): ${(r.stderr || r.stdout || '').trim().split('\n').pop()}`); }
+  }
   const rep = readJson(report);
   if (rep.imageDataIdentical !== true) { fs.rmSync(tmp, { force: true }); throw new Error(`${path.basename(out)}: làm sạch đổi điểm ảnh`); }
   fs.renameSync(tmp, out);
