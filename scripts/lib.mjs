@@ -177,6 +177,12 @@ export function saveSettings(input = {}) {
     }
     if (!fs.existsSync(path.resolve(toolRoot, changes.skillsRoot))) throw new Error(`skillsRoot không tồn tại: ${path.resolve(toolRoot, changes.skillsRoot)}`);
     const next = merge(cur, changes);
+    // Images per post (Settings > Tool settings): [min, max], 1..4, a random count in that range for every post (default [1, 4]).
+    if (input.posts?.images_per_post !== undefined) {
+      const ipp = input.posts.images_per_post.map(Number);
+      if (ipp.length !== 2 || !ipp.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) || ipp[0] > ipp[1]) throw new Error('posts.images_per_post phải là [min, max] với 1 <= min <= max <= 4.');
+      next.posts = { ...(cur.posts || {}), images_per_post: ipp };
+    }
     // No approval step any more (user, 09/11/2026): older settings files lose their approval block on save.
     delete next.approval;
     next.research = changes.research;
@@ -589,9 +595,9 @@ export function normalizeOverride(input = {}) {
     add.push({ id, name: String(x.name || id).slice(0, 120), platform: String(x.platform || (/facebook.com/.test(u.host) ? 'facebook' : '')), url: u.href, enabled: true, what_to_take: String(x.what_to_take || ''), notes: String(x.notes || '') });
   }
   const disabled = [...new Set((Array.isArray(o.sources_disabled) ? o.sources_disabled : []).map(String).filter((s) => SRC_ID.test(s)))];
-  // Album size per post (posts.images_per_post [min, max], 1-10); missing = the tool default (settings posts.images_per_post).
+  // Album size per post (posts.images_per_post [min, max], 1-4); missing = the tool default (settings posts.images_per_post).
   const ipp = o.posts?.images_per_post;
-  const album = Array.isArray(ipp) && ipp.length === 2 && ipp.every((x) => Number.isInteger(x) && x >= 1 && x <= 10) && ipp[0] <= ipp[1] ? { posts: { images_per_post: ipp } } : {};
+  const album = Array.isArray(ipp) && ipp.length === 2 && ipp.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && ipp[0] <= ipp[1] ? { posts: { images_per_post: ipp } } : {};
   return { posts_per_day: ppd, paused: o.paused === true, sources_add: add, sources_disabled: disabled, ...album };
 }
 export function readBrandOverride(id) {

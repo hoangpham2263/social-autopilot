@@ -102,3 +102,31 @@ test('Run tab Images option: the prompt gets the chosen engine and the pipeline 
   // The setting stays the default holder: the UI never saves the per-run choice.
   assert.ok(!/postJson\("\/api\/settings"[^)]*prImages/.test(html));
 });
+
+// Batch + album (4 images): register-image --n 2..4, flow-brief, the run option --images in the pipeline/UI/prompt text.
+test('flow batch: register-image --n 2/3/4, flow-brief for the extras, --images wiring, batch text', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-flow4-'));
+  try {
+    const id = 'demo-20261112-03', draftDir = path.join(dir, 'ws', 'drafts', 'demo', id);
+    fs.mkdirSync(draftDir, { recursive: true });
+    fs.writeFileSync(path.join(draftDir, 'draft.json'), JSON.stringify({ id, brand: 'demo', brand_dir: path.join(dir, 'none'), image_count: 4, sign_text: 'Mia & Leo', product_size: '60 cm wide', idea: { scene: 'a cosy bedroom wall' }, inspiration: {}, networks: [], captions: {} }));
+    fs.writeFileSync(path.join(draftDir, 'status.json'), JSON.stringify({ status: 'needs_caption' }));
+    const env = { ...process.env, SA_WORKSPACE: path.join(dir, 'ws'), HOME: dir, USERPROFILE: dir };
+    const draft = (...a) => JSON.parse(spawnSync(process.execPath, [path.join(root, 'scripts', 'draft.mjs'), ...a], { encoding: 'utf8', env }).stdout);
+    const file = path.join(dir, 'd.png'); fs.writeFileSync(file, picture(false));
+    for (const n of [1, 2, 3, 4]) draft('register-image', '--id', id, '--n', String(n), '--from', file);
+    for (const f of ['image.png', 'image-02.png', 'image-03.png', 'image-04.png']) assert.ok(fs.existsSync(path.join(draftDir, f)), f);
+    const st = JSON.parse(fs.readFileSync(path.join(draftDir, 'status.json'), 'utf8'));
+    assert.equal(st.images['image-04.png'].state, 'ok'); assert.equal(st.flow_images['image-04.png'].sparkle, 'none');
+    assert.equal(draft('register-image', '--id', id, '--n', '5', '--from', file).ok, false);
+    const b2 = draft('flow-brief', '--id', id, '--n', '2'), b3 = draft('flow-brief', '--id', id, '--n', '3');
+    assert.equal(b2.needs_image1_as_reference, true); assert.equal(b2.aspect, '1:1');
+    assert.match(b2.prompt, /different camera shot: detail/); assert.match(b3.prompt, /different camera shot: wide/);
+    assert.ok(!/Save the result/.test(b2.prompt) && b2.register.includes('--n 2'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.ok(FLOW_IMAGES_TEXT.includes('BATCH') && FLOW_IMAGES_TEXT.includes('WAIT ONCE') && FLOW_IMAGES_TEXT.includes('Thêm vào câu lệnh') && FLOW_IMAGES_TEXT.includes('flow-brief') && FLOW_IMAGES_TEXT.includes('1-4'));
+  const pipe = fs.readFileSync(path.join(root, 'scripts', 'pipeline.mjs'), 'utf8');
+  assert.ok(pipe.includes("args.images") && pipe.includes('images_choice') && pipe.includes("'--images'") && pipe.includes('needs_image1_as_reference'));
+  const html = fs.readFileSync(path.join(root, 'ui', 'index.html'), 'utf8');
+  assert.ok(html.includes('id="prImgCount"') && html.includes('--images') && html.includes('setIppMin'));
+});

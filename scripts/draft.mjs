@@ -25,11 +25,12 @@
 //   node scripts/draft.mjs size-check --id <draft> --product-pct N --object-pct N [--wall-pct N] [--accept "<reason>"]
 //        measured proportions of the new image (logged in status.json size_check, shown in the app); over a limit: retry once with reprompt --smaller N
 //   node scripts/draft.mjs image --id <draft> [--force]     runs Codex (prompt.txt must be finished: no {{...}} left)
-//   node scripts/draft.mjs register-image --id <draft> --from <file.jpg|png> [--n 1..3] [--engine flow]
+//   node scripts/draft.mjs register-image --id <draft> --from <file.jpg|png> [--n 1..4] [--engine flow]
 //        Google Flow images (settings image_engine = flow): the agent saves the download anywhere and runs this ONE command per
-//        image (n = 1 main image.png, 2 = image-02.png, 3 = image-03.png): the raw download is kept (image-generated-flow-original.jpg|png,
+//        image (n = 1 main image.png, 2 = image-02.png, 3 = image-03.png, 4 = image-04.png): the raw download is kept (image-generated-flow-original.jpg|png,
 //        extras image-0N-flow-original.*), converted to PNG, Google's sparkle removed locally (scripts/image-unsparkle.mjs), then the
 //        usual metadata clean, watermark when the brand has it on, and the automatic check. Status: image_engine flow, sparkle removed|none.
+//   node scripts/draft.mjs flow-brief --id <draft> [--n 1..4]   Flow helper: condensed English prompt, ratio, reference copied under Downloads, register command
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
 //                                                           product_images.watermark.enabled (default off; needs ffmpeg)
 //   node scripts/draft.mjs check --id <draft>               automatic checks of image + captions; passed -> ready
@@ -41,8 +42,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText, imagesRange, pickImageCount, draftImages, extraShotOf, albumHash } from './draft-lib.mjs';
+import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText, imagesRange, pickImageCount, draftImages, extraShotOf, albumHash, parseImagesOpt } from './draft-lib.mjs';
 import { cleanDraftImage, cleanExtraImage } from './image-clean.mjs';
 import { unsparkleFile } from './image/unsparkle.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords, readBrandOverride } from './lib.mjs';
@@ -141,7 +143,7 @@ export function newDraft(args) {
     // captions: posted languages + reviewer-only languages (language_policy.review_langs; never posted).
     image: 'image.png', captions: Object.fromEntries([...brand.languages, ...(brand.review_languages || [])].map((l) => [l, `content-${l}.txt`])), ai_disclosure: { tool: 'codex' },
     // Album (user 11/11/2026): a random number of images in posts.images_per_post (tool default, brand override).
-    image_count: Number(args.images) >= 1 ? Math.min(10, Math.floor(Number(args.images))) : pickImageCount(imagesRange(settings(), readBrandOverride(brand.id))),
+    image_count: parseImagesOpt(args.images) ? pickImageCount(parseImagesOpt(args.images)) : Number(args.images) >= 1 ? Math.min(10, Math.floor(Number(args.images))) : pickImageCount(imagesRange(settings(), readBrandOverride(brand.id))), // --images N | min-max (run option) wins over brand/settings
   };
   writeJson(path.join(dir, 'draft.json'), draft);
   const second = scene
@@ -484,6 +486,42 @@ export function registerImage(args, s = settings()) {
     next: missing.length ? `Register the other image(s): ${missing.join(', ')} (draft.mjs register-image --id ${draft.id} --n <k> --from <file>).` : 'LOOK at the image(s) (no Google star left, nothing wrong), then write the captions.' };
 }
 
+// Google Flow helper: the CONDENSED English prompt to paste into Flow for image n (the full prompt.txt / prompt-0N.txt is Codex-style:
+// ~6 KB, Vietnamese brand rules, a "Save the result as ..." line), the aspect ratio, the reference photo copied under
+// <home>/Downloads (the Playwright file chooser only reads under the user's folder; nothing is removed) and the register command.
+// n = 1: cover (reference = the brand photo / the scene-swap reference, if any). n >= 2: album extra, reference = image 1 of the same
+// post as it sits in the Flow project ("+" > its thumbnail > "Thêm vào câu lệnh"); its file is also copied to Downloads as a fallback.
+const q = (x) => String(x || '').replace(/"/g, "'").replace(/s+/g, ' ').trim();
+export function flowBrief(args, s = settings()) {
+  const { dir, draft } = findDraft(need(args, 'id'));
+  const files = draftImages(draft);
+  const n = args.n && args.n !== true ? Number(args.n) : 1;
+  if (!Number.isInteger(n) || n < 1 || n > files.length) throw new Error(`--n must be 1..${files.length} (this draft has ${files.length} image(s)).`);
+  const idea = draft.idea || {}, mode = refModeOf(draft), sign = draft.sign_text || '';
+  const common = 'Square 1:1 frame. No people, no other text, no logos.';
+  let prompt, ref = '';
+  if (n === 1) {
+    ref = (draft.image_mode === 'scene-swap' ? draft.reference_image : draft.product_image) || '';
+    if (mode === 'keep-scene' && sign && draft.ref_text) prompt = `Edit the attached photo. Keep the exact same scene: ${q(idea.scene)}. Change only the text of the sign: replace "${q(draft.ref_text)}" with exactly "${q(sign)}", in the same flowing single-line handwriting, same thin neon tube and soft glow, same position and size. Extend the scene naturally to a square 1:1 frame without stretching. No people, no other text, no logos.`;
+    else if (mode === 'new-scene') prompt = `Edit the attached photo. Remove every person. Put the same product in a new real-life scene: ${q(idea.scene)}${idea.angle ? ', ' + q(idea.angle) : ''}. Keep the product's shape, text${sign ? ' ("' + q(sign) + '")' : ''}, colours and proportions exactly; real size ${q(draft.product_size)}. ${common}`;
+    else prompt = `Edit the attached product photo. Place exactly this product (same shape, text${sign ? ' "' + q(sign) + '"' : ''}, colours, materials, proportions) in a real-life scene: ${q(idea.scene)}${idea.angle ? ', ' + q(idea.angle) : ''}${idea.props ? '; props: ' + q(idea.props) : ''}. Real size ${q(draft.product_size)}, do not enlarge it. Natural light, candid photo look. ${common}`;
+  } else {
+    ref = path.join(dir, 'image.png');
+    prompt = `Edit the attached image (image 1 of this post). Keep the same product with the same text character for character, the same scene, the same lighting and the same moment; only a different camera shot: ${SHOTS[extraShotOf(n - 1)]} Do not add stands, brackets or anything not in image 1. ${common}`;
+  }
+  let reference_for_upload = '';
+  if (ref && fs.existsSync(ref)) {
+    const downloads = path.join(os.homedir(), 'Downloads');
+    fs.mkdirSync(downloads, { recursive: true });
+    reference_for_upload = path.join(downloads, `sa-ref-${draft.id}-${n}${path.extname(ref) || '.png'}`);
+    fs.copyFileSync(ref, reference_for_upload);
+  }
+  return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, needs_image1_as_reference: n > 1,
+    reference: n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
+    ...(n > 1 && !fs.existsSync(ref) ? { warning: 'image 1 is not registered yet (extras follow the cover).' } : {}),
+    register: `node scripts/draft.mjs register-image --id ${draft.id} --n ${n} --from <downloaded file>` };
+}
+
 // Optional post-processing, default off: the brand's logo as a small overlay in one corner of the finished image, never
 // on the product. Only when the brand's social.json has product_images.watermark { enabled: true, position
 // (top-left|top-right|bottom-left|bottom-right), opacity (0-1), file (logo inside the skill folder) }. The Codex image
@@ -611,6 +649,7 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'image') return out(image(args, s));
   if (cmd === 'image-batch') return out(await imageBatch(args, s));
   if (cmd === 'register-image') return out(registerImage(args, s));
+  if (cmd === 'flow-brief') return out(flowBrief(args, s));
   if (cmd === 'reprompt') return out(reprompt(args));
   if (cmd === 'check') return out(check(args));
   if (cmd === 'watermark') return out(watermark(args, s));
@@ -619,7 +658,7 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'contact-sheet') return out(contactSheets(args, s));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
-  throw new Error('Lệnh: new | reprompt | image | register-image | image-batch | watermark | confirm-clean | size-check | check | show | list');
+  throw new Error('Lệnh: new | reprompt | image | register-image | flow-brief | image-batch | watermark | confirm-clean | size-check | check | show | list');
 });
 
 // Album: one prompt per extra image (prompt-02.txt, ...), filled from prompts/album-extra.txt. {{PRODUCT_DESCRIPTION}}

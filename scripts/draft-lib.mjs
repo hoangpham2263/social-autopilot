@@ -139,12 +139,21 @@ export function summary({ dir, draft, status }) {
 }
 
 
-// Album (user 11/11/2026): every post gets a random number of images in a range, default [1, 3]
+// Album (user 11/11/2026): every post gets a random number of images in a range, default [1, 4]
 // (settings posts.images_per_post, overridable per brand in workspace/brands/<id>.json posts.images_per_post).
 export function imagesRange(settings = {}, brandCfg = {}) {
-  const ok = (r) => Array.isArray(r) && r.length === 2 && r.every((x) => Number.isInteger(x) && x >= 1 && x <= 10) && r[0] <= r[1];
+  const ok = (r) => Array.isArray(r) && r.length === 2 && r.every((x) => Number.isInteger(x) && x >= 1 && x <= IMAGES_MAX) && r[0] <= r[1];
   const b = brandCfg?.posts?.images_per_post, s = settings?.posts?.images_per_post;
-  return ok(b) ? b : ok(s) ? s : [1, 3];
+  return ok(b) ? b : ok(s) ? s : [1, 4];
+}
+// Run option --images N | min-max (1..4, IMAGES_MAX): a fixed N is [N, N]. Empty/undefined = no option (the range of settings/brand). Bad value = null.
+export const IMAGES_MAX = 4;
+export function parseImagesOpt(v) {
+  if (v === undefined || v === null || v === '' || v === true) return null;
+  const m = /^(d+)(?:s*-s*(d+))?$/.exec(String(v).trim());
+  if (!m) return null;
+  const a = Number(m[1]), b = m[2] === undefined ? a : Number(m[2]);
+  return a >= 1 && b <= IMAGES_MAX && a <= b ? [a, b] : null;
 }
 export const pickImageCount = ([min, max], rand = Math.random) => min + Math.floor(rand() * (max - min + 1));
 // Brand skill naming: 1 image -> image.png; several -> image-01.png, image-02.png, ... (image-01 = main/cover).

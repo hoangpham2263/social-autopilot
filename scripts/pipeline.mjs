@@ -5,7 +5,7 @@
 //
 //   node scripts/pipeline.mjs mcp-plan [--brand <id|all>]
 //        the Metricool MCP calls to make first (getBrandSettings, getBestTimeToPostByNetwork per brand, exact args)
-//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"] [--image-engine codex|flow]
+//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"] [--image-engine codex|flow] [--images N|min-max]
 //        --items: ideas from exactly these library items (passed to ideas.mjs init; one brand); only their ideas go in the
 //        ideas file. A reused item comes with _context.previous_uses + reuse_rule (take a new angle).
 //        [--brand-settings <file> --best-times-dir <dir>]   (the saved MCP answers: sync-brands / sync-times run here)
@@ -36,7 +36,7 @@ import { nowIn } from './metricool-csv.mjs';
 import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, imageEngine, loadBrand, findDraft, cleanText, metricoolBrands, isMain } from './lib.mjs';
 import { previousUses } from './store.mjs';
 import { REUSE_RULE } from './ideas.mjs';
-import { draftImages } from './draft-lib.mjs';
+import { draftImages, parseImagesOpt } from './draft-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pipeDir = () => path.join(workspace, 'pipeline');
@@ -126,6 +126,8 @@ function stageA(args) {
   const started = stamp();
   const engineArg = args['image-engine'] && args['image-engine'] !== true ? String(args['image-engine']) : '';
   if (engineArg && !['codex', 'flow'].includes(engineArg)) throw new Error('--image-engine must be codex or flow.');
+  const imagesArg = args.images === undefined || args.images === true || args.images === '' ? '' : String(args.images);
+  if (imagesArg && !parseImagesOpt(imagesArg)) throw new Error('--images must be N or min-max within 1..4 (e.g. 2 or 1-3); omit it for the default range.');
   const brandArg = String(args.brand && args.brand !== true ? args.brand : 'all');
   const agent = String(args.agent && args.agent !== true ? args.agent : 'Claude Code');
   const pickIds = args.items && args.items !== true ? String(args.items).split(',').map((x) => x.trim()).filter(Boolean) : [];
@@ -165,7 +167,7 @@ function stageA(args) {
   const ideasFile = path.join(pipeDir(), 'ideas-todo.json');
   writeJson(ideasFile, todo);
   lap('ideas_init', t);
-  const st = saveState({ run_started: started, image_engine_choice: engineArg, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
+  const st = saveState({ run_started: started, image_engine_choice: engineArg, images_choice: imagesArg, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
   const items = Object.values(publish.brands).reduce((n, b) => n + b.items.length, 0);
   return {
     stage: 'A done', stop: todo.ideas.length ? 'ideas' : needsResearch.length ? 'needs research' : 'captions', ...(needsResearch.length ? { needs_research: needsResearch } : {}), brands: scope, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items,
@@ -188,11 +190,13 @@ function flowTodo(st) {
     if (['approved', 'rejected'].includes(d.status.status)) continue;
     const files = draftImages(d.draft), missing = files.filter((f) => !fs.existsSync(path.join(d.dir, f)));
     if (!missing.length) continue;
-    todo.push({ id, brand: d.draft.brand, images_to_make: missing.map((f) => ({ n: files.indexOf(f) + 1, file: f, prompt: path.join(d.dir, f === 'image.png' ? 'prompt.txt' : 'prompt-' + f.slice(-6, -4) + '.txt') })), product_image: d.draft.product_image || '', register: 'node scripts/draft.mjs register-image --id ' + id + ' --n <n> --from <downloaded file>' });
+    // EVERY missing image of the post: image.png (cover, n=1) and the album extras image-02.png.. (n>=2, same scene: image 1 is their reference).
+    todo.push({ id, brand: d.draft.brand, album_images: files.length, product_image: d.draft.product_image || '',
+      images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n} --from <downloaded file>` }; }) });
   }
   return todo;
 }
-const FLOW_NEXT = 'Make each image in Google Flow with the Playwright MCP (procedure: docs/flow-images.md), save the download, then register it with the command shown per image (one command per image: PNG, sparkle removal, clean, check). Then: node scripts/pipeline.mjs create --resume.';
+const FLOW_NEXT = 'Google Flow, BATCH (docs/flow-images.md): one Flow project per run; per image run flow-brief (condensed prompt + ratio + reference copied to Downloads). SUBMIT every cover image.png of every draft one after another without waiting, wait ONCE, then submit every extra (n>=2: attach the draft image 1 from the project via "+" > thumbnail > "Thêm vào câu lệnh"), wait once more, then download each result (1K), match it to its draft/n (order of thumbnails or the prompt in the detail view; Downloads names come from Flow, not our id) and register it with the register command of that image. Then: node scripts/pipeline.mjs create --resume.';
 
 // ----- Stage B -----
 function spawnImages(st, ids) {
@@ -247,7 +251,7 @@ function stageB(st, file) {
     const p = step('ideas.mjs', ['pick', '--brand', e.brand, '--id', e.id]);
     if (p.ok === false) { problems.push(`${tag}: ${p.error}`); continue; }
     const refImage = swap ? String(e.ref_image || e._context?.ref_image || '') : '';
-    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce', '--ref-mode', refMode, '--ref-has-face', String(e.ref_has_face), ...(e.ref_text ? ['--ref-text', String(e.ref_text)] : [])] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : [])]);
+    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce', '--ref-mode', refMode, '--ref-has-face', String(e.ref_has_face), ...(e.ref_text ? ['--ref-text', String(e.ref_text)] : [])] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : []), ...(st.images_choice ? ['--images', String(st.images_choice)] : [])]);
     if (n.ok === false) { problems.push(`${tag}: ${n.error}`); continue; }
     fillDescription(n.dir, cleanText(String(e.description)).text);
     made.push(n.id);

@@ -1,12 +1,13 @@
 // Album: random image count per post, brand-skill file names, cover first, alt per image (tests only on request).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { imagesRange, pickImageCount, imageFiles, draftImages, publishPairs, extraShotOf } from '../scripts/draft-lib.mjs';
+import { imagesRange, pickImageCount, imageFiles, draftImages, publishPairs, extraShotOf, parseImagesOpt } from '../scripts/draft-lib.mjs';
 import { altTexts } from '../scripts/writeback.mjs';
 import { normalizeOverride } from '../scripts/lib.mjs';
 
-test('imagesRange: brand overrides settings, default [1, 3]', () => {
-  assert.deepEqual(imagesRange({}, {}), [1, 3]);
+test('imagesRange: brand overrides settings, default [1, 4]', () => {
+  assert.deepEqual(imagesRange({}, {}), [1, 4]);
+  assert.deepEqual(imagesRange({ posts: { images_per_post: [1, 9] } }, {}), [1, 4]); // max 4
   assert.deepEqual(imagesRange({ posts: { images_per_post: [2, 4] } }, {}), [2, 4]);
   assert.deepEqual(imagesRange({ posts: { images_per_post: [2, 4] } }, { posts: { images_per_post: [1, 1] } }), [1, 1]);
   assert.deepEqual(imagesRange({ posts: { images_per_post: [3, 1] } }, {}), [1, 3]);
@@ -16,6 +17,7 @@ test('imagesRange: brand overrides settings, default [1, 3]', () => {
 test('pickImageCount stays in range', () => {
   assert.equal(pickImageCount([1, 3], () => 0), 1);
   assert.equal(pickImageCount([1, 3], () => 0.999), 3);
+  assert.equal(pickImageCount([1, 4], () => 0.999), 4);
   for (let i = 0; i < 50; i++) { const n = pickImageCount([1, 3]); assert.ok(n >= 1 && n <= 3); }
 });
 test('names: image.png alone, image-01.. for an album; never language images', () => {
@@ -36,4 +38,13 @@ test('alt text: one per image, in order', () => {
   assert.match(alts[0], /^Neon sign reading "Open" in a cozy bar/);
   assert.match(alts[1], /^Close-up/);
   assert.equal(altTexts({ idea: { product_type: 'Lamp' } }).length, 1);
+});
+
+test('parseImagesOpt: --images N | min-max within 1..4', () => {
+  assert.deepEqual(parseImagesOpt('2'), [2, 2]);
+  assert.deepEqual(parseImagesOpt('1-3'), [1, 3]);
+  assert.deepEqual(parseImagesOpt('1-4'), [1, 4]);
+  for (const bad of ['0', '5', '3-1', 'x', '1-5']) assert.equal(parseImagesOpt(bad), null);
+  assert.equal(parseImagesOpt(undefined), null);
+  assert.deepEqual(draftImages({ image_count: 4 }), ['image.png', 'image-02.png', 'image-03.png', 'image-04.png']);
 });
