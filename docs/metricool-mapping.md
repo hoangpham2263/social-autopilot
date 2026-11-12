@@ -27,7 +27,7 @@ Một bài trong Metricool (rút gọn, giá trị minh hoạ):
 
 ## 2. Bảng ánh xạ
 
-Nguồn: `<brand>` = thư mục thương hiệu (cũ: `skills/<id>-skills`; mới: `<repo>/brands/<id>`); `social.json` = `<brand>/project/social.json`; `catalog` = `<brand>/catalog.json` → `posts[]`; `folder` = `<brand>/<post.folder>/` (đường dẫn trong social.json/catalog tính theo thư mục thương hiệu, không theo gốc skill); `brands` = `workspace/metricool-brands.json` (do `sync-brands` ghi).
+Nguồn: `<brand>` = thư mục thương hiệu (dùng chung: `<skillsRoot>/brand-content-skills/brands/<id>`; tạm: `<repo>/brands/<id>`; cũ: `<id>-skills`); `social.json` = `<brand>/project/social.json`; `catalog` = `<brand>/catalog.json` → `posts[]`; `folder` = `<brand>/<post.folder>/` (đường dẫn trong social.json/catalog tính theo thư mục thương hiệu, không theo gốc skill); `brands` = `workspace/metricool-brands.json` (do `sync-brands` ghi).
 
 | Trường Metricool (MCP / CSV) | Bắt buộc | Kiểu, định dạng | Nguồn của tool |
 |---|---|---|---|
