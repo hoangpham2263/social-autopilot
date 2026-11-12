@@ -697,7 +697,6 @@ header + * { margin-top: 0; }
     };
     $("#addSrc").onclick = () => {
       const u = $("#fNewSrc").value.trim();
-      if (!u) { $("#brandMsg").textContent = ""; $("#fNewSrc").focus(); return; } // nothing typed: Add does nothing, no error
       if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">The URL must start with http(s)://</span>`; return; }
       const a = { id: slug(u), name: u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60), platform: /facebook\.com/.test(u) ? "facebook" : "", url: u, what_to_take: "", notes: "" };
       if ([...arr(skill.research?.sources), ...editing.added].some((x) => x?.id === a.id || x?.url === u)) { $("#brandMsg").innerHTML = `<span class="bad-text">That source is already in the list.</span>`; return; }
