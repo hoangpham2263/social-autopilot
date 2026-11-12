@@ -686,7 +686,7 @@ header + * { margin-top: 0; }
       </div>
       <div class="fields">
         <div class="field wide"><span class="label">Sources</span><div id="fSources">${rows.join("") || `<div class="meta">No sources.</div>`}</div>
-          <div class="slot"><input type="text" id="fNewSrc" placeholder="Add a source: paste the page URL"><button class="btn" type="button" id="addSrc">Add</button></div></div>
+          <div class="slot"><input type="text" id="fNewName" placeholder="Name (optional)" style="flex: 0 1 200px"><input type="text" id="fNewSrc" placeholder="Page URL (https://...)"><button class="btn" type="button" id="addSrc">Add</button></div></div>
       </div>`;
     $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
     $("#fSources").onclick = (e) => {
@@ -698,11 +698,12 @@ header + * { margin-top: 0; }
     $("#addSrc").onclick = () => {
       const u = $("#fNewSrc").value.trim();
       if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">The URL must start with http(s)://</span>`; return; }
-      const a = { id: slug(u), name: u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60), platform: /facebook\.com/.test(u) ? "facebook" : "", url: u, what_to_take: "", notes: "" };
+      const typedName = $("#fNewName").value.trim().slice(0, 60);
+      const a = { id: slug(u), name: typedName || u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60), platform: /facebook\.com/.test(u) ? "facebook" : "", url: u, what_to_take: "", notes: "" };
       if ([...arr(skill.research?.sources), ...editing.added].some((x) => x?.id === a.id || x?.url === u)) { $("#brandMsg").innerHTML = `<span class="bad-text">That source is already in the list.</span>`; return; }
       editing.added.push(a);
       $("#fSources").insertAdjacentHTML("beforeend", srcRow(a, "tool", "new, Save to keep"));
-      $("#fNewSrc").value = ""; $("#brandMsg").textContent = "";
+      $("#fNewSrc").value = ""; $("#fNewName").value = ""; $("#brandMsg").textContent = "";
     };
     const syncOff = () => { const paused = $("#fPaused").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fPaused" && el.id !== "fOpen") setDisabled(el, paused, "Paused: untick Paused to change this"); };
     $("#fPaused").onchange = syncOff; syncOff();
