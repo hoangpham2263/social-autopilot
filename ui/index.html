@@ -355,7 +355,7 @@ header + * { margin-top: 0; }
   </section>
 
   <section class="page" id="page-prompt" hidden>
-    <!-- Row 1: Mode. Row 2: Agent, Brand, then the options of the chosen mode (same-width fields). Row 3: sub-agent,
+    <!-- Row 1: Mode. Row 2: Agent, Brand, then the options of the chosen mode (same-width fields). Row 3:
          Copy prompt and the hint. Then the prompt. -->
     <div class="fields">
       <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
@@ -364,7 +364,6 @@ header + * { margin-top: 0; }
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
       <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
-      <div class="field" id="prSubField"><label for="prSub" title="Claude Code: hand the whole task to one background sub-agent so the chat stays free">Run in</label><select id="prSub"><option value="main">Main chat</option><option value="sub">Sub-agent</option></select></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = no limit)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
@@ -955,7 +954,6 @@ header + * { margin-top: 0; }
     const mcTz = arr(promptData.brands).find((x) => x.id === brand)?.metricool_timezone || promptData.default_tz || "America/New_York";
     $("#prWindowLabel").textContent = `Time (${tzName(mcTz)})`;
     const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
-    syncSub();
     prBase = p ? p.text : "";
     $("#prText").value = buildPrompt();
     try { arDraw(); } catch {}
@@ -1011,23 +1009,16 @@ header + * { margin-top: 0; }
     }
     return lines.length ? lines.join("; ") : "defaults";
   }
-  // "Run in a sub-agent" (Claude Code only; remembered per agent, on by default): one first line hands the whole task to
-  // one background sub-agent so the chat stays free. Codex has no sub-agent tool (it runs in its own session); ChatGPT
-  // runs nothing.
+  // Everything runs in ONE background sub-agent: the Claude Code prompt always starts with this line. Codex has no
+  // sub-agent tool (own session) and ChatGPT runs nothing, so neither gets the line.
   const SUB_LINE = "Run this whole task in ONE background sub-agent (Agent tool, general-purpose) with the prompt below; keep this chat free; when it finishes, relay its 'Report' section to me.";
   const subAllowed = () => /claude code/i.test($("#prAgent").value || "");
-  function syncSub() {
-    const agent = $("#prAgent").value || "";
-    // Default Main chat; Sub-agent only when chosen (remembered per agent).
-    $("#prSub").value = subAllowed() && store.get(`prSub:${agent}`) === "1" ? "sub" : "main";
-    setDisabled($("#prSub"), !subAllowed(), /codex/i.test(agent) ? "Codex runs it in its own session" : "ChatGPT cannot run the task");
-  }
   let prBlock = ""; // research with nothing to run: the reason (no prompt is made)
   function buildPrompt() {
     prBlock = researchBlock();
     if (prBlock) return prBlock;
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
-    const lead = subAllowed() && $("#prSub").value === "sub" ? SUB_LINE + "\n" : "";
+    const lead = subAllowed() ? SUB_LINE + "\n" : "";
     return lead + buildTask();
   }
   function buildTask() {
@@ -1078,7 +1069,6 @@ header + * { margin-top: 0; }
     drawPrompt(); applyHow();
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
-  $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").value === "sub" ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
   for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
   $("#prItemClear").onclick = () => { prItem = null; $("#prCount").value = ""; drawPrompt(); };
@@ -1116,12 +1106,12 @@ header + * { margin-top: 0; }
   };
   const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
   let arTimer = 0, arState = null;
-  // How to run: "Run in the app" (Run now + live panel) or "Copy prompt" (prompt box + Run in). Default Copy prompt until the user picks the app once. Only hides; #prText keeps being regenerated.
+  // How to run: "Run in the app" (Run now + live panel) or "Copy prompt" (prompt box). Default Copy prompt until the user picks the app once. Only hides; #prText keeps being regenerated.
   const howNow = () => (store.get("prHow") === "app" ? "app" : "copy");
   function applyHow() {
     const app = howNow() === "app", busy = !!arState?.active, claude = subAllowed();
     for (const b of $$("#prHow button")) b.setAttribute("aria-pressed", String(b.dataset.how === howNow()));
-    for (const id of ["#prCopy", "#prMsg", "#prSubField", "#prTextBox"]) $(id).hidden = app;
+    for (const id of ["#prCopy", "#prMsg", "#prTextBox"]) $(id).hidden = app;
     // The Chrome connection section is for Run in the app (Run now needs the connection); with Copy prompt it is not shown.
     $("#prChrome").hidden = !app;
     $("#prRunNow").hidden = !app; if (!app) $("#prStop").hidden = true;
@@ -1173,7 +1163,7 @@ header + * { margin-top: 0; }
     const key = modeKey(prMode);
     // Only Publish approved asks first (it schedules real posts on Metricool); Research and Create start at once and say what they do in the live panel.
     if (key === "publish" && !confirm(AR_CONFIRM[key]())) return;
-    // The same text Copy prompt copies, minus the optional "Run in: Sub-agent" lead line (a headless run is its own agent, so that line means nothing to it).
+    // The same text Copy prompt copies, minus the sub-agent lead line (a headless run is its own agent, so that line means nothing to it).
     let text = $("#prText").value;
     if (text.startsWith(SUB_LINE)) text = text.slice(SUB_LINE.length).replace(/^\s+/, "");
     if (!text.startsWith("TASK:")) { flash("Could not build the prompt: it does not start with TASK:."); return; }
