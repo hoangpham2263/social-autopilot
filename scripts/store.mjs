@@ -10,7 +10,9 @@
 //   workspace/store/<brand>/items.json      { brand, updated, next, items: [ item ] }
 //   workspace/store/<brand>/images/          <item-id>-<n>-<sha8>.<ext> (copies of the downloaded post images)
 //   workspace/store/<brand>/progress.json    per source: newest_seen / oldest_seen ({ date, post_id, post_url, item }),
-//                                            reached_end (scrolled to the end of the page once), blocked, last_run
+//                                            reached_end (scrolled to the end of the page once), blocked, last_run, and the
+//                                            crawl REGISTRY fields: status none|partial|complete, posts_total, new_last_run,
+//                                            last_run_date, resume ({ post_id, post_url, date, count, at }), reached_end_text
 //                                            ({ run, mode: new|backfill|full, state, new_on_top, backfilled, at })
 //   workspace/store/<brand>/ideas.json       the brand's ideas (ideas.mjs), each tied to one store item
 // item: { id: "S0001", source_id, source_url, store, post_url, alt_urls?, post_key(s), post_ids, captured, posted_date,
@@ -31,6 +33,9 @@
 //   node scripts/store.mjs restore --brand <id> --id S0001                     Removed -> Available
 //   node scripts/store.mjs migrate-uses [--brand <id>]                        old "used" items -> available, uses filled (saved)
 //   node scripts/store.mjs known   --brand <id> [--source <sid>]               post links already in the store
+//   node scripts/store.mjs registry --brand <id> [--source <sid>]              the crawl registry: per source status none|partial|complete, posts_total, new_last_run, last_run, resume cursor
+//   node scripts/store.mjs registry-seed [--brand <id>]                         writes the registry fields into progress.json for sources that have none yet (nothing is removed)
+//   node scripts/store.mjs recrawl --brand <id> --source <sid>                  resets the source to status none: the next run crawls it fully again
 //   node scripts/store.mjs classify --brand <id> [--limit 40] [--source <sid>]   the batch filter (RUNBOOK 1.3): unjudged
 //                                            "new" items, compact (id, source, caption excerpt, thumbnail path) + what
 //                                            to take per source; the agent judges them in one pass (text + thumbnails)
@@ -39,7 +44,7 @@
 //   node scripts/store.mjs migrate [--brand <id>]                             old runs/<brand>/<date>/<src>/refs.json -> store
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, sha1, cleanText, loadBrand, draftsRoot, brandDiscovery } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, workspace, settings, readJson, writeJson, withLock, stamp, today, sha1, cleanText, loadBrand, draftsRoot, brandDiscovery } from './lib.mjs';
 import { imageHashes, hamming } from './phash.mjs';
 
 export const STATUSES = ['new', 'rejected'];
@@ -472,20 +477,95 @@ export function markUsed(brand, ids, by) {
   });
 }
 
-// Per-source crawl outcome (research.mjs result) kept with the store, so the next crawl knows what happened:
-// newest_seen / oldest_seen (from the store), reached_end (once true it stays: the oldest post was reached), last_run.
+// ----- crawl registry: per brand and per source, what was already collected, so a later run never redoes it -----
+// It lives in progress.json (next to the older per-source facts newest_seen / oldest_seen / reached_end / last_run); the
+// counts come from the store items (the facts), the status and the resume cursor from research.mjs result.
+//   none      never crawled (or reset with Recrawl): the next run crawls it fully, to the end of the page
+//   partial   crawled, but not to the end of the page (time budget, --max-posts, block): the next run continues, skipping
+//             known posts, until the end; `resume` = { post_id, post_url, date, count, at } of the oldest post kept so far
+//   complete  scrolled to the end of the page once: later runs only check the top and stop at the first known posts
+export const REGISTRY_STATUSES = ['none', 'partial', 'complete'];
+const dayOf = (iso) => String(iso || '').slice(0, 10);
+// p = the source's progress.json entry (may be empty), k = knownPosts() of the source (live facts from the store) or null.
+export function registryFrom(p = {}, k = null) {
+  const count = k ? k.count : (Number.isInteger(p.items) ? p.items : 0);
+  const status = REGISTRY_STATUSES.includes(p.status) ? p.status : p.reached_end ? 'complete' : count > 0 ? 'partial' : 'none';
+  const lr = p.last_run || {};
+  const oldest = (k ? k.oldest_seen : p.oldest_seen) || null;
+  return {
+    status, posts_total: count,
+    new_last_run: Number.isInteger(p.new_last_run) ? p.new_last_run : (lr.new_on_top || 0) + (lr.backfilled || 0),
+    last_run: p.last_run_date || lr.run || dayOf(p.last_crawl),
+    newest_seen: (k ? k.newest_seen : p.newest_seen) || null, oldest_seen: oldest,
+    resume: status === 'partial' ? (p.resume || (oldest ? { post_id: oldest.post_id || '', post_url: oldest.post_url || '', date: oldest.date || '', count, at: '' } : null)) : null,
+    reached_end_text: status === 'complete' ? (p.reached_end_text || dayOf(p.reached_end_at)) : '',
+    blocked: p.blocked || '',
+  };
+}
+export const registryOf = (brand, sourceId) => registryFrom(readProgress(brand).sources?.[sourceId] || {}, knownPosts(brand, sourceId));
+// Every reference source with facts (a progress entry or store items); discovery pseudo-sources are not part of it.
+export function registryAll(brand, ids = []) {
+  const s = readStore(brand).items.map((i) => i.source_id);
+  const all = [...new Set([...ids, ...Object.keys(readProgress(brand).sources || {}), ...s])].filter((x) => x && !/^discovery-/.test(x));
+  return Object.fromEntries(all.map((id) => [id, registryOf(brand, id)]));
+}
+// Recrawl: the source is treated as never crawled (status none, no resume cursor): the next run crawls it fully again.
+// Nothing else is removed (items, history stay).
+export function resetRegistry(brand, sourceId) {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(String(sourceId || ''))) throw new Error('Invalid source id.');
+  const file = progressFile(brand);
+  withLock(file, () => {
+    const p = readJson(file, { sources: {} });
+    p.sources ||= {};
+    p.sources[sourceId] = { ...(p.sources[sourceId] || {}), status: 'none', reached_end: false, reached_end_text: '', resume: null, recrawl_at: stamp() };
+    writeJson(file, p);
+  });
+  return registryOf(brand, sourceId);
+}
+// Seed: sources that have facts but no registry fields yet get them from what the store and progress.json already say.
+// Idempotent; existing fields stay.
+export function seedRegistry(brand, ids = []) {
+  const file = progressFile(brand), seeded = [];
+  withLock(file, () => {
+    const p = readJson(file, { sources: {} });
+    p.sources ||= {};
+    for (const [id, r] of Object.entries(registryAll(brand, ids))) {
+      const cur = p.sources[id] || {};
+      if (cur.status) continue;
+      if (!cur.last_crawl && !r.posts_total) continue;
+      p.sources[id] = { ...cur, status: r.status, posts_total: r.posts_total, new_last_run: r.new_last_run, last_run_date: r.last_run, resume: r.resume, reached_end_text: r.reached_end_text };
+      seeded.push({ source: id, status: r.status, posts_total: r.posts_total, last_run: r.last_run, resume: r.resume ? r.resume.date || r.resume.post_id : '' });
+    }
+    if (seeded.length) writeJson(file, p);
+  });
+  return seeded;
+}
+
+// Per-source crawl outcome (research.mjs result), kept with the store so the next crawl knows what happened and the registry
+// above stays true. newest_seen / oldest_seen come from the store; the status follows the result:
+//   end -> complete (and reached_end); on a complete source every other result keeps complete (a top check);
+//   otherwise partial when the store holds posts of the source (resume cursor = its oldest post), else none; skipped changes nothing.
 // result: { state, label?, note?, reached_end, new, new_on_top?, backfilled? }; run: { date, mode }.
 export function recordProgress(brand, sourceId, result, run = {}) {
   const file = progressFile(brand);
   return withLock(file, () => {
     const p = readJson(file, { sources: {} });
+    p.sources ||= {};
     const before = p.sources[sourceId] || {};
     const k = knownPosts(brand, sourceId);
+    if (result.state === 'skipped') return { ...before, ...registryFrom(before, k) };
+    const prev = REGISTRY_STATUSES.includes(before.status) ? before.status : before.reached_end ? 'complete' : (k.count > 0 || before.items > 0) ? 'partial' : 'none';
+    const status = result.state === 'end' ? 'complete' : prev === 'complete' ? 'complete' : k.count > 0 ? 'partial' : 'none';
+    const day = run.date || today();
+    const o = k.oldest_seen;
     p.sources[sourceId] = {
-      ...before, last_crawl: stamp(), last_result: result,
-      reached_end: !!(before.reached_end || result.reached_end), ...(result.reached_end ? { reached_end_at: stamp() } : {}),
+      ...before, last_crawl: stamp(), last_result: result, status,
+      reached_end: status === 'complete', ...(result.state === 'end' ? { reached_end_at: stamp() } : {}),
+      reached_end_text: status === 'complete' ? (result.state === 'end' ? day : before.reached_end_text || dayOf(before.reached_end_at) || day) : '',
+      resume: status === 'partial' && o ? { post_id: o.post_id || '', post_url: o.post_url || '', date: o.date || '', count: k.count, at: stamp() } : null,
       blocked: result.state === 'blocked' ? result.note || 'checkpoint/captcha' : '',
-      items: k.count, newest_posted_date: k.newest_posted_date, oldest_posted_date: k.oldest_posted_date,
+      items: k.count, posts_total: k.count, new_last_run: Number.isInteger(result.new) ? result.new : (result.new_on_top || 0) + (result.backfilled || 0), last_run_date: day,
+      newest_posted_date: k.newest_posted_date, oldest_posted_date: k.oldest_posted_date,
       newest_seen: k.newest_seen, oldest_seen: k.oldest_seen,
       last_run: { run: run.date || '', mode: run.mode || 'new', state: result.state, note: result.note || '', new_on_top: result.new_on_top || 0, backfilled: result.backfilled || 0, at: stamp() },
     };
@@ -537,6 +617,7 @@ if (isMain(import.meta.url)) main(() => {
   const cmd = args._[0];
   if (cmd === 'migrate-uses') return out({ brands: (args.brand ? [String(args.brand)] : (fs.existsSync(path.join(workspace, 'store')) ? fs.readdirSync(path.join(workspace, 'store')).filter((d) => /^[a-z0-9][a-z0-9-]*$/.test(d) && fs.existsSync(itemsFile(d))) : [])).map(migrateUses) });
   if (cmd === 'migrate') return out({ brands: (args.brand ? [String(args.brand)] : brandsInWorkspace()).map(migrateRuns) });
+  if (cmd === 'registry-seed') return out({ brands: (args.brand && args.brand !== true ? [String(args.brand)] : (fs.existsSync(path.join(workspace, 'store')) ? fs.readdirSync(path.join(workspace, 'store')).filter((d) => /^[a-z0-9][a-z0-9-]*$/.test(d) && fs.existsSync(itemsFile(d))) : [])).map((b) => ({ brand: b, seeded: seedRegistry(b) })) });
   const brand = need(args, 'brand');
   if (cmd === 'list') {
     const r = listItems(brand, { status: args.status ? String(args.status) : '', source: args.source ? String(args.source) : '', platform: args.platform && args.platform !== true ? String(args.platform) : '' });
@@ -549,5 +630,7 @@ if (isMain(import.meta.url)) main(() => {
   if (cmd === 'classify') return out(classifyBatch(brand, { limit: args.limit === undefined ? 40 : Number(args.limit) || 0, source: args.source && args.source !== true ? String(args.source) : '' }));
   if (cmd === 'verdict') { const r = applyVerdicts(brand, readJson(path.resolve(need(args, 'file')))); return out({ ...r, left: classifyBatch(brand, { limit: 0 }).total_unjudged }); }
   if (cmd === 'known') { const k = knownPosts(brand, args.source ? String(args.source) : ''); return out(k); }
-  throw new Error('Lệnh: list | show | remove (reject) | restore | classify | verdict | known | migrate | migrate-uses');
+  if (cmd === 'registry') return out({ brand, sources: args.source && args.source !== true ? { [String(args.source)]: registryOf(brand, String(args.source)) } : registryAll(brand) });
+  if (cmd === 'recrawl') return out({ brand, source: need(args, 'source'), registry: resetRegistry(brand, need(args, 'source')) });
+  throw new Error('Lệnh: list | show | remove (reject) | restore | classify | verdict | known | registry | registry-seed | recrawl | migrate | migrate-uses');
 });

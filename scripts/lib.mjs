@@ -642,6 +642,8 @@ export function inspectBrand(dir) {
   result.review_languages = reviewLanguages(social);
   result.sources = brandSources(social).map((x) => x.id);
   result.discovery_platforms = brandDiscovery(social).platforms.map((x) => x.id); // research.discovery: enabled platforms
+  result.discovery_enabled = brandDiscovery(social).enabled && result.discovery_platforms.length > 0 && brandDiscovery(social).keywords.length + brandDiscovery(social).hashtags.length > 0; // runs automatically after the picked sources
+  result.sources_info = brandSources(social).map((x) => ({ id: x.id, name: x.name, platform: x.platform, url: x.url }));
   result.ai_scenes_allowed = social.product_images?.ai_scenes_allowed !== false; // on unless explicitly false
   result.reference_redraw = social.product_images?.reference_redraw?.enabled === true; // scene-swap allowed (opt-in)
   const checker = skillScript(dir, 'check-skill.mjs');
@@ -679,8 +681,9 @@ export function loadBrand(id, { allowDisabled = false } = {}) {
 // ----- runs, ideas, drafts -----
 export const runDir = (brand, date) => path.join(workspace, 'runs', brand, date);
 
-// The brand's crawl inputs, only from its own project/social.json: research.sources[] (id, name, platform, url,
-// enabled, what_to_take, notes), enabled ones only. The tool keeps no source list of its own.
+// The brand's crawl inputs: the sources the USER keeps in the tool (workspace/brands/<id>.json sources_add[], ticked ones), merged by
+// applyBrandOverride with research.sources[] of project/social.json, which now ships EMPTY (no sample links anywhere).
+// Enabled ones only: (id, name, platform, url, what_to_take, notes).
 export function brandSources(social) {
   return (Array.isArray(social.research?.sources) ? social.research.sources : [])
     .filter((x) => x && x.url && x.enabled === true && /^[a-z0-9][a-z0-9-]*$/.test(x.id || ''))
@@ -692,12 +695,13 @@ export function brandSources(social) {
 export const DISCOVERY_PLATFORMS = ['instagram', 'pinterest', 'facebook', 'etsy', 'houzz'];
 // Not supported by the tool any more: a skill (or --platforms) that still names one is skipped with a one-line note, never an error.
 export const RETIRED_PLATFORMS = ['tiktok', 'youtube', 'reddit'];
-export function brandDiscovery(social) {
+// force: use the skill's platforms/keywords/hashtags even when research.discovery.enabled is not true (not used by the app any more).
+export function brandDiscovery(social, { force = false } = {}) {
   const d = social?.research?.discovery;
   const strs = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()))] : []);
   const pf = d?.product_fit || {};
   const product_fit = { types: strs(pf.types), must_have: strs(pf.must_have), must_not: strs(pf.must_not) };
-  if (!d || typeof d !== 'object' || d.enabled !== true) return { enabled: false, platforms: [], keywords: [], hashtags: [], product_fit, max_per_platform: 0 };
+  if (!d || typeof d !== 'object' || (d.enabled !== true && !force)) return { enabled: false, platforms: [], keywords: [], hashtags: [], product_fit, max_per_platform: 0 };
   const platforms = (Array.isArray(d.platforms) ? d.platforms : []).filter((p) => p && p.enabled === true && DISCOVERY_PLATFORMS.includes(p.id)).map((p) => ({ id: p.id, notes: typeof p.notes === 'string' ? p.notes : '' }));
   const retired = (Array.isArray(d.platforms) ? d.platforms : []).filter((p) => p && p.enabled === true && RETIRED_PLATFORMS.includes(p.id)).map((p) => p.id);
   return { enabled: true, platforms, ...(retired.length ? { retired } : {}), keywords: strs(d.keywords), hashtags: strs(d.hashtags).map((h) => h.replace(/^#/, '')), product_fit, max_per_platform: Number.isInteger(d.max_per_platform) && d.max_per_platform > 0 ? d.max_per_platform : 15 };

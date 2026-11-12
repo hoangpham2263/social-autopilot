@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { registryAll } from './store.mjs';
 import { main, out, isMain, parseArgs, need, discoverBrands, skillRootOf, skillScript, skillScriptArgs, readJson, secretProblems, brandSocial, readBrandOverride, saveBrandOverride, brandOverrideFile } from './lib.mjs';
 
 // Secret detection lives in lib.mjs (shared with metricool-brands.json): only real secret keys (token, secret, password,
@@ -40,7 +41,9 @@ export function readSocial(id) {
   const dir = brandDir(id);
   const file = path.join(dir, 'project', 'social.json');
   // social = what the tool uses (skill + override); skill_social = the skill file as it is; override = the tool's part.
-  return { id, dir, file, social: brandSocial(dir, id), skill_social: readJson(file), override: readBrandOverride(id), override_file: brandOverrideFile(id), check: checkSkill(dir) };
+  const social = brandSocial(dir, id);
+  // registry = the crawl registry of every source of the brand (store.mjs registryOf: status none|partial|complete, posts_total, new_last_run, last_run, resume).
+  return { id, dir, file, social, skill_social: readJson(file), override: readBrandOverride(id), override_file: brandOverrideFile(id), registry: registryAll(id, (social.research?.sources || []).map((x) => x?.id).filter(Boolean)), check: checkSkill(dir) };
 }
 
 // The app's Brand Edit panel: saved in the tool (workspace/brands/<id>.json), never in the skill.
