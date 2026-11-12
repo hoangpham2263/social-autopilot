@@ -5,7 +5,7 @@
 //   node scripts/prompts.mjs show --mode "Research only" --agent "Claude Code" [--brand dreamyvows] [--options "..."]
 import fs from 'node:fs';
 import path from 'node:path';
-import { main, out, isMain, parseArgs, need, toolRoot, discoverBrands } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, toolRoot, discoverBrands, imageEngine } from './lib.mjs';
 
 // One at a time or in parallel is said by each mode's STEPS line (Research: one at a time; Create / Publish: may run in
 // parallel). Research wording (docs/scheduled-prompt.md): the sources are ALL the enabled ones of the brand (no --source in the Run tab prompt), collected fully by a
@@ -18,6 +18,14 @@ export function promptList(md = fs.readFileSync(path.join(toolRoot, 'docs', 'sch
   for (let m; (m = re.exec(md));) list.push({ mode: m[1].trim(), agent: m[2].trim(), text: m[3].trim() });
   return list;
 }
+// {{IMAGES}} = the image engine lines (settings image_engine): empty for codex (nothing changes), the Google Flow procedure for flow.
+// The full procedure with pitfalls is docs/flow-images.md; this is the short form every Create prompt carries.
+export const FLOW_IMAGES_TEXT = [
+  'IMAGES: engine = Google Flow (settings image_engine). Do NOT run Codex for images (no draft.mjs image / image-batch); the pipeline stops at "waiting for Flow images". Make each image yourself in Flow in the signed-in Chrome with the Playwright MCP, one at a time (one browser), and follow docs/flow-images.md. The brand rules (no logo on the product, English text on images, album 1-3 images) stay as in the skill and the draft prompt.txt / prompt-0N.txt (those files are the Flow prompts).',
+  '  Flow: open https://flow.google.com → "New project" (Dự án mới) → click the bottom prompt box, set via the count chip: Image, the post ratio (1:1 feed), x1 → Escape → CLICK THE BOTTOM PROMPT BOX (not the project-title textbox) and type the prompt → round arrow → wait 20-30 s for the thumbnail → open it → download icon → "1K original size" (JPG lands in the Downloads folder; find the newest <project>_<id>.jpg with node) → node scripts/draft.mjs register-image --id <draft> --n <1|2|3> --from <that file> (converts to PNG, removes the Google sparkle locally, cleans, checks). Reference/product photo: the "+" button at the left of the prompt box. Use text/role locators, adapt to the UI language; never ask Flow to remove a watermark or change a brand name.',
+  '  Flow STOP: login wall, captcha, consent dialog you cannot pass, no credits, or a Flow refusal → stop, report, do not retry endlessly.',
+].join('\n');
+export const imagesText = (engine = imageEngine()) => (engine === 'flow' ? FLOW_IMAGES_TEXT : '');
 // {{TOOL}} = this tool's folder (never a fixed path), {{BRAND}} = the brand or all, {{OPTIONS}} = this run's options.
 // One SKILL line per brand in scope (all usable brands when none is given), A-Z, with its linked skill folder: the
 // terminal agent cannot pick a skill, so the prompt says where each one is.
@@ -34,7 +42,7 @@ export function skillLines(brand = '', brands = discoverBrands().brands) {
   const list = brands.filter((b) => (brand ? b.id === brand : b.usable)).sort((a, b) => a.id.localeCompare(b.id));
   return list.map(skillLine).join('\n') || 'SKILL: (no linked, usable brand)';
 }
-export const fillPrompt = (text, brand, options = 'defaults', skills = skillLines(brand)) => String(text).replace(/\{\{TOOL\}\}/g, toolRoot).replace(/\{\{BRAND\}\}/g, brand || ALL_BRANDS).replace(/\{\{OPTIONS\}\}/g, options).replace(/\{\{SKILLS\}\}/g, skills);
+export const fillPrompt = (text, brand, options = 'defaults', skills = skillLines(brand), images = imagesText()) => String(text).replace(/\n?\{\{IMAGES\}\}/g, () => (images ? '\n' + images : '')).replace(/\{\{TOOL\}\}/g, toolRoot).replace(/\{\{BRAND\}\}/g, brand || ALL_BRANDS).replace(/\{\{OPTIONS\}\}/g, options).replace(/\{\{SKILLS\}\}/g, skills);
 
 if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();

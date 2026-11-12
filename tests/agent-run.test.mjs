@@ -168,3 +168,21 @@ test('findClaude order: setting, PATH, newest VS Code extension, fixed folders',
   assert.equal(findClaude({ plat: 'darwin', home, exists: has('/opt/homebrew/bin/claude'), which: () => '', list: () => [] }).path, '/opt/homebrew/bin/claude');
   assert.equal(findClaude({ plat: 'linux', home, exists: () => false, which: () => '', list: () => [] }).found, false);
 });
+
+test('create with image engine flow: Playwright browser tools allowed, same wait-for-Connect note; codex create unchanged', async () => {
+  const { runner, out } = setup({ image_engine: 'flow' });
+  assert.equal(runner.start({ mode: 'create', prompt: PROMPT }).ok, true);
+  await done(runner);
+  const rec = recorded(out);
+  const tools = rec.args[rec.args.indexOf('--allowedTools') + 1].split(',');
+  for (const n of ['browser_tabs', 'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_press_key', 'browser_wait_for', 'browser_run_code_unsafe', 'browser_take_screenshot', 'browser_evaluate', 'browser_file_upload']) assert.ok(tools.includes('mcp__playwright__' + n), n);
+  for (const n of ALLOWED_TOOLS.create) assert.ok(tools.includes(n), n);
+  assert.ok(!rec.args.includes('--strict-mcp-config'), 'strict stays research only');
+  assert.ok(rec.stdin.startsWith('RUN-NOW NOTE') && rec.stdin.endsWith(PROMPT));
+  assert.ok(rec.cfg?.mcpServers?.playwright, 'the temp MCP config has the playwright server');
+  const { runner: r2, out: o2 } = setup({ image_engine: 'codex' });
+  r2.start({ mode: 'create', prompt: PROMPT }); await done(r2);
+  const c = recorded(o2);
+  assert.equal(c.args[c.args.indexOf('--allowedTools') + 1], ALLOWED_TOOLS.create.join(','));
+  assert.equal(c.stdin, PROMPT);
+});

@@ -20,6 +20,11 @@ export const ALLOWED_TOOLS = {
   publish: [...BASE, ...METRICOOL_READ, MC + "createScheduledPost", MC + "updateScheduledPost"],
 };
 
+// Create with image engine Google Flow: the agent drives Flow in the signed-in Chrome, so the Playwright browser tools are added.
+export const FLOW_TOOLS = ["browser_tabs", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_press_key", "browser_wait_for", "browser_run_code_unsafe", "browser_take_screenshot", "browser_evaluate", "browser_file_upload"].map((n) => "mcp__playwright__" + n);
+export const usesFlow = (mode, settings = {}) => mode === "create" && settings?.image_engine === "flow";
+export const allowedTools = (mode, settings = {}) => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings) ? FLOW_TOOLS : [])];
+
 // Anything that looks like a secret is replaced before a line is kept.
 const SCRUBS = [
   [/\bBearer\s+\S+/gi, "Bearer [hidden]"],
@@ -120,8 +125,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
     const found = findCli();
     if (!found?.found) return { ok: false, status: 400, error: "Claude CLI not found: set claudeCli.command in workspace/settings.json." };
-    if (mode === "research" && !npxOk()) return { ok: false, status: 400, error: "npx is not available (it comes with Node.js): the Playwright MCP cannot start." };
     const s = getSettings() || {};
+    const flow = usesFlow(mode, s);
+    if ((mode === "research" || flow) && !npxOk()) return { ok: false, status: 400, error: "npx is not available (it comes with Node.js): the Playwright MCP cannot start." };
     const profile = String(s.research?.chrome_profile || "").trim();
     const maxTurns = Number.isInteger(s.agent_run?.max_turns) && s.agent_run.max_turns > 0 ? s.agent_run.max_turns : 400;
     const limitMin = Number(s.agent_run?.timeout_minutes?.[mode]) > 0 ? Number(s.agent_run.timeout_minutes[mode]) : DEFAULT_MINUTES[mode];
@@ -129,7 +135,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile })));
-    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", ALLOWED_TOOLS[mode].join(","), "--add-dir", s.skillsRoot || toolRoot, "--mcp-config", cfg];
+    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", allowedTools(mode, s).join(","), "--add-dir", s.skillsRoot || toolRoot, "--mcp-config", cfg];
     if (mode === "research") args.push("--strict-mcp-config");
     const env = { ...process.env, ...(profile ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
@@ -152,7 +158,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     child.stdin?.on("error", () => {});
     // Started from the app (Run now): the person is at the screen and will click Connect in Chrome, so help the connect page appear
     // and wait for it instead of stopping. This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
-    const waitNote = mode === "research" ? "RUN-NOW NOTE: this run was started from the app, so the person is at the computer and will click Connect in Chrome.\nIf the browser is not connected yet (browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail):\n1) The Playwright MCP has ALREADY opened its own Welcome / connect page. Do NOT open a second copy of it (two Welcome tabs confuse the person).\n   Bring that existing tab to the front with browser_run_code_unsafe: async (page) => { await page.bringToFront(); }, and tell the person in one line to click Connect.\n2) Only if that call fails or no Welcome tab exists at all, run ONCE: node scripts/chrome-connect.mjs --url \"<the exact chrome-extension://.../connect.html?mcpRelayUrl=... URL from browser_tabs>\" (never when a Welcome tab already exists).\n3) Do NOT stop: wait up to 3 minutes calling browser_tabs about every 15 seconds until a real page tab appears.\n4) Only if nothing connects after 3 minutes, follow the normal stop rule of step 1.0.\n\n" : "";
+    let waitNote = mode === "research" || flow ? "RUN-NOW NOTE: this run was started from the app, so the person is at the computer and will click Connect in Chrome.\nIf the browser is not connected yet (browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail):\n1) The Playwright MCP has ALREADY opened its own Welcome / connect page. Do NOT open a second copy of it (two Welcome tabs confuse the person).\n   Bring that existing tab to the front with browser_run_code_unsafe: async (page) => { await page.bringToFront(); }, and tell the person in one line to click Connect.\n2) Only if that call fails or no Welcome tab exists at all, run ONCE: node scripts/chrome-connect.mjs --url \"<the exact chrome-extension://.../connect.html?mcpRelayUrl=... URL from browser_tabs>\" (never when a Welcome tab already exists).\n3) Do NOT stop: wait up to 3 minutes calling browser_tabs about every 15 seconds until a real page tab appears.\n4) Only if nothing connects after 3 minutes, follow the normal stop rule of step 1.0.\n\n" : "";
+    if (flow) waitNote = waitNote.replace("follow the normal stop rule of step 1.0.", "stop and report that Chrome did not connect.");
     try { child.stdin?.end(waitNote + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
     run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);

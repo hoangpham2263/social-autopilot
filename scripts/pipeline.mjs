@@ -33,9 +33,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isoWithOffset } from './metricool-mcp.mjs';
 import { nowIn } from './metricool-csv.mjs';
-import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, loadBrand, findDraft, cleanText, metricoolBrands, isMain } from './lib.mjs';
+import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, imageEngine, loadBrand, findDraft, cleanText, metricoolBrands, isMain } from './lib.mjs';
 import { previousUses } from './store.mjs';
 import { REUSE_RULE } from './ideas.mjs';
+import { draftImages } from './draft-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pipeDir = () => path.join(workspace, 'pipeline');
@@ -176,6 +177,21 @@ function stageA(args) {
   };
 }
 
+// ----- Flow images (settings image_engine = flow): no Codex run; the agent makes each image in Google Flow (docs/flow-images.md)
+// and registers it: draft.mjs register-image --id <draft> --n <k> --from <downloaded file>. -----
+function flowTodo(st) {
+  const todo = [];
+  for (const id of st.drafts || []) {
+    let d; try { d = findDraft(id); } catch { continue; }
+    if (['approved', 'rejected'].includes(d.status.status)) continue;
+    const files = draftImages(d.draft), missing = files.filter((f) => !fs.existsSync(path.join(d.dir, f)));
+    if (!missing.length) continue;
+    todo.push({ id, brand: d.draft.brand, images_to_make: missing.map((f) => ({ n: files.indexOf(f) + 1, file: f, prompt: path.join(d.dir, f === 'image.png' ? 'prompt.txt' : 'prompt-' + f.slice(-6, -4) + '.txt') })), product_image: d.draft.product_image || '', register: 'node scripts/draft.mjs register-image --id ' + id + ' --n <n> --from <downloaded file>' });
+  }
+  return todo;
+}
+const FLOW_NEXT = 'Make each image in Google Flow with the Playwright MCP (procedure: docs/flow-images.md), save the download, then register it with the command shown per image (one command per image: PNG, sparkle removal, clean, check). Then: node scripts/pipeline.mjs create --resume.';
+
 // ----- Stage B -----
 function spawnImages(st, ids) {
   const outFile = path.join(pipeDir(), 'image-batch.json');
@@ -235,14 +251,17 @@ function stageB(st, file) {
     made.push(n.id);
   }
   st.drafts = [...new Set([...(st.drafts || []), ...made])];
-  if (st.drafts.length) spawnImages(st, made);
+  st.image_engine = imageEngine(settings());
+  if (st.drafts.length && st.image_engine !== 'flow') spawnImages(st, made);
   st.stage = st.drafts.length ? 'images' : problems.length ? 'ideas' : 'captions';
   st.timing = { ...st.timing, B: Date.now() - t0 };
   saveState(st);
   return {
-    stage: 'B done', drafts: made, rejected, problems, images: st.batch ? `running in the background (pid ${st.batch.pid}), at most codex.concurrency at once` : 'none',
+    stage: 'B done', drafts: made, rejected, problems, images: st.image_engine === 'flow' ? 'flow: made by the agent in Google Flow' : st.batch ? `running in the background (pid ${st.batch.pid}), at most codex.concurrency at once` : 'none',
+    ...(st.image_engine === 'flow' ? { flow_images: flowTodo(st) } : {}),
     next: problems.length && !made.length
       ? `Fix these entries in the ideas file and send it again: node scripts/pipeline.mjs create --resume --ideas ${rel(path.resolve(file))}`
+      : st.image_engine === 'flow' ? [FLOW_NEXT, `Metricool steps (publish.json items + status queries) if not done yet.${problems.length ? ' Some ideas failed (problems): fix them and send the ideas file again later.' : ''}`]
       : [`Images are being made. Meanwhile do the Metricool steps (publish.json items + status queries) if not done yet.${problems.length ? ' Some ideas failed (problems): fix them and send the ideas file again later.' : ''}`, 'Then: node scripts/pipeline.mjs create --resume (waits for the images, makes the contact sheet).'],
   };
 }
@@ -274,6 +293,10 @@ function captionTemplate(st) {
 }
 function stageC(st, args) {
   const t0 = Date.now();
+  if (st.image_engine === 'flow') {
+    const todo = flowTodo(st);
+    if (todo.length) return { stage: 'C waiting for Flow images', flow_images: todo, next: FLOW_NEXT };
+  }
   const done = waitImages(st, Number(args['wait-minutes'] || 40) * 60000);
   if (!done) return { stage: 'C waiting', next: 'Images are still being made: run node scripts/pipeline.mjs create --resume again.' };
   const batch = readJson(st.batch?.out || '', null);
@@ -331,8 +354,11 @@ function stageD(st, file, args) {
   if (redo.length) {
     // Redone images: --force per draft in the background (Codex slots keep the machine limit), then back to Stage C.
     const outFile = path.join(pipeDir(), 'image-batch.json');
-    const pids = redo.map((id) => { const p = spawn(process.execPath, [path.join(here, 'draft.mjs'), 'image', '--id', id, '--force'], { detached: true, stdio: 'ignore', windowsHide: true }); p.unref(); return p.pid; });
-    st.batch = { pid: pids[pids.length - 1], pids, out: outFile, started: stamp(), drafts: redo };
+    const flow = st.image_engine === 'flow';
+    // Flow redo: the old images are put aside so the draft shows as waiting for new ones (register-image fills them again).
+    if (flow) for (const id of redo) { const d = findDraft(id); for (const f of draftImages(d.draft)) if (fs.existsSync(path.join(d.dir, f))) fs.renameSync(path.join(d.dir, f), path.join(d.dir, `image-old-${Date.now()}-${f}`)); }
+    const pids = flow ? [] : redo.map((id) => { const p = spawn(process.execPath, [path.join(here, 'draft.mjs'), 'image', '--id', id, '--force'], { detached: true, stdio: 'ignore', windowsHide: true }); p.unref(); return p.pid; });
+    st.batch = flow ? null : { pid: pids[pids.length - 1], pids, out: outFile, started: stamp(), drafts: redo };
     st.stage = 'images';
   }
   st.timing = { ...st.timing, D: Date.now() - t0 };
@@ -342,7 +368,8 @@ function stageD(st, file, args) {
   if (allReady && !args['no-finish']) return { stage: 'D done', results, ...finish(st) };
   return {
     stage: 'D partial', results, redo, problems,
-    next: redo.length ? `Redoing ${redo.length} image(s) in the background: node scripts/pipeline.mjs create --resume (waits, new contact sheet), then captions for those.`
+    next: redo.length && st.image_engine === 'flow' ? `Redo ${redo.length} image(s) in Google Flow (new prompt.txt written; docs/flow-images.md), register each with draft.mjs register-image --id <draft> --n <k> --from <file> (replaces the old image), then: node scripts/pipeline.mjs create --resume.`
+      : redo.length ? `Redoing ${redo.length} image(s) in the background: node scripts/pipeline.mjs create --resume (waits, new contact sheet), then captions for those.`
       : `Fix the drafts that are not ready (problems above) in ${rel(path.resolve(file))} and send it again: node scripts/pipeline.mjs create --resume --captions ${rel(path.resolve(file))}${notReady.length || problems.length ? ' (or finish anyway: node scripts/pipeline.mjs create --resume --finish; they stay out of To review)' : ''}`,
   };
 }
