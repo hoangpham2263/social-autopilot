@@ -12,6 +12,7 @@ Read this first when working ON the tool (code, tests, UI). Running the tool (re
 - `core/` launcher shell (Windows WebView2 / macOS), setup page, update.
 - `config/` defaults (`settings.json`, `best-times.json`, examples). `prompts/` Codex image prompts, caption brief, idea rules.
 - `docs/` `scheduled-prompt.md` (the ONLY source of the Run tab texts), `research.md`, `metricool.md`, `LESSONS.md` (lessons for making posts), this map.
+- `docs/flow-images.md` Google Flow image engine (procedure, pitfalls, commands, sparkle removal); `scripts/image/` own PNG/JPEG + sparkle remover, `scripts/vendor/` vendored JPEG decoder.
 - `tests/` `node:test`, one file per area; `fake-codex.mjs` stands in for Codex (`SA_CODEX`).
 - `workspace/` (git-ignored, all state; see below).
 

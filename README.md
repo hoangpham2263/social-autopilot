@@ -69,6 +69,7 @@ Nothing is machine-specific: Chrome and its profiles are discovered; override wi
 ## Settings file
 
 Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**. Các cài đặt chuẩn khác không hiện trên app; ai cần đổi thì sửa tay `workspace/settings.json` của máy (ghi đè lên mặc định `config/settings.json`, cùng khoá):
+Tab **Settings** còn có **Image engine** (`image_engine`): `Codex` (mặc định) hoặc `Google Flow`. Với Flow, Create & publish bảo agent tạo ảnh trên Google Flow trong Chrome (Playwright MCP) rồi chạy `draft.mjs register-image`; ảnh Flow có sao Google ở góc phải dưới và tool xoá cục bộ (`scripts/image-unsparkle.mjs`, nhận PNG/JPG). Chi tiết: `docs/flow-images.md`. Run now với Flow cho phép các tool trình duyệt Playwright và chờ bạn bấm Connect như Research.
 
 | Khoá | Ý nghĩa |
 |---|---|
