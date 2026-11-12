@@ -461,7 +461,7 @@ export function registerImage(args, s = settings()) {
   const keepPrefix = path.basename(keep).replace(/\.[a-z]+$/, '.');
   for (const f of fs.readdirSync(dir)) if (f.startsWith(keepPrefix) && path.join(dir, f) !== keep) fs.renameSync(path.join(dir, f), path.join(dir, `image-old-${stampNow}-${f}`));
   fs.writeFileSync(keep, raw);
-  const sparkle = unsparkleFile(keep, generated);
+  const sparkle = unsparkleFile(keep, generated, { assumePresent: true }); // Flow pictures always carry the star
   const mark = sparkle.applied ? 'removed' : 'none';
   const st0 = readJson(statusFile, {});
   const per = { ...(st0.flow_images || {}), [path.basename(target)]: { original: path.basename(keep), sparkle: mark, alpha: sparkle.alpha, at: stamp() } };
@@ -482,7 +482,7 @@ export function registerImage(args, s = settings()) {
   let checked;
   try { checked = check({ id: draft.id }); } catch (e) { checked = { error: e.message }; }
   const missing = files.filter((f) => !fs.existsSync(path.join(dir, f)));
-  return { id: draft.id, n, image: target, original: keep, engine: 'flow', sparkle: mark, alpha: sparkle.alpha, ...(cleaned ? { metadata_removed: cleaned.removed } : {}), ...(watermarked ? { watermark: watermarked } : {}), status: checked.status, problems: checked.problems || (checked.error ? [checked.error] : []), warnings: checked.warnings || [], ...(missing.length ? { images_missing: missing } : {}),
+  return { id: draft.id, n, image: target, original: keep, engine: 'flow', sparkle: mark, alpha: sparkle.alpha, ...(sparkle.method ? { sparkle_method: sparkle.method } : {}), ...(cleaned ? { metadata_removed: cleaned.removed } : {}), ...(watermarked ? { watermark: watermarked } : {}), status: checked.status, problems: checked.problems || (checked.error ? [checked.error] : []), warnings: checked.warnings || [], ...(missing.length ? { images_missing: missing } : {}),
     next: missing.length ? `Register the other image(s): ${missing.join(', ')} (draft.mjs register-image --id ${draft.id} --n <k> --from <file>).` : 'LOOK at the image(s) (no Google star left, nothing wrong), then write the captions.' };
 }
 

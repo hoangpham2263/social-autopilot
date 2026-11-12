@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { removeSparkle, sparkleCover, sparkleRadius, unsparkleFile, decodeImage } from '../scripts/image/unsparkle.mjs';
+import { removeSparkle, sparkleCover, sparkleRadius, sparkleAnchor, unsparkleFile, decodeImage } from '../scripts/image/unsparkle.mjs';
 import { encodePng, decodePng } from '../scripts/image/png.mjs';
 import { isJpeg } from '../scripts/image/jpeg.mjs';
 
@@ -85,4 +85,52 @@ test('unsparkleFile and the CLI: PNG in, PNG out, input untouched', () => {
 test('isJpeg looks at the magic bytes', () => {
   assert.equal(isJpeg(Buffer.from([0xff, 0xd8, 0xff, 0xe0])), true);
   assert.equal(isJpeg(Buffer.from([137, 80, 78, 71])), false);
+});
+
+// A bright, busy corner (white flowers on a pale table): the veil adds little contrast and the ring is noisy; the old mean-contrast test
+// missed such a star. 1024 px picture, star 102 px from the right and bottom edges.
+function brightBusy(size = 1024) {
+  let seed = 12345; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const data = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const i = (y * size + x) * 4, base = 205 + (x * 25) / size + (y * 10) / size;
+    // a bright blob (flower) just up-left of the star, brighter than the veiled star
+    const flower = Math.hypot(x - (size - 135), y - (size - 135)) < 30 ? 50 : 0;
+    const v = Math.max(0, Math.min(255, base + flower + (rnd() - 0.5) * 16));
+    data[i] = v; data[i + 1] = v - 6; data[i + 2] = v - 14; data[i + 3] = 255;
+  }
+  return { width: size, height: size, data };
+}
+function veil(img, alpha = 0.3, off = 102) {
+  const { cover } = sparkleCover(img.width, img.height, img.width - off, img.height - off);
+  for (let p = 0; p < img.width * img.height; p++) { const a = alpha * cover[p]; if (!a) continue; for (let c = 0; c < 3; c++) img.data[p * 4 + c] = Math.round(img.data[p * 4 + c] * (1 - a) + 255 * a); }
+}
+const meanDiff = (a, b, size = 1024) => { let s = 0, n = 0; for (let y = size - 140; y < size - 64; y++) for (let x = size - 140; x < size - 64; x++) for (let c = 0; c < 3; c++) { s += Math.abs(a.data[(y * size + x) * 4 + c] - b.data[(y * size + x) * 4 + c]); n++; } return s / n; };
+
+test('assumePresent: a star on a bright noisy background is taken off at the anchor (strength inside the real range)', () => {
+  const clean = brightBusy(), shown = brightBusy(); veil(shown);
+  const before = meanDiff(clean, shown);
+  const r = removeSparkle(shown, { assumePresent: true });
+  assert.equal(r.applied, true);
+  assert.ok(['detected', 'anchor'].includes(r.method));
+  assert.ok(r.alpha >= 0.1 && r.alpha <= 0.8, `alpha ${r.alpha}`);
+  assert.ok(meanDiff(clean, shown) < before / 2, `mean error ${before} -> ${meanDiff(clean, shown)}`);
+});
+
+test('assumePresent on a picture whose star does not show: anchor method with the clamped strength', () => {
+  const img = brightBusy();
+  for (let p = 0; p < img.width * img.height; p++) for (let c = 0; c < 3; c++) img.data[p * 4 + c] = 253; // saturated: no contrast at all
+  const r = removeSparkle(img, { assumePresent: true });
+  assert.equal(r.applied, true);
+  assert.equal(r.method, 'anchor');
+  assert.ok(r.alpha >= 0.25 && r.alpha <= 0.36, `alpha ${r.alpha}`);
+  assert.ok(Math.abs(r.right - 102) <= 5 && Math.abs(r.bottom - 102) <= 5);
+});
+
+test('without assumePresent a flat picture stays unchanged; the anchor grows from 102 (1K) to 120 (2K)', () => {
+  const img = { width: 1024, height: 1024, data: Buffer.alloc(1024 * 1024 * 4, 253) }, copy = Buffer.from(img.data);
+  assert.equal(removeSparkle(img).applied, false);
+  assert.ok(img.data.equals(copy));
+  assert.equal(sparkleAnchor(1024, 1024), 102);
+  assert.equal(sparkleAnchor(2048, 2048), 120);
 });
