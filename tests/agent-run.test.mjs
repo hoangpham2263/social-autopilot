@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createAgentRunner, sanitize, mcpConfig, validate, ALLOWED_TOOLS } from '../core/setup/agent-run.mjs';
+import { createAgentRunner, sanitize, mcpConfig, validate, ALLOWED_TOOLS, usesFlow, runEngine } from '../core/setup/agent-run.mjs';
 import { findClaude } from '../core/setup/claude-cli.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -185,4 +185,26 @@ test('create with image engine flow: Playwright browser tools allowed, same wait
   const c = recorded(o2);
   assert.equal(c.args[c.args.indexOf('--allowedTools') + 1], ALLOWED_TOOLS.create.join(','));
   assert.equal(c.stdin, PROMPT);
+});
+
+test('per-run image engine: the run choice beats the setting for tools and the Connect note (create only)', async () => {
+  // Setting codex, run choice flow: Playwright browser tools + the wait note.
+  const { runner, out } = setup({ image_engine: 'codex' });
+  assert.equal(runner.start({ mode: 'create', prompt: PROMPT, imageEngine: 'flow' }).ok, true);
+  await done(runner);
+  const rec = recorded(out);
+  assert.ok(rec.args[rec.args.indexOf('--allowedTools') + 1].split(',').includes('mcp__playwright__browser_navigate'));
+  assert.ok(rec.stdin.startsWith('RUN-NOW NOTE') && rec.stdin.endsWith(PROMPT));
+  // Setting flow, run choice codex: no browser tools, no note.
+  const { runner: r2, out: o2 } = setup({ image_engine: 'flow' });
+  r2.start({ mode: 'create', prompt: PROMPT, imageEngine: 'codex' }); await done(r2);
+  const c = recorded(o2);
+  assert.equal(c.args[c.args.indexOf('--allowedTools') + 1], ALLOWED_TOOLS.create.join(','));
+  assert.equal(c.stdin, PROMPT);
+  // No choice (or an invalid one): the setting decides. Publish ignores the engine.
+  assert.equal(usesFlow('create', { image_engine: 'flow' }, ''), true);
+  assert.equal(usesFlow('create', { image_engine: 'flow' }, 'nonsense'), true);
+  assert.equal(usesFlow('create', {}, 'flow'), true);
+  assert.equal(usesFlow('publish', {}, 'flow'), false);
+  assert.equal(runEngine({ image_engine: 'flow' }, 'codex'), 'codex');
 });

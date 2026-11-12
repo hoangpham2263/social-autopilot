@@ -61,3 +61,44 @@ test('register-image: Flow JPG/PNG becomes image.png / image-02.png, sparkle rem
     assert.match(JSON.parse(bad.stdout).error, /PNG or JPEG/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// 1K and 2K Flow downloads have the star at different distances from the corner (103/97 and 120/120); with no remove-watermark skill
+// folder on the machine the built-in cleaner is used and says so.
+test('register-image: star at the 1K and 2K places, built-in cleaner when the skill script is missing', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-flow2-'));
+  try {
+    const starAt = (right, bottom) => {
+      const data = Buffer.alloc(W * H * 4);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; data[i] = 60 + (x * 80) / W; data[i + 1] = 50 + (y * 60) / H; data[i + 2] = 40; data[i + 3] = 255; }
+      const { cover } = sparkleCover(W, H, W - right, H - bottom);
+      for (let p = 0; p < W * H; p++) { const a = 0.32 * cover[p]; if (a) for (let c = 0; c < 3; c++) data[p * 4 + c] = Math.round(data[p * 4 + c] * (1 - a) + 255 * a); }
+      return encodePng({ width: W, height: H, data });
+    };
+    const id = 'demo-20261112-02', draftDir = path.join(dir, 'ws', 'drafts', 'demo', id);
+    fs.mkdirSync(draftDir, { recursive: true });
+    fs.writeFileSync(path.join(draftDir, 'draft.json'), JSON.stringify({ id, brand: 'demo', brand_dir: path.join(dir, 'none'), image_count: 2, idea: {}, inspiration: {}, networks: [], captions: {} }));
+    fs.writeFileSync(path.join(draftDir, 'status.json'), JSON.stringify({ status: 'needs_caption' }));
+    const run = (...a) => { const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'draft.mjs'), 'register-image', '--id', id, ...a], { encoding: 'utf8', env: { ...process.env, SA_WORKSPACE: path.join(dir, 'ws'), SA_STRIP_SCRIPT: path.join(dir, 'no-such-skill', 'strip-png-metadata.mjs') } }); return JSON.parse(r.stdout); };
+    const k1 = path.join(dir, '1k.png'), k2 = path.join(dir, '2k.png');
+    fs.writeFileSync(k1, starAt(103, 97)); fs.writeFileSync(k2, starAt(120, 120));
+    const one = run('--from', k1, '--n', '1');
+    assert.equal(one.ok, true, JSON.stringify(one)); assert.equal(one.sparkle, 'removed');
+    const two = run('--from', k2, '--n', '2');
+    assert.equal(two.sparkle, 'removed', JSON.stringify(two));
+    const st = JSON.parse(fs.readFileSync(path.join(draftDir, 'status.json'), 'utf8'));
+    assert.equal(st.metadata_clean.cleaner, 'built-in');
+    const rep = JSON.parse(fs.readFileSync(path.join(draftDir, 'image-clean-report.json'), 'utf8'));
+    assert.equal(rep.cleaner, 'built-in'); assert.equal(rep.imageDataIdentical, true); assert.deepEqual(rep.outputChunks, []);
+    assert.ok(fs.existsSync(path.join(draftDir, 'image-generated-flow-original.png')), 'the original is kept');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Run tab Images option: the prompt gets the chosen engine and the pipeline command --image-engine', () => {
+  const html = fs.readFileSync(path.join(root, 'ui', 'index.html'), 'utf8');
+  assert.ok(html.includes('id="prImages"') && html.includes('data-opt="create"'));
+  assert.ok(html.includes('--image-engine ${chosenEngine()}') && html.includes('image_engine: chosenEngine()'));
+  const pipe = fs.readFileSync(path.join(root, 'scripts', 'pipeline.mjs'), 'utf8');
+  assert.ok(pipe.includes("args['image-engine']") && pipe.includes('image_engine_choice'));
+  // The setting stays the default holder: the UI never saves the per-run choice.
+  assert.ok(!/postJson\("\/api\/settings"[^)]*prImages/.test(html));
+});

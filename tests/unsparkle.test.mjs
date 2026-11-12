@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { removeSparkle, sparkleCover, unsparkleFile, decodeImage } from '../scripts/image/unsparkle.mjs';
+import { removeSparkle, sparkleCover, sparkleRadius, unsparkleFile, decodeImage } from '../scripts/image/unsparkle.mjs';
 import { encodePng, decodePng } from '../scripts/image/png.mjs';
 import { isJpeg } from '../scripts/image/jpeg.mjs';
 
@@ -17,8 +17,8 @@ function gradient() {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; data[i] = 60 + (x * 80) / W; data[i + 1] = 50 + (y * 60) / H; data[i + 2] = 40 + ((x + y) * 40) / (W + H); data[i + 3] = 255; }
   return { width: W, height: H, data };
 }
-function addStar(img, alpha = 0.32) {
-  const { cover } = sparkleCover(W, H);
+function addStar(img, alpha = 0.32, right = 101, bottom = 101) {
+  const { cover } = sparkleCover(W, H, W - right, H - bottom);
   for (let p = 0; p < W * H; p++) { const a = alpha * cover[p]; if (!a) continue; for (let c = 0; c < 3; c++) img.data[p * 4 + c] = Math.round(img.data[p * 4 + c] * (1 - a) + 255 * a); }
 }
 const maxDiff = (a, b) => { let m = 0; for (let p = 0; p < W * H; p++) for (let c = 0; c < 3; c++) m = Math.max(m, Math.abs(a.data[p * 4 + c] - b.data[p * 4 + c])); return m; };
@@ -31,6 +31,23 @@ test('a star over a gradient is removed', () => {
   assert.equal(r.applied, true);
   assert.ok(Math.abs(r.alpha - 0.32) < 0.05, `alpha ${r.alpha}`);
   assert.ok(maxDiff(clean, shown) < 12, `left ${maxDiff(clean, shown)}`);
+});
+
+// The star is not at a fixed distance: 1K Flow downloads have it about 103 px from the right and 97 from the bottom, 2K ones 120 / 120.
+for (const [right, bottom] of [[103, 97], [120, 120], [92, 128]]) {
+  test(`a star ${right} px from the right and ${bottom} from the bottom is found and removed`, () => {
+    const clean = gradient(), shown = gradient();
+    addStar(shown, 0.3, right, bottom);
+    const r = removeSparkle(shown);
+    assert.equal(r.applied, true);
+    assert.ok(Math.abs(r.right - right) <= 2 && Math.abs(r.bottom - bottom) <= 2, `found ${r.right}/${r.bottom}`);
+    assert.ok(maxDiff(clean, shown) < 14, `left ${maxDiff(clean, shown)}`);
+  });
+}
+
+test('the star radius grows only a little with the picture size', () => {
+  assert.ok(Math.abs(sparkleRadius(1024, 1024) - 25.8) < 0.01);
+  assert.ok(sparkleRadius(2048, 2048) <= 25.8 && sparkleRadius(2048, 2048) > 24);
 });
 
 test('a picture without the star is left as it is', () => {
