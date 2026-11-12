@@ -115,6 +115,18 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt .field:has(#prStart) { width: 220px; }
 #page-prompt .fields { gap: 16px 8px; }
 #page-prompt .fields > .field:not(.auto):not(:has(#prStart)) { width: 146px; flex: 0 1 146px; }
+/* Research Sources: a select-like dropdown; the panel floats over the page (no layout jump). */
+#prSrcField { position: relative; }
+#prSrcBox > summary { display: flex; align-items: center; height: var(--ctl-h); box-sizing: border-box; padding: var(--ctl-pad); font-size: var(--ctl-font); color: var(--ink); background: #fff; border: var(--ctl-border); border-radius: var(--r); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; list-style: none; }
+#prSrcBox > summary::-webkit-details-marker { display: none; }
+#prSrcBox > summary::after { content: ""; margin-left: auto; border: 4px solid transparent; border-top-color: var(--muted); border-bottom-width: 0; }
+#prSrcBox > summary:hover, #prSrcBox[open] > summary { border-color: var(--accent); }
+#prSrcBox[open] > summary { margin: 0; }
+#prSrc { position: absolute; left: 0; top: calc(100% + 2px); z-index: 12; box-sizing: border-box; min-width: 100%; width: max-content; max-width: min(520px, calc(100vw - 32px)); max-height: 320px; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--accent); border-radius: var(--r); display: grid; gap: 2px; }
+#prSrc .opt-group { padding: 6px 6px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+#prSrc label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
+#prSrc label:hover { background: var(--soft-hover); }
+#prSrc .meta { font-size: 12px; }
 #prText { display: block; flex: 1 1 auto; height: 100%; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prMsg.copied { color: var(--ink); }
 #prText[readonly] { background: #fafafa; }
@@ -365,6 +377,7 @@ header + * { margin-top: 0; }
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
       <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
+      <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = no limit)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
@@ -916,7 +929,27 @@ header + * { margin-top: 0; }
     const brandSel = $("#prBrand").value, scope = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable));
     // Research always covers ALL enabled sources of the chosen brand(s); a brand can run when it has enabled sources, or its skill enables discovery.
     if (!scope.some((x) => arr(x.sources).length || x.discovery_enabled)) return "No sources yet: add page links in the brand's Edit page (Overview)";
+    if (srcScope().total && !srcScope().on) return "Tick at least one source";
     return "";
+  }
+  // Sources picker: ticks live in memory only (srcOff = unticked "brand:source"); default = every enabled source ticked.
+  let srcOff = new Set();
+  function srcBrands() { const sel = $("#prBrand").value; return az(arr(promptData.brands).filter((x) => (sel ? x.id === sel : x.usable)).filter((x) => arr(x.sources).length), (x) => x.name || x.id); }
+  function srcScope() {
+    const per = {}; let total = 0, on = 0;
+    for (const b of srcBrands()) for (const s of arr(b.sources)) { total++; if (!srcOff.has(`${b.id}:${s}`)) { on++; (per[b.id] ||= []).push(s); } }
+    return { total, on, per };
+  }
+  function srcLabel() {
+    const { total, on } = srcScope();
+    $("#prSrcSum").textContent = !total ? "None" : on === total ? `All ${total}` : on ? `${on} of ${total}` : "None";
+  }
+  function drawSources() {
+    const brands = srcBrands(), single = !!$("#prBrand").value;
+    const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, reg = modeCounts[b.id]?.registry?.[s]; return `<label title="${esc(info?.url || s)}"><input type="checkbox" value="${esc(v)}"${srcOff.has(v) ? "" : " checked"}><span>${esc(info?.name || s)}</span><span class="meta"><span class="dot ${(REG[reg?.status] || REG.none)[1]}"></span>${esc(regLine(reg))}</span></label>`; };
+    $("#prSrc").innerHTML = brands.map((b) => `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${arr(b.sources).map((s) => row(b, s)).join("")}`).join("") || `<div class="meta">No enabled sources.</div>`;
+    for (const c of $$("#prSrc input")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); srcLabel(); regenerate(); };
+    srcLabel();
   }
   function drawPrompt() {
     const prompts = arr(promptData.prompts), brands = arr(promptData.brands);
@@ -955,6 +988,7 @@ header + * { margin-top: 0; }
     $("#prWindowLabel").textContent = `Time (${tzName(mcTz)})`;
     const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
     prBase = p ? p.text : "";
+    drawSources();
     $("#prText").value = buildPrompt();
     try { arDraw(); } catch {}
     prBoxSync();
@@ -995,7 +1029,14 @@ header + * { margin-top: 0; }
     if (isResearch(prMode)) {
       const max = parseInt($("#prMax").value, 10);
       // No source choice: every enabled source of the brand(s), each with the smart crawl decided from its registry; per-source on/off is in the brand Edit page.
-      lines.push("all enabled sources of the brand (no --source flag): each one is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
+      const sc = srcScope();
+      if (sc.on === sc.total) lines.push("all enabled sources of the brand (no --source flag): each one is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
+      else {
+        // A subset is ticked: --source per brand; brands with nothing ticked are skipped.
+        for (const [bid, list] of Object.entries(sc.per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
+        if (!brand) lines.push("only the brands listed above (brands with no source ticked are skipped)");
+        lines.push("each ticked source is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
+      }
       lines.push("discovery follows the brand's skill config (research.discovery: runs after the sources only if enabled there)");
       if (max > 0) lines.push(`target ${max} new posts per brand: sources first, then discovery if the skill enables it (--max-posts ${max})`);
     } else {
@@ -1072,6 +1113,7 @@ header + * { margin-top: 0; }
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
+  document.addEventListener("click", (e) => { if ($("#prSrcBox").open && !e.target.closest("#prSrcField")) $("#prSrcBox").open = false; });
   for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
   $("#prItemClear").onclick = () => { prItem = null; $("#prCount").value = ""; drawPrompt(); };
 
