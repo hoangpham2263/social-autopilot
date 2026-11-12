@@ -274,9 +274,9 @@ export function syncMetricoolBrands(raw, now = new Date()) {
 
 // A brand folder ("dir") exists in two layouts:
 //   legacy  <skillsRoot>/<id>-skills/{SKILL.md,project,workspace,scripts,references,...}   dir = the skill; skillRoot = dir
-//   shared  <skillsRoot>/<skill>/brands/<id>/{project,workspace}  (e.g. brand-content-skills/brands/dreamyvows); SKILL.md,
+//   shared  <skillsRoot>/<skill>/brands/<id>/project  (e.g. brand-content-skills/brands/dreamyvows); its working data is OUTSIDE the skill: <repo>/workspace/<id>/; SKILL.md,
 //           scripts/, references/, templates/ live once at the skill root = two levels above dir
-// dir is always where the brand's own files are (project/, workspace/); skillRoot is where SKILL.md and the shared scripts
+// dir is always where the brand's own files are (project/); skillRoot is where SKILL.md and the shared scripts
 // are. Legacy: skillRoot === dir. A shared brand id is its folder name; a legacy id is the folder name without -skills.
 export const SKILL_FILES = ['SKILL.md', 'project/project.md', 'project/social.json'];
 export const BRAND_FILES = ['project/project.md', 'project/social.json'];
