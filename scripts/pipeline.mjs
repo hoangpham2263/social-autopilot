@@ -5,7 +5,7 @@
 //
 //   node scripts/pipeline.mjs mcp-plan [--brand <id|all>]
 //        the Metricool MCP calls to make first (getBrandSettings, getBestTimeToPostByNetwork per brand, exact args)
-//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"]
+//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"] [--image-engine codex|flow]
 //        --items: ideas from exactly these library items (passed to ideas.mjs init; one brand); only their ideas go in the
 //        ideas file. A reused item comes with _context.previous_uses + reuse_rule (take a new angle).
 //        [--brand-settings <file> --best-times-dir <dir>]   (the saved MCP answers: sync-brands / sync-times run here)
@@ -124,6 +124,8 @@ function someImages(dir, max = 40) {
 
 function stageA(args) {
   const started = stamp();
+  const engineArg = args['image-engine'] && args['image-engine'] !== true ? String(args['image-engine']) : '';
+  if (engineArg && !['codex', 'flow'].includes(engineArg)) throw new Error('--image-engine must be codex or flow.');
   const brandArg = String(args.brand && args.brand !== true ? args.brand : 'all');
   const agent = String(args.agent && args.agent !== true ? args.agent : 'Claude Code');
   const pickIds = args.items && args.items !== true ? String(args.items).split(',').map((x) => x.trim()).filter(Boolean) : [];
@@ -163,7 +165,7 @@ function stageA(args) {
   const ideasFile = path.join(pipeDir(), 'ideas-todo.json');
   writeJson(ideasFile, todo);
   lap('ideas_init', t);
-  const st = saveState({ run_started: started, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
+  const st = saveState({ run_started: started, image_engine_choice: engineArg, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
   const items = Object.values(publish.brands).reduce((n, b) => n + b.items.length, 0);
   return {
     stage: 'A done', stop: todo.ideas.length ? 'ideas' : needsResearch.length ? 'needs research' : 'captions', ...(needsResearch.length ? { needs_research: needsResearch } : {}), brands: scope, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items,
@@ -251,7 +253,7 @@ function stageB(st, file) {
     made.push(n.id);
   }
   st.drafts = [...new Set([...(st.drafts || []), ...made])];
-  st.image_engine = imageEngine(settings());
+  st.image_engine = st.image_engine_choice || imageEngine(settings()); // --image-engine of this run, else the Settings default
   if (st.drafts.length && st.image_engine !== 'flow') spawnImages(st, made);
   st.stage = st.drafts.length ? 'images' : problems.length ? 'ideas' : 'captions';
   st.timing = { ...st.timing, B: Date.now() - t0 };

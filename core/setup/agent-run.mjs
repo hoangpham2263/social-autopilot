@@ -22,8 +22,10 @@ export const ALLOWED_TOOLS = {
 
 // Create with image engine Google Flow: the agent drives Flow in the signed-in Chrome, so the Playwright browser tools are added.
 export const FLOW_TOOLS = ["browser_tabs", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_press_key", "browser_wait_for", "browser_run_code_unsafe", "browser_take_screenshot", "browser_evaluate", "browser_file_upload"].map((n) => "mcp__playwright__" + n);
-export const usesFlow = (mode, settings = {}) => mode === "create" && settings?.image_engine === "flow";
-export const allowedTools = (mode, settings = {}) => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings) ? FLOW_TOOLS : [])];
+// The engine of a run: the one chosen for this run (Run tab "Images", per run only) when valid, else the tool setting image_engine.
+export const runEngine = (settings = {}, engine = "") => (engine === "codex" || engine === "flow" ? engine : settings?.image_engine === "flow" ? "flow" : "codex");
+export const usesFlow = (mode, settings = {}, engine = "") => mode === "create" && runEngine(settings, engine) === "flow";
+export const allowedTools = (mode, settings = {}, engine = "") => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : [])];
 
 // Anything that looks like a secret is replaced before a line is kept.
 const SCRUBS = [
@@ -119,14 +121,14 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     last = run.state; cur = null;
   };
 
-  function start({ mode, prompt, brands } = {}) {
+  function start({ mode, prompt, brands, imageEngine } = {}) {
     const bad = validate({ mode, prompt });
     if (bad) return { ok: false, status: 400, error: bad };
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
     const found = findCli();
     if (!found?.found) return { ok: false, status: 400, error: "Claude CLI not found: set claudeCli.command in workspace/settings.json." };
     const s = getSettings() || {};
-    const flow = usesFlow(mode, s);
+    const flow = usesFlow(mode, s, imageEngine);
     if ((mode === "research" || flow) && !npxOk()) return { ok: false, status: 400, error: "npx is not available (it comes with Node.js): the Playwright MCP cannot start." };
     const profile = String(s.research?.chrome_profile || "").trim();
     const maxTurns = Number.isInteger(s.agent_run?.max_turns) && s.agent_run.max_turns > 0 ? s.agent_run.max_turns : 400;
@@ -135,7 +137,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile })));
-    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", allowedTools(mode, s).join(","), "--add-dir", s.skillsRoot || toolRoot, "--mcp-config", cfg];
+    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", s.skillsRoot || toolRoot, "--mcp-config", cfg];
     if (mode === "research") args.push("--strict-mcp-config");
     const env = { ...process.env, ...(profile ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
