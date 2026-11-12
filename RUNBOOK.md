@@ -11,7 +11,7 @@ Trạng thái người dùng thấy (tab Posts, đúng thứ tự): **To review*
 
 ## Rules for every run
 
-- Prompt ghi sẵn đường dẫn: `TOOL:` (thư mục tool) và mỗi thương hiệu một dòng `SKILL: <id> → <thư mục skill>`; agent không tự chọn skill, chỉ làm với các skill đó và đọc `SKILL.md`, `project/project.md`, `project/social.json` của từng skill ở bước Setup.
+- Prompt ghi sẵn đường dẫn: `TOOL:` (thư mục tool) và mỗi thương hiệu một dòng `SKILL: <id> → <thư mục>`; agent không tự chọn skill, chỉ làm với các dòng đó. Bố cục cũ (`<id>-skills`): đọc `SKILL.md`, `project/project.md`, `project/social.json` của skill. Bố cục mới (`brand-content-skills/brands/<id>`): dòng ghi thư mục thương hiệu và gốc skill; đọc `SKILL.md` + `references/` ở gốc skill, rồi CHỈ file của thương hiệu đó (`brands/<id>/project/...`, `workspace/`), không đọc thương hiệu khác; script dùng chung chạy từ gốc skill kèm `--brand <id>`.
 - **Dừng (STOP) vẫn ghi nhật ký:** lượt nào dừng giữa chừng (bị chặn, Chrome không nối được, lỗi Metricool, hết lượt Codex...) **vẫn luôn** làm bước ghi nhật ký (`runlog.mjs add`, kèm lý do dừng: `--reason "<lý do>"`, vd `--reason "chrome unreachable"`; nhật ký ghi kết quả **stopped** và không lấy số liệu của lượt cũ) rồi báo cáo. `node scripts/runlog.mjs --help` in cách dùng. Bước ghi nhật ký không bao giờ bị bỏ.
 - Mỗi lượt (mọi chế độ, mọi agent) theo đúng các bước đánh số của chế độ đó, không bỏ bước; **bước gần cuối luôn là ghi nhật ký** (`scripts/runlog.mjs`, 1.5 / 2.9 / 3.1), **bước cuối là báo cáo** với các mục cố định (1.6 / 2.10 / 3.2).
 
@@ -22,7 +22,7 @@ Trạng thái người dùng thấy (tab Posts, đúng thứ tự): **To review*
 - Skill không bao giờ được chép vào tool. Mỗi brand Metricool trỏ tới một thư mục skill (`skill_path` trong `workspace/metricool-brands.json`); tool chỉ **đọc** thư mục đó; **không bao giờ ghi vào skill** (bài đã duyệt, Metricool id, ngày đăng nằm trong sổ bài của tool `workspace/posts/<brand>/`). Mọi dữ kiện riêng của thương hiệu đọc từ skill (`SKILL.md`, `project/project.md`, `project/social.json`). Không hard-code thương hiệu, không trộn nguồn hay kho giữa thương hiệu.
 - Brand chỉ được làm và gửi bài khi đã trỏ tới một skill dùng được; brand chưa trỏ skill, hoặc `removed: true` (đã mất khỏi tài khoản) trong `workspace/metricool-brands.json`, thì **không bao giờ**. Không dùng blogId khác `args.blogId` của payload; không `createScheduledPostForReview`.
 - Tuỳ chọn của lượt (dòng `Options:` của prompt) ưu tiên hơn mặc định: Research → `--source a,b` (trang tham khảo), `--platforms a,b|none` (nền tảng discovery), `--keywords "k1,k2"`, `--max-posts N` (mục tiêu mỗi thương hiệu), `--backfill` hoặc `--full` cho `research.mjs start`; Create → `--count N` cho `ideas.mjs init` (trống = đủ bài cho `planning.ahead_days` ngày tới); Publish approved → `--limit N` (tối đa N bài đã duyệt mỗi brand, bài duyệt sớm nhất trước) cho `metricool-mcp.mjs payload`; chỉ Publish approved → `--window morning|midday|afternoon|evening` (chỉ giờ trong khung đó của ngày, theo múi giờ Metricool của brand; tốt nhất trước, không có dữ liệu thì giữa khung) và Start: **From today** = `--start today` (mặc định trong app) hoặc **From tomorrow** (không có cờ) (giờ tốt nhất kế tiếp sau bây giờ, chừa 15 phút an toàn; brand 1 bài/ngày chỉ dùng giờ chính, không bao giờ giờ dự phòng tối nay) cho `payload`. Giờ được tính lúc chạy `payload`, nên chạy `payload` ngay trước khi gửi; item đã quá `send_before` thì không gửi, chạy lại `payload` (giờ chuyển sang slot kế). Create & publish không có hai tuỳ chọn này: bài đã duyệt luôn hẹn ở giờ tốt nhất tự động, từ ngày mai.
-- Trước khi làm bài cho thương hiệu: đọc `SKILL.md` và `project/project.md` của skill.
+- Trước khi làm bài cho thương hiệu: đọc `SKILL.md` (bố cục mới: ở gốc skill `brand-content-skills`) và `project/project.md` của thương hiệu (bố cục mới: `brands/<id>/project/project.md`).
 - **Không bao giờ gắn nhãn AI** lên bài (caption, text, alt). **Không logo trên sản phẩm** (logo chỉ là watermark nhỏ ở góc, khi thương hiệu bật).
 - Không đăng thẳng lên mạng xã hội; mọi bài đi qua Metricool dạng hẹn giờ. Agent **không bao giờ tự duyệt** bài (`finalize.mjs approve` chỉ do người dùng, qua app).
 - Không dùng ảnh hay câu chữ của đối thủ; không nhắc tên shop nguồn; không đăng nhập hộ, không lưu cookie.
@@ -46,13 +46,16 @@ node scripts/brands.mjs [--run research|create|publish]   # usable = thương hi
 node scripts/sources.mjs         # mỗi thương hiệu: các research.sources đang bật trong social.json của nó
 ```
 
-Thương hiệu usable = brand Metricool đã trỏ tới một thư mục skill hợp lệ (`SKILL.md`, `project/project.md`, `project/social.json`), `social.json` có `enabled: true` và `scripts/check-skill.mjs --tool-ready` của chính skill đạt (exit 0).
+Thương hiệu usable = brand Metricool đã trỏ tới một thư mục thương hiệu hợp lệ (`project/project.md`, `project/social.json`, và `SKILL.md` ở gốc skill), `social.json` có `enabled: true` và `scripts/check-skill.mjs --tool-ready` của skill đạt (exit 0; bố cục mới: `node <skillRoot>/scripts/check-skill.mjs --brand <id> --tool-ready`).
+
+Hai bố cục thư mục thương hiệu (tool nhận cả hai): **cũ** `<skillsRoot>/<id>-skills/` (cả skill là thư mục thương hiệu, có `SKILL.md`, `scripts/`, `references/` riêng) và **mới (dùng chung)** `<skillsRoot>/brand-content-skills/brands/<id>/` (một skill duy nhất; `SKILL.md`, `scripts/`, `references/`, `templates/` ở gốc skill `brand-content-skills/` dùng chung cho mọi thương hiệu, mỗi thương hiệu chỉ có `project/` và `workspace/`). `brand.dir` = thư mục thương hiệu (chứa `project/`), `brand.skillRoot` = gốc skill (bố cục cũ: bằng `dir`; bố cục mới: hai cấp trên `dir`). Script dùng chung (`check-skill.mjs`, `clean-image.mjs`) luôn gọi ở `skillRoot`; bố cục mới thêm `--brand <id>` (trừ `clean-image.mjs`), và agent chỉ đọc file của đúng thương hiệu đó. Đổi thư mục skills: `skillsRoot` trong cài đặt (hoặc biến môi trường `SA_SKILLS_ROOT`).
 
 Trỏ skill (người dùng làm ở tab **Overview**: Choose skill / Change skill / Disconnect; hoặc lệnh):
 ```
-node scripts/skills.mjs list-sources [--from <folder>]          # thư mục skill trong <folder> (mặc định skillsRoot), sâu 2 tầng, kèm trạng thái
-node scripts/skills.mjs validate --path <skills folder>/<id>-skills
-node scripts/skills.mjs link   --brand "<tên brand Metricool>" --path <skills folder>/<id>-skills
+node scripts/skills.mjs list-sources [--from <folder>]          # thư mục thương hiệu trong <folder> (mặc định skillsRoot), sâu 2 tầng, kèm trạng thái; skill dùng chung liệt kê brands/* ("brand-content-skills / <id>")
+node scripts/skills.mjs validate --path <skills folder>/<id>-skills            # hoặc <skills folder>/brand-content-skills/brands/<id>
+node scripts/skills.mjs link   --brand "<tên brand Metricool>" --path <skills folder>/<id>-skills   # hoặc .../brand-content-skills/brands/<id>
+node scripts/skills.mjs relink --from <skillsRoot cũ> --to <skillsRoot mới> [--file <json>] [--apply]   # chuyển skill_path <x>-skills -> brand-content-skills/brands/<x>; mặc định chỉ xem trước (dry-run)
 node scripts/skills.mjs unlink --brand "<tên brand Metricool>"  # chỉ bỏ liên kết, không đụng thư mục
 ```
 Thư mục đã trỏ bị đổi tên/di chuyển: thẻ ở Overview báo không tìm thấy, dùng Change skill.
