@@ -1,18 +1,22 @@
-// Brand skill folders stay where they are; the tool only POINTS to them (nothing is copied). A Metricool brand is linked
-// to one brand folder (Tổng quan: Chọn skill / Đổi skill / Ngắt kết nối); the tool then reads that folder. Two layouts:
+// Brand folders stay where they are; the tool only POINTS to them (nothing is copied). A Metricool brand is linked
+// to one brand folder (Tổng quan: Chọn skill / Đổi skill / Ngắt kết nối); the tool then reads that folder. Layouts:
+//   current <repo>/brands/<id>           (ONE folder per brand: project/ + posts, published, covers, catalog, context, local; the one shared skill is skills/brand-content-skills with the scripts)
 //   legacy  skills/<id>-skills            (the skill folder is the brand folder)
-//   shared  skills/brand-content-skills/brands/<id>   (one skill, one folder per brand; shared scripts at the skill root)
+//   old shared  skills/brand-content-skills/brands/<id>   (brands inside the skill; data in workspace/<id>)
 // node scripts/skills.mjs list-sources [--from <dir>]          valid brand folders in <dir> (2 levels deep; shared skills list their brands/*), with readiness
 // node scripts/skills.mjs validate --path <brand-or-skill-dir>  is it a brand/skill folder; its check-skill --tool-ready
 // node scripts/skills.mjs link --brand "<Metricool brand>" --path <brand-or-skill-dir>
 // node scripts/skills.mjs unlink --brand "<Metricool brand>"   the folder is never touched
+// node scripts/skills.mjs relink --to-brands [<brandsRoot>] [--file <metricool-brands.json>] [--apply]
+//   migration to the one-folder-per-brand layout: rewrites skill_path <...>/skills/<skill>/brands/<x> and <...>/<x>-skills -> <brandsRoot>/<x>
+//   (brandsRoot default: <repo>/brands from the settings); dry-run unless --apply (a .bak copy is written next to the file).
 // node scripts/skills.mjs relink --from <oldSkillsRoot> --to <newSkillsRoot> [--file <metricool-brands.json>] [--apply]
 //   migration to the shared layout: rewrites skill_path values <from>/<x>-skills -> <to>/brand-content-skills/brands/<x>;
 //   dry-run unless --apply (a .bak copy is written next to the file); --skill <name> picks another shared skill folder name.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { main, out, parseArgs, need, isMain, settings, readJson, SKILL_FILES, isSkillDir, skillIdOf, skillRootOf, isSharedLayout, skillLabelOf, sharedBrandDirs, skillScript, skillScriptArgs, inspectBrand, metricoolBrands, metricoolFile, linkMetricool, linkedDir } from './lib.mjs';
+import { main, out, parseArgs, need, isMain, settings, readJson, SKILL_FILES, isSkillDir, skillIdOf, skillRootOf, isSharedLayout, skillLabelOf, sharedBrandDirs, skillScript, skillScriptArgs, inspectBrand, metricoolBrands, metricoolFile, linkMetricool, linkedDir, brandsRootOf } from './lib.mjs';
 
 // Where Find looks first: the skills folder of the settings (skillsRoot); any other folder can be typed in.
 export const defaultSource = () => settings().skillsRoot;
@@ -52,14 +56,17 @@ export async function listSources(from = '') {
   try { links = metricoolBrands().brands || []; } catch {}
   const found = [], skipped = [];
   const brandsOf = (d) => sharedBrandDirs(d).filter(isSkillDir);
+  const norm = (p) => path.resolve(p).toLowerCase();
   if (isSkillDir(dir)) found.push(dir);
   else if (sharedBrandDirs(dir).length) found.push(...brandsOf(dir));
   else for (const d of subdirs(dir)) {
     if (isSkillDir(d)) { found.push(d); continue; }
     if (sharedBrandDirs(d).length) { found.push(...brandsOf(d)); continue; }
     const deeper = subdirs(d).flatMap((x) => isSkillDir(x) ? [x] : brandsOf(x));
-    if (deeper.length) found.push(...deeper); else if (fs.existsSync(path.join(d, 'SKILL.md'))) skipped.push({ dir: d, reason: `thiếu ${SKILL_FILES.filter((f) => !fs.existsSync(path.join(d, f))).join(', ')}` });
+    if (deeper.length) found.push(...deeper); else if (fs.existsSync(path.join(d, 'SKILL.md')) && !fs.existsSync(path.join(d, 'scripts', '_brand.mjs'))) skipped.push({ dir: d, reason: `thiếu ${SKILL_FILES.filter((f) => !fs.existsSync(path.join(d, f))).join(', ')}` });
   }
+  // Default source (skillsRoot): the brands folder next to it (<repo>/brands/<id>) belongs to the same list.
+  if (norm(dir) === norm(defaultSource())) for (const d of subdirs(brandsRootOf())) if (isSkillDir(d) && !found.some((x) => norm(x) === norm(d))) found.push(d);
   const sources = await Promise.all(found.map(async (d) => {
     const id = skillIdOf(d);
     const linked = links.find((m) => m.skill_id && path.resolve(linkedDir(m)).toLowerCase() === path.resolve(d).toLowerCase());
@@ -90,10 +97,25 @@ export function relinkPaths(cfg, from, to, skill = 'brand-content-skills') {
   });
   return { cfg: { ...cfg, brands }, changes };
 }
-export function relinkFile({ file, from, to, skill, apply = false }) {
+// Migration to one folder per brand: skill_path .../<skill>/brands/<x> (old shared) or .../<x>-skills (legacy) -> <brandsRoot>/<x>.
+export function relinkToBrands(cfg, brandsRoot) {
+  const norm = (p) => path.resolve(p).split(path.sep).join('/').replace(/\/+$/, '');
+  const changes = [];
+  const brands = (cfg.brands || []).map((b) => {
+    if (!b.skill_path) return b;
+    const p = norm(b.skill_path), m = p.match(/\/skills\/[^/]+\/brands\/([^/]+)$/i) || p.match(/\/([^/]+)-skills$/i);
+    if (!m) return b;
+    const next = `${norm(brandsRoot)}/${m[1]}`;
+    if (next.toLowerCase() === p.toLowerCase()) return b;
+    changes.push({ name: b.name, skill_id: b.skill_id, from: b.skill_path, to: next, target_exists: isSkillDir(next) });
+    return { ...b, skill_path: next };
+  });
+  return { cfg: { ...cfg, brands }, changes };
+}
+export function relinkFile({ file, from, to, skill, apply = false, toBrands = false }) {
   const cfg = readJson(file);
   if (!cfg || !Array.isArray(cfg.brands)) throw new Error(`${file} is not a metricool-brands.json (no brands[]).`);
-  const { cfg: next, changes } = relinkPaths(cfg, from, to, skill);
+  const { cfg: next, changes } = toBrands ? relinkToBrands(cfg, to || brandsRootOf()) : relinkPaths(cfg, from, to, skill);
   const missing = changes.filter((c) => !c.target_exists).length;
   if (apply) {
     if (missing) throw new Error(`${missing} target brand folder(s) do not exist under ${to}; nothing written (run without --apply to see them).`);
@@ -109,6 +131,7 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'validate') return out(validate(need(args, 'path')));
   if (cmd === 'link') return out({ metricool: linkMetricool(need(args, 'brand'), need(args, 'path'), { confirm: args.confirm === true }) });
   if (cmd === 'unlink') return out({ metricool: linkMetricool(need(args, 'brand'), null) });
+  if (cmd === 'relink' && args['to-brands'] !== undefined) return out(relinkFile({ file: args.file && args.file !== true ? path.resolve(String(args.file)) : metricoolFile(), toBrands: true, to: args['to-brands'] === true ? '' : String(args['to-brands']), apply: args.apply === true }));
   if (cmd === 'relink') return out(relinkFile({ file: args.file && args.file !== true ? path.resolve(String(args.file)) : metricoolFile(), from: need(args, 'from'), to: need(args, 'to'), skill: args.skill && args.skill !== true ? String(args.skill) : undefined, apply: args.apply === true }));
-  throw new Error('Lệnh: list-sources [--from <dir>] | validate --path <dir> | link --brand <tên> --path <dir> [--confirm] | unlink --brand <tên> | relink --from <skillsRoot cũ> --to <skillsRoot mới> [--file <json>] [--apply] (mặc định chỉ xem trước)');
+  throw new Error('Lệnh: list-sources [--from <dir>] | validate --path <dir> | link --brand <tên> --path <dir> [--confirm] | unlink --brand <tên> | relink --to-brands [<thư mục brands>] [--file <json>] [--apply] | relink --from <skillsRoot cũ> --to <skillsRoot mới> [--file <json>] [--apply] (mặc định chỉ xem trước)');
 });

@@ -135,3 +135,53 @@ test('relink --apply refuses when a target brand folder is missing', () => {
   assert.match(r.stdout + r.stderr, /do not exist/);
   assert.ok(!fs.existsSync(`${file}.bak`));
 });
+
+// ----- current layout: <repo>/brands/<id> (project + data in one folder), one shared skill in <repo>/skills -----
+const repoDir = path.join(tmp, 'cur'), curSkills = path.join(repoDir, 'skills'), curSkill = path.join(curSkills, 'brand-content-skills');
+const CUR_CHECK = "import fs from 'node:fs'; import path from 'node:path'; const a = process.argv, i = a.indexOf('--brand'); const id = i > 0 ? a[i + 1] : ''; const ok = id && fs.existsSync(path.join(import.meta.dirname, '..', '..', '..', 'brands', id, 'project', 'social.json')); console.log(ok ? 'ĐẠT' : '  - missing: --brand'); process.exit(ok ? 0 : 1);\n";
+write(path.join(curSkill, 'SKILL.md'), '---\nname: brand-content-skills\n---\n');
+write(path.join(curSkill, 'scripts', '_brand.mjs'), '// shared\n');
+write(path.join(curSkill, 'scripts', 'check-skill.mjs'), CUR_CHECK);
+for (const [id, name, blog] of [['alpha', 'Alpha', '111'], ['beta', 'Beta', '222']]) {
+  write(path.join(repoDir, 'brands', id, 'project', 'project.md'), '# p\n');
+  write(path.join(repoDir, 'brands', id, 'project', 'social.json'), social(name, blog));
+  write(path.join(repoDir, 'brands', id, 'catalog.json'), '{"posts":[]}\n');
+}
+
+test('current layout: brands/<id> is the brand folder, the shared skill (not a brand) is found beside it', async () => {
+  const L = await lib();
+  const b = path.join(repoDir, 'brands', 'alpha');
+  assert.equal(L.sharedSkillRoot(curSkills), curSkill);
+  assert.equal(L.skillRootOf(b), curSkill);
+  assert.equal(L.isSharedLayout(b), true);
+  assert.equal(L.skillIdOf(b), 'alpha');
+  assert.equal(L.isSkillDir(b), true);
+  assert.deepEqual(L.skillScriptArgs(b, ['--tool-ready']), ['--tool-ready', '--brand', 'alpha']);
+  assert.equal(L.skillLabelOf(b), 'brands / alpha');
+  const r = run(curSkills, 'brands.mjs');
+  assert.deepEqual(r.usable.sort(), ['alpha', 'beta']);
+  assert.deepEqual(r.skipped, []); // the skill folder itself is not reported as a brand
+  for (const x of r.brands) { assert.equal(x.dir, path.join(repoDir, 'brands', x.id)); assert.equal(x.skillRoot, curSkill); }
+  const s = run(curSkills, 'skills.mjs', 'list-sources');
+  assert.deepEqual(s.sources.map((x) => x.label).sort(), ['brands / alpha', 'brands / beta']);
+});
+
+test('relink --to-brands: dry-run by default, rewrites old shared and legacy skill_path to <repo>/brands/<id>, --apply writes a backup', () => {
+  const file = path.join(tmp, 'relink3', 'metricool-brands.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const old = path.join(curSkill, 'brands', 'alpha').split(path.sep).join('/'), leg = path.join(curSkills, 'beta-skills').split(path.sep).join('/');
+  fs.writeFileSync(file, JSON.stringify({ version: 1, account: {}, brands: [{ name: 'Alpha', blog_id: '111', skill_id: 'alpha', skill_path: old }, { name: 'Beta', blog_id: '222', skill_id: 'beta', skill_path: leg }, { name: 'Gamma', blog_id: '333', skill_id: null }] }));
+  const before = fs.readFileSync(file, 'utf8'), to = path.join(repoDir, 'brands');
+  const env = { ...process.env, SA_WORKSPACE: ws, SA_SKILLS_ROOT: curSkills };
+  const go = (...a) => JSON.parse(spawnSync(process.execPath, [path.join(tool, 'scripts', 'skills.mjs'), 'relink', '--to-brands', to, '--file', file, ...a], { env, encoding: 'utf8' }).stdout);
+  const dry = go();
+  assert.equal(dry.dry_run, true); assert.equal(dry.changed, 2); assert.equal(dry.missing_targets, 0);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  assert.equal(dry.changes[0].to, path.join(to, 'alpha').split(path.sep).join('/'));
+  go('--apply');
+  assert.equal(fs.readFileSync(`${file}.bak`, 'utf8'), before);
+  const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(j.brands[0].skill_path, path.join(to, 'alpha').split(path.sep).join('/'));
+  assert.equal(j.brands[1].skill_path, path.join(to, 'beta').split(path.sep).join('/'));
+  assert.equal(go().changed, 0); // idempotent
+});

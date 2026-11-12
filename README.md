@@ -79,7 +79,7 @@ Tab **Settings** chỉ cho sửa **Plan ahead (days)** và **Auto-host images**.
 | `codex.concurrency`, `codex.retry_wait_seconds` | số ảnh Codex làm cùng lúc trên cả máy (3), giây chờ trước khi thử lại khi Codex báo hết lượt (60) |
 | `posts.images_per_post` | `[min, max]` số ảnh mỗi bài, chọn ngẫu nhiên (mặc định `[1, 3]`); thương hiệu đè trong `workspace/brands/<id>.json` `posts.images_per_post`. 1 ảnh = `image.png`; nhiều ảnh = `image-01.png` (bìa), `image-02.png`...; chữ trên ảnh luôn tiếng Anh |
 | `ffmpeg.command` | lệnh ffmpeg (watermark, đọc WebP khi dedupe) |
-| `skillsRoot` | thư mục `skills/`: bố cục cũ `<id>-skills/` hoặc bố cục mới `brand-content-skills/brands/<id>/` (tool nhận cả hai; biến môi trường `SA_SKILLS_ROOT` đè lên khi chạy thử) |
+| `skillsRoot` | thư mục `skills/`: bố cục cũ `<id>-skills/` hoặc thương hiệu ở `<repo>/brands/<id>/` (một thư mục cho mỗi thương hiệu; `<repo>` = cha của `skillsRoot`, đè bằng cài đặt `brandsRoot` / biến `SA_BRANDS_ROOT`); tool vẫn nhận bố cục cũ; biến môi trường `SA_SKILLS_ROOT` đè lên khi chạy thử |
 | `remove_watermark.script` | script xoá metadata ảnh |
 | `imageHost.path`, `imageHost.remote_url`, `imageHost.rawBase` | repo ảnh trong tool (mặc định `workspace/image-host`, repo git riêng, không lên git của tool), link git để tự clone khi máy chưa có, link công khai (https) của ảnh |
 

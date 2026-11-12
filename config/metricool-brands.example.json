@@ -15,7 +15,7 @@
         "facebook"
       ],
       "skill_id": "<skill id>",
-      "skill_path": "<path to the brand folder: skills/<id>-skills (legacy) or skills/brand-content-skills/brands/<id>>",
+      "skill_path": "<path to the brand folder: skills/<id>-skills (legacy) or <repo>/brands/<id>>",
       "last_checked": "<yyyy-mm-dd>"
     },
     {

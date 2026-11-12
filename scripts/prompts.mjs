@@ -19,15 +19,14 @@ export function promptList(md = fs.readFileSync(path.join(toolRoot, 'docs', 'sch
 // {{TOOL}} = this tool's folder (never a fixed path), {{BRAND}} = the brand or all, {{OPTIONS}} = this run's options.
 // One SKILL line per brand in scope (all usable brands when none is given), A-Z, with its linked skill folder: the
 // terminal agent cannot pick a skill, so the prompt says where each one is.
-// Legacy brand skill (<id>-skills): everything is in its folder. Shared skill (brand-content-skills/brands/<id>): the skill root
-// holds SKILL.md, references/ and the scripts once for all brands; the agent reads ONLY this brand's folder and runs shared
-// scripts with --brand <id>.
-// The brand's working data (posts, published, covers, local) lives OUTSIDE the skill: <repo>/workspace/<id>/ (env BRAND_WORKSPACE_ROOT overrides the root).
-const brandWorkspace = (b) => path.join(process.env.BRAND_WORKSPACE_ROOT || path.join(b.skillRoot, '..', '..', 'workspace'), b.id);
+// Legacy brand skill (<id>-skills): everything is in its folder. Shared skill (current layout): the skill root
+// holds SKILL.md, references/ and the scripts once for all brands; each brand is ONE folder <repo>/brands/<id>/ with its project/
+// and its working data (posts, published, covers, catalog.json, context.md, local) side by side; the agent reads ONLY that folder
+// and runs shared scripts with --brand <id>.
 export function skillLine(b) {
   if (!b.shared) return `SKILL: ${b.id} → ${b.dir} (read its SKILL.md + project/project.md + project/social.json)`;
   const sh = (f) => path.join(b.skillRoot, f);
-  return `SKILL: ${b.id} → brand folder ${b.dir}; skill root ${b.skillRoot}. Read ${sh('SKILL.md')} and ${sh('references')} (shared rules), then ONLY this brand's files: ${path.join(b.dir, 'project', 'project.md')}, project/social.json, and its working data folder ${brandWorkspace(b)}. Never read another brand's folder. Run shared scripts from the skill root with --brand ${b.id}, e.g. node ${sh('scripts/check-skill.mjs')} --brand ${b.id} --tool-ready (clean-image.mjs takes no --brand).`;
+  return `SKILL: ${b.id} → brand folder ${b.dir}; skill root ${b.skillRoot}. Read ${sh('SKILL.md')} and ${sh('references')} (shared rules), then ONLY this brand's folder: ${path.join(b.dir, 'project', 'project.md')}, project/social.json, and its working data (posts/, published/, covers/, catalog.json, context.md) in the same folder ${b.dir}. Never read another brand's folder. Run shared scripts from the skill root with --brand ${b.id}, e.g. node ${sh('scripts/check-skill.mjs')} --brand ${b.id} --tool-ready (clean-image.mjs takes no --brand).`;
 }
 export function skillLines(brand = '', brands = discoverBrands().brands) {
   const list = brands.filter((b) => (brand ? b.id === brand : b.usable)).sort((a, b) => a.id.localeCompare(b.id));

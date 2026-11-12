@@ -497,14 +497,14 @@ header + * { margin-top: 0; }
   const MC_COLOR = { draft: "c-amber", scheduled: "", published: "c-green", error: "c-red", not_sent: "" };
   const MC_TEXT = { draft: "waiting to send (old Metricool draft)", scheduled: "scheduled", published: "published", error: "Metricool error", not_sent: "not sent" };
   // Skill picker (Choose skill / Change skill): a source folder (or a skill / brand folder path pasted), Find, the brand folders
-  // found with their readiness (one choice; a shared skill lists its brands as "brand-content-skills / dreamyvows"), then Link:
+  // found with their readiness (one choice; a shared skill lists its brands as "brands / dreamyvows"), then Link:
   // the Metricool brand points to that folder. Nothing is copied.
   let skillSource = "";
   async function skillPicker(panel, mcName) {
     if (!panel.hidden) { panel.hidden = true; return; }
     panel.hidden = false;
     if (!skillSource) { const r = await getJson("/api/skills").catch(() => ({})); skillSource = r.default_source || ""; }
-    panel.innerHTML = `<div class="fields"><div class="field wide"><label>Skills folder</label><div class="inline-control"><input data-from value="${esc(skillSource)}" title="The skills folder (legacy skills/&lt;brand&gt;-skills, or skills/brand-content-skills/brands/&lt;brand&gt;), or the path of one brand folder"><button class="btn" type="button" data-find>Find</button></div></div></div>
+    panel.innerHTML = `<div class="fields"><div class="field wide"><label>Skills folder</label><div class="inline-control"><input data-from value="${esc(skillSource)}" title="The skills folder (brand folders in brands/&lt;brand&gt; next to it, or legacy skills/&lt;brand&gt;-skills), or the path of one brand folder"><button class="btn" type="button" data-find>Find</button></div></div></div>
       <div class="found"></div><div class="row-actions" data-go-row hidden><button class="btn primary" type="button" data-link>Link</button></div><div class="msg"></div>`;
     const msg = panel.querySelector(".msg");
     panel.querySelector("[data-find]").onclick = async () => {
@@ -1041,7 +1041,7 @@ header + * { margin-top: 0; }
   function buildTask() {
     const brandSel = $("#prBrand").value;
     const scope = az(arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)), (x) => x.id);
-    // skill_line comes from the server (scripts/prompts.mjs skillLine): legacy skill folder, or brand folder + skill root + --brand <id> (shared layout).
+    // skill_line comes from the server (scripts/prompts.mjs skillLine): legacy skill folder, or brand folder (brands/<id>: project and data together) + skill root + --brand <id>.
     const skills = scope.map((x) => x.skill_line || `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
     return prBase.replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }

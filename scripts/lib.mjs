@@ -272,34 +272,54 @@ export function syncMetricoolBrands(raw, now = new Date()) {
   return { ...saved, added: brands.filter((b) => !old.has(b.blog_id)).map((b) => b.name), removed: removed.map((b) => b.name) };
 }
 
-// A brand folder ("dir") exists in two layouts:
+// A brand folder ("dir") exists in three layouts:
+//   brands  <repo>/brands/<id>/{project,posts,published,covers,catalog.json,context.md,local}   CURRENT: one folder per brand, ALL of its files inside;
+//           the one shared skill lives apart at <skillsRoot>/<skill>/ (SKILL.md, scripts/, references/, templates/; found by sharedSkillRoot)
 //   legacy  <skillsRoot>/<id>-skills/{SKILL.md,project,workspace,scripts,references,...}   dir = the skill; skillRoot = dir
-//   shared  <skillsRoot>/<skill>/brands/<id>/project  (e.g. brand-content-skills/brands/dreamyvows); its working data is OUTSIDE the skill: <repo>/workspace/<id>/; SKILL.md,
-//           scripts/, references/, templates/ live once at the skill root = two levels above dir
-// dir is always where the brand's own files are (project/); skillRoot is where SKILL.md and the shared scripts
-// are. Legacy: skillRoot === dir. A shared brand id is its folder name; a legacy id is the folder name without -skills.
+//   old shared  <skillsRoot>/<skill>/brands/<id>/project   (brands inside the skill, data in <repo>/workspace/<id>/); skillRoot = two levels above dir
+// dir is the brand's folder (its files: project/...); skillRoot is where SKILL.md and the shared scripts are.
+// Legacy: skillRoot === dir. A brands/old-shared id is its folder name; a legacy id is the folder name without -skills.
+// The brands folder is <repo>/brands (repo = parent of skillsRoot); setting brandsRoot or env SA_BRANDS_ROOT overrides it.
 export const SKILL_FILES = ['SKILL.md', 'project/project.md', 'project/social.json'];
 export const BRAND_FILES = ['project/project.md', 'project/social.json'];
+const dirsOf = (p, test = () => true) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && test(path.join(p, e.name))).map((e) => path.join(p, e.name)); } catch { return []; } };
+const isSharedSkill = (d) => fs.existsSync(path.join(d, 'SKILL.md')) && fs.existsSync(path.join(d, 'scripts', '_brand.mjs'));
+// The single shared skill in skillsRoot (folder with SKILL.md and scripts/_brand.mjs; skillsRoot itself counts); several: brand-content-skills wins, else the first A-Z; '' when none.
+export function sharedSkillRoot(skillsRoot) {
+  const all = isSharedSkill(skillsRoot) ? [skillsRoot] : dirsOf(skillsRoot, isSharedSkill).sort();
+  return all.find((d) => path.basename(d) === 'brand-content-skills') || all[0] || '';
+}
+export const brandsRootOf = (s = settings()) => path.resolve(toolRoot, process.env.SA_BRANDS_ROOT || s.brandsRoot || path.join(path.dirname(s.skillsRoot), 'brands'));
+function inBrandsRoot(d) {
+  const parent = path.dirname(d);
+  if (path.basename(parent) === 'brands') return true;
+  try { return parent.toLowerCase() === brandsRootOf().toLowerCase(); } catch { return false; }
+}
 export function skillRootOf(dir) {
   const d = path.resolve(dir), brands = path.dirname(d), root = path.dirname(brands);
-  return path.basename(brands) === 'brands' && fs.existsSync(path.join(root, 'SKILL.md')) ? root : d;
+  if (path.basename(brands) === 'brands' && fs.existsSync(path.join(root, 'SKILL.md'))) return root; // old shared layout
+  if (!fs.existsSync(path.join(d, 'SKILL.md')) && fs.existsSync(path.join(d, 'project')) && inBrandsRoot(d)) {
+    let sk = ''; try { sk = settings().skillsRoot; } catch {}
+    for (const c of [path.join(root, 'skills'), sk]) { const r = c && sharedSkillRoot(c); if (r) return r; }
+  }
+  return d;
 }
 export const isSharedLayout = (dir) => skillRootOf(dir) !== path.resolve(dir);
 export const isSkillDir = (dir) => BRAND_FILES.every((f) => fs.existsSync(path.join(dir, f))) && fs.existsSync(path.join(skillRootOf(dir), 'SKILL.md'));
 export const skillIdOf = (dir) => isSharedLayout(dir) ? path.basename(path.resolve(dir)) : path.basename(path.resolve(dir)).replace(/-skills$/, '');
-// A script of the skill: shared at skillRoot (legacy: the skill's own copy). skillScriptArgs adds --brand <id> in the shared layout
+// A script of the skill: shared at skillRoot (legacy: the skill's own copy). skillScriptArgs adds --brand <id> in the shared layouts
 // for the scripts that need a brand (check-skill, check-post, mark-published, manifest); clean-image takes no --brand.
 export const skillScript = (dir, name) => path.join(skillRootOf(dir), 'scripts', name);
 export const skillScriptArgs = (dir, args = []) => isSharedLayout(dir) ? [...args, '--brand', skillIdOf(dir)] : args;
-// "<skill> / <brand>" label for a shared-layout brand folder in pickers, else the folder name.
-export const skillLabelOf = (dir) => isSharedLayout(dir) ? `${path.basename(skillRootOf(dir))} / ${skillIdOf(dir)}` : path.basename(path.resolve(dir));
-// Brand folders inside a shared skill root (<skillRoot>/brands/*) that have a project/ folder; [] for anything else.
+// Picker label: "brands / <id>" for a folder in the brands root, "<skill> / <id>" for the old shared layout, else the folder name.
+export const skillLabelOf = (dir) => !isSharedLayout(dir) ? path.basename(path.resolve(dir)) : path.basename(path.dirname(path.resolve(dir))) === 'brands' && path.dirname(path.dirname(path.resolve(dir))) === skillRootOf(dir) ? `${path.basename(skillRootOf(dir))} / ${skillIdOf(dir)}` : `brands / ${skillIdOf(dir)}`;
+// Brand folders inside an old-layout shared skill root (<skillRoot>/brands/*) that have a project/ folder; [] for anything else.
 export function sharedBrandDirs(skillRoot) {
   const b = path.join(skillRoot, 'brands');
   if (!fs.existsSync(path.join(skillRoot, 'SKILL.md')) || !fs.existsSync(b)) return [];
   try { return fs.readdirSync(b, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && fs.existsSync(path.join(b, e.name, 'project'))).map((e) => path.join(b, e.name)); } catch { return []; }
 }
-// The shared skill roots directly under skillsRoot (folders with SKILL.md and brands/), plus skillsRoot itself when it is one.
+// The old-layout shared skill roots directly under skillsRoot (folders with SKILL.md and brands/), plus skillsRoot itself when it is one.
 export function skillRootsIn(root) {
   const o = [];
   if (sharedBrandDirs(root).length) o.push(root);
@@ -333,7 +353,7 @@ export function linkMetricool(name, skillDir, { confirm = false } = {}) {
   let skill_id = null, skill_path;
   if (skillDir) {
     const dir = path.resolve(String(skillDir).trim());
-    if (!isSkillDir(dir)) throw new Error(`${dir} is not a skill/brand folder (needs ${SKILL_FILES.join(', ')}; shared layout: SKILL.md two levels above the brand folder).`);
+    if (!isSkillDir(dir)) throw new Error(`${dir} is not a skill/brand folder (needs ${SKILL_FILES.join(', ')}; shared layout: the one shared skill with SKILL.md beside <repo>/brands).`);
     skill_id = skillIdOf(dir);
     if (!/^[a-z0-9][a-z0-9-]*$/.test(skill_id)) throw new Error(`Skill folder name "${path.basename(dir)}" is not valid (lowercase letters, digits, hyphens).`);
     const other = cfg.brands.find((x) => x !== b && (x.skill_id === skill_id || (x.skill_path && samePath(x.skill_path, dir))));
@@ -345,27 +365,31 @@ export function linkMetricool(name, skillDir, { confirm = false } = {}) {
   return saveMetricoolBrands({ ...cfg, brands: cfg.brands.map((x) => { if (x !== b) return x; const { skill_path: _, ...rest } = x; return { ...rest, skill_id, ...(skill_path ? { skill_path } : {}) }; }) });
 }
 
-// An entry with only skill_id (no skill_path): skillsRoot/<id>-skills (legacy), else skillsRoot/*/brands/<id> (shared layout).
-function legacyOrSharedDir(root, id) {
+// An entry with only skill_id (no skill_path): <brandsRoot>/<id> (current), skillsRoot/<id>-skills (legacy), else skillsRoot/*/brands/<id> (old shared layout).
+function legacyOrSharedDir(root, id, s = settings()) {
+  const current = path.join(brandsRootOf(s), id);
+  if (fs.existsSync(path.join(current, 'project'))) return current;
   const legacy = path.join(root, `${id}-skills`);
   if (fs.existsSync(legacy)) return legacy;
   for (const d of skillRootsIn(root)) { const b = path.join(d, 'brands', id); if (fs.existsSync(b)) return b; }
   return legacy;
 }
 // The folder a Metricool brand points to: its skill_path; an older entry with only skill_id means skillsRoot/<id>-skills (or the shared layout).
-export const linkedDir = (m, s = settings()) => (m?.skill_path ? path.resolve(m.skill_path) : m?.skill_id ? legacyOrSharedDir(s.skillsRoot, m.skill_id) : '');
+export const linkedDir = (m, s = settings()) => (m?.skill_path ? path.resolve(m.skill_path) : m?.skill_id ? legacyOrSharedDir(s.skillsRoot, m.skill_id, s) : '');
 
-// Every skill folder the tool works with: the sub-folders of skillsRoot, plus the folders linked by path. A linked
+// Every skill/brand folder the tool works with: <repo>/brands/*, the sub-folders of skillsRoot, plus the folders linked by path. A linked
 // path owns its id: a skillsRoot folder of the same id is not used for it, also when the linked folder is missing
 // (renamed or moved), so a brand never silently falls back to another folder.
 export function skillDirs(s = settings()) {
   const root = s.skillsRoot, byId = new Map();
   if (fs.existsSync(root)) for (const e of fs.readdirSync(root, { withFileTypes: true })) if (e.isDirectory() && !e.name.startsWith('.')) {
     const d = path.join(root, e.name), shared = sharedBrandDirs(d);
+    if (isSharedSkill(d) && !fs.existsSync(path.join(d, 'project'))) continue; // the shared skill itself (current layout: no brands/ inside), not a brand
     if (shared.length) for (const b of shared) byId.set(path.basename(b), b); // shared layout: <skill>/brands/<id>
     else byId.set(e.name.replace(/-skills$/, ''), d); // legacy: <id>-skills
   }
   for (const b of sharedBrandDirs(root)) byId.set(path.basename(b), b); // skillsRoot is itself a shared skill
+  for (const b of dirsOf(brandsRootOf(s), (d) => fs.existsSync(path.join(d, 'project')))) byId.set(path.basename(b), b); // current layout: <repo>/brands/<id>
   let linked = [];
   try { linked = metricoolBrands().brands || []; } catch {}
   for (const m of linked) if (m.skill_id && m.skill_path) {
@@ -589,7 +613,7 @@ export function applyBrandOverride(social, ov) {
 export const skillSocial = (dir) => readJson(path.join(dir, 'project', 'social.json'));
 export const brandSocial = (dir, id = skillIdOf(dir)) => applyBrandOverride(skillSocial(dir), readBrandOverride(id));
 
-// One brand = one brand folder (legacy <id>-skills, or <skill>/brands/<id> of a shared skill; under skillsRoot or linked by path from Tổng quan) with project/project.md and project/social.json, and SKILL.md at its skillRoot.
+// One brand = one brand folder (<repo>/brands/<id>, legacy <id>-skills, or <skill>/brands/<id> of an old shared skill; under skillsRoot or linked by path from Tổng quan) with project/project.md and project/social.json, and SKILL.md at its skillRoot.
 // Readiness is the skill's own check (scripts/check-skill.mjs --tool-ready, exit 0 = ready); the tool does not
 // re-implement it. Usable (in the run) = enabled: true and ready.
 export function inspectBrand(dir) {

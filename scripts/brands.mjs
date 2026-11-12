@@ -1,5 +1,6 @@
-// Step 0: discover brands in skillsRoot (config/settings.json; SA_SKILLS_ROOT overrides it). Two layouts: legacy
-// <skillsRoot>/<id>-skills/ and shared <skillsRoot>/brand-content-skills/brands/<id>/ (SKILL.md + scripts at the skill root);
+// Step 0: discover brands in skillsRoot (config/settings.json; SA_SKILLS_ROOT overrides it). Layouts: current
+// <repo>/brands/<id>/ (one folder per brand; <repo> = parent of skillsRoot, override: setting brandsRoot or env SA_BRANDS_ROOT; the one shared
+// skill <skillsRoot>/brand-content-skills holds SKILL.md + scripts), plus legacy <skillsRoot>/<id>-skills/ and <skillsRoot>/<skill>/brands/<id>/;
 // either way a brand has project/project.md and project/social.json. It is in the run (usable) only when social.json has
 // "enabled": true and the skill's `scripts/check-skill.mjs --tool-ready` (shared layout: `--brand <id>`) passes; problems lists what is missing.
 // node scripts/brands.mjs [--run research|create|publish]
