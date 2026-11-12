@@ -24,7 +24,7 @@ Các quyết định của người dùng dưới đây thắng mọi chỗ khá
 ## 3. Kho nghiên cứu (`workspace/store/<brand>/`)
 - `items.json` (`S0001`..., caption đã lọc ký tự ẩn, ảnh, hash, `status: new|used|rejected`), `progress.json`, `duplicates.json`, `ideas.json`.
 - Bỏ trùng trên cả kho: link/mã bài Facebook (cả `alt_urls`), SHA-1 ảnh, ảnh gần giống (dHash, `scripts/phash.mjs`), caption giống hệt hoặc ≥ 90%. Ngưỡng ở `settings.research.dedupe`.
-- Tăng dần: lần sau dừng khi gặp 3 bài liên tiếp đã có (trừ `--full`); `--backfill` lấy bài cũ hơn bài cũ nhất đã có; `--since`, `--max-posts` khi người dùng chọn.
+- Tăng dần, quyết từ sổ đăng ký của từng nguồn: nguồn mới/dở crawl tới hết trang (tiếp tục được qua `resume`), nguồn đã `complete` dừng khi gặp 3 bài liên tiếp đã có; `--backfill` / `--full` chỉ là tuỳ chọn CLI nội bộ; `--since`, `--max-posts` khi người dùng chọn.
 - Người dùng xem kho ở tab Library, "Bỏ" bài không muốn dùng.
 
 ## 3b. Kiểm tra tự động + duyệt bởi người

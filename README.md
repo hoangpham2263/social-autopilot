@@ -6,7 +6,7 @@ Agent (Claude Code hoặc Codex) làm việc; app chỉ để xem, duyệt và q
 ## Cách hoạt động
 
 ```
-1. Research   →  script crawl hết bài các trang tham khảo vào Library (bỏ trùng)
+1. Research   →  crawl các nguồn bạn chọn (đầy đủ tới hết trang, tiếp tục được; sổ đăng ký nhớ nguồn nào đã xong) vào Library (bỏ trùng); tìm theo từ khoá chỉ khi skill của thương hiệu bật `research.discovery.enabled` (tự chạy sau các nguồn). Nguồn là danh sách của bạn (Overview > Edit), không có link mặc định
                 →  agent lọc một lượt (giữ / bỏ, có lý do)
 2. Create     →  từ Library làm ảnh + caption mới  →  To review
 3. Approve    →  bạn duyệt trong app  →  lưu vào sổ bài của tool + đưa ảnh lên
@@ -42,13 +42,13 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 
 | Tab | Dùng để |
 |---|---|
-| Overview | Brand, skill, trạng thái, số bài |
+| Overview | Brand, skill, trạng thái, số bài; Edit: nguồn nghiên cứu của bạn (thêm tên tuỳ chọn + link, xoá, tick) kèm trạng thái crawl và Recrawl |
 | Library | Bài tham khảo đã crawl: Available (còn dùng được, thẻ ghi "new" hoặc "used N×") / Removed (không dùng nữa, kèm lý do); một bài có thể gợi ý nhiều bài (mỗi lần góc mới); Preview: **Make a post from this** (sang Prompt: Create & publish, 1 bài, `--items`, tuỳ chọn Scene-swap), Remove (lý do tuỳ chọn), Restore |
 | Posts | Bài của mình: To review · Approved (chờ gửi) · Scheduled (trên Metricool) · Posted; bài album xem trước đủ mọi ảnh, ảnh bìa trước |
 | Prompt | Lấy prompt để chạy |
 | Settings | Tài khoản, yêu cầu, cài đặt tool |
 
-**Crawl** (Research): *New posts* lấy bài mới (mặc định) · *Backfill older* lấy dần bài cũ · *Full rescan* đọc lại toàn bộ. Script `collect.mjs` lấy dữ liệu (fetch hoặc script in-page chạy qua Playwright MCP trong Chrome đã đăng nhập; Facebook chưa có script in-page nên lấy tay bằng Playwright MCP), rồi agent lọc cả lô (`store.mjs classify` / `verdict`): bài bị lọc nằm ở Library → Dropped kèm lý do; tab Log hiện "N kept · M filtered".
+**Research** (tab Run): chỉ chọn **Brand** (mọi nguồn đang bật của brand được crawl; bật/tắt từng nguồn và xem never / partial / complete, số bài, ngày chạy cuối ở Overview > Edit) và **Max posts per brand** (trống = không giới hạn). Không có link mặc định và không có ô Crawl: nguồn mới/dở được lấy tới hết trang (tiếp tục được ở lần sau), nguồn đã xong chỉ kiểm đầu trang; nút **Recrawl** ở Overview > Edit (mỗi nguồn) cho lấy lại từ đầu. Chưa có nguồn thì Copy prompt / Run now bị khoá kèm lời nhắc thêm link ở Overview > Edit. Script `collect.mjs` lấy dữ liệu (script in-page tự cuộn, chạy qua Playwright MCP trong Chrome đã đăng nhập, một lần gọi một vòng), rồi agent lọc cả lô (`store.mjs classify` / `verdict`): bài bị lọc nằm ở Library → Dropped kèm lý do; tab Log hiện "N kept · M filtered".
 
 ## Run now (chạy không cần dán)
 Tab Prompt có nút **Run now** cạnh **Copy prompt** (Copy vẫn như cũ). App tự chạy Claude Code ở chế độ headless với đúng prompt đó, kèm Playwright MCP riêng cho lần chạy, và hiện tiến độ trực tiếp (trạng thái, thời gian, dòng cuối, Live log). Lần đầu mỗi lượt có thể phải bấm Connect trong Chrome (trừ khi máy có biến môi trường PLAYWRIGHT_MCP_EXTENSION_TOKEN: app không lưu, không hỏi, không ghi token). Agent chạy với danh sách tool giới hạn theo mode và giới hạn thời gian cứng (settings `agent_run.timeout_minutes`: research 30, create 30, publish 15 phút; `agent_run.max_turns` mặc định 400). Nút **Stop** dừng cả cây tiến trình. Chỉ một lần chạy mỗi lúc. Không tìm thấy Claude: đặt `claudeCli.command` trong workspace/settings.json. Log rút gọn ở workspace/runs/agent-run.log (không chứa input/kết quả của tool).
