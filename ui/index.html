@@ -287,6 +287,7 @@ a, .linkbtn { color: var(--accent); }
 .btn[data-act=unreview]:hover, #prItemClear:hover { background: #ffe9c2; border-color: #c98a0a; }
 .btn.primary, #prRunNow, #prCopy, #prChromeCheck { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover, #prRunNow:hover, #prCopy:hover, #prChromeCheck:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+#prCopy:disabled, #prRunNow:disabled { background: var(--line); border-color: var(--line); color: #6b7280; cursor: not-allowed; }
 .btn[data-edit], .btn[data-pick], #settingsEdit, #prChromeOpen, .btn[data-find], .btn[data-copy], header .reload, header .config { background: #e7f0fe; border-color: #8ab4f8; color: #0b4fb3; }
 .btn[data-edit]:hover, .btn[data-pick]:hover, #settingsEdit:hover, #prChromeOpen:hover, .btn[data-find]:hover, .btn[data-copy]:hover, header .reload:hover, header .config:hover { background: #d2e3fc; border-color: var(--accent); }
 /* green wins over the generic blue primary */
@@ -365,10 +366,7 @@ header + * { margin-top: 0; }
       <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
       <div class="field" id="prSubField"><label for="prSub" title="Claude Code: hand the whole task to one background sub-agent so the chat stays free">Run in</label><select id="prSub"><option value="main">Main chat</option><option value="sub">Sub-agent</option></select></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
-      <div class="field" data-opt="research" hidden><span class="label" title="The brand's reference pages (social.json research.sources), collected first; none ticked = all">Reference pages</span><details class="select" id="prSrcBox"><summary id="prSrcSum">All</summary><div class="options" id="prSrc"></div></details></div>
-      <div class="field" data-opt="research" hidden><span class="label" title="Search more posts by the brand's keywords/hashtags on these platforms after the reference pages (default: every enabled platform of the skill)">Discovery platforms</span><details class="select" id="prPlatBox"><summary id="prPlatSum">All</summary><div class="options" id="prPlat"></div></details></div>
-      <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run: reference pages first, then discovery until it is met">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
-      <div class="field" data-opt="research" hidden><label for="prKind" title="How the reference pages are read">Crawl</label><select id="prKind"><option value="new">New posts</option><option value="backfill">Backfill older</option><option value="full">Full rescan</option></select></div>
+      <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = no limit)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
@@ -671,10 +669,11 @@ header + * { margin-top: 0; }
     const skillOff = skill.enabled !== true;
     $("#brandTitle").textContent = skill.brand || id;
     $("#brandLegend").textContent = skill.brand || id;
+    const regs = r.registry || {};
     const srcRow = (x, kind, note = "added in the tool") => {
       const inSkillOff = kind === "skill" && !x.enabled;
       const tip = inSkillOff ? "Off in the skill: turn it on in the skill folder" : "Tick = crawled";
-      return `<div class="slot" data-kind="${kind}" data-id="${esc(x.id)}"><input type="checkbox"${!inSkillOff && !off.has(x.id) ? " checked" : ""}${inSkillOff ? " disabled" : ""} title="${esc(tip)}"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}${kind === "tool" ? ` <span class="meta">(${esc(note)})</span>` : ""}</span>${kind === "tool" ? `<button class="btn" type="button" data-rmsrc="1">Remove</button>` : ""}</div>`;
+      return `<div class="slot" data-kind="${kind}" data-id="${esc(x.id)}"><input type="checkbox"${!inSkillOff && !off.has(x.id) ? " checked" : ""}${inSkillOff ? " disabled" : ""} title="${esc(tip)}"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}${kind === "tool" && note !== "added in the tool" ? ` <span class="meta">(${esc(note)})</span>` : ""}</span><span class="meta src-reg"><span class="dot ${(REG[regs[x.id]?.status] || REG.none)[1]}"></span>${esc(regLine(regs[x.id]))}</span>${regs[x.id] && regs[x.id].status !== "none" ? `<button class="btn" type="button" data-recrawl="1" title="Treat this source as never crawled: the next run collects it fully again, to the end of the page (nothing is deleted)">Recrawl</button>` : ""}${kind === "tool" ? `<button class="btn" type="button" data-rmsrc="1">Remove</button>` : ""}</div>`;
     };
     const rows = [...arr(skill.research?.sources).filter((x) => x && x.id).map((x) => srcRow(x, "skill")), ...editing.added.map((x) => srcRow(x, "tool"))];
     // Posting times are automatic (Metricool's best times, else the research table); channels are the Metricool brand's.
@@ -685,13 +684,21 @@ header + * { margin-top: 0; }
         <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">${icon("folder")}<span>Open skill folder</span></button></div>
       </div>
       <div class="fields">
-        <div class="field wide"><span class="label">Sources</span><div id="fSources">${rows.join("") || `<div class="meta">No sources.</div>`}</div>
+        <div class="field wide"><span class="label">Sources</span><div id="fSources">${rows.join("") || `<div class="meta">No sources yet. Add a page link below (name optional), Save, then tick it in the Run tab.</div>`}</div>
           <div class="slot"><input type="text" id="fNewName" placeholder="Name (optional)" style="flex: 0 1 200px"><input type="text" id="fNewSrc" placeholder="Page URL (https://...)"><button class="btn" type="button" id="addSrc">Add</button></div></div>
       </div>`;
     $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
-    $("#fSources").onclick = (e) => {
-      if (!e.target.dataset.rmsrc) return;
+    $("#fSources").onclick = async (e) => {
       const row = e.target.closest(".slot");
+      if (row && e.target.dataset.recrawl) {
+        const res = await postJson("/api/source-recrawl", { brand: id, source: row.dataset.id }).catch(() => offline);
+        if (res.error) { $("#brandMsg").innerHTML = errLine(res.error); return; }
+        $("#brandMsg").innerHTML = `<span class="ok-text">${esc(row.dataset.id)} will be collected fully again on the next run.</span>`;
+        $(".src-reg", row).innerHTML = `<span class="dot dot-grey"></span>${esc(regLine(res.registry))}`;
+        e.target.remove();
+        return;
+      }
+      if (!e.target.dataset.rmsrc) return;
       editing.added = editing.added.filter((a) => a.id !== row.dataset.id);
       row.parentNode.removeChild(row);
     };
@@ -901,6 +908,17 @@ header + * { margin-top: 0; }
     if (arr(promptData.prompts).length) apply(); else setTimeout(function wait() { arr(promptData.prompts).length ? apply() : setTimeout(wait, 150); }, 150);
   }
   const isResearch = (m) => /research/i.test(m);
+  // The crawl registry of a source (GET /api/prompt-counts registry, /api/brand registry): never / partial / complete, posts, last run.
+  const REG = { none: ["never", "dot-grey"], partial: ["partial", "dot-amber"], complete: ["complete", "dot-green"] };
+  const regLine = (r) => (!r || (r.status === "none" && !r.posts_total) ? "never crawled" : `${(REG[r.status] || REG.none)[0]} · ${r.posts_total || 0} posts${r.last_run ? ` · +${r.new_last_run || 0} last run (${r.last_run})` : ""}${r.status === "partial" && r.resume ? ` · resumes after ${typeof r.resume === "object" ? r.resume.date || String(r.resume.post_id || "saved cursor").slice(0, 14) : r.resume}` : ""}`);
+  // Research with nothing to run: no prompt is made (Copy prompt / Run now are greyed with this text).
+  function researchBlock() {
+    if (!isResearch(prMode)) return "";
+    const brandSel = $("#prBrand").value, scope = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable));
+    // Research always covers ALL enabled sources of the chosen brand(s); a brand can run when it has enabled sources, or its skill enables discovery.
+    if (!scope.some((x) => arr(x.sources).length || x.discovery_enabled)) return "No sources yet: add page links in the brand's Edit page (Overview)";
+    return "";
+  }
   function drawPrompt() {
     const prompts = arr(promptData.prompts), brands = arr(promptData.brands);
     const modes = [...new Set(prompts.map((p) => p.mode))];
@@ -929,21 +947,6 @@ header + * { margin-top: 0; }
       if (!swapOk) $("#prSwap").checked = false;
     }
     // Time and Start belong to Publish approved only: Create & publish always schedules at Auto (best time), from tomorrow.
-    // Sources: enabled research sources (social.json) of the chosen brand, or of every brand grouped by brand when
-    // Brand is "All". Value = "<brand>:<source>"; none ticked = all sources.
-    const b = brands.find((x) => x.id === brand);
-    const ticked = new Set($$("#prSrc input:checked").map((x) => x.value));
-    const group = (x) => arr(x.sources).map((s) => { const v = `${x.id}:${s}`; return `<label><input type="checkbox" value="${esc(v)}"${ticked.has(v) ? " checked" : ""}>${esc(modeCounts[x.id] ? withCount(s, `${modeCounts[x.id].sources?.[s] || 0} available`) : s)}</label>`; }).join("");
-    const shown = b ? [b] : az(brands.filter((x) => arr(x.sources).length), (x) => x.name || x.id);
-    $("#prSrc").innerHTML = shown.map((x) => `${b ? "" : `<div class="opt-group">${esc(x.name || x.id)}</div>`}${group(x)}`).join("") || `<div class="meta">No enabled sources.</div>`;
-    for (const c of $$("#prSrc input")) c.onchange = () => { srcLabel(); regenerate(); };
-    srcLabel();
-    // Discovery platforms: the enabled platforms of the chosen brand's skill (every brand: their union); all ticked by
-    // default, unticked ones remembered (prPlatOff).
-    const plats = [...new Set((b ? [b] : brands.filter((x) => x.usable)).flatMap((x) => arr(x.discovery_platforms)))];
-    $("#prPlat").innerHTML = plats.map((p) => `<label><input type="checkbox" value="${esc(p)}"${prPlatOff.has(p) ? "" : " checked"}>${esc(platformName(p))}</label>`).join("") || `<div class="meta">No discovery platforms in the skill.</div>`;
-    for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) prPlatOff.delete(c.value); else prPlatOff.add(c.value); platLabel(); regenerate(); };
-    platLabel();
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
     $("#prCount").placeholder = publishOnly ? "all" : "auto";
     $("#prCount").title = publishOnly ? "Empty = every approved post not sent yet; N = at most N per brand, oldest approved first" : `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
@@ -955,12 +958,12 @@ header + * { margin-top: 0; }
     syncSub();
     prBase = p ? p.text : "";
     $("#prText").value = buildPrompt();
+    try { arDraw(); } catch {}
     prBoxSync();
     fitPrompt();
     // The panel follows the selected mode (reloaded when the mode changes, or when nothing is polling).
     if (modeKey(prMode) !== shownRunMode || !runTimer) loadProgress();
   }
-  let prPlatOff = new Set();
   // Overview "Research": one logo tile per research platform (GET /api/research-platforms), status chip; silent if the endpoint fails.
   const DOT_OF = { "c-green": "dot-green", "c-amber": "dot-amber", "c-red": "dot-red", "": "dot-grey" };
   const PLAT_CHIP = { ok: ["Ready", "c-green"], untested: ["Needs check", "c-amber"], broken: ["Blocked", "c-red"] };
@@ -988,29 +991,15 @@ header + * { margin-top: 0; }
     } catch { /* quiet */ }
   }
 
-  function platLabel() {
-    const all = $$("#prPlat input"), on = all.filter((x) => x.checked).map((x) => platformName(x.value));
-    $("#prPlatSum").textContent = !all.length ? "None" : on.length === all.length ? "All" : on.length ? on.join(", ") : "None";
-  }
-  function srcLabel() {
-    const on = $$("#prSrc input:checked").map((x) => x.value.split(":").pop());
-    $("#prSrcSum").textContent = on.length ? on.join(", ") : "All";
-  }
   // This run's options as short lines (only those set); the steps themselves are in RUNBOOK.md.
   function options() {
     const lines = [], brand = $("#prBrand").value;
     if (isResearch(prMode)) {
-      const src = $$("#prSrc input:checked").map((x) => x.value), max = parseInt($("#prMax").value, 10), kind = $("#prKind").value;
-      // Ticked sources per brand; brands with nothing ticked are skipped when some are ticked elsewhere.
-      const per = {}; for (const v of src) { const [bid, s] = v.split(":"); (per[bid] ||= []).push(s); }
-      for (const [bid, list] of Object.entries(per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
-      if (!brand && src.length) lines.push(`only the brands listed above`);
-      // Discovery platforms: every one ticked = defaults (no flag); some = --platforms; none = no discovery.
-      const pall = $$("#prPlat input"), pon = pall.filter((x) => x.checked).map((x) => x.value);
-      if (pall.length && pon.length < pall.length) lines.push(pon.length ? `discovery platforms ${pon.map(platformName).join(", ")} (--platforms ${pon.join(",")})` : "no discovery, reference pages only (--platforms none)");
-      if (max > 0) lines.push(`target ${max} new posts per brand: reference pages first, then discovery (--max-posts ${max})`);
-      if (kind === "backfill") lines.push("backfill older posts on the reference pages (--backfill)");
-      if (kind === "full") lines.push("full rescan (--full)");
+      const max = parseInt($("#prMax").value, 10);
+      // No source choice: every enabled source of the brand(s), each with the smart crawl decided from its registry; per-source on/off is in the brand Edit page.
+      lines.push("all enabled sources of the brand (no --source flag): each one is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
+      lines.push("discovery follows the brand's skill config (research.discovery: runs after the sources only if enabled there)");
+      if (max > 0) lines.push(`target ${max} new posts per brand: sources first, then discovery if the skill enables it (--max-posts ${max})`);
     } else {
       const pub = /publish approved/i.test(prMode);
       const count = parseInt($("#prCount").value, 10), win = pub ? $("#prWindow").value : "", start = pub ? $("#prStart").value : "";
@@ -1033,7 +1022,10 @@ header + * { margin-top: 0; }
     $("#prSub").value = subAllowed() && store.get(`prSub:${agent}`) === "1" ? "sub" : "main";
     setDisabled($("#prSub"), !subAllowed(), /codex/i.test(agent) ? "Codex runs it in its own session" : "ChatGPT cannot run the task");
   }
+  let prBlock = ""; // research with nothing to run: the reason (no prompt is made)
   function buildPrompt() {
+    prBlock = researchBlock();
+    if (prBlock) return prBlock;
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
     const lead = subAllowed() && $("#prSub").value === "sub" ? SUB_LINE + "\n" : "";
     return lead + buildTask();
@@ -1071,9 +1063,10 @@ header + * { margin-top: 0; }
     note.hidden = !pub;
     if (pub) note.textContent = `Already on Metricool: ${sum("on_metricool")} (never sent again)`;
   }
+  let regSig = "";
   async function loadModeCounts() {
     const r = await getJson("/api/prompt-counts").catch(() => ({}));
-    if (r.brands) { const first = !Object.keys(modeCounts).length; modeCounts = r.brands; showModeCounts(); if (first && arr(promptData.prompts).length) drawPrompt(); }
+    if (r.brands) { const first = !Object.keys(modeCounts).length; modeCounts = r.brands; showModeCounts(); const sig = JSON.stringify(Object.values(modeCounts).map((c) => c.registry)); if ((first || sig !== regSig) && arr(promptData.prompts).length) drawPrompt(); regSig = sig; }
   }
   const loadPrompts = safely("#prMsg", async () => {
     loadModeCounts();
@@ -1087,9 +1080,9 @@ header + * { margin-top: 0; }
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
   $("#prSub").onchange = () => { store.set(`prSub:${$("#prAgent").value}`, $("#prSub").value === "sub" ? "1" : "0"); regenerate(); };
   $("#prBrand").onchange = () => { drawPrompt(); regenerate(); };
-  for (const id of ["#prMax", "#prKind", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
+  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap"]) $(id).onchange = regenerate;
   $("#prItemClear").onclick = () => { prItem = null; $("#prCount").value = ""; drawPrompt(); };
-  document.addEventListener("click", (e) => { for (const id of ["#prSrcBox", "#prPlatBox"]) if ($(id).open && !e.target.closest(id)) $(id).open = false; });
+
   const baseHint = $("#prMsg").textContent;
   let hint = baseHint;
   const toast = (text, kind = "error") => {
@@ -1105,6 +1098,7 @@ header + * { margin-top: 0; }
   };
   const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
   $("#prCopy").onclick = async () => {
+    if (prBlock) { flash(prBlock); return; }
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
     { const v = $("#prText").value; clearTimeout(flash.t); $("#prMsg").classList.add("copied"); $("#prMsg").textContent = `Copied · ${v.length.toLocaleString("en-US")} characters`; flash.t = setTimeout(() => { $("#prMsg").classList.remove("copied"); $("#prMsg").textContent = hint; }, 3000); }
     // A new pending run of this mode: the panel starts over and waits for the agent (brands.mjs --run, Setup).
@@ -1146,7 +1140,8 @@ header + * { margin-top: 0; }
     const r = arState, claude = subAllowed();
     applyHow();
     const busy = !!r?.active, noCli = r && r.cli && !r.cli.found;
-    setDisabled($("#prRunNow"), busy || noCli || !claude, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found" : "Run now starts Claude Code: choose the Claude Code agent");
+    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found" : "Run now starts Claude Code: choose the Claude Code agent");
+    setDisabled($("#prCopy"), !!prBlock, prBlock);
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
     box.hidden = howNow() !== "app"; prRunVis();
@@ -1174,6 +1169,7 @@ header + * { margin-top: 0; }
     if (arState?.active && !$("#page-prompt").hidden) arTimer = setTimeout(loadAgentRun, 3000);
   }
   $("#prRunNow").onclick = async () => {
+    if (prBlock) { flash(prBlock); return; }
     const key = modeKey(prMode);
     // Only Publish approved asks first (it schedules real posts on Metricool); Research and Create start at once and say what they do in the live panel.
     if (key === "publish" && !confirm(AR_CONFIRM[key]())) return;

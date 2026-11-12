@@ -16,7 +16,7 @@ import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial, saveOverride } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
-import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar } from "../scripts/store.mjs";
+import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar, registryAll, resetRegistry } from "../scripts/store.mjs";
 import { promptList, skillLine, ALL_BRANDS } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
@@ -242,6 +242,14 @@ async function handle(req, res) {
     if (!isObject(b.social)) throw new Error("Missing override or social (override must be a JSON object; social.json itself is read-only).");
     return saveSocial(get("id"), b.social);
   });
+  // Brand Edit, a source's registry row: Recrawl = the source is treated as never crawled (status none), the next run collects it fully again. Nothing is deleted.
+  if (path === "/api/source-recrawl" && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    const brand = String(b.brand ?? ""), source = String(b.source ?? "");
+    if (!discovered().brands.some((x) => x.id === brand)) throw new Error(`Unknown brand "${brand}".`);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(source)) throw new Error("Invalid source.");
+    return { source, registry: resetRegistry(brand, source) };
+  });
   if (path === "/api/store" && req.method === "GET") return api(res, () => {
     const brands = discovered().brands;
     const brand = get("brand"), status = get("status"), source = get("source"), platform = get("platform");
@@ -278,6 +286,8 @@ async function handle(req, res) {
         on_metricool: (qb.on_metricool || []).length,
         // Available library items per source (Prompt Sources list).
         sources: listItems(b.id, { status: "new" }).items.reduce((o, i) => { o[i.source_id] = (o[i.source_id] || 0) + 1; return o; }, {}),
+        // Crawl registry of each source the user keeps: status none|partial|complete, posts_total, new_last_run, last_run (store.mjs registryOf).
+        registry: Object.fromEntries(Object.entries(registryAll(b.id, b.sources || [])).filter(([id]) => (b.sources || []).includes(id)).map(([id, r]) => [id, { status: r.status, posts_total: r.posts_total, new_last_run: r.new_last_run, last_run: r.last_run, resume: r.resume ? r.resume.date || r.resume.post_id || "saved" : "" }])),
       }];
     })) };
   });
@@ -287,7 +297,7 @@ async function handle(req, res) {
     const short = (n) => { const t = String(n || "").split(/[.;]| \(/)[0].trim(); return t.length > 110 ? `${t.slice(0, 107)}...` : t; };
     return { platforms: Object.entries(PLATFORM_REGISTRY).map(([id, e]) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), status: e.status, checked: e.checked || "", note: short(e.note), enabled_for: brands.filter((b) => (b.discovery_platforms || []).includes(id)).map((b) => b.id) })), brands: brands.map((b) => ({ id: b.id, name: b.brand })) };
   });
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, skill_root: b.skillRoot || b.dir, shared: !!b.shared, skill_line: skillLine(b), metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], discovery_platforms: b.discovery_platforms || [], posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, skill_root: b.skillRoot || b.dir, shared: !!b.shared, skill_line: skillLine(b), metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], sources_info: b.sources_info || [], discovery_platforms: b.discovery_platforms || [], discovery_enabled: !!b.discovery_enabled, posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));
