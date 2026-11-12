@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { main, out, isMain, parseArgs, need, settings, toolRoot, workspace, inside, withLock, loadBrand, readJson, writeJson, today, stamp, findDraft } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, settings, toolRoot, workspace, inside, withLock, loadBrand, readJson, writeJson, today, stamp, findDraft, skillScript } from './lib.mjs';
 import { metadataChunks } from './image-clean.mjs';
 import { postsDir, postsCatalogFile, postFolder, checkPost as checkRegisterPost } from './posts.mjs';
 
@@ -220,7 +220,7 @@ export async function publish({ brand: brandId, post: postId, video: wantVideo =
   const { brand, catalogFile, entry } = postOf(brandId, postId);
   if (!APPROVED.includes(entry.status)) throw new Error(`${postId} đang "${entry.status}"; chỉ host media của bài đã duyệt (approved/scheduled/published).`);
   const items = mediaOf(brand, entry, postId, wantVideo);
-  const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
+  const cleaner = skillScript(brand.dir, 'clean-image.mjs'); // shared at the skill root (legacy: the skill's own copy)
   for (const it of items) {
     it.buf = fs.readFileSync(it.file);
     it.hash = sha(it.buf);

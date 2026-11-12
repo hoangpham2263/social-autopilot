@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, isMain, parseArgs, need, workspace, readJson, writeJson, withLock, loadBrand, today, projectField, hasHidden, aiLabelHits, brandLanguages, inside, brandSocial } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, workspace, readJson, writeJson, withLock, loadBrand, today, projectField, hasHidden, aiLabelHits, brandLanguages, inside, brandSocial, skillScript } from './lib.mjs';
 
 export const postsDir = (brandId) => path.join(workspace, 'posts', brandId);
 export const postsCatalogFile = (brandId) => path.join(postsDir(brandId), 'catalog.json');
@@ -87,7 +87,7 @@ export function checkPost(brand, postOrId) {
     const alts = [].concat(entry.media_alt || []).filter(Boolean).length;
     if (images.length > 1 && alts < images.length) warnings.push(`media_alt có ${alts}/${images.length} alt (posts.mjs fill-alt).`);
     if (!images.length && !entry.video && !entry.media_url && !entry.video_url) errors.push('Chưa có ảnh trong catalog.');
-    const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
+    const cleaner = skillScript(brand.dir, 'clean-image.mjs'); // shared at the skill root (legacy: the brand skill's own copy); brand independent
     for (const name of images) {
       const file = path.join(folder, name);
       if (path.basename(name) !== name || !fs.existsSync(file)) { errors.push(`Thiếu ${name}.`); continue; }

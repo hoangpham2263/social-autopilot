@@ -1,5 +1,5 @@
 // A brand's project/social.json, read only (the UI's Brand panel uses the same function), with what the skill's own
-// scripts/check-skill.mjs --tool-ready says is still missing. Skills are READ-ONLY for social-autopilot (user,
+// scripts/check-skill.mjs --tool-ready says is still missing (shared layout: S/scripts/check-skill.mjs --brand <id>). Skills are READ-ONLY for social-autopilot (user,
 // 10/11/2026): the tool never writes into a skill folder, so "set" is refused; edit the skill itself.
 // Per-brand changes the app allows (posts per day, paused, added/disabled sources) are saved IN THE TOOL,
 // workspace/brands/<id>.json (lib.mjs brandSocial merges them over social.json); the skill is not changed.
@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { main, out, isMain, parseArgs, need, discoverBrands, readJson, secretProblems, brandSocial, readBrandOverride, saveBrandOverride, brandOverrideFile } from './lib.mjs';
+import { main, out, isMain, parseArgs, need, discoverBrands, skillRootOf, skillScript, skillScriptArgs, readJson, secretProblems, brandSocial, readBrandOverride, saveBrandOverride, brandOverrideFile } from './lib.mjs';
 
 // Secret detection lives in lib.mjs (shared with metricool-brands.json): only real secret keys (token, secret, password,
 // api_key, access_key, x-mc-auth, bearer, ...) and token-looking values; "author" or "session" alone are fine.
@@ -21,9 +21,9 @@ function brandDir(id) {
   return b.dir;
 }
 
-// The skill's own check: errors (LỖI), tool-ready missing items, warnings.
+// The skill's own check (legacy: the brand skill's own script; shared layout: the shared script at the skill root with --brand <id>): errors (LỖI), tool-ready missing items, warnings.
 export function checkSkill(dir) {
-  const run = (args) => spawnSync(process.execPath, [path.join(dir, 'scripts', 'check-skill.mjs'), ...args], { cwd: dir, encoding: 'utf8', windowsHide: true });
+  const run = (args) => spawnSync(process.execPath, [skillScript(dir, 'check-skill.mjs'), ...skillScriptArgs(dir, args)], { cwd: skillRootOf(dir), encoding: 'utf8', windowsHide: true });
   const plain = run([]);
   const ready = run(['--tool-ready']);
   const lines = (r, re) => String(r.stdout).split(/\r?\n/).filter((l) => re.test(l));
@@ -52,7 +52,7 @@ export function saveOverride(id, input) {
 // Skills are read-only for the tool: saving is refused (kept as a function so the app answers with a clear message).
 export function saveSocial(id) {
   brandDir(id);
-  throw new Error('Skill chỉ đọc: social-autopilot không bao giờ ghi vào thư mục skill. Sửa project/social.json trong skill (rồi chạy scripts/check-skill.mjs --tool-ready của skill).');
+  throw new Error('Skill chỉ đọc: social-autopilot không bao giờ ghi vào thư mục skill. Sửa project/social.json trong thư mục thương hiệu (rồi chạy scripts/check-skill.mjs --tool-ready của skill, bộ dùng chung: kèm --brand <id>).');
 }
 
 if (isMain(import.meta.url)) main(() => {

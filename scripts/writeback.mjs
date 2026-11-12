@@ -11,7 +11,7 @@ import { cleanDraftImage } from './image-clean.mjs';
 import { hostAfterWriteback } from './host-image.mjs';
 import { postsDir, postsCatalogFile, nextPostId, checkPost } from './posts.mjs';
 import { publishPairs, draftImages, extraShotOf } from './draft-lib.mjs';
-import { main, out, parseArgs, need, isMain, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus, cleanText, aiLabelHits } from './lib.mjs';
+import { main, out, parseArgs, need, isMain, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus, cleanText, aiLabelHits, skillScript } from './lib.mjs';
 
 // Alt text for the post image, made at Approve from the idea (product, scene, props, sign text): short, descriptive,
 // never an AI label (a sentence with one is dropped), never the source shop. Always present, so payload never lacks it.
@@ -71,7 +71,7 @@ function writeBackInner(id) {
   // then the brand skill's own clean-image.mjs only when its --check does not already say SẠCH (no double work).
   try { cleanDraftImage(dir, { generator: 'codex' }); } catch (e) { fs.rmSync(folder, { recursive: true, force: true }); throw e; }
   // The skill's clean-image.mjs is only run (read-only use of the skill), its output goes into the tool's folder.
-  const cleaner = path.join(brand.dir, 'scripts', 'clean-image.mjs');
+  const cleaner = skillScript(brand.dir, 'clean-image.mjs'); // shared at the skill root (legacy: the skill's own copy)
   const already = fs.existsSync(cleaner) && /SẠCH:/.test(spawnSync(process.execPath, [cleaner, '--check', path.join(dir, 'image.png')], { encoding: 'utf8', windowsHide: true }).stdout || '');
   if (fs.existsSync(cleaner) && !already) {
     const r = spawnSync(process.execPath, [cleaner, path.join(dir, 'image.png'), path.join(folder, 'image.png')], { encoding: 'utf8', windowsHide: true });

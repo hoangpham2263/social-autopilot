@@ -1,6 +1,7 @@
-// Step 0: discover brands. A brand is a skill folder in skillsRoot (config/settings.json) with SKILL.md,
-// project/project.md and project/social.json. It is in the run (usable) only when social.json has "enabled": true and
-// the skill's own `scripts/check-skill.mjs --tool-ready` passes; problems lists what that check says is missing.
+// Step 0: discover brands in skillsRoot (config/settings.json; SA_SKILLS_ROOT overrides it). Two layouts: legacy
+// <skillsRoot>/<id>-skills/ and shared <skillsRoot>/brand-content-skills/brands/<id>/ (SKILL.md + scripts at the skill root);
+// either way a brand has project/project.md and project/social.json. It is in the run (usable) only when social.json has
+// "enabled": true and the skill's `scripts/check-skill.mjs --tool-ready` (shared layout: `--brand <id>`) passes; problems lists what is missing.
 // node scripts/brands.mjs [--run research|create|publish]
 //   --run (Setup, step 1 of every prompt): this run shows in the app's Prompt tab (Run progress); it takes over the
 //   pending run the app's Copy prompt made, or starts one (scripts/progress.mjs).
@@ -18,7 +19,7 @@ main(() => {
   out({
     skillsRoot: root,
     usable,
-    brands: brands.map(({ id, dir, brand, enabled, ready, usable, channels, languages, language_mode, review_languages, sources, ai_scenes_allowed, problems }) => ({ id, dir, brand, enabled, ready, usable, channels, languages, language_mode, review_languages, sources, ai_scenes_allowed, problems })),
+    brands: brands.map(({ id, dir, skillRoot, shared, brand, enabled, ready, usable, channels, languages, language_mode, review_languages, sources, ai_scenes_allowed, problems }) => ({ id, dir, skillRoot, shared, brand, enabled, ready, usable, channels, languages, language_mode, review_languages, sources, ai_scenes_allowed, problems })),
     skipped,
   });
 });

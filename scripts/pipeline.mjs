@@ -152,7 +152,7 @@ function stageA(args) {
     const ideas = readJson(path.join(workspace, 'store', id, 'ideas.json'), { ideas: [] }).ideas.filter((i) => ['todo', 'ready'].includes(i.status) && (!pickIds.length || pickIds.includes(i.item)));
     const items = readJson(path.join(workspace, 'store', id, 'items.json'), { items: [] }).items;
     const folders = productFolders(b);
-    todo.brands[id] = { skill: b.dir, skill_md: path.join(b.dir, 'SKILL.md'), project_md: path.join(b.dir, 'project', 'project.md'), image_guide: path.join(b.dir, 'references', 'image-guide.md'), size_source: b.social.product_images?.size_source || 'project.md section 5/10', custom_text: b.social.product_images?.custom_text === true, reference_redraw: b.social.product_images?.reference_redraw?.enabled === true, product_folders: folders, product_images: folders.flatMap((d) => someImages(d, 30)).slice(0, 60) };
+    todo.brands[id] = { skill: b.dir, skill_root: b.skillRoot || b.dir, skill_md: path.join(b.skillRoot || b.dir, 'SKILL.md'), project_md: path.join(b.dir, 'project', 'project.md'), image_guide: path.join(b.skillRoot || b.dir, 'references', 'image-guide.md'), size_source: b.social.product_images?.size_source || 'project.md section 5/10', custom_text: b.social.product_images?.custom_text === true, reference_redraw: b.social.product_images?.reference_redraw?.enabled === true, product_folders: folders, product_images: folders.flatMap((d) => someImages(d, 30)).slice(0, 60) };
     for (const i of ideas) {
       const it = items.find((x) => x.id === i.item) || {};
       const prev = previousUses(it);

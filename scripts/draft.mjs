@@ -149,7 +149,7 @@ export function newDraft(args) {
   }), 'utf8');
   writeExtraPrompts(dir, draft, brand, sizeTextFill(brand, productSize, signText, so, refInfo));
   fs.writeFileSync(path.join(dir, 'brief.md'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'caption-brief.md'), 'utf8'), {
-    BRAND: brand.brand, SKILL: path.join(brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
+    BRAND: brand.brand, SKILL: path.join(brand.skillRoot || brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
     SIGN_TEXT_NOTE: [refNote(refMode, refInfo.text, signText),
       signText ? 'Chữ trên bảng là "' + signText + '": caption (mọi ngôn ngữ) nhắc đúng chữ này, không viết chữ mẫu kiểu "Your Names".' : ''].filter(Boolean).join(' '),
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
@@ -248,7 +248,7 @@ function sizeTextFill(brand, size, signText, o = {}, ref = {}) {
       : ref.mode
       ? `Keep the product's text EXACTLY as in the reference photo: the same characters/letters, script, orientation, layout, font, colours and number of lines${signText ? ` (it reads: "${signText}")` : ''}. Do not change, translate, correct (not even a character that looks mirrored) or add any text on the product.`
       : signText ? `The customer's own text on the product (where the photo shows template/placeholder text such as "Your Names", "Your Logo", "Your Bar Name") must read exactly: "${signText}". No placeholder text may remain; fixed words of the design stay as they are; keep the product's font style, colours, layout and number of lines.` : 'Keep the product\'s own text exactly as in the photo.',
-    IMAGE_GUIDE: path.join(brand.dir, 'references', 'image-guide.md'),
+    IMAGE_GUIDE: path.join(brand.skillRoot || brand.dir, 'references', 'image-guide.md'),
   };
 }
 // Rebuilds prompt.txt of an existing draft from the template (new size / sign text), keeping its product description.
@@ -442,7 +442,7 @@ export function watermark(args, s = settings()) {
   const raw = path.join(dir, 'image-generated.png'), overlaid = path.join(dir, 'image-watermarked.png');
   if (!fs.existsSync(raw)) throw new Error('Chưa có image-generated.png (chạy draft.mjs image trước).');
   const logo = path.resolve(brand.dir, String(wm.file || ''));
-  if (!wm.file || !inside(brand.dir, logo) || !fs.existsSync(logo)) throw new Error('product_images.watermark.file phải là file logo có thật trong thư mục skill của thương hiệu.');
+  if (!wm.file || !inside(brand.dir, logo) || !fs.existsSync(logo)) throw new Error('product_images.watermark.file phải là file logo có thật trong thư mục thương hiệu (project/sources/..., tương đối theo thư mục thương hiệu).');
   const head = fs.readFileSync(raw).subarray(0, 24);
   const width = head.subarray(1, 4).toString('latin1') === 'PNG' ? head.readUInt32BE(16) : 1024;
   const position = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(wm.position) ? wm.position : 'bottom-right';
