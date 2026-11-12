@@ -491,7 +491,7 @@ export function registerImage(args, s = settings()) {
 // <home>/Downloads (the Playwright file chooser only reads under the user's folder; nothing is removed) and the register command.
 // n = 1: cover (reference = the brand photo / the scene-swap reference, if any). n >= 2: album extra, reference = image 1 of the same
 // post as it sits in the Flow project ("+" > its thumbnail > "Thêm vào câu lệnh"); its file is also copied to Downloads as a fallback.
-const q = (x) => String(x || '').replace(/"/g, "'").replace(/s+/g, ' ').trim();
+const q = (x) => String(x || '').replace(/"/g, "'").replace(/\s+/g, ' ').trim();
 export function flowBrief(args, s = settings()) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const files = draftImages(draft);
