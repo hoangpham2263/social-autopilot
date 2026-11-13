@@ -82,6 +82,7 @@
     "images_per_post": [
       1,
       4
-    ]
+    ],
+    "album_mode": "random"
   }
 }

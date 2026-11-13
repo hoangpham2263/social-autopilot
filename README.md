@@ -80,6 +80,7 @@ Tab **Settings** còn có **Image engine** (`image_engine`): `Codex` (mặc đ�
 | `research.dedupe` | ngưỡng trùng: `image_distance` (/256), `caption_similarity` (0–1) |
 | `codex.command`, `codex.timeout_minutes` | lệnh chạy Codex, thời gian chờ tối đa |
 | `codex.concurrency`, `codex.retry_wait_seconds` | số ảnh Codex làm cùng lúc trên cả máy (3), giây chờ trước khi thử lại khi Codex báo hết lượt (60) |
+| `posts.album_mode` | `random` (mặc định) | `angle` | `scene`: kiểu album của bài từ 2 ảnh: `angle` = cùng cảnh, góc khác; `scene` = cùng sản phẩm, cảnh khác theo bảng của thương hiệu; random = 50/50 mỗi bài, ghi vào `draft.json` `album_mode`. Settings > Album; mỗi lần chạy: ô chọn Album của Run tab = `pipeline.mjs create --album angle|scene|random` (mặc định thì không thêm cờ) |
 | `posts.images_per_post` | `[min, max]` (1-4) số ảnh mỗi bài, chọn ngẫu nhiên (mặc định `[1, 4]`, tối đa 4; Settings > Images per post; mỗi lần chạy: hai ô min/max Images per post của Run tab = `pipeline.mjs create --images N|min-max`; min = max = đúng N ảnh; mặc định thì không thêm cờ); thương hiệu đè trong `workspace/brands/<id>.json` `posts.images_per_post`. 1 ảnh = `image.png`; nhiều ảnh = `image-01.png` (bìa), `image-02.png`...; chữ trên ảnh luôn tiếng Anh |
 | `ffmpeg.command` | lệnh ffmpeg (watermark, đọc WebP khi dedupe) |
 | `skillsRoot` | thư mục repo chứa skill dùng chung (mặc định `../vaniecom-workspace`): thương hiệu ở `<skillsRoot>/brand-content-skills/brands/<id>/` (một thư mục cho mỗi thương hiệu, trong skill); chỉ thư mục con có `SKILL.md` được coi là skill; tool vẫn nhận `<repo>/brands/<id>/` (đè bằng `brandsRoot` / `SA_BRANDS_ROOT`) và bố cục cũ `<id>-skills/`; biến môi trường `SA_SKILLS_ROOT` đè lên khi chạy thử |
@@ -109,4 +110,4 @@ workspace/                 dữ liệu riêng của máy (không lên git)
 - `docs/research.md` — một đường: Claude mở trang, cuộn, đọc bằng script trích xuất `collect.mjs` (adapter nền tảng), lọc
 - `docs/metricool.md` — Metricool
 - `docs/scheduled-prompt.md` — prompt mẫu
-Các lựa chọn của Run tab (Agent, How to run, Brand, Max posts, Sources/Platforms, Images, Images per post min/max, Posts, Time, Start) được nhớ trong trình duyệt/app này (localStorage); Library item thì không.
+Các lựa chọn của Run tab (Agent, How to run, Brand, Max posts, Sources/Platforms, Images, Images per post min/max, Album, Posts, Time, Start) được nhớ trong trình duyệt/app này (localStorage); Library item thì không.

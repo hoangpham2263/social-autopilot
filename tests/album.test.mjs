@@ -48,3 +48,22 @@ test('parseImagesOpt: --images N | min-max within 1..4', () => {
   assert.equal(parseImagesOpt(undefined), null);
   assert.deepEqual(draftImages({ image_count: 4 }), ['image.png', 'image-02.png', 'image-03.png', 'image-04.png']);
 });
+
+test('album type: --album parsing, forced choice, random split, old drafts = angle', async () => {
+  const { parseAlbumOpt, albumChoice, pickAlbumMode, albumModeOf } = await import('../scripts/draft-lib.mjs');
+  assert.equal(parseAlbumOpt(undefined), '');
+  assert.equal(parseAlbumOpt('Scene'), 'scene');
+  assert.equal(parseAlbumOpt('x'), null);
+  assert.equal(albumChoice('', { posts: { album_mode: 'angle' } }), 'angle');
+  assert.equal(albumChoice('scene', { posts: { album_mode: 'angle' } }), 'scene');
+  assert.equal(albumChoice('', {}), 'random');
+  assert.equal(pickAlbumMode('scene'), 'scene');
+  assert.equal(pickAlbumMode('random', () => 0), 'angle');
+  assert.equal(pickAlbumMode('random', () => 0.9), 'scene');
+  assert.equal(albumModeOf({ image_count: 1, album_mode: 'scene' }), '');
+  assert.equal(albumModeOf({ image_count: 3 }), 'angle');
+  assert.equal(albumModeOf({ image_count: 3, album_mode: 'scene' }), 'scene');
+  const alts = altTexts({ image_count: 3, album_mode: 'scene', album_scenes: ['a bar counter'], idea: { product_type: 'Neon sign', scene: 'a cozy bar' }, sign_text: 'Open' });
+  assert.match(alts[1], /in a bar counter\.$/);
+  assert.match(alts[2], /in a different setting\.$/);
+});

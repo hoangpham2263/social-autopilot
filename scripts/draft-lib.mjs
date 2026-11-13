@@ -129,7 +129,7 @@ export function summary({ dir, draft, status }) {
   const langs = draftLangs(draft);
   const read = (list) => { const o = {}; for (const l of list) { const f = langs.file(l); const file = path.join(dir, f); if (fs.existsSync(file)) o[f] = fs.readFileSync(file, 'utf8'); } return o; };
   const captions = read(langs.posted), review_captions = read(langs.review);
-  return { id: draft.id, brand: draft.brand, status: status.status, dir, image: path.join(dir, 'image.png'), images: draftImages(draft).map((f) => path.join(dir, f)).filter((f) => fs.existsSync(f)), image_count: draftImages(draft).length, idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}`, inspiration: draft.inspiration.post_url || draft.inspiration.source_url, networks: draft.networks.map((n) => n.network), problems: status.problems || [], note: status.note || '', captions,
+  return { id: draft.id, brand: draft.brand, status: status.status, dir, image: path.join(dir, 'image.png'), images: draftImages(draft).map((f) => path.join(dir, f)).filter((f) => fs.existsSync(f)), image_count: draftImages(draft).length, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft), album_scenes: draft.album_scenes || [] } : {}), idea: `${draft.idea.product_type} · ${draft.idea.scene} · ${draft.idea.angle}`, inspiration: draft.inspiration.post_url || draft.inspiration.source_url, networks: draft.networks.map((n) => n.network), problems: status.problems || [], note: status.note || '', captions,
     posted_languages: langs.posted, review_languages: langs.review, review_captions,
     product_size: draft.product_size || '', size_compare: draft.size_compare || '', size_check: refModeOf(draft) === 'keep-scene' ? null : sizeShown(dir, status.size_check),
     ...(refModeOf(draft) === 'keep-scene' ? { framing: 'kept original framing' } : {}),
@@ -184,3 +184,30 @@ export function albumProblems(dir, draft = {}, status = {}) {
 }
 // Which extra shot an album image k (0-based, k >= 1) is: a close-up detail, then a wider/other angle, alternating.
 export const extraShotOf = (k) => (k % 2 === 1 ? 'detail' : 'wide');
+
+// Album type (user 13/11/2026): a post with 2+ images is "angle" (same scene, other camera shot per extra) or "scene"
+// (same product and text in a different scene per extra). Chosen at random per post when the draft is created.
+// Forced by settings posts.album_mode, the run option --album, or draft.mjs new --album. Single-image posts ignore it.
+export const ALBUM_MODES = ['angle', 'scene'];
+export const ALBUM_CHOICES = ['random', ...ALBUM_MODES];
+// Run option --album angle|scene|random. Empty/undefined/true = no option (''), bad value = null.
+export function parseAlbumOpt(v) {
+  if (v === undefined || v === null || v === '' || v === true) return '';
+  const s = String(v).trim().toLowerCase();
+  return ALBUM_CHOICES.includes(s) ? s : null;
+}
+// The choice in force: the run option, else settings posts.album_mode, else random.
+export const albumChoice = (opt, settings = {}) => parseAlbumOpt(opt) || parseAlbumOpt(settings?.posts?.album_mode) || 'random';
+export const pickAlbumMode = (choice = 'random', rand = Math.random) => (ALBUM_MODES.includes(choice) ? choice : ALBUM_MODES[rand() < 0.5 ? 0 : 1]);
+// A draft's album type: '' for a single image; drafts made before this rule (no album_mode) are "angle".
+export const albumModeOf = (draft = {}) => (draftImages(draft).length < 2 ? '' : ALBUM_MODES.includes(draft.album_mode) ? draft.album_mode : 'angle');
+// The scene text of album extra k (1-based extra number, i.e. image n = k + 1): draft.album_scenes[k - 1], else the line the
+// agent wrote into prompt-0N.txt ("NEW SCENE FOR THIS IMAGE: ..."), else ''.
+export function albumSceneOf(dir, draft = {}, n) {
+  const fromDraft = String((draft.album_scenes || [])[n - 2] || '').trim();
+  if (fromDraft) return fromDraft;
+  try {
+    const m = /^NEW SCENE FOR THIS IMAGE:[ \t]*(.+)$/m.exec(fs.readFileSync(path.join(dir, `prompt-${String(n).padStart(2, '0')}.txt`), 'utf8'));
+    return m && !/\{\{\w+\}\}/.test(m[1]) ? m[1].trim() : '';
+  } catch { return ''; }
+}

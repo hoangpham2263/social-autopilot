@@ -9,6 +9,8 @@
 //          keep-scene: no human face in the reference: its scene/framing stay, the product gets NEW text: --sign-text (new,
 //                      same language/script as the original) and --ref-text (what the reference reads) are required
 //          new-scene:  a face / identifiable person: a new real-life scene, every person removed, the product's text kept
+//        --album angle|scene|random   album type of a post with 2+ images (default: settings posts.album_mode, random = 50/50 per post;
+//          angle = same scene, other camera shots; scene = same product in other scenes) [--album-scenes "scene 2|scene 3"]
 //        --size "<real size, e.g. 91 cm (36 in) wide>" (required; from the skill: social.json product_images.size_source)
 //        --compare "<comparison object + its real size, e.g. the 4-seat table below, 120 cm (47 in) wide>" (named in the
 //        prompt with the proportion limits; tool defaults or social.json product_images.size_limits) [--frame-max N] [--close-up]
@@ -44,7 +46,7 @@ import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText, imagesRange, pickImageCount, draftImages, extraShotOf, albumHash, parseImagesOpt } from './draft-lib.mjs';
+import { checkDraft, summary, logoWarnings, REF_MODES, refModeOf, refTemplate, sameSignText, imagesRange, pickImageCount, draftImages, extraShotOf, albumHash, parseImagesOpt, parseAlbumOpt, albumChoice, pickAlbumMode, albumModeOf, albumSceneOf } from './draft-lib.mjs';
 import { cleanDraftImage, cleanExtraImage } from './image-clean.mjs';
 import { unsparkleFile } from './image/unsparkle.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords, readBrandOverride } from './lib.mjs';
@@ -145,6 +147,14 @@ export function newDraft(args) {
     // Album (user 11/11/2026): a random number of images in posts.images_per_post (tool default, brand override).
     image_count: parseImagesOpt(args.images) ? pickImageCount(parseImagesOpt(args.images)) : Number(args.images) >= 1 ? Math.min(10, Math.floor(Number(args.images))) : pickImageCount(imagesRange(settings(), readBrandOverride(brand.id))), // --images N | min-max (run option) wins over brand/settings
   };
+  // Album type (2+ images only): --album angle|scene|random, else settings posts.album_mode, random = 50/50 per post.
+  if (draft.image_count > 1) {
+    const opt = parseAlbumOpt(args.album);
+    if (opt === null) throw new Error('--album must be angle, scene or random.');
+    draft.album_mode = pickAlbumMode(albumChoice(opt, settings()));
+    const scenes = String(args['album-scenes'] && args['album-scenes'] !== true ? args['album-scenes'] : '').split('|').map((x) => x.trim()).filter(Boolean);
+    if (draft.album_mode === 'scene' && scenes.length) draft.album_scenes = scenes.slice(0, draft.image_count - 1);
+  }
   writeJson(path.join(dir, 'draft.json'), draft);
   const second = scene
     ? 'The second attached image is ONLY a mood/lighting reference. Do not copy it and do not take any objects from it.'
@@ -499,7 +509,7 @@ export function flowBrief(args, s = settings()) {
   if (!Number.isInteger(n) || n < 1 || n > files.length) throw new Error(`--n must be 1..${files.length} (this draft has ${files.length} image(s)).`);
   const idea = draft.idea || {}, mode = refModeOf(draft), sign = draft.sign_text || '';
   const common = 'Square 1:1 frame. No people, no other text, no logos.';
-  let prompt, ref = '';
+  let prompt, ref = '', album_scene = '';
   if (n === 1) {
     ref = (draft.image_mode === 'scene-swap' ? draft.reference_image : draft.product_image) || '';
     if (mode === 'keep-scene' && sign && draft.ref_text) prompt = `Edit the attached photo. Keep the exact same scene: ${q(idea.scene)}. Change only the text of the sign: replace "${q(draft.ref_text)}" with exactly "${q(sign)}", in the same flowing single-line handwriting, same thin neon tube and soft glow, same position and size. Extend the scene naturally to a square 1:1 frame without stretching. No people, no other text, no logos.`;
@@ -507,6 +517,11 @@ export function flowBrief(args, s = settings()) {
     else prompt = `Edit the attached product photo. Place exactly this product (same shape, text${sign ? ' "' + q(sign) + '"' : ''}, colours, materials, proportions) in a real-life scene: ${q(idea.scene)}${idea.angle ? ', ' + q(idea.angle) : ''}${idea.props ? '; props: ' + q(idea.props) : ''}. Real size ${q(draft.product_size)}, do not enlarge it. Natural light, candid photo look. ${common}`;
   } else {
     ref = path.join(dir, 'image.png');
+    if (albumModeOf(draft) === 'scene') {
+      const sc = albumSceneOf(dir, draft, n);
+      album_scene = sc;
+      prompt = `Edit the attached image (image 1 of this post). Keep exactly the same product with the same text character for character (same shape, colours, materials, size); place it in a different scene: ${sc ? q(sc) : '<SCENE MISSING: pick one per the brand table (project.md section 10) that differs from image 1 and the other extras, then write it on the "NEW SCENE FOR THIS IMAGE:" line of prompt-' + String(n).padStart(2, '0') + '.txt>'}, natural light, candid photo look. ${common}`;
+    } else
     prompt = `Edit the attached image (image 1 of this post). Keep the same product with the same text character for character, the same scene, the same lighting and the same moment; only a different camera shot: ${SHOTS[extraShotOf(n - 1)]} Do not add stands, brackets or anything not in image 1. ${common}`;
   }
   let reference_for_upload = '';
@@ -516,7 +531,7 @@ export function flowBrief(args, s = settings()) {
     reference_for_upload = path.join(downloads, `sa-ref-${draft.id}-${n}${path.extname(ref) || '.png'}`);
     fs.copyFileSync(ref, reference_for_upload);
   }
-  return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, needs_image1_as_reference: n > 1,
+  return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),
     reference: n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
     ...(n > 1 && !fs.existsSync(ref) ? { warning: 'image 1 is not registered yet (extras follow the cover).' } : {}),
     register: `node scripts/draft.mjs register-image --id ${draft.id} --n ${n} --from <downloaded file>` };
@@ -667,11 +682,14 @@ const SHOTS = {
   detail: 'detail: a close-up of the product (material, edge, finish, light on it), the same scene softly behind it.',
   wide: 'wide: a wider view or a different angle of the same room/scene, the product at its real size in the same place.',
 };
+// "angle" album: prompts/album-extra.txt (same scene, other shot). "scene" album: prompts/album-extra-scene.txt (same product,
+// a different scene per extra; the scene comes from draft.album_scenes, else the agent writes it on the "NEW SCENE FOR THIS IMAGE:"
+// line of prompt-0N.txt per the brand's project.md table; an old line is kept when the prompts are rewritten).
 function writeExtraPrompts(dir, draft, brand, sizeFill) {
-  const files = draftImages(draft);
+  const files = draftImages(draft), scene = albumModeOf(draft) === 'scene';
   for (let k = 1; k < files.length; k++) {
-    fs.writeFileSync(path.join(dir, `prompt-${String(k + 1).padStart(2, '0')}.txt`), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'album-extra.txt'), 'utf8'), {
-      INDEX: String(k + 1), COUNT: String(files.length), MAIN_IMAGE: 'image.png', SHOT: SHOTS[extraShotOf(k)],
+    fs.writeFileSync(path.join(dir, `prompt-${String(k + 1).padStart(2, '0')}.txt`), fill(fs.readFileSync(path.join(toolRoot, 'prompts', scene ? 'album-extra-scene.txt' : 'album-extra.txt'), 'utf8'), {
+      INDEX: String(k + 1), COUNT: String(files.length), MAIN_IMAGE: 'image.png', ...(scene ? { ALBUM_SCENE: albumSceneOf(dir, draft, k + 1) || '{{ALBUM_SCENE}}' } : { SHOT: SHOTS[extraShotOf(k)] }),
       PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', OUTPUT: files[k], ...sizeFill,
     }), 'utf8');
   }

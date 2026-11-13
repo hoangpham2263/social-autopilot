@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { cleanDraftImage } from './image-clean.mjs';
 import { hostAfterWriteback } from './host-image.mjs';
 import { postsDir, postsCatalogFile, nextPostId, checkPost } from './posts.mjs';
-import { publishPairs, draftImages, extraShotOf } from './draft-lib.mjs';
+import { publishPairs, draftImages, extraShotOf, albumModeOf } from './draft-lib.mjs';
 import { main, out, parseArgs, need, isMain, inside, withLock, loadBrand, readJson, writeJson, today, findDraft, setStatus, cleanText, aiLabelHits, skillScript } from './lib.mjs';
 
 // Alt text for the post image, made at Approve from the idea (product, scene, props, sign text): short, descriptive,
@@ -34,7 +34,8 @@ export function altText(draft) {
 export function altTexts(draft) {
   const cover = altText(draft);
   const what = cover.split(/ in | with /)[0].replace(/[.…]+$/, '');
-  return draftImages(draft).map((_, k) => (k === 0 ? cover : extraShotOf(k) === 'detail' ? `Close-up of the ${what.charAt(0).toLowerCase() + what.slice(1)}: material, edge and light.` : `${what}, a wider view of the same scene.`));
+  const sceneAlbum = albumModeOf(draft) === 'scene';
+  return draftImages(draft).map((_, k) => (k === 0 ? cover : sceneAlbum ? (draft.album_scenes?.[k - 1] ? `${what}, in ${String(draft.album_scenes[k - 1]).replace(/[.…]+$/, '')}.` : `${what}, in a different setting.`) : extraShotOf(k) === 'detail' ? `Close-up of the ${what.charAt(0).toLowerCase() + what.slice(1)}: material, edge and light.` : `${what}, a wider view of the same scene.`));
 }
 
 export function slugify(text) {

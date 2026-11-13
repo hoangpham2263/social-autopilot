@@ -5,7 +5,7 @@
 //
 //   node scripts/pipeline.mjs mcp-plan [--brand <id|all>]
 //        the Metricool MCP calls to make first (getBrandSettings, getBestTimeToPostByNetwork per brand, exact args)
-//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"] [--image-engine codex|flow] [--images N|min-max]
+//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"] [--image-engine codex|flow] [--images N|min-max] [--album angle|scene|random]
 //        --items: ideas from exactly these library items (passed to ideas.mjs init; one brand); only their ideas go in the
 //        ideas file. A reused item comes with _context.previous_uses + reuse_rule (take a new angle).
 //        [--brand-settings <file> --best-times-dir <dir>]   (the saved MCP answers: sync-brands / sync-times run here)
@@ -36,7 +36,7 @@ import { nowIn } from './metricool-csv.mjs';
 import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, imageEngine, loadBrand, findDraft, cleanText, metricoolBrands, isMain } from './lib.mjs';
 import { previousUses } from './store.mjs';
 import { REUSE_RULE } from './ideas.mjs';
-import { draftImages, parseImagesOpt } from './draft-lib.mjs';
+import { draftImages, parseImagesOpt, parseAlbumOpt, albumModeOf, albumSceneOf, extraShotOf } from './draft-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pipeDir = () => path.join(workspace, 'pipeline');
@@ -128,6 +128,8 @@ function stageA(args) {
   if (engineArg && !['codex', 'flow'].includes(engineArg)) throw new Error('--image-engine must be codex or flow.');
   const imagesArg = args.images === undefined || args.images === true || args.images === '' ? '' : String(args.images);
   if (imagesArg && !parseImagesOpt(imagesArg)) throw new Error('--images must be N or min-max within 1..4 (e.g. 2 or 1-3); omit it for the default range.');
+  const albumArg = parseAlbumOpt(args.album);
+  if (albumArg === null) throw new Error('--album must be angle, scene or random; omit it for the Settings default (posts.album_mode).');
   const brandArg = String(args.brand && args.brand !== true ? args.brand : 'all');
   const agent = String(args.agent && args.agent !== true ? args.agent : 'Claude Code');
   const pickIds = args.items && args.items !== true ? String(args.items).split(',').map((x) => x.trim()).filter(Boolean) : [];
@@ -146,7 +148,7 @@ function stageA(args) {
   lap('sync_payload_status', t);
   // 2.3 ideas init per brand -> one ideas file for every brand
   t = Date.now();
-  const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), compare (the comparison object in the scene with ITS real size, e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"; the product stays at most 60% of it unless the brand sets other size_limits), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder), description (the exact product: every letter and accent of its text, font, colours, material, proportions). A reused library item (_context.previous_uses): a NEW angle, a different scene (new-scene) OR a different sign_text (keep-scene) than every previous use; the same scene + sign_text + product is rejected. Reference-based post / scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the PRODUCT always comes from the reference photo; every foreign logo, shop name, watermark, phone, price is removed); LOOK at _context.ref_image and set "ref_has_face" (true when any human face / identifiable person shows) and "ref_mode": no face -> "keep-scene" (the scene/background/framing stay; sign_text = NEW text in the SAME language/script as the original, fitting the scene, no placeholder, no third-party brand, no real customer name; "ref_text" = what the reference reads exactly; compare not needed), face -> "new-scene" (a new real-life scene, every person removed; the product text stays as is: sign_text empty or only what it already reads; compare + proportion rules apply). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
+  const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), compare (the comparison object in the scene with ITS real size, e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"; the product stays at most 60% of it unless the brand sets other size_limits), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder), description (the exact product: every letter and accent of its text, font, colours, material, proportions). Albums (a post with 2+ images gets album_mode angle|scene when the draft is made): for an expected SCENE album you may add "album_scenes": [one scene line per extra image] (each a believable setting for this exact product per the brand project.md section 10 table, different from the cover scene and from each other, never a forbidden one; props in the same line); omit it to choose them at Stage C. A reused library item (_context.previous_uses): a NEW angle, a different scene (new-scene) OR a different sign_text (keep-scene) than every previous use; the same scene + sign_text + product is rejected. Reference-based post / scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the PRODUCT always comes from the reference photo; every foreign logo, shop name, watermark, phone, price is removed); LOOK at _context.ref_image and set "ref_has_face" (true when any human face / identifiable person shows) and "ref_mode": no face -> "keep-scene" (the scene/background/framing stay; sign_text = NEW text in the SAME language/script as the original, fitting the scene, no placeholder, no third-party brand, no real customer name; "ref_text" = what the reference reads exactly; compare not needed), face -> "new-scene" (a new real-life scene, every person removed; the product text stays as is: sign_text empty or only what it already reads; compare + proportion rules apply). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
   for (const id of scope) {
     const r = step('ideas.mjs', ['init', '--brand', id, ...(args.restart ? ['--reset'] : []), ...(pickIds.length ? ['--items', pickIds.join(',')] : args.count && args.count !== true ? ['--count', String(args.count)] : [])]);
     for (const n of r.notes || []) notes.push(`${id}: ${n}`);
@@ -167,7 +169,7 @@ function stageA(args) {
   const ideasFile = path.join(pipeDir(), 'ideas-todo.json');
   writeJson(ideasFile, todo);
   lap('ideas_init', t);
-  const st = saveState({ run_started: started, image_engine_choice: engineArg, images_choice: imagesArg, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
+  const st = saveState({ run_started: started, image_engine_choice: engineArg, images_choice: imagesArg, album_choice: albumArg, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
   const items = Object.values(publish.brands).reduce((n, b) => n + b.items.length, 0);
   return {
     stage: 'A done', stop: todo.ideas.length ? 'ideas' : needsResearch.length ? 'needs research' : 'captions', ...(needsResearch.length ? { needs_research: needsResearch } : {}), brands: scope, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items,
@@ -191,8 +193,9 @@ function flowTodo(st) {
     const files = draftImages(d.draft), missing = files.filter((f) => !fs.existsSync(path.join(d.dir, f)));
     if (!missing.length) continue;
     // EVERY missing image of the post: image.png (cover, n=1) and the album extras image-02.png.. (n>=2, same scene: image 1 is their reference).
-    todo.push({ id, brand: d.draft.brand, album_images: files.length, product_image: d.draft.product_image || '',
-      images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n} --from <downloaded file>` }; }) });
+    const am = albumModeOf(d.draft);
+    todo.push({ id, brand: d.draft.brand, album_images: files.length, ...(am ? { album_mode: am, album_note: am === 'scene' ? 'SCENE album: the same product in a different scene per extra (pick each scene per the brand table, project.md section 10; never a forbidden scene; write it as draft.album_scenes or on the "NEW SCENE FOR THIS IMAGE:" line of prompt-0N.txt)' : 'ANGLE album: the same scene, a different camera shot per extra' } : {}), product_image: d.draft.product_image || '',
+      images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, ...(n > 1 ? { make: am === 'scene' ? `a different scene: ${albumSceneOf(d.dir, d.draft, n) || '(not chosen yet: pick per the brand table)'}` : `same scene, ${extraShotOf(n - 1)} shot` } : { make: 'cover' }), brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n} --from <downloaded file>` }; }) });
   }
   return todo;
 }
@@ -251,7 +254,7 @@ function stageB(st, file) {
     const p = step('ideas.mjs', ['pick', '--brand', e.brand, '--id', e.id]);
     if (p.ok === false) { problems.push(`${tag}: ${p.error}`); continue; }
     const refImage = swap ? String(e.ref_image || e._context?.ref_image || '') : '';
-    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce', '--ref-mode', refMode, '--ref-has-face', String(e.ref_has_face), ...(e.ref_text ? ['--ref-text', String(e.ref_text)] : [])] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : []), ...(st.images_choice ? ['--images', String(st.images_choice)] : [])]);
+    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce', '--ref-mode', refMode, '--ref-has-face', String(e.ref_has_face), ...(e.ref_text ? ['--ref-text', String(e.ref_text)] : [])] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : []), ...(st.images_choice ? ['--images', String(st.images_choice)] : []), ...(st.album_choice ? ['--album', String(st.album_choice)] : []), ...(Array.isArray(e.album_scenes) && e.album_scenes.length ? ['--album-scenes', e.album_scenes.map((x) => String(x).replace(/|/g, ' ')).join('|')] : [])]);
     if (n.ok === false) { problems.push(`${tag}: ${n.error}`); continue; }
     fillDescription(n.dir, cleanText(String(e.description)).text);
     made.push(n.id);

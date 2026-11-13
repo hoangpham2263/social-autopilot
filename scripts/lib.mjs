@@ -183,6 +183,11 @@ export function saveSettings(input = {}) {
       if (ipp.length !== 2 || !ipp.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) || ipp[0] > ipp[1]) throw new Error('posts.images_per_post phải là [min, max] với 1 <= min <= max <= 4.');
       next.posts = { ...(cur.posts || {}), images_per_post: ipp };
     }
+    // Album type of a post with 2+ images: random (default) | angle | scene.
+    if (input.posts?.album_mode !== undefined) {
+      if (!['random', 'angle', 'scene'].includes(input.posts.album_mode)) throw new Error('posts.album_mode phải là random, angle hoặc scene.');
+      next.posts = { ...(next.posts || cur.posts || {}), album_mode: input.posts.album_mode };
+    }
     // No approval step any more (user, 09/11/2026): older settings files lose their approval block on save.
     delete next.approval;
     next.research = changes.research;

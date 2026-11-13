@@ -384,6 +384,7 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images of this run only: Codex, or Google Flow in your signed-in Chrome. The default is the tool setting (Settings tab, Image engine); changing it here does not change that setting.">Images</label><select id="prImages" title="This run only. Default = Settings, Image engine."><option value="codex">Codex</option><option value="flow">Google Flow</option></select></div>
       <div class="field" data-opt="create" hidden><label for="prImgMin" title="Random between min and max for each post (1 to 4); same number = exactly that many">Images per post</label><span class="pair" title="Random between min and max for each post (1 to 4); same number = exactly that many"><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" placeholder="min" aria-label="Images per post, min" autocomplete="off"><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" placeholder="max" aria-label="Images per post, max" autocomplete="off"></span></div>
+      <div class="field" data-opt="create" hidden><label for="prAlbum" title="Albums (2 or more images): Random picks per post, same scene with other camera angles, or the same product in other scenes (per the brand's table). The cover is the same in both. Single-image posts ignore it. This run only; the default is Settings, Album.">Album</label><select id="prAlbum" title="This run only. Default = Settings, Album."><option value="random">Random</option><option value="angle">Same scene, other angles</option><option value="scene">Other scenes</option></select></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
@@ -961,7 +962,11 @@ header + * { margin-top: 0; }
   }
   // The --images value of this run: "" = the tool default (no flag), "N" = exactly N, "min-max" = random range.
   function imgFlag() { const [a, b] = imgPairVal(), d = defIpp(); return a === d[0] && b === d[1] ? "" : a === b ? String(a) : `${a}-${b}`; }
+  // Album type of this run (Run tab, Album): the select starts at settings posts.album_mode; --album only when it differs from that default.
+  const defAlbum = () => ["angle", "scene"].includes(promptData.album_mode) ? promptData.album_mode : "random";
+  const albumFlag = () => { const v = $("#prAlbum").value; return v !== defAlbum() && ["random", "angle", "scene"].includes(v) ? v : ""; };
   function prRestore(prompts, brands) {
+    { const sa = jget("prAlbum", null); $("#prAlbum").value = ["random", "angle", "scene"].includes(sa) ? sa : defAlbum(); }
     srcOff = new Set(jget("prSrcOff", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.sources).includes(v.slice(b.id.length + 1)))));
     platOff = new Set(jget("prPlatOff", []).filter((p) => PLATS.includes(p)));
     const mx = parseInt(store.get("prMax"), 10); $("#prMax").value = mx >= 1 ? String(mx) : "";
@@ -1111,6 +1116,8 @@ header + * { margin-top: 0; }
       if (!pub) lines.push(`images by ${chosenEngine() === "flow" ? "Google Flow" : "Codex"} (pipeline.mjs create --image-engine ${chosenEngine()}; this run only)`);
       const imf = pub ? "" : imgFlag();
       if (imf) lines.push(imf.includes("-") ? `images per post random ${imf.replace("-", " to ")} (--images ${imf}; this run only)` : `images per post exactly ${imf} (pipeline.mjs create --images ${imf}; this run only)`);
+      const alf = pub ? "" : albumFlag();
+      if (alf) lines.push(alf === "random" ? "albums random between same scene with other angles and other scenes (pipeline.mjs create --album random; this run only)" : alf === "angle" ? "albums: same scene, other camera angles (pipeline.mjs create --album angle; this run only)" : "albums: the same product in other scenes per the brand's table (pipeline.mjs create --album scene; this run only)");
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");
     }
@@ -1182,9 +1189,10 @@ header + * { margin-top: 0; }
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
   $("#prBrand").onchange = () => { store.set("prBrand_" + modeKey(prMode), $("#prBrand").value || "all"); drawPrompt(); regenerate(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
-  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
+  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax", "#prAlbum"]) $(id).onchange = () => {
     const v = $(id).value;
     if (id === "#prImages") { $(id).dataset.touched = "1"; store.set("prEngine", v); }
+    else if (id === "#prAlbum") store.set("prAlbum", JSON.stringify(v));
     else if (id === "#prMax") store.set("prMax", v);
     else if (id === "#prCount") store.set("prCount_" + modeKey(prMode), "c:" + v);
     else if (id === "#prWindow" || id === "#prStart") store.set(id === "#prWindow" ? "prWindow" : "prStart", "v:" + v);
@@ -1754,6 +1762,7 @@ function draftTags(d) {
         ${review.length ? `<dt>Review only</dt><dd>${esc(review.map((x) => LANG_NAME(x.lang)).join(", "))} <span class="meta">(not posted)</span></dd>` : ""}
         <dt>Viewing</dt><dd>${o ? `${esc(LANG_NAME(o.lang) || "-")} · ${o.review ? `<span class="warn-text">Review only, not posted</span>` : `<span class="ok-text">Posted</span>`}` : "-"}</dd>
         <dt>Status</dt><dd>${draftTags(d)}</dd>
+        ${d.album_mode ? `<dt>Album</dt><dd>${d.album_mode === "scene" ? "Other scenes" : "Same scene, other angles"} <span class="meta">${esc(d.image_count)} images${arr(d.album_scenes).length ? ` · ${esc(arr(d.album_scenes).join(" / "))}` : ""}</span></dd>` : ""}
         <dt>Created</dt><dd>${esc(String(d.created || "-").slice(0, 16).replace("T", " "))}</dd>
         <dt>Time</dt><dd>${esc(liveIds(bp)[0] ? vnEt(liveIds(bp)[0].publication, liveIds(bp)[0].timezone) : plannedOf(d))}</dd>
       </dl>
@@ -1927,6 +1936,7 @@ function draftTags(d) {
       ${row("Plan ahead", `${esc(s.planning?.ahead_days ?? 7)} days`, "Create & publish makes enough posts to fill this many days")}
       ${row("Image engine", `${s.image_engine === "flow" ? "Google Flow" : "Codex"} <span class="meta">${s.image_engine === "flow" ? "the agent makes each image in Flow (Chrome + Playwright MCP); Google's sparkle is removed locally" : "Codex CLI makes the images"}</span>`, "Which tool makes the post images")}
       ${row("Images per post", `${esc((s.posts?.images_per_post || [1, 4]).join(" to "))} <span class="meta">random per post; one run can fix it in the Run tab</span>`, "Every post is an album of this many images (random between min and max, 1 to 4) of the same scene")}
+      ${row("Album", `${esc({ angle: "Same scene, other angles", scene: "Other scenes" }[s.posts?.album_mode] || "Random")} <span class="meta">for posts with 2 or more images; one run can change it in the Run tab</span>`, "Albums are either the same scene with other camera angles or the same product in other scenes; Random picks one per post")}
       ${s.imageHost ? row("Auto-host images", s.imageHost.auto_after_writeback !== false ? "Yes" : "No", "Push the image to the image repo (inside the tool: workspace/image-host, cloned from imageHost.remote_url when missing) right after approval") : ""}
       ${arr(r.times?.table).length ? row("Posting times", `<details><summary>Ranked hours per day (best first)</summary><div class="table-wrap"><table class="edit times"><thead><tr><th>Day</th><th>Primary</th><th>Backup</th><th>Acceptable</th></tr></thead><tbody>${r.times.table.map((t) => `<tr><td>${esc(DAY_NAME[t.day] || t.day)}</td>${["primary", "backup", "acceptable"].map((k) => `<td>${t[k].map((h, i) => `<span class="meta">${i + 1}.</span>${esc(h)}`).join(" ")}</td>`).join("")}</tr>`).join("")}</tbody></table></div><div class="meta">Primary: the studies' best hours; Backup: their next-best hours for that day (Sprout Social, Buffer, Hootsuite); Acceptable: the rest of 07:00–22:00 by the overall Facebook engagement curve. Research table (America/New_York); Metricool's best times replace Primary and lead Backup once synced. Edit in config/best-times.json.</div></details>`) : ""}
       ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
@@ -1935,6 +1945,7 @@ function draftTags(d) {
       <div class="field"><label title="Create &amp; publish makes enough posts to fill this many days ahead">Plan ahead (days)</label><input type="number" min="1" step="1" data-s="planning.ahead_days" value="${esc(s.planning?.ahead_days ?? 7)}"></div>
       <div class="field"><label for="setImageEngine" title="Codex: Codex CLI makes the images (default). Google Flow: Create &amp; publish tells the agent to make each image in Google Flow in your signed-in Chrome (Playwright MCP), then register it; Google's sparkle is removed locally. Brand rules stay in the skill.">Image engine</label><select id="setImageEngine" data-s="image_engine"><option value="codex"${s.image_engine === "flow" ? "" : " selected"}>Codex</option><option value="flow"${s.image_engine === "flow" ? " selected" : ""}>Google Flow (agent + Chrome)</option></select></div>
       <div class="field"><span class="label" title="Every post gets a random number of images (an album of the same scene) between min and max, 1 to 4. Default 1 to 4. A brand can override it in workspace/brands/&lt;id&gt;.json posts.images_per_post; one run can fix it in the Run tab.">Images per post</span><div class="inline-control"><input type="number" min="1" max="4" step="1" id="setIppMin" aria-label="Minimum images per post" value="${esc(s.posts?.images_per_post?.[0] ?? 1)}"> <span class="meta">to</span> <input type="number" min="1" max="4" step="1" id="setIppMax" aria-label="Maximum images per post" value="${esc(s.posts?.images_per_post?.[1] ?? 4)}"></div></div>
+      <div class="field"><label for="setAlbum" title="Posts with 2 or more images: Random picks per post between the same scene with other camera angles and the same product in other scenes (per the brand's table). One run can change it in the Run tab.">Album</label><select id="setAlbum"><option value="random"${["angle", "scene"].includes(s.posts?.album_mode) ? "" : " selected"}>Random</option><option value="angle"${s.posts?.album_mode === "angle" ? " selected" : ""}>Same scene, other angles</option><option value="scene"${s.posts?.album_mode === "scene" ? " selected" : ""}>Other scenes</option></select></div>
       ${s.imageHost ? `<div class="field"><span class="label" title="Push the image right after the post is written into the brand">Auto-host images</span><div class="checks"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> On</label></div></div>` : ""}
       </div>`;
   });
@@ -1947,7 +1958,7 @@ function draftTags(d) {
       let o = out; for (const p of parts.slice(0, -1)) o = o[p] ||= {};
       o[parts.at(-1)] = v;
     }
-    out.posts = { images_per_post: [Number($("#setIppMin").value), Number($("#setIppMax").value)] };
+    out.posts = { images_per_post: [Number($("#setIppMin").value), Number($("#setIppMax").value)], album_mode: $("#setAlbum").value };
     const r = await postJson("/api/settings", { settings: out }).catch(() => offline);
     const err = r.error;
     $("#settingsMsg").innerHTML = err ? errLine(err) : `<span class="ok-text">Saved.</span>`;
