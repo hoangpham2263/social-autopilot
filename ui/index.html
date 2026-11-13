@@ -292,10 +292,10 @@ details.sec[open] > summary { margin-bottom: 12px; }
 #page-settings details.sec > summary { margin: 0; } #page-settings details.sec[open] > summary { margin-bottom: 12px; }
 #page-prompt details.sec { flex: 0 0 auto; }
 #page-prompt #prChrome { margin: 0 0 12px; box-sizing: border-box; width: 100%; }
-#prBrowser, #prOwnBox { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-#prBrowser .fields, #prOwnBox .row-actions, #prOwnBox .meta { margin: 0; }
-#prOwnBox .row-actions { align-items: flex-start; }
-#prOwnBox .row-actions + :not(.msg):not([hidden]) { margin-top: 0; }
+#prBrowser { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+#prBrowser .row-actions, #prBrowser .meta { margin: 0; }
+#prBrowser .row-actions { align-items: flex-start; }
+#prBrowser .row-actions + :not(.msg):not([hidden]) { margin-top: 0; }
 #prBrowserStatus { color: var(--muted); }
 #prLogins { margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; box-sizing: border-box; min-height: 150px; display: flex; flex-direction: column; gap: 8px; }
 #prLogins[hidden] { display: none; }
@@ -355,11 +355,11 @@ a, .linkbtn { color: var(--accent); }
 .btn[data-reject]:hover, .btn[data-act=drop]:hover, .btn[data-act=cancel]:hover, .btn[data-act=cancel-go]:hover, .btn[data-confirm]:hover, .btn[data-rmsrc]:hover, .btn[data-unlink]:hover, #prStop:hover { background: #fadad6; border-color: #d93025; }
 .btn[data-act=unreview], #prItemClear { background: #fff4e0; border-color: #e0a63a; color: #7a4b00; }
 .btn[data-act=unreview]:hover, #prItemClear:hover { background: #ffe9c2; border-color: #c98a0a; }
-.btn.primary, #prRunNow, #prCopy, #prChromeCheck { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.primary:hover, #prRunNow:hover, #prCopy:hover, #prChromeCheck:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn.primary, #prRunNow, #prCopy { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover, #prRunNow:hover, #prCopy:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
 #prCopy:disabled, #prRunNow:disabled { background: var(--line); border-color: var(--line); color: #6b7280; cursor: not-allowed; }
-.btn[data-edit], .btn[data-pick], #settingsEdit, #prChromeOpen, .btn[data-find], .btn[data-copy], header .reload, header .config { background: #e7f0fe; border-color: #8ab4f8; color: #0b4fb3; }
-.btn[data-edit]:hover, .btn[data-pick]:hover, #settingsEdit:hover, #prChromeOpen:hover, .btn[data-find]:hover, .btn[data-copy]:hover, header .reload:hover, header .config:hover { background: #d2e3fc; border-color: var(--accent); }
+.btn[data-edit], .btn[data-pick], #settingsEdit, .btn[data-find], .btn[data-copy], header .reload, header .config { background: #e7f0fe; border-color: #8ab4f8; color: #0b4fb3; }
+.btn[data-edit]:hover, .btn[data-pick]:hover, #settingsEdit:hover, .btn[data-find]:hover, .btn[data-copy]:hover, header .reload:hover, header .config:hover { background: #d2e3fc; border-color: var(--accent); }
 /* green wins over the generic blue primary */
 main .btn[data-act=approve], main .btn[data-link], main .btn[data-install], main .btn[data-make], main #settingsSave, main #brandSave { background: #e6f4ea; border-color: #34a853; color: #14532d; }
 main .btn[data-act=approve]:hover, main .btn[data-link]:hover, main .btn[data-install]:hover, main .btn[data-make]:hover, main #settingsSave:hover, main #brandSave:hover { background: #d3ecdb; border-color: #1e7e34; }
@@ -465,33 +465,14 @@ header + * { margin-top: 0; }
       <div class="ar-resbar" id="arResBar" hidden><button class="btn" type="button" id="arCopyRes">Copy report</button></div>
       <div class="ar-logbox" id="arLogBox"><span class="label">Live log</span><div class="ar-feed" id="arFeed" aria-live="polite"></div><details class="ar-tech"><summary>Chi tiết kỹ thuật</summary><pre class="ar-log" id="arLog"></pre></details></div>
     </div>
-    <!-- Browser for runs: Own browser (dedicated profile, log in once, headless runs) or My Chrome (extension: read only status from GET /api/chrome-check; profile + helpers inside). -->
+    <!-- Browser: the tool's own Chrome profile (log in once, runs are headless in the background). Status from GET /api/browser. -->
     <details class="sec" id="prChrome">
       <summary><span>Browser</span><span id="prChromeSum" class="meta">· loading…</span></summary>
       <div id="prBrowser">
-        <div class="fields">
-          <div class="field"><label for="prBrowserMode">Browser for runs</label><select id="prBrowserMode" style="min-width:260px;width:auto;max-width:100%" title="Own browser: a separate Chrome profile you log in to once, used in the background. My Chrome: attaches to your Chrome through the Playwright extension (needs a Connect click)"><option value="own">Own browser (log in once)</option><option value="extension">My Chrome (extension)</option></select></div>
-        </div>
-        <div id="prOwnBox">
-          <div class="row-actions"><button class="btn" type="button" id="prBrowserLogin" title="Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
-          <div class="meta" id="prBrowserStatus" role="status"></div>
-          <div id="prLogins"></div>
-          <div class="meta">Runs use this profile in the background (headless). Facebook may show a checkpoint for automated browsers; if a site blocks headless runs, switch browser.headless off in Settings. Sites you log in to: Facebook, Instagram, Pinterest, Etsy, Houzz, Google (Flow).</div>
-        </div>
-      </div>
-      <div id="prExtBox">
-      <div class="fields">
-        <div class="field"><label for="prChromeProf">Chrome profile</label><select id="prChromeProf" style="min-width:360px;width:auto;max-width:100%" title="Chrome profile Playwright is connected to; used by Open Chrome and the connect helper"><option value="">choose the profile</option></select></div>
-      </div>
-      <div class="row-actions">
-        <button class="btn primary" type="button" id="prChromeCheck" title="Instant check: Chrome, profile and the Playwright MCP Bridge extension">Check</button>
-        <button class="btn" type="button" id="prChromeOpen" title="Opens that profile's window">Open Chrome</button>
-        <button class="linkbtn" type="button" id="prChromeCopy" title="Also checks which sites you are signed in to. The app cannot run Claude: paste this into Claude Code">Copy full-check prompt</button>
-      </div>
-      <div class="meta" id="prChromeMsg" role="status" style="margin-top:8px"></div>
-      <div id="prChromeLive"></div>
-      <div class="chips" id="prChromeChips"></div>
-      <div class="meta" id="prChromeStamp"></div>
+        <div class="row-actions"><button class="btn" type="button" id="prBrowserLogin" title="Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
+        <div class="meta" id="prBrowserStatus" role="status"></div>
+        <div id="prLogins"></div>
+        <div class="meta">Runs use this profile in the background (headless). Facebook may show a checkpoint for automated browsers; if a site blocks headless runs, switch browser.headless off in Settings. Sites you log in to: Facebook, Instagram, Pinterest, Etsy, Houzz, Google (Flow).</div>
       </div>
     </details>
     <!-- Run progress of the selected mode (scripts/progress.mjs, GET /api/progress): steps, counter, time, last message. -->
@@ -1236,7 +1217,7 @@ header + * { margin-top: 0; }
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");
     }
-    if (browserMode === "own" && (isResearch(prMode) || (!/publish approved/i.test(prMode) && chosenEngine() === "flow"))) lines.push(`browser: the tool's OWN already logged-in browser, no Connect step, nothing to wait for: the Playwright MCP of THIS session must be started with --browser chrome --user-data-dir ${browserState?.profile_dir || "<tool>/workspace/browser-profile"}${browserState?.headless === false ? "" : " --headless"} (a login wall or checkpoint: stop and report, the person re-opens Browser > Open browser to log in)`);
+    if ((isResearch(prMode) || (!/publish approved/i.test(prMode) && chosenEngine() === "flow"))) lines.push(`browser: the tool's OWN already logged-in browser, no Connect step, nothing to wait for: the Playwright MCP of THIS session must be started with --browser chrome --user-data-dir ${browserState?.profile_dir || "<tool>/workspace/browser-profile"}${browserState?.headless === false ? "" : " --headless"} (a login wall or checkpoint: stop and report, the person re-opens Browser > Open browser to log in)`);
     return lines.length ? lines.join("; ") : "defaults";
   }
   // Everything runs in ONE background sub-agent: the Claude Code prompt always starts with this line. Codex has no
@@ -1348,12 +1329,12 @@ header + * { margin-top: 0; }
 
   // ----- Run now: starts headless Claude with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
   const AR_CONFIRM = {
-    research: () => browserMode === "own" ? "Research: Claude will open pages in the tool's own browser (in the background, no window) and add posts to the Library. Log in to the sites first: Browser > Open browser to log in." : `Research: Claude will open pages in your Chrome (profile ${$("#prChromeProf").value || "default"}) and add posts to the Library. Click Connect in Chrome when asked.`,
+    research: () => "Research: Claude will open pages in the tool's own browser (in the background, no window) and add posts to the Library. Log in to the sites first: Browser > Open browser to log in.",
     create: () => "Create: starts image generation (Codex quota) and writes drafts.",
     publish: () => "Publish approved: will schedule the Approved posts on Metricool.",
   };
   const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
-  let browserMode = "own", browserState = null;
+  let browserState = null;
   let arTimer = 0, arState = null; const arToldProblem = new Set();
   // How to run: "Run in the app" (Run now + live panel) or "Copy prompt" (prompt box). Default Copy prompt until the user picks the app once. Only hides; #prText keeps being regenerated.
   const howNow = () => (store.get("prHow") === "app" ? "app" : "copy");
@@ -1399,7 +1380,7 @@ header + * { margin-top: 0; }
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
     const stepLine = arr(r.tail).filter((l) => l.startsWith("tool: ")).pop(), step = busy && stepLine ? ` · step: ${stepLine.slice(6).replace("mcp__playwright__", "").replace(/^mcp__claude_ai_Metricool_Social_Media_Management__/, "")}` : "";
     $("#arElapsed").textContent = `${r.mode}${r.flow ? " (Flow)" : ""} · ${arClock(r.elapsed_s || 0)}${r.limit_min ? ` of ${r.limit_min} min max` : ""}${r.turns ? ` · ${r.turns} turns` : ""}${step}`;
-    const startMsg = r.mode === "research" && browserMode === "own" ? "Starting… Claude works in the own browser in the background." : r.mode === "research" ? `Starting… Claude opens pages in your Chrome (profile ${$("#prChromeProf").value || "default"}). Click Connect in Chrome when asked.` : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
+    const startMsg = r.mode === "research" ? "Starting… Claude works in the own browser in the background." : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
     { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : full || r.last_text || (busy ? startMsg : "")), !bad && !busy && !!(full || r.last_text), !!full); }
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
@@ -1508,13 +1489,13 @@ header + * { margin-top: 0; }
   };
   $("#prStop").onclick = async () => { const r = await postJson("/api/agent-run/stop", {}).catch(() => ({ error: "The app did not answer." })); if (r.error) flash(r.error); setTimeout(loadAgentRun, 800); };
   // ----- Own-browser logins (#prLogins): cookie presence/expiry per site from GET /api/browser-logins (names/expiry only, never values) -----
-  // Own-browser mode only (browserMode). Shows the platforms of this run's sources (+ Google for Flow); lock marks and a soft pre-run hint use the same state.
+  // Shows the platforms of this run's sources (+ Google for Flow); lock marks and a soft pre-run hint use the same state.
   const BL_NAMES = { facebook: "Facebook", instagram: "Instagram", pinterest: "Pinterest", etsy: "Etsy", houzz: "Houzz", google: "Google (Flow)" };
   const BL_STATE = { logged_in: ["logged in", "dot-green"], logged_out: ["not logged in", "dot-red"], unknown: ["unknown", "dot-grey"] };
   const BL_LOCK = `<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 1 1 6 0v3H9V6z"/></svg>`;
   let blList = [], blAll = true /* every platform is listed; there is no Show all switch */, blTimer = 0, blTries = 0, blBusy = false, blLoaded = false, blVisiting = false, blSum = "", blProg = "", blPoll = 0;
   const blOf = (p) => blList.find((x) => x.platform === p);
-  const blOut = (p) => browserMode === "own" && blLoaded && !!blOf(p)?.required && blOf(p).state === "logged_out";
+  const blOut = (p) => blLoaded && !!blOf(p)?.required && blOf(p).state === "logged_out";
   const blLockTip = (p) => `${BL_NAMES[p] || p}: not logged in. Run > Browser > Log in`;
   // Lock icons for every .bl-lk placeholder (Run tab Sources rows, brand Edit page source rows), then the pre-run hint.
   function blMarks() {
@@ -1523,7 +1504,7 @@ header + * { margin-top: 0; }
   }
   // Required platforms that are logged out among the enabled sources of a Research run (Unknown stays silent).
   function blNeed() {
-    if (browserMode !== "own" || !isResearch(prMode)) return [];
+    if (!isResearch(prMode)) return [];
     const need = new Set();
     for (const b of srcBrands()) for (const s of arr(b.sources)) { if (!srcOn(b, s)) continue; const p = srcPlat(b, s); if (blOut(p)) need.add(p); }
     return [...need].map((p) => BL_NAMES[p] || p);
@@ -1542,9 +1523,6 @@ header + * { margin-top: 0; }
   }
   function blDraw() {
     const box = $("#prLogins"); if (!box) return;
-    const own = browserMode === "own";
-    box.hidden = !own;
-    if (!own) { blMarks(); return; }
     const rel = blRelevant(), busyRun = !!arState?.active;
     const rows = blList.filter((x) => blAll || rel.has(x.platform));
     const list = !blLoaded ? `<div class="meta">Checking…</div>` : !blList.length ? `<div class="meta">Could not read the login state.</div>` : !rows.length ? `<div class="meta">No site in this selection needs a login. Show all lists every site.</div>` : rows.map((x) => {
@@ -1592,7 +1570,7 @@ header + * { margin-top: 0; }
     const r = await postJson("/api/open-login-browser", { platform }).catch(() => offline);
     if (r && r.error) { toast(r.error); blDraw(); return; }
     toast(`Login window opened on ${BL_NAMES[platform] || platform}. Log in, then close the window.`, "ok");
-    blWatch(); try { loadChrome(); } catch {}
+    blWatch(); try { loadBrowser(); } catch {}
   }
   { const lb = $("#prBrowserLogin"); if (lb) lb.addEventListener("click", () => blWatch()); }
   $("#prImages").addEventListener("change", () => blDraw());
@@ -1603,123 +1581,31 @@ header + * { margin-top: 0; }
   const clock = (t) => (t ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
   const took = (a, b) => { const s = Math.max(0, Math.round(((b ? Date.parse(b) : Date.now()) - Date.parse(a)) / 1000)); return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`; };
   let runTimer = 0, shownRunMode = "";
-  // ----- Chrome check line: read only, refreshed every 3 s while the Run tab is open; never touches Chrome -----
-  const CHROME_PROMPT = [
-    "Test the Chrome connection only (read only: never sign in, click, type or accept anything; stop on a login wall and report it).",
-    "0. Connect: if browser_tabs shows a connect.html?mcpRelayUrl= tab, or the browser tools say they are not connected, run node scripts/chrome-connect.mjs --url \"<that exact url from browser_tabs>\" (it opens the profile chosen in the app), then STOP and tell the user to click Connect in the window that opened and to say \"connected\". Never click Connect or sign in for the user.",
-    "1. Run: node scripts/collect.mjs check-chrome --brand all (it prints the path of a small file).",
-    "2. Run that file with browser_run_code_unsafe using the filename parameter (never paste it); it starts with page.bringToFront().",
-    "3. Save the JSON it returns to a file and record it: node scripts/research.mjs chrome-record --state ok --result-file <file> (hidden:true: bringToFront again and re-run; browser not answering: --state fail --note \"<reason>\").",
-    "4. Report one line per platform (signed in / signed out / blocked) and whether the tab was hidden.",
-  ].join("\n");
-  let chromeTimer = 0, chromeErr = "";
-  const loadChrome = safely("#prChromeSum", async () => {
-    clearTimeout(chromeTimer); chromeTimer = 0;
-    const sum = $("#prChromeSum"), chipsEl = $("#prChromeChips"), prof = $("#prChromeProf");
-    if (document.activeElement === prof || document.activeElement === $("#prBrowserMode")) { if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000); return; } // do not redraw while the list is open
-    // Browser mode first: Own browser shows the login launcher and status; My Chrome keeps the extension helpers below.
-    const bi = await getJson("/api/browser").catch(() => offline);
-    if (!bi.error) { const was = browserMode; browserState = bi; browserMode = bi.mode === "extension" ? "extension" : "own"; $("#prBrowserMode").value = browserMode; if (was !== browserMode) regenerate(); }
-    $("#prOwnBox").hidden = browserMode !== "own"; $("#prExtBox").hidden = browserMode === "own";
-    if (browserMode === "own") {
-      const bst = $("#prBrowserStatus"), login = $("#prBrowserLogin");
-      const busy = !!bi.run_active;
-      const line = bi.error ? "Could not read the browser status: " + bi.error : bi.window_open ? "The login window is open: log in, then close it before a run." : busy ? "A run is using the own browser now (headless)." : bi.profile_exists ? "Profile ready" + (bi.last_opened ? ", last opened " + when(bi.last_opened) : "") + (bi.headless ? " · runs in the background" : " · runs with a visible window") : "No profile yet: press Open browser to log in, log in to the sites, then close the window.";
-      bst.textContent = line;
-      login.disabled = busy || !!bi.window_open; login.title = busy ? "A headless run holds the profile: wait for it or press Stop" : bi.window_open ? "The login window is already open" : login.title;
-      sum.innerHTML = bi.error ? '<span class="status-tag c-amber">· unavailable</span>' : `<span class="status-tag ${bi.window_open ? "c-amber" : bi.profile_exists ? "c-green" : "c-amber"}">· own browser: ${esc(bi.window_open ? "login window open" : bi.profile_exists ? "ready" : "log in once")}</span>`;
-      chromeErr = bi.error ? String(bi.error) : "";
-      if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000);
-      return;
-    }
-    const r = await getJson("/api/chrome-check").catch(() => offline);
-    const cp = await getJson("/api/chrome-profiles").catch(() => offline);
-    const profs = cp.error ? [] : arr(cp.profiles), sel = cp.error ? "" : String(cp.selected || "");
-    const cur = prof.value || sel;
-    const sc = await getJson("/api/chrome-setup-check?profile=" + encodeURIComponent(cur)).catch(() => offline);
-    const setup = [];
-    let setupSum = "";
-    if (!sc.error && sc.browser) {
-      const chip = (ok, good, bad) => setup.push(`<span class="status-tag ${ok ? "c-green" : "c-amber"}">${esc(ok ? good + " ✓" : bad)}</span>`);
-      chip(sc.browser.found, "Chrome found", "Chrome not found: set research.chrome_path");
-      if (cur) { chip(sc.profile.exists, `Profile "${cur}"`, `Profile "${cur}" not found: choose another`); if (sc.profile.exists) chip(sc.extension.installed, "Playwright MCP Bridge installed", "Playwright MCP Bridge missing: install the extension in this profile"); }
-      else setup.push('<span class="status-tag c-amber">Choose a profile</span>');
-      setupSum = !sc.browser.found ? "Chrome not found" : !cur ? "choose a profile" : !sc.profile.exists ? "profile not found" : !sc.extension.installed ? "extension missing" : "ready to connect";
-    }
-    let chips = "";
-    if (r.error || !r.status) sum.innerHTML = '<span class="status-tag c-amber">· unavailable</span>';
-    else {
-      const st = r.status, rec = r.record;
-      const exp = st.expected_profile ? `<span class="meta">expected profile: ${esc(st.expected_profile)}</span>` : "";
-      if (!st.ok) { sum.innerHTML = setupSum ? `<span class="status-tag ${setupSum === "ready to connect" ? "c-green" : "c-amber"}">· ${esc(setupSum)}</span>` : `<span class="status-tag c-amber">· ${esc(st.reason === "not run" || st.reason === "expired" ? "not checked" : st.reason)}</span>`; chips = setup.join("") + exp; }
-      else {
-        const list = Object.entries(rec.platforms || {}).map(([id, p]) => {
-          const bad = p.wall || p.signed_in === false;
-          const txt = p.wall && p.wall !== "login" ? p.wall : p.signed_in === false || p.wall === "login" ? "signed out" : "";
-          return `<span class="status-tag ${bad ? "c-amber" : p.signed_in === true ? "c-green" : ""}">${esc(platformName(id))} ${bad ? "✗ " + txt : "✓"}</span>`;
-        });
-        const ago = st.age_minutes === 0 ? "just now" : st.age_minutes + " min ago";
-        sum.innerHTML = list.length ? `<span class="meta">·</span> ${list.join(" ")}` : `<span class="status-tag c-green">· checked ${ago}</span>`;
-        chips = setup.join("") + `<span class="meta">full check ${ago}</span>${list.join("")}${exp}`;
-      }
-    }
-    chipsEl.innerHTML = chips || setup.join("");
-    chromeErr = r.error ? String(r.error) : cp.error ? String(cp.error) : sc.error ? String(sc.error) : "";
-    renderChromeLive(r);
-    const opts = ['<option value="">choose the profile</option>'].concat(profs.map((p) => `<option value="${esc(p.folder)}"${p.folder === sel ? " selected" : ""}>${esc([p.folder, p.name, p.email].filter(Boolean).join(" · "))}</option>`));
-    if (sel && !profs.some((p) => p.folder === sel)) opts.push(`<option value="${esc(sel)}" selected>${esc(sel)}</option>`);
-    prof.innerHTML = opts.join("");
-    if (!$("#page-prompt").hidden) chromeTimer = setTimeout(loadChrome, 3000);
-  });
-  // Visible feedback for the buttons: status line (#prChromeMsg), last-check stamp, full-check waiting box (#prChromeLive).
+  // ----- Browser status line + login window launcher (read only status from GET /api/browser), refreshed every 3 s while the Run tab is open -----
   const hms = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
-  let fullWait = null, lastLive = "";
-  const chromeMsg = (text, amber) => { const m = $("#prChromeMsg"); m.textContent = text || ""; m.style.color = amber ? "var(--amber, #b45309)" : ""; };
-  function renderChromeLive(r) {
-    const box = $("#prChromeLive"); let h = "";
-    if (fullWait) {
-      const rec = r && r.record, got = rec && Date.parse(rec.at) > fullWait.since;
-      if (got) { h = `<div class="meta">Result received ${esc(hms(rec.at))}</div>`; fullWait = null; }
-      else {
-        const late = Date.now() - fullWait.since > 300000;
-        h = `<div class="sec" style="padding:10px 12px;margin-top:8px"><div class="meta">${esc(fullWait.note)}</div>` +
-          `<div class="meta">1. Paste the prompt into Claude Code. 2. Wait for Claude to run it. This panel updates by itself.</div>` +
-          (fullWait.manual ? `<textarea readonly rows="6" style="width:100%;margin-top:6px" id="prChromeManual">${esc(CHROME_PROMPT)}</textarea>` : "") +
-          (late ? `<div class="meta" style="color:var(--amber, #b45309)">No result yet: did you paste the prompt in Claude Code? The browser must be connected (look for 'started debugging this browser')</div>` : "") +
-          `<div class="meta">Waiting for the result… (since ${esc(hms(fullWait.since))}) <button class="linkbtn" type="button" id="prChromeCancel">cancel</button></div></div>`;
-      }
-    }
-    if (h !== lastLive) { box.innerHTML = h; lastLive = h; const c = $("#prChromeCancel"); if (c) c.onclick = () => { fullWait = null; renderChromeLive(null); chromeMsg("Cancelled."); }; }
-  }
-  $("#prChromeCheck").onclick = async () => {
-    const b = $("#prChromeCheck"), t0 = b.textContent; b.disabled = true; b.textContent = "Checking…"; chromeMsg("");
-    try { await loadChrome(); if (chromeErr) chromeMsg("Could not run the check: " + chromeErr, true); else $("#prChromeStamp").textContent = "Checked " + hms(Date.now()); }
-    catch (e) { chromeMsg("Could not run the check: " + (e && e.message ? e.message : e), true); }
-    finally { b.disabled = false; b.textContent = t0; }
-  };
-  $("#prBrowserMode").onchange = async (e) => { const v = e.target.value; const r2 = await postJson("/api/settings", { settings: { browser: { mode: v } } }).catch(() => offline); flash(r2.error ? "Could not save the browser mode." : "Browser mode saved."); e.target.blur(); browserMode = v === "extension" ? "extension" : "own"; regenerate(); loadChrome(); };
+  let browserTimer = 0;
+  const loadBrowser = safely("#prChromeSum", async () => {
+    clearTimeout(browserTimer); browserTimer = 0;
+    const sum = $("#prChromeSum");
+    const bi = await getJson("/api/browser").catch(() => offline);
+    if (!bi.error) { const first = !browserState; browserState = bi; if (first) regenerate(); }
+    const bst = $("#prBrowserStatus"), login = $("#prBrowserLogin");
+    const busy = !!bi.run_active;
+    const line = bi.error ? "Could not read the browser status: " + bi.error : bi.window_open ? "The login window is open: log in, then close it before a run." : busy ? "A run is using the own browser now (headless)." : bi.profile_exists ? "Profile ready" + (bi.last_opened ? ", last opened " + when(bi.last_opened) : "") + (bi.headless ? " · runs in the background" : " · runs with a visible window") : "No profile yet: press Open browser to log in, log in to the sites, then close the window.";
+    bst.textContent = line;
+    login.disabled = busy || !!bi.window_open; login.title = busy ? "A headless run holds the profile: wait for it or press Stop" : bi.window_open ? "The login window is already open" : login.title;
+    sum.innerHTML = bi.error ? '<span class="status-tag c-amber">· unavailable</span>' : `<span class="status-tag ${bi.window_open ? "c-amber" : bi.profile_exists ? "c-green" : "c-amber"}">· own browser: ${esc(bi.window_open ? "login window open" : bi.profile_exists ? "ready" : "log in once")}</span>`;
+    if (!$("#page-prompt").hidden) browserTimer = setTimeout(loadBrowser, 3000);
+  });
   $("#prBrowserLogin").onclick = async () => {
-    const b = $("#prBrowserLogin"); b.disabled = true; chromeMsg("Opening the login window…");
+    const b = $("#prBrowserLogin"); b.disabled = true;
     const r2 = await postJson("/api/open-login-browser", {}).catch(() => offline);
-    if (r2 && r2.error) { chromeMsg("Could not open the login window: " + r2.error, true); toast(r2.error); } else chromeMsg("Login window opened at " + hms(Date.now()) + ". Log in, then close it.");
-    loadChrome();
-  };
-  $("#prChromeProf").onchange = async (e) => { const r2 = await postJson("/api/settings", { settings: { research: { chrome_profile: e.target.value } } }).catch(() => offline); flash(r2.error ? "Could not save the profile." : "Profile saved."); e.target.blur(); loadChrome(); };
-  $("#prChromeOpen").onclick = async () => {
-    const b = $("#prChromeOpen"), p = $("#prChromeProf").value; b.disabled = true; chromeMsg("Opening Chrome profile " + (p || "(default)") + "…");
-    const r2 = await postJson("/api/open-chrome", { profile: p }).catch(() => offline);
-    b.disabled = false; if (r2 && r2.error) chromeMsg("Could not open Chrome: " + r2.error, true); else chromeMsg("Opened Chrome profile " + (p || "(default)") + " at " + hms(Date.now()));
-  };
-  $("#prChromeCopy").onclick = async () => {
-    fullWait = { since: Date.now(), note: "", manual: false };
-    try { await navigator.clipboard.writeText(CHROME_PROMPT); fullWait.note = "Copied to the clipboard"; }
-    catch { fullWait.manual = true; fullWait.note = "Could not copy automatically: select the prompt below and copy it by hand"; }
-    lastLive = ""; renderChromeLive(null);
-    const m = $("#prChromeManual"); if (m) { m.focus(); m.select(); }
+    if (r2 && r2.error) toast(r2.error); else toast("Login window opened at " + hms(Date.now()) + ". Log in, then close it.", "ok");
+    loadBrowser();
   };
   const loadProgress = safely("#prRunSum", async () => {
     clearTimeout(runTimer); runTimer = 0;
-    loadChrome(); loadAgentRun();
+    loadBrowser(); loadAgentRun();
     if (!prMode) return;
     const mode = modeKey(prMode);
     shownRunMode = mode;
