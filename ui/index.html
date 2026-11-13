@@ -116,7 +116,8 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt .fields { gap: 16px 8px; }
 #page-prompt .fields > .field:not(.auto):not(:has(#prStart)) { width: 146px; flex: 0 1 146px; }
 /* Images per post: the select keeps a readable width ("Random 1 to 4", "Album 2 to 4", "Custom..."); in Custom mode the cell grows to hold min and max. */
-#page-prompt .field:has(#prImgSel) { width: auto; }
+#page-prompt .fields > .field:has(#prImgSel) { width: auto !important; flex: 0 0 auto !important; min-width: 0; } /* sized by its content, so the row wraps to a new line instead of scrolling sideways */
+#page-prompt { overflow-x: hidden; }
 #page-prompt .imgrow { display: flex; gap: 6px; align-items: center; } #page-prompt .imgrow select { flex: 0 0 9.5rem; width: 9.5rem; min-width: 9.5rem; } #page-prompt .imgrow .pair { flex: 0 0 auto; } #page-prompt .imgrow .pair[hidden] { display: none; }
 #page-prompt .pair { display: flex; gap: 6px; align-items: center; } #page-prompt .pair input { width: 4.6rem; flex: 0 0 4.6rem; min-width: 0; text-align: center; }
 #page-prompt .pair .meta { font-size: 12px; }
