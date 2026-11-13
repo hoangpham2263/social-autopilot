@@ -44,8 +44,8 @@
     "profile_dir": "workspace/browser-profile"
   },
   "agent_run": {
-    "timeout_minutes": { "research": 30, "create": 30, "create_flow": 45, "publish": 15 },
-    "max_turns": { "research": 400, "create": 600, "create_flow": 900, "publish": 200 }
+    "timeout_minutes": { "research": 0, "create": 0, "create_flow": 0, "publish": 0 },
+    "max_turns": { "research": 0, "create": 0, "create_flow": 0, "publish": 0 }
   },
   "codex": {
     "command": "codex",
