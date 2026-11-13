@@ -12,8 +12,9 @@ import { browserSettings } from "./own-browser.mjs";
 export const MODES = ["research", "create", "publish"];
 // Hard time limits (minutes) and --max-turns per mode. "create_flow" = Create with image engine Flow (images take 20-30 s each, 3-image albums
 // need many turns). Both are settings: agent_run.timeout_minutes.<mode|create_flow>, agent_run.max_turns (a number for all, or an object per mode).
-export const DEFAULT_MINUTES = { research: 30, create: 30, create_flow: 45, publish: 15 };
-export const DEFAULT_TURNS = { research: 400, create: 600, create_flow: 900, publish: 200 };
+// 0 = no limit (default): a run goes on until it is done or the user presses Stop; set the settings above to bring a limit back.
+export const DEFAULT_MINUTES = { research: 0, create: 0, create_flow: 0, publish: 0 };
+export const DEFAULT_TURNS = { research: 0, create: 0, create_flow: 0, publish: 0 };
 export const MAX_LINE = 300, LOG_LINES = 2000, TAIL_LINES = 30;
 const MC = "mcp__claude_ai_Metricool_Social_Media_Management__";
 const BASE = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"];
@@ -232,7 +233,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
     if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, own: { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } })));
-    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
+    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
     if (browser) args.push("--mcp-config", cfg);
     if (mode === "research") args.push("--strict-mcp-config");
     const env = { ...process.env };
@@ -260,7 +261,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const note = own ? ownNote(bs.headless) : "";
     try { child.stdin?.end(note + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
-    run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
+    if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
     run.timer.unref?.();
     return { ok: true, status: 200, run_id: runId, mode, started };
   }
