@@ -165,7 +165,9 @@ details[open] > summary { margin-bottom: 6px; }
 .ar-logbox > .label { font-size: 12px; color: var(--muted); }
 .ar-logbox[hidden] { display: none; }
 .ar-logbox { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
-.ar-bar { display: flex; align-items: center; gap: 4px 12px; min-height: 22px; }
+.ar-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 22px; }
+.ar-count { flex: 1 1 100%; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ar-count[hidden] { display: none; }
 .ar-bar[hidden] { display: none; }
 .ar-track { position: relative; flex: 1 1 auto; height: 10px; border-radius: 999px; background: #e4e6eb; overflow: hidden; }
 .ar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: var(--accent); transition: width .4s ease; }
@@ -471,7 +473,7 @@ header + * { margin-top: 0; }
     <div class="meta" id="prLoginHint" role="status" hidden></div>
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
-      <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span></div>
+      <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span><span class="ar-count" id="arCount" hidden></span></div>
       <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span></div>
       <div id="arLast" class="ar-last ar-result"></div>
       <div class="ar-resbar" id="arResBar" hidden><button class="btn" type="button" id="arCopyRes">Copy report</button></div>
@@ -679,7 +681,16 @@ header + * { margin-top: 0; }
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
       const parts = (list) => list.filter(Boolean).join(" · ");
       const none = `<span class="muted">No posts yet</span>`, needed = Number(x?.plan?.need) || 0;
-      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, st.new && `${st.new} available`, needed > 0 && (st.new < needed ? `<span class="status-tag c-amber" title="Library has fewer posts than the plan needs">${needed} needed</span>` : `${needed} needed`), st.rejected && `${st.rejected} removed`]) : none;
+      const kho = st?.total ? parts([`<a href="#" data-go="store" data-brand="${esc(id)}">${st.total} posts</a>`, `${st.ready ?? st.new} ready`, st.cooling && `${st.cooling} cooling`, st.rejected && `${st.rejected} removed`, needed > 0 && st.new < needed && `<span class="status-tag c-amber" title="Library has fewer posts than the plan needs (${needed})">short by ${needed - st.new}</span>`]) : none;
+      // Today in the brand's timezone: posts the tool scheduled for today, and drafts it created today.
+      const tz = m.timezone || s?.timezone || "", dayOf = (v) => { try { return new Date(v).toLocaleDateString("sv-SE", { timeZone: tz || undefined }); } catch { return String(v).slice(0, 10); } };
+      const todayKey = dayOf(Date.now());
+      const todaySched = arr(x?.written).flatMap((w) => arr(w.metricool_sent)).filter((p) => !p.draft && p.publication && String(p.publication).slice(0, 10) === todayKey).length;
+      const todayMade = arr(x?.written).filter((w) => w.created && dayOf(w.created) === todayKey).length;
+      // Reference sources: enabled in the skill, and the last crawl state of each (registry: complete / partial / none).
+      const srcRows = arr(x?.research?.sources), reg = (k) => srcRows.filter((r) => (r.registry?.status || "none") === k).length;
+      const srcLine = s ? parts([`${arr(s.sources).length} enabled`, srcRows.length && `${reg("complete")} complete`, srcRows.length && reg("partial") && `${reg("partial")} partial`, srcRows.length && reg("none") && `${reg("none")} none`]) : "";
+      const rs = x?.research, researchLine = rs?.latest ? parts([esc(rs.latest) + (rs.today ? " (today)" : ""), `<a href="#" data-go="store" data-brand="${esc(id)}">${num(rs, "new_last_crawl")} new</a>`, num(rs, "duplicates_last_crawl") ? `${rs.duplicates_last_crawl} duplicates` : ""]) : "";
       const written = arr(x?.written).length;
       const posted = mc.published || 0, review = num(d, "ready"), scheduled = num(mc, "scheduled");
       const onMc = arr(x?.written).filter((w) => w.metricool !== "published" && liveIds(w).length).length, waiting = Math.max(0, written - posted - onMc);
@@ -689,11 +700,12 @@ header + * { margin-top: 0; }
       return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
         <div class="head-row"><h3>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}<span class="dot after ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span></h3>${actions(m)}</div>
         <dl class="kv">
-          <dt>Metricool</dt><dd>${esc(arr(m.networks).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}</dd>
+          <dt>Channels</dt><dd title="Enabled in the skill; Metricool has connected: ${esc(arr(m.networks).map(net).join(", ") || "none")}">${esc((arr(s?.channels).length ? arr(s.channels) : arr(m.networks)).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}</dd>
           ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}${sug}
           ${x ? `<dt>Library</dt><dd>${kho}</dd>
           <dt>Posts</dt><dd>${posts}</dd>
-          ${x.plan ? `<dt>Plan</dt><dd title="Plan ahead: days × posts per day; only the tool's own posts count">${esc(x.plan.days)} days · ${esc(scheduled)} scheduled${x.plan.covered - scheduled > 0 ? ` · ${esc(x.plan.covered - scheduled)} in work` : ""} · ${esc(x.plan.need)} to make</dd>` : ""}` : ""}
+          ${x.plan ? `<dt>Plan</dt><dd title="Plan ahead: days × posts per day; only the tool's own posts count">${s?.posts_per_day ? esc(s.posts_per_day) + "/day × " : ""}${esc(x.plan.days)} days · ${esc(scheduled)} scheduled${x.plan.covered - scheduled > 0 ? ` · ${esc(x.plan.covered - scheduled)} in work` : ""} · ${esc(x.plan.need)} to make · <span class="meta">today ${todaySched} scheduled, ${todayMade} created</span></dd>` : ""}
+          ${srcLine ? `<dt>Sources</dt><dd>${esc(srcLine)}</dd>` : ""}${researchLine ? `<dt>Last crawl</dt><dd>${researchLine}</dd>` : ""}` : ""}
           ${(() => { const next = arr(x?.written).flatMap((w) => arr(w.metricool_sent)).filter((m) => !m.draft && m.publication && w_future(m.publication, m.timezone)).map((m) => m.publication).sort()[0]; return next ? `<dt>Next post</dt><dd>${esc(String(next).replace("T", " ").slice(0, 16))} <span class="meta">${esc(m.timezone || "")}</span></dd>` : ""; })()}
           ${s && lastRun(s.id) ? (() => { const l = lastRun(s.id), x = arr(l.brands).find((y) => y.brand === s.id); return `<dt>Last run</dt><dd><a href="#" data-log="${esc(l.id)}">${esc(when(l.ended))} · ${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(x?.headline || l.headline)}</a></dd>`; })() : ""}
           ${miss.length ? `<dt>Missing</dt><dd><ul class="missing flush">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
@@ -1543,15 +1555,33 @@ header + * { margin-top: 0; }
     fill.style.width = busy && !ps ? "" : pct + "%";
     if (busy && ps) { seg.hidden = false; seg.style.left = pct + "%"; seg.style.width = Math.min(100 / ps.total, 100 - pct) + "%"; } else seg.hidden = true;
     track.setAttribute("aria-valuenow", String(pct));
+    { const ct = rpState && rpState.mode === r.mode && rpState.started === r.started ? rpText(rpState) : ""; $("#arCount").hidden = !ct; $("#arCount").textContent = ct; }
     const text = (e) => [label, `elapsed ${arMmss(e)}`].filter(Boolean).join(" · ");
     meta.textContent = text(elapsed);
     clearInterval(arTick); arTick = 0;
     if (busy && r.started) arTick = setInterval(() => { if (!arState?.active) { clearInterval(arTick); arTick = 0; return; } meta.textContent = text(Math.max(0, Math.round((Date.now() - Date.parse(arState.started)) / 1000))); }, 1000);
   }
+  // Live counter text of the run (null = nothing to show yet). research: "dreamyvows 16/100 · grenheim 0/100 · 16 kept";
+  // create: "drafts 2/5 · images 1/2"; publish: "scheduled 3/8 approved".
+  let rpState = null;
+  function rpText(p) {
+    if (!p || !p.mode) return "";
+    const names = (id) => (arr(brandData.brands).find((b) => b.id === id)?.id || id);
+    if (p.research) {
+      const rows = arr(p.research.rows);
+      if (!rows.length) return "";
+      return rows.map((x) => `${names(x.brand)} ${x.kept}${x.target ? "/" + x.target : ""}`).join(" · ") + (rows.length > 1 ? ` · total ${p.research.kept}${p.research.target ? "/" + p.research.target : ""}` : "") + " new posts";
+    }
+    if (p.create) return `drafts ${p.create.drafts}${p.create.requested ? "/" + p.create.requested : ""} · images ${p.create.images}/${p.create.drafts}`;
+    if (p.publish) return `scheduled ${p.publish.scheduled}/${p.publish.approved} approved`;
+    return "";
+  }
   async function loadAgentRun() {
     clearTimeout(arTimer); arTimer = 0;
     const r = await getJson("/api/agent-run").catch(() => null);
     if (r && !r.error) {
+      // What the run has produced so far (GET /api/run-progress, same poll); kept after the run ends (final counts).
+      if (r.active || arState?.active || (!rpState && r.status && r.status !== "idle")) { const p = await getJson("/api/run-progress").catch(() => null); if (p && !p.error) rpState = p; }
       const was = arState; arState = r; arDraw();
       // The run just ended (also when the person is on another tab): outcome toast + refresh what a run changes.
       if (was?.active && !r.active) arEnded(r);
@@ -1599,7 +1629,7 @@ header + * { margin-top: 0; }
     const secs = arState?.started ? Math.max(0, Math.round((Date.now() - Date.parse(arState.started)) / 1000)) : 0;
     const onRun = !$("#page-prompt").hidden;
     bar.hidden = !(runLocked && onRun); pill.hidden = !(runLocked && !onRun);
-    if (runLocked) { bar.textContent = RUN_LOCK_BANNER; pill.textContent = "Run active \u00b7 " + arMmss(secs) + " \u00b7 controls locked"; pill.title = RUN_LOCK_BANNER; }
+    if (runLocked) { bar.textContent = RUN_LOCK_BANNER; const rc = rpState && rpState.started === arState?.started ? rpText(rpState) : ""; pill.textContent = "Run active \u00b7 " + arMmss(secs) + (rc ? " \u00b7 " + rc : "") + " \u00b7 controls locked"; pill.title = RUN_LOCK_BANNER; }
   }
   function setRunLock(on) {
     on = !!on; if (on === runLocked) { runLockBanner(); return; }
