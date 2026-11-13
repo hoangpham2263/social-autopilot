@@ -115,6 +115,7 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt .field:has(#prStart) { width: 220px; }
 #page-prompt .fields { gap: 16px 8px; }
 #page-prompt .fields > .field:not(.auto):not(:has(#prStart)) { width: 146px; flex: 0 1 146px; }
+#page-prompt .imgrow { display: flex; gap: 6px; align-items: center; } #page-prompt .imgrow select { flex: 1 1 auto; min-width: 0; } #page-prompt .imgrow .pair { flex: 0 0 5.5rem; } #page-prompt .imgrow .pair[hidden] { display: none; }
 #page-prompt .pair { display: flex; gap: 6px; } #page-prompt .pair input { width: 0; flex: 1 1 0; min-width: 0; }
 /* Research Sources: a select-like dropdown; the panel floats over the page (no layout jump). */
 #prSrcField, #prPlatField { position: relative; }
@@ -383,8 +384,7 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = no limit)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images of this run only: Codex, or Google Flow in your signed-in Chrome. The default is the tool setting (Settings tab, Image engine); changing it here does not change that setting.">Images</label><select id="prImages" title="This run only. Default = Settings, Image engine."><option value="codex">Codex</option><option value="flow">Google Flow</option></select></div>
-      <div class="field" data-opt="create" hidden><label for="prImgMin" title="Random between min and max for each post (1 to 4); same number = exactly that many">Images per post</label><span class="pair" title="Random between min and max for each post (1 to 4); same number = exactly that many"><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" placeholder="min" aria-label="Images per post, min" autocomplete="off"><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" placeholder="max" aria-label="Images per post, max" autocomplete="off"></span></div>
-      <div class="field" data-opt="create" hidden><label for="prAlbum" title="Albums (2 or more images): Random picks per post, same scene with other camera angles, or the same product in other scenes (per the brand's table). The cover is the same in both. Single-image posts ignore it. This run only; the default is Settings, Album.">Album</label><select id="prAlbum" title="This run only. Default = Settings, Album."><option value="random">Random</option><option value="angle">Same scene, other angles</option><option value="scene">Other scenes</option></select></div>
+      <div class="field" data-opt="create" hidden><label for="prImgSel" title="Images per post of this run: Random 1 to 4 (default, per Settings), exactly 1, an album of 2 to 4 (type random: other angles or other scenes), or a custom range (min and max, 1 to 4). Album type: Settings, Album.">Images per post</label><span class="imgrow" title="Images per post of this run: Random 1 to 4 (default, per Settings), exactly 1, an album of 2 to 4 (type random: other angles or other scenes), or a custom range (min and max, 1 to 4). Album type: Settings, Album."><select id="prImgSel"><option value="random">Random 1 to 4</option><option value="one">1 image</option><option value="album">Album 2 to 4</option><option value="custom">Custom…</option></select><span class="pair" id="prImgCustom" hidden><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" placeholder="min" aria-label="Images per post, min" autocomplete="off"><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" placeholder="max" aria-label="Images per post, max" autocomplete="off"></span></span></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
@@ -948,32 +948,42 @@ header + * { margin-top: 0; }
   let platOff = new Set();
   // Run tab choices are remembered in this browser (localStorage via store; nothing secret). Keys: prAgent, prHow, prMode (as before),
   // prBrand_<mode> + prCount_<mode> (mode = research|create|publish), prMax, prSrcOff (unticked "brand:source" ids), prPlatOff (unticked platforms),
-  // prEngine, prImg ([min,max], only when it differs from the Settings default), prWindow, prStart. The library item is never stored.
+  // prEngine, prImgSel (random|one|album|custom; absent = random) + prImg ([min,max], custom only; old keys migrate), prWindow, prStart. The library item is never stored.
   // Restored once on the first draw, then validated (unknown ids dropped, numbers clamped, invalid -> defaults).
   const jget = (k, d) => { try { const v = JSON.parse(store.get(k)); return v ?? d; } catch { return d; } };
   let prRestored = false, prLastMk = "";
   const defIpp = () => { const r = promptData.images_per_post; return Array.isArray(r) && r.length === 2 && r.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && r[0] <= r[1] ? r : [1, 4]; };
   const clampImg = (v, d) => { const n = Math.round(Number(v)); return v === null || v === undefined || String(v).trim() === "" || !Number.isFinite(n) ? d : Math.min(4, Math.max(1, n)); };
-  // Images per post of this run: [min, max] clamped to 1..4 and min <= max (a typed min above max lifts max, a typed max below min lowers min).
+  // Images per post of this run: the select (random | one | album | custom); custom shows min/max (clamped to 1..4, min <= max).
   function imgPairVal(changed) {
     const d = defIpp(); let a = clampImg($("#prImgMin").value, d[0]), b = clampImg($("#prImgMax").value, d[1]);
     if (a > b) { if (changed === "max") a = b; else b = a; }
     return [a, b];
   }
-  // The --images value of this run: "" = the tool default (no flag), "N" = exactly N, "min-max" = random range.
-  function imgFlag() { const [a, b] = imgPairVal(), d = defIpp(); return a === d[0] && b === d[1] ? "" : a === b ? String(a) : `${a}-${b}`; }
-  // Album type of this run (Run tab, Album): the select starts at settings posts.album_mode; --album only when it differs from that default.
-  const defAlbum = () => ["angle", "scene"].includes(promptData.album_mode) ? promptData.album_mode : "random";
-  const albumFlag = () => { const v = $("#prAlbum").value; return v !== defAlbum() && ["random", "angle", "scene"].includes(v) ? v : ""; };
+  const IMG_SELS = ["random", "one", "album", "custom"];
+  function imgSelShow() { $("#prImgCustom").hidden = $("#prImgSel").value !== "custom"; const d = defIpp(); $("#prImgSel").options[0].textContent = `Random ${d[0]} to ${d[1]}`; }
+  // The --images value of this run: "" = the tool default (no flag), "N" = exactly N, "min-max" = range.
+  function imgFlag() {
+    const v = $("#prImgSel").value;
+    if (v === "one") return "1";
+    if (v === "album") return "2-4";
+    if (v !== "custom") return "";
+    const [a, b] = imgPairVal(); return a === b ? String(a) : `${a}-${b}`;
+  }
+  // Album type is random per post (Settings, Album: posts.album_mode; CLI --album); there is no Run tab control for it.
   function prRestore(prompts, brands) {
-    { const sa = jget("prAlbum", null); $("#prAlbum").value = ["random", "angle", "scene"].includes(sa) ? sa : defAlbum(); }
     srcOff = new Set(jget("prSrcOff", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.sources).includes(v.slice(b.id.length + 1)))));
     platOff = new Set(jget("prPlatOff", []).filter((p) => PLATS.includes(p)));
     const mx = parseInt(store.get("prMax"), 10); $("#prMax").value = mx >= 1 ? String(mx) : "";
     for (const [k, el] of [["prWindow", "#prWindow"], ["prStart", "#prStart"]]) { const v = store.get(k); if (v.startsWith("v:") && [...$(el).options].some((o) => o.value === v.slice(2))) $(el).value = v.slice(2); }
-    const d = defIpp(), st = jget("prImg", null);
-    let a = clampImg(st?.[0], d[0]), b = clampImg(st?.[1], d[1]); if (a > b) b = a;
-    $("#prImgMin").value = a; $("#prImgMax").value = b;
+    const d = defIpp(), st = jget("prImg", null), sv = store.get("prImgSel").replace(/^"|"$/g, "");
+    const ok = Array.isArray(st) && st.length === 2 && st.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && st[0] <= st[1];
+    let sel = IMG_SELS.includes(sv) ? sv : "random";
+    if (!IMG_SELS.includes(sv) && ok) sel = st[0] === 1 && st[1] === 1 ? "one" : st[0] === 2 && st[1] === 4 ? "album" : "custom";
+    if (sel === "custom" && !ok) sel = "random";
+    $("#prImgSel").value = sel;
+    $("#prImgMin").value = ok ? st[0] : d[0]; $("#prImgMax").value = ok ? st[1] : d[1];
+    imgSelShow();
   }
   const srcPlat = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s); if (info?.platform) return String(info.platform).toLowerCase(); const u = String(info?.url || ""); return PLATS.find((p) => u.includes(p)) || ""; };
   const srcOn = (b, s) => !(platOff.has(srcPlat(b, s)) || srcOff.has(`${b.id}:${s}`));
@@ -1115,9 +1125,8 @@ header + * { margin-top: 0; }
       if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
       if (!pub) lines.push(`images by ${chosenEngine() === "flow" ? "Google Flow" : "Codex"} (pipeline.mjs create --image-engine ${chosenEngine()}; this run only)`);
       const imf = pub ? "" : imgFlag();
-      if (imf) lines.push(imf.includes("-") ? `images per post random ${imf.replace("-", " to ")} (--images ${imf}; this run only)` : `images per post exactly ${imf} (pipeline.mjs create --images ${imf}; this run only)`);
-      const alf = pub ? "" : albumFlag();
-      if (alf) lines.push(alf === "random" ? "albums random between same scene with other angles and other scenes (pipeline.mjs create --album random; this run only)" : alf === "angle" ? "albums: same scene, other camera angles (pipeline.mjs create --album angle; this run only)" : "albums: the same product in other scenes per the brand's table (pipeline.mjs create --album scene; this run only)");
+      if (imf) lines.push(imf === "2-4" ? "album of 2 to 4 images (type random: other angles or other scenes) (pipeline.mjs create --images 2-4; this run only)" : imf === "1" ? "exactly 1 image (pipeline.mjs create --images 1; this run only)" : `custom ${imf.replace("-", " to ")} images per post (--images ${imf}; this run only)`);
+      else if (!pub) lines.push(`images per post: random ${defIpp().join(" to ")}`);
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");
     }
@@ -1189,16 +1198,16 @@ header + * { margin-top: 0; }
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
   $("#prBrand").onchange = () => { store.set("prBrand_" + modeKey(prMode), $("#prBrand").value || "all"); drawPrompt(); regenerate(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
-  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax", "#prAlbum"]) $(id).onchange = () => {
+  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgSel", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
     const v = $(id).value;
     if (id === "#prImages") { $(id).dataset.touched = "1"; store.set("prEngine", v); }
-    else if (id === "#prAlbum") store.set("prAlbum", JSON.stringify(v));
+    else if (id === "#prImgSel") { store.set("prImgSel", v); imgSelShow(); }
     else if (id === "#prMax") store.set("prMax", v);
     else if (id === "#prCount") store.set("prCount_" + modeKey(prMode), "c:" + v);
     else if (id === "#prWindow" || id === "#prStart") store.set(id === "#prWindow" ? "prWindow" : "prStart", "v:" + v);
     else if (id === "#prImgMin" || id === "#prImgMax") {
       const [a, b] = imgPairVal(id === "#prImgMax" ? "max" : "min"), d = defIpp(); $("#prImgMin").value = a; $("#prImgMax").value = b;
-      store.set("prImg", a === d[0] && b === d[1] ? "" : JSON.stringify([a, b]));
+      store.set("prImg", JSON.stringify([a, b]));
     }
     regenerate();
   };
