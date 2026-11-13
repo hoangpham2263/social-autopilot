@@ -22,7 +22,7 @@ function setup(settings = {}, extra = {}) {
   const out = path.join(ws, 'fake-out.json');
   process.env.FAKE_CLAUDE_OUT = out;
   const runner = createAgentRunner({
-    toolRoot: ws, workspace: ws, getSettings: () => ({ skillsRoot: path.join(ws, 'skills'), browser: { mode: 'extension' }, ...settings }), plat: 'win32',
+    toolRoot: ws, workspace: ws, getSettings: () => ({ skillsRoot: path.join(ws, 'skills'), ...settings }), plat: 'win32',
     findCli: () => ({ found: true, path: fake }), npxOk: () => true, graceMs: 100,
     spawnFn: (cmd, args, opts) => spawn(process.execPath, [cmd, ...args], opts),
     killTree: (child) => { kills.push(child.pid); child.kill('SIGKILL'); }, ...extra,
@@ -46,11 +46,11 @@ test('argv has no prompt, stdin gets it, flags and per-mode tools', async () => 
   assert.equal(runner.start({ mode: 'research', prompt: PROMPT }).ok, true);
   await done(runner);
   const rec = recorded(out);
-  // A research run started from the app gets the wait-for-Connect note in front of the exact prompt the Copy button gives.
+  // A research run started from the app gets the own-browser note in front of the exact prompt the Copy button gives.
   assert.ok(rec.stdin.endsWith(PROMPT), 'stdin ends with the unchanged prompt');
   const note = rec.stdin.slice(0, rec.stdin.length - PROMPT.length);
   assert.ok(note.startsWith('RUN-NOW NOTE'), 'the note comes first');
-  assert.ok(note.includes('chrome-connect.mjs'), 'the note brings the connect page in front of the person');
+  assert.ok(note.includes('OWN browser') && !note.includes('Connect click'), 'the note is the own-browser note');
   assert.ok(!rec.args.some((a) => a.includes('TASK:')));
   for (const f of ['-p', '--verbose', '--strict-mcp-config', '--add-dir', '--mcp-config']) assert.ok(rec.args.includes(f), f);
   assert.equal(rec.args[rec.args.indexOf('--output-format') + 1], 'stream-json');
@@ -122,7 +122,6 @@ test('non-zero exit is failed with a clean error', async () => {
 
 test('tail sanitising and no secret in any workspace file; tool inputs/results never kept', async () => {
   process.env.FAKE_CLAUDE_BEHAVIOR = 'secret';
-  process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN = 'ENVTOKEN-123456';
   const { runner, ws } = setup();
   runner.start({ mode: 'research', prompt: PROMPT });
   await wait(() => runner.status().tail.some((l) => l.includes('Bearer')));
@@ -131,24 +130,24 @@ test('tail sanitising and no secret in any workspace file; tool inputs/results n
   const walk = (d) => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); fs.statSync(p).isDirectory() ? walk(p) : all.push(fs.readFileSync(p, 'utf8')); } };
   walk(ws);
   const text = all.join('\n') + JSON.stringify(runner.status());
-  for (const s of ['abc.def.ghi', 'zzz9', 'TOPSECRET', 'ENVTOKEN', 'SECRETVALUE', 'TOOLRESULT-SECRET', 'A'.repeat(60)]) assert.ok(!text.includes(s), s);
+  for (const s of ['abc.def.ghi', 'zzz9', 'TOPSECRET', 'SECRETVALUE', 'TOOLRESULT-SECRET', 'A'.repeat(60)]) assert.ok(!text.includes(s), s);
   assert.ok(runner.status().tail.every((l) => l.length <= 300));
   assert.ok(sanitize('x'.repeat(500)).length <= 300);
-  delete process.env.FAKE_CLAUDE_BEHAVIOR; delete process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN;
+  delete process.env.FAKE_CLAUDE_BEHAVIOR;
 });
 
-test('MCP config per platform, profile env only, temp file removed after the run', async () => {
-  assert.deepEqual(mcpConfig({ plat: 'win32' }).mcpServers.playwright, { command: 'cmd', args: ['/c', 'npx', '@playwright/mcp@latest', '--extension'] });
-  assert.deepEqual(mcpConfig({ plat: 'darwin' }).mcpServers.playwright, { command: 'npx', args: ['@playwright/mcp@latest', '--extension'] });
-  assert.deepEqual(mcpConfig({ plat: 'linux', profile: 'Profile 2' }).mcpServers.playwright.env, { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: 'Profile 2' });
-  const { runner, ws, out } = setup({ research: { chrome_profile: 'Profile 2' } });
+test('MCP config per platform (own browser only), temp file removed after the run', async () => {
+  const own = { userDataDir: '/p/bp', headless: true };
+  assert.deepEqual(mcpConfig({ plat: 'win32', own }).mcpServers.playwright.args.slice(0, 3), ['/c', 'npx', '@playwright/mcp@latest']);
+  assert.equal(mcpConfig({ plat: 'darwin', own }).mcpServers.playwright.command, 'npx');
+  const { runner, ws, out } = setup();
   runner.start({ mode: 'research', prompt: PROMPT }); await done(runner);
   const rec = recorded(out);
   assert.deepEqual(Object.keys(rec.cfg.mcpServers), ['playwright']);
-  assert.equal(rec.cfg.mcpServers.playwright.env.PLAYWRIGHT_MCP_PROFILE_DIR_NAME, 'Profile 2');
-  assert.equal(rec.profile, 'Profile 2');
+  assert.ok(!rec.cfg.mcpServers.playwright.args.includes('--extension'));
+  assert.equal(rec.profile, '');
   assert.ok(!fs.existsSync(rec.cfgPath));
-  assert.deepEqual(fs.readdirSync(path.join(ws, 'tmp')), []);
+  assert.deepEqual(fs.readdirSync(path.join(ws, 'tmp')).filter((f) => f.endsWith('.json')), []);
 });
 
 test('missing npx or CLI are clear errors', () => {
@@ -172,7 +171,7 @@ test('findClaude order: setting, PATH, newest VS Code extension, fixed folders',
   assert.equal(findClaude({ plat: 'linux', home, exists: () => false, which: () => '', list: () => [] }).found, false);
 });
 
-test('create with image engine flow: Playwright browser tools allowed, same wait-for-Connect note; codex create unchanged', async () => {
+test('create with image engine flow: Playwright browser tools allowed, same own-browser note; codex create unchanged', async () => {
   const { runner, out } = setup({ image_engine: 'flow' });
   assert.equal(runner.start({ mode: 'create', prompt: PROMPT }).ok, true);
   await done(runner);
@@ -190,7 +189,7 @@ test('create with image engine flow: Playwright browser tools allowed, same wait
   assert.equal(c.stdin, PROMPT);
 });
 
-test('per-run image engine: the run choice beats the setting for tools and the Connect note (create only)', async () => {
+test('per-run image engine: the run choice beats the setting for tools and the own-browser note (create only)', async () => {
   // Setting codex, run choice flow: Playwright browser tools + the wait note.
   const { runner, out } = setup({ image_engine: 'codex' });
   assert.equal(runner.start({ mode: 'create', prompt: PROMPT, imageEngine: 'flow' }).ok, true);
@@ -272,18 +271,13 @@ test('auth problem: Not logged in is classified live, fails with an actionable m
   delete process.env.FAKE_CLAUDE_BEHAVIOR;
 });
 
-test('metricool problem in publish; browser problem after the wait in research and Flow create', async () => {
+test('metricool problem in publish; no browser problem for a publish run', async () => {
   process.env.FAKE_CLAUDE_BEHAVIOR = 'metricool';
   const { runner } = setup();
   runner.start({ mode: 'publish', prompt: PROMPT }); await done(runner);
   assert.equal(runner.status().problem.kind, 'metricool');
   assert.match(runner.status().error, /Metricool/);
   process.env.FAKE_CLAUDE_BEHAVIOR = 'noconnect';
-  const { runner: r2 } = setup();
-  r2.start({ mode: 'research', prompt: PROMPT }); await done(r2);
-  assert.equal(r2.status().status, 'done');
-  assert.equal(r2.status().problem.kind, 'browser');
-  assert.match(r2.status().error, /Connect/);
   const { runner: r3 } = setup({}, {});
   r3.start({ mode: 'publish', prompt: PROMPT }); await done(r3);
   assert.equal(r3.status().problem, null, 'a publish run never reports a browser problem');
@@ -295,7 +289,7 @@ test('classifyProblem: patterns and scope', () => {
   assert.equal(classifyProblem('Metricool needs you to sign in again', { mode: 'publish' })?.kind, 'metricool');
   assert.equal(classifyProblem('Metricool needs you to sign in again', { mode: 'research' }), null);
   assert.equal(classifyProblem('Flow: please sign in again to Google', { mode: 'create' }), null, 'a Google sign-in is not Metricool');
-  assert.equal(classifyProblem('the browser did not connect', { mode: 'create', needsBrowser: true })?.kind, 'browser');
+  assert.equal(classifyProblem('the browser did not connect', { mode: 'create', needsBrowser: true }), null, 'no extension hint any more');
   assert.equal(classifyProblem('the browser did not connect', { mode: 'create', needsBrowser: false }), null);
   assert.equal(classifyProblem('browser not connected', { mode: 'research', needsBrowser: true, kinds: ['auth', 'metricool'] }), null, 'live scan skips browser');
   assert.equal(classifyProblem('All done', { mode: 'research', needsBrowser: true }), null);
@@ -342,15 +336,14 @@ test('friendly live lines: Vietnamese mapping, repeat counter, no tool names or 
   } finally { delete process.env.FAKE_CLAUDE_BEHAVIOR; }
 });
 
-// ----- own browser mode (default): dedicated profile, headless, no extension, no Connect note -----
-test('mcpConfig own mode: flags, headless on/off, no extension, no profile env; extension mode unchanged', () => {
+// ----- own browser (the only mode): dedicated profile, headless, no extension, no Connect note -----
+test('mcpConfig: own browser flags, headless on/off, no extension, no profile env', () => {
   const own = { userDataDir: '/p/browser-profile', headless: true, outputDir: '/p/out' };
-  const a = mcpConfig({ plat: 'linux', profile: 'Profile 2', own }).mcpServers.playwright;
+  const a = mcpConfig({ plat: 'linux', own }).mcpServers.playwright;
   assert.deepEqual(a.args, ['@playwright/mcp@latest', '--browser', 'chrome', '--user-data-dir', '/p/browser-profile', '--headless', '--viewport-size', '1280x900', '--output-dir', '/p/out']);
   assert.equal(a.command, 'npx'); assert.equal(a.env, undefined); assert.ok(!a.args.includes('--extension'));
   const w = mcpConfig({ plat: 'win32', own: { ...own, headless: false } }).mcpServers.playwright;
   assert.deepEqual(w.args.slice(0, 3), ['/c', 'npx', '@playwright/mcp@latest']); assert.ok(!w.args.includes('--headless'));
-  assert.deepEqual(mcpConfig({ plat: 'darwin' }).mcpServers.playwright.args, ['@playwright/mcp@latest', '--extension']);
 });
 
 test('own mode run: config with the profile dir, own note (no Connect), no profile env; refusals with injectable fakes', async () => {
@@ -371,7 +364,7 @@ test('own mode run: config with the profile dir, own note (no Connect), no profi
   assert.equal(r3.runner.start({ mode: 'publish', prompt: PROMPT }).ok, true); await done(r3.runner);
 });
 
-test('login wall in own mode becomes the log-in-again hint; not in extension mode', () => {
+test('login wall becomes the log-in-again hint', () => {
   const t = 'Facebook showed a login wall, so I stopped.';
   assert.equal(classifyProblem(t, { mode: 'research', needsBrowser: true, own: true, kinds: ['login'] }).kind, 'login');
   assert.match(MESSAGES.login, /Open browser to log in/);
@@ -380,4 +373,20 @@ test('login wall in own mode becomes the log-in-again hint; not in extension mod
   assert.equal(classifyProblem('login required', { mode: 'research', needsBrowser: true, own: true, kinds: ['login'] }), null, 'bare login required is Claude auth');
   assert.equal(classifyProblem('The user data directory is already in use', { mode: 'research', needsBrowser: true, own: true, kinds: ['login', 'profile'] }).kind, 'profile');
   assert.equal(classifyProblem('browser not connected', { mode: 'research', needsBrowser: true, own: true }), null, 'no extension hint in own mode');
+});
+
+// Run lock (ui/index.html): one central function, the guard text, and the server refusing a restart during a run.
+test('run lock: central function and guard text in the UI', () => {
+  const html = fs.readFileSync(path.join(here, '..', 'ui', 'index.html'), 'utf8');
+  assert.match(html, /function setRunLock\(/);
+  assert.match(html, /function applyRunLock\(/);
+  assert.match(html, /MutationObserver/);
+  assert.match(html, /A run is active: wait for it to finish or press Stop/);
+  assert.match(html, /A run is active: stop it or wait for it to finish/);
+  assert.match(html, /controls are locked until it finishes/);
+  assert.match(html, /arFails < 3/);
+  for (const needle of ['#brandSave', '[data-act=approve]', '[data-restore]', '#settingsSave', '[data-recrawl]']) assert.ok(html.includes(needle), needle);
+  assert.ok((html.match(/if \(runGuard\(\)\) return/g) || []).length >= 10);
+  const server = fs.readFileSync(path.join(here, '..', 'src', 'server.mjs'), 'utf8');
+  assert.match(server, /A run is active: stop it or wait for it to finish/);
 });

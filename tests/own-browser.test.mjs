@@ -12,11 +12,12 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'sa-own-'));
 test('browser settings defaults and validation', () => {
   const root = tmp();
   assert.deepEqual(browserSettings({}, root), { mode: 'own', headless: true, profileDir: path.join(root, 'workspace', 'browser-profile') });
-  assert.equal(browserSettings({ browser: { mode: 'extension', headless: false } }, root).mode, 'extension');
+  assert.equal(browserSettings({ browser: { mode: 'extension', headless: false } }, root).mode, 'own', 'an old stored extension mode is read as own');
   assert.equal(browserSettings({ browser: { headless: false } }, root).headless, false);
-  assert.deepEqual(validateBrowserSettings({ mode: 'extension', headless: 'false' }, {}), { mode: 'extension', headless: false, profile_dir: 'workspace/browser-profile' });
+  assert.deepEqual(validateBrowserSettings({ mode: 'extension', headless: 'false' }, {}), { mode: 'own', headless: false, profile_dir: 'workspace/browser-profile' }, 'any mode is stored as own, no error');
+  assert.equal(validateBrowserSettings({ mode: 'x' }, { mode: 'extension' }).mode, 'own');
   assert.equal(validateBrowserSettings(undefined), undefined);
-  for (const bad of [{ mode: 'x' }, { headless: 'maybe' }, { profile_dir: '' }, { profile_dir: 'a/secret' }, []]) assert.throws(() => validateBrowserSettings(bad, {}));
+  for (const bad of [{ headless: 'maybe' }, { profile_dir: '' }, { profile_dir: 'a/secret' }, []]) assert.throws(() => validateBrowserSettings(bad, {}));
 });
 
 test('launcher command: user-data-dir, no-first-run, only allow-listed URLs', () => {

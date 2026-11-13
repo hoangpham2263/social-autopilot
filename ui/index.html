@@ -133,6 +133,7 @@ details[open] > summary { margin-bottom: 6px; }
 #prSrc label, #prPlat label, #prAlb label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
 #prSrc label:hover, #prPlat label:hover, #prAlb label:hover { background: var(--soft-hover); }
 #prSrc .meta, #prPlat .meta, #prAlb .meta { font-size: 12px; }
+.sug-tag { font-size: 11px; line-height: 16px; padding: 0 5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; }
 #prText { display: block; flex: 1 1 auto; height: 100%; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prMsg.copied { color: var(--ink); }
 #prText[readonly] { background: #fafafa; }
@@ -460,6 +461,7 @@ header + * { margin-top: 0; }
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
       <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span></div>
+      <span class="meta" id="prExtHint" hidden></span>
       <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span></div>
       <div id="arLast" class="ar-last ar-result"></div>
       <div class="ar-resbar" id="arResBar" hidden><button class="btn" type="button" id="arCopyRes">Copy report</button></div>
@@ -620,6 +622,7 @@ header + * { margin-top: 0; }
   // A Metricool publication time (wall clock in the brand's timezone) still ahead of now in that timezone.
   const w_future = (pub, tz) => { let now = new Date().toISOString().slice(0, 16); try { now = new Date().toLocaleString("sv-SE", { timeZone: tz }).replace(" ", "T").slice(0, 16); } catch {} return String(pub).slice(0, 16) >= now; };
   const loadOverview = safely("#ovList", async () => {
+    if (runGuard()) return { cancelled: true };
     const [q, b, lg] = await Promise.all([getJson("/api/queue"), getJson("/api/brands"), getJson("/api/runlogs?limit=50").catch(() => ({}))]).catch(() => [offline, {}, {}]);
     const lastRun = (id) => arr(lg?.logs).find((l) => arr(l.brands).some((x) => x.brand === id));
     if (q.error) { $("#ovList").innerHTML = errLine(q.error); return; }
@@ -705,6 +708,7 @@ header + * { margin-top: 0; }
     };
     const panelOf = (el) => el.closest("[data-card]").querySelector("[data-panel]");
     for (const b2 of $$("#ovList [data-pick]")) b2.onclick = () => skillPicker(panelOf(b2), b2.dataset.pick);
+      if (runGuard()) return; 
     for (const b2 of $$("#ovList [data-connect]")) b2.onclick = () => {
       const panel = panelOf(b2);
       if (!panel.hidden) { panel.hidden = true; return; }
@@ -739,7 +743,7 @@ header + * { margin-top: 0; }
     editing = { id, skill, added: arr(ov.sources_add).map((x) => ({ ...x })) };
     const cad = skill.cadence || {};
     const skillPerDay = Number.isInteger(cad.posts_per_day) && cad.posts_per_day > 0 ? cad.posts_per_day : Number.isInteger(cad.posts_per_week) && cad.posts_per_week > 0 ? Math.ceil(cad.posts_per_week / 7) : 1;
-    const off = new Set(arr(ov.sources_disabled));
+    const off = new Set(arr(ov.sources_disabled)), sugs = arr(ov.suggested);
     const skillOff = skill.enabled !== true;
     $("#brandTitle").textContent = skill.brand || id;
     $("#brandLegend").textContent = skill.brand || id;
@@ -761,9 +765,23 @@ header + * { margin-top: 0; }
       <div class="fields">
         <div class="field wide"><span class="label">Sources</span><div id="fSources">${rows.join("") || `<div class="meta">No sources yet. Add a page link below (name optional), Save, then tick it in the Run tab.</div>`}</div>
           <div class="slot"><input type="text" id="fNewName" placeholder="Name (optional)" style="flex: 0 1 200px"><input type="text" id="fNewSrc" placeholder="Page URL (https://...)"><button class="btn" type="button" id="addSrc">Add</button></div></div>
-      </div>`;
+      </div>${sugs.length ? `
+      <div class="fields">
+        <div class="field wide"><span class="label" title="New pages the agent found outside your list. Add makes one an ordinary source; Dismiss means it is never suggested again.">Suggested sources</span><div id="fSuggested">${sugs.map((x) => `<div class="slot" data-sug="${esc(x.id)}"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}</span><span class="meta">${esc([x.platform, x.reason].filter(Boolean).join(" · "))}</span><button class="btn" type="button" data-sug-act="accept">Add</button><button class="btn" type="button" data-sug-act="dismiss">Dismiss</button></div>`).join("")}</div></div>
+      </div>` : ""}`;
     blMarks();
-    $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
+    // Suggested sources: Add (POST /api/sources/accept) or Dismiss (POST /api/sources/dismiss) act at once, even before Save; unsaved edits stay as they are.
+    if ($("#fSuggested")) $("#fSuggested").onclick = async (e) => {
+      const act = e.target.dataset.sugAct, row = e.target.closest(".slot");
+      if (!act || !row) return;
+      const res = await postJson(`/api/sources/${act}`, { brand: id, ids: [row.dataset.sug] }).catch(() => offline);
+      if (res.error) { $("#brandMsg").innerHTML = errLine(res.error); return; }
+      for (const a of arr(res.accepted)) { editing.added.push({ ...a, what_to_take: "", notes: "" }); $("#fSources").insertAdjacentHTML("beforeend", srcRow(a, "tool", "added from suggestions")); }
+      $("#brandMsg").innerHTML = `<span class="ok-text">${act === "accept" ? `${esc(row.querySelector(".src-url").textContent)} added: tick it in the Run tab.` : "Dismissed: it will not be suggested again."}</span>`;
+      blMarks(); row.remove();
+      if (!$$("#fSuggested .slot").length) $("#fSuggested").closest(".fields").remove();
+    };
+    $("#fOpen").onclick =async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
     $("#fSources").onclick = async (e) => {
       const row = e.target.closest(".slot");
       if (row && e.target.dataset.recrawl) {
@@ -778,6 +796,7 @@ header + * { margin-top: 0; }
       editing.added = editing.added.filter((a) => a.id !== row.dataset.id);
       row.parentNode.removeChild(row);
     };
+        if (runGuard()) return; 
     $("#addSrc").onclick = () => {
       const u = $("#fNewSrc").value.trim();
       if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">The URL must start with http(s)://</span>`; return; }
@@ -790,6 +809,7 @@ header + * { margin-top: 0; }
     };
     const syncOff = () => { const paused = $("#fPaused").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fPaused" && el.id !== "fOpen") setDisabled(el, paused, "Paused: untick Paused to change this"); };
     $("#fPaused").onchange = syncOff; syncOff();
+      if (runGuard()) return; 
     show("brand");
   }
   $("#brandBack").onclick = () => show("overview");
@@ -805,6 +825,7 @@ header + * { margin-top: 0; }
     msg.textContent = "Saving…";
     const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { override }).catch(() => offline);
     if (r.error) msg.innerHTML = errLine(r.error);
+    if (runGuard()) return; 
     else { msg.innerHTML = `<span class="ok-text">Saved in the tool — the skill is not changed.</span>`; setTimeout(() => show("overview"), 900); }
   };
 
@@ -896,6 +917,7 @@ header + * { margin-top: 0; }
   // ‹ Prev / Next › (↑/↓) walk the filtered list without closing.
   function openStoreItem(brand, items, start) {
     let i = start, k = 0, msg = "";
+        if (runGuard()) return; 
     const go = (step) => { if (items[i + step]) { i += step; k = 0; msg = ""; draw(); } };
     const draw = () => {
       const it = items[i], imgs = arr(it.image_paths);
@@ -951,6 +973,7 @@ header + * { margin-top: 0; }
       // Remove opens its reason box.
       if ($("[data-reject]", box)) $("[data-reject]", box).onclick = () => { const r = $(".reject-box", box); r.hidden = !r.hidden; if (!r.hidden) $("input", r).focus(); };
       for (const r of $$(".reject-box", box)) {
+        if (runGuard()) return; 
         $("[data-confirm]", r).onclick = () => setStatus(r.dataset.box, $("input", r).value);
         $("input", r).onkeydown = (e) => { if (e.key === "Enter") setStatus(r.dataset.box, e.target.value); };
       }
@@ -994,19 +1017,21 @@ header + * { margin-top: 0; }
     if (!isResearch(prMode)) return "";
     const brandSel = $("#prBrand").value, scope = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable));
     // Research always covers ALL enabled sources of the chosen brand(s); a brand can run when it has enabled sources, or its skill enables discovery.
-    if (!scope.some((x) => arr(x.sources).length || x.discovery_enabled)) return "No sources yet: add page links in the brand's Edit page (Overview)";
+    if (!scope.some((x) => arr(x.sources).length || arr(x.suggested).length || x.discovery_enabled)) return "No sources yet: add page links in the brand's Edit page (Overview)";
     if (!PLATS.some((p) => !platOff.has(p))) return "Tick at least one platform";
-    if (srcScope().total && !srcScope().on) return "Tick at least one source";
+    { const sc = srcScope(); if (sc.any && !sc.eff) return "Tick at least one source"; }
     return "";
   }
   // Sources picker: srcOff = unticked "brand:source" (remembered, see prRestore); default = every enabled source ticked.
   let srcOff = new Set();
-  function srcBrands() { const sel = $("#prBrand").value; return az(arr(promptData.brands).filter((x) => (sel ? x.id === sel : x.usable)).filter((x) => arr(x.sources).length), (x) => x.name || x.id); }
+  // sugOn = ticked SUGGESTED rows "brand:id" (remembered prSugOn; default none: a suggested page is only crawled when I tick it, then it is accepted at Run now / Copy prompt).
+  let sugOn = new Set();
+  function srcBrands() { const sel = $("#prBrand").value; return az(arr(promptData.brands).filter((x) => (sel ? x.id === sel : x.usable)).filter((x) => arr(x.sources).length || arr(x.suggested).length), (x) => x.name || x.id); }
   // Platforms picker: platOff = unticked platforms (remembered; default all ticked). Effective sources = ticked platforms AND ticked sources.
   const PLATS = ["instagram", "pinterest", "facebook", "etsy", "houzz"];
   let platOff = new Set();
   // Run tab choices are remembered in this browser (localStorage via store; nothing secret). Keys: prAgent, prHow, prMode (as before),
-  // prBrand_<mode> + prCount_<mode> (mode = research|create|publish), prMax, prSrcOff (unticked "brand:source" ids), prPlatOff (unticked platforms),
+  // prBrand_<mode> + prCount_<mode> (mode = research|create|publish), prMax, prSrcOff (unticked "brand:source" ids), prSugOn (ticked suggested "brand:id"), prPlatOff (unticked platforms),
   // prEngine, prImg ([min,max]; the old prImgSel select maps once on load), prAlbOff (unticked image types), prWindow, prStart. The library item is never stored.
   // Restored once on the first draw, then validated (unknown ids dropped, numbers clamped, invalid -> defaults).
   const jget = (k, d) => { try { const v = JSON.parse(store.get(k)); return v ?? d; } catch { return d; } };
@@ -1060,6 +1085,7 @@ header + * { margin-top: 0; }
     $("#prImgMin").value = pair[0]; $("#prImgMax").value = pair[1];
     if (sv) { store.set("prImgSel", ""); store.set("prImg", JSON.stringify(pair)); }
     const ao = jget("prAlbOff", null);
+    sugOn = new Set(jget("prSugOn", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.suggested).some((x) => x.id === v.slice(b.id.length + 1)))));
     albOff = Array.isArray(ao) ? new Set(ao.filter((v) => ALBS.some((x) => x[0] === v))) : defAlbOff();
     if (albOff.size >= ALBS.length) albOff = defAlbOff();
     drawAlbums();
@@ -1067,38 +1093,72 @@ header + * { margin-top: 0; }
   const srcPlat = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s); if (info?.platform) return String(info.platform).toLowerCase(); const u = String(info?.url || ""); return PLATS.find((p) => u.includes(p)) || ""; };
   const srcOn = (b, s) => !(platOff.has(srcPlat(b, s)) || srcOff.has(`${b.id}:${s}`));
   function srcScope() {
-    const per = {}; let total = 0, on = 0;
-    for (const b of srcBrands()) for (const s of arr(b.sources)) { total++; if (srcOn(b, s)) { on++; (per[b.id] ||= []).push(s); } }
-    return { total, on, per };
+    const per = {}, plats = new Set(), ext = []; let total = 0, on = 0, eff = 0, any = 0, all = true;
+    for (const b of srcBrands()) {
+      let rows = 0;
+      for (const s of arr(b.sources)) {
+        any++; const done = srcDone(b, s), isOn = done ? !platOff.has(srcPlat(b, s)) : srcOn(b, s);
+        if (!done) { rows++; total++; if (isOn) on++; }
+        if (isOn) { eff++; (per[b.id] ||= []).push(s); plats.add(srcPlat(b, s)); } else all = false;
+      }
+      for (const x of sugList(b)) {
+        any++; rows++; total++; const isOn = sugOn.has(`${b.id}:${x.id}`) && !platOff.has(sugPlat(b, x.id));
+        if (isOn) { on++; eff++; (per[b.id] ||= []).push(x.id); plats.add(sugPlat(b, x.id)); }
+      }
+      if (arr(b.sources).length && !rows) ext.push(b);
+    }
+    return { total, on, eff, any, per, plats, ext, all };
   }
   function platLabel() {
     const on = PLATS.filter((p) => !platOff.has(p));
     $("#prPlatSum").textContent = on.length === PLATS.length ? "All" : on.length ? on.map((p) => p[0].toUpperCase() + p.slice(1)).join(", ") : "None";
   }
+  // SRC-SCOPE-BEGIN (tests/run-sources.test.mjs evaluates this block with stubs: keep it free of DOM calls)
   function drawPlatforms() {
     const cnt = Object.fromEntries(PLATS.map((p) => [p, 0]));
+  // The picker shows only what is LEFT: sources not fully crawled (registry not complete) + suggested ones. Fully crawled sources are hidden and stay in
+  // the run (top check; only an unticked platform drops them). M (total) = rows shown, k (on) = ticked rows; "all" (no --source flag) = every real source
+  // included; an unticked suggestion is not a source yet, so it never breaks "all". ext = brands with nothing left (every source done, nothing suggested).
+  const srcDone = (b, s) => modeCounts[b.id]?.registry?.[s]?.status === "complete";
+  const sugList = (b) => arr(b.suggested).filter((x) => !arr(b.sources).includes(x.id));
+  const sugPlat = (b, id) => { const x = sugList(b).find((y) => y.id === id); return String(x?.platform || "").toLowerCase() || PLATS.find((p) => String(x?.url || "").includes(p)) || ""; };
     for (const b of srcBrands()) for (const s of arr(b.sources)) { const p = srcPlat(b, s); if (p in cnt) cnt[p]++; }
     const logo = (p) => { const l = PLAT_LOGO[p]; return l ? `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="${l[0]}" d="${l[1]}"/></svg>` : ""; };
     $("#prPlat").innerHTML = PLATS.map((p) => `<label><input type="checkbox" value="${p}"${platOff.has(p) ? "" : " checked"}>${logo(p)}<span>${p[0].toUpperCase() + p.slice(1)}</span><span class="meta">${cnt[p]} source${cnt[p] === 1 ? "" : "s"}</span></label>`).join("");
     for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) platOff.delete(c.value); else platOff.add(c.value); store.set("prPlatOff", JSON.stringify([...platOff])); platLabel(); drawSources(); regenerate(); };
     platLabel();
+  // Picker summary: k ticked of the M rows shown (only what is left; hidden completed sources are not counted); nothing left = "None left".
+  const srcSumText = ({ total, on, any }) => (!total ? (any ? "None left" : "None") : `${on} of ${total}`);
+  // SRC-SCOPE-END
   }
   function srcLabel() {
-    const { total, on } = srcScope();
-    $("#prSrcSum").textContent = !total ? "None" : on === total ? `All ${total}` : on ? `${on} of ${total}` : "None";
+    const { total, on, any } = srcScope();
+    $("#prSrcSum").textContent = srcSumText({ total, on, any });
+    extHint();
+  }
+  // Under the buttons: Research with nothing left to crawl looks for new sources outside the list (extra External sources step).
+  function extHint() {
+    const el = $("#prExtHint"); if (!el) return;
+    const sc = isResearch(prMode) && !prBlock ? srcScope() : null, names = sc ? sc.ext.map((b) => b.name || b.id) : [];
+    el.hidden = !names.length;
+    el.textContent = !names.length ? "" : sc.total === 0 ? "All sources are done: this run looks for new sources" : `All sources are done for ${names.join(", ")}: this run looks for new sources there`;
   }
   // Fully crawled (registry complete) sources are hidden from the picker for good (Edit page > Recrawl brings one back); they stay in the run as a quick top check for new posts.
-  const showDone = false;
-  const srcDone = (b, s) => modeCounts[b.id]?.registry?.[s]?.status === "complete";
   function drawSources() {
     const brands = srcBrands(), single = !!$("#prBrand").value;
-    const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, reg = modeCounts[b.id]?.registry?.[s], pOff = platOff.has(srcPlat(b, s)); return `<label title="${esc(info?.url || s)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" value="${esc(v)}"${srcOff.has(v) || pOff ? "" : " checked"}${pOff ? " disabled" : ""}><span>${esc(info?.name || s)}</span><span class="bl-lk" data-p="${esc(srcPlat(b, s))}"></span><span class="meta"><span class="dot ${(REG[reg?.status] || REG.none)[1]}"></span>${esc(regLine(reg))}</span></label>`; };
-    let hidden = 0, shown = 0;
-    const rows = (b) => arr(b.sources).filter((s) => { if (srcDone(b, s) && !showDone) { hidden++; return false; } shown++; return true; });
-    const body = brands.map((b) => { const r = rows(b).map((s) => row(b, s)).join(""); return r ? `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${r}` : ""; }).join("");
-    const empty = !brands.some((b) => arr(b.sources).length) ? "No enabled sources." : !shown ? "All sources are fully crawled. A run only checks the top of each page for new posts." : "";
+    // Rows show only the name (a suggested page also a small "suggested" tag and a tooltip with platform, reason and URL); fully crawled sources are hidden for good.
+    const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, pOff = platOff.has(srcPlat(b, s)); return `<label title="${esc(info?.url || s)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" value="${esc(v)}"${srcOff.has(v) || pOff ? "" : " checked"}${pOff ? " disabled" : ""}><span>${esc(info?.name || s)}</span><span class="bl-lk" data-p="${esc(srcPlat(b, s))}"></span></label>`; };
+    const sugRow = (b, x) => { const v = `${b.id}:${x.id}`, pOff = platOff.has(sugPlat(b, x.id)), tip = [sugPlat(b, x.id), x.reason, x.url].filter(Boolean).join(" · "); return `<label title="${esc(tip)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" data-sug="1" value="${esc(v)}"${sugOn.has(v) && !pOff ? " checked" : ""}${pOff ? " disabled" : ""}><span>${esc(x.name || x.id)}</span><span class="sug-tag">suggested</span><span class="bl-lk" data-p="${esc(sugPlat(b, x.id))}"></span></label>`; };
+    let shown = 0;
+    const rows = (b) => [...arr(b.sources).filter((s) => !srcDone(b, s)).map((s) => row(b, s)), ...sugList(b).map((x) => sugRow(b, x))].map((h) => (shown++, h));
+    const body = brands.map((b) => { const r = rows(b).join(""); return r ? `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${r}` : ""; }).join("");
+    const empty = !brands.length ? "No enabled sources." : !shown ? "All sources are done. A run only checks the top of each page for new posts, then looks for new sources." : "";
     $("#prSrc").innerHTML = body + (empty ? `<div class="meta">${empty}</div>` : ""); // crawled sources are hidden for good: no "show" switch
-    for (const c of $$("#prSrc input[value]")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); store.set("prSrcOff", JSON.stringify([...srcOff])); srcLabel(); regenerate(); };
+    for (const c of $$("#prSrc input[value]")) c.onchange = () => {
+      if (c.dataset.sug) { if (c.checked) sugOn.add(c.value); else sugOn.delete(c.value); store.set("prSugOn", JSON.stringify([...sugOn])); }
+      else { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); store.set("prSrcOff", JSON.stringify([...srcOff])); }
+      srcLabel(); regenerate();
+    };
     srcLabel(); blMarks();
   }
   function drawPrompt() {
@@ -1193,14 +1253,15 @@ header + * { margin-top: 0; }
       // No source choice: every enabled source of the brand(s), each with the smart crawl decided from its registry; per-source on/off is in the brand Edit page.
       const sc = srcScope();
       const pl = PLATS.filter((p) => !platOff.has(p)), plSome = pl.length < PLATS.length;
-      if (sc.on === sc.total) lines.push("all enabled sources of the brand (no --source flag): each one is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
+      if (sc.all) lines.push("all enabled sources of the brand (no --source flag): each one is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
       else {
         // A subset is ticked: --source per brand; brands with nothing ticked are skipped.
         for (const [bid, list] of Object.entries(sc.per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
         if (!brand) lines.push("only the brands listed above (brands with no source ticked are skipped)");
         lines.push("each ticked source is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
       }
-      if (plSome) lines.push(`platforms ${pl.join(", ")} only (--platforms ${pl.join(",")}): sources of other platforms are not crawled, discovery is restricted to these platforms`);
+      if (sc.ext.length) lines.push(`external sources for: ${sc.ext.map((b) => b.id).join(", ")} (every source of the brand is fully crawled and no suggestion is pending: after the top check, run EXTRA STEP 1.4b, which only suggests new pages, nothing is crawled from them)`);
+      if (plSome) lines.push(`platforms ${pl.join(", ")} only (--platforms ${pl.join(",")}): sources of other platforms are not crawled, discovery and the external search are restricted to these platforms`);
       lines.push("discovery follows the brand's skill config (research.discovery: runs after the sources only if enabled there)");
       if (max > 0) lines.push(`target ${max} new posts per brand: sources first, then discovery if the skill enables it (--max-posts ${max})`);
     } else {
@@ -1240,8 +1301,9 @@ header + * { margin-top: 0; }
     // skill_line comes from the server (scripts/prompts.mjs skillLine): legacy skill folder, or brand folder (brands/<id>: project and data together) + skill root + --brand <id>.
     const skills = scope.map((x) => x.skill_line || `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
     // {{IMAGES}}: the Google Flow lines when settings image_engine is flow (text from the server, scripts/prompts.mjs); nothing for codex.
+    extHint();
     const images = chosenEngine() === "flow" ? promptData.images_text || "" : "";
-    return prBase.replace(/\n?\{\{IMAGES\}\}/g, () => (images ? "\n" + images : "")).replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
+    return prBase.replace(/\n?\{\{IMAGES\}\}/g, () => (images ? "\n" + images : "")).replace(/\n?\{\{EXTERNAL\}\}/g, () => (isResearch(prMode) && srcScope().ext.length ? "\n" + (promptData.external_text || "") : "")).replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
   // Count line above the prompt box (the box itself fills the leftover page height by CSS).
   function prBoxSync() {
@@ -1327,7 +1389,23 @@ header + * { margin-top: 0; }
     loadProgress();
   };
 
+  // Ticked suggested sources become ordinary sources (POST /api/sources/accept) at the moment of Copy prompt / Run now, never while the prompt text is built;
+  // then the brands are reloaded so the prompt is rebuilt with them as real sources. Returns false when it failed (nothing is run).
+  async function acceptTicked() {
+    if (!isResearch(prMode) || prBlock) return true;
+    const by = {};
+    for (const b of srcBrands()) for (const x of sugList(b)) if (sugOn.has(`${b.id}:${x.id}`) && !platOff.has(sugPlat(b, x.id))) (by[b.id] ||= []).push(x.id);
+    for (const [bid, ids] of Object.entries(by)) {
+      const r = await postJson("/api/sources/accept", { brand: bid, ids }).catch(() => offline);
+      if (r.error) { toast(r.error); flash(r.error); return false; }
+      for (const id of ids) sugOn.delete(`${bid}:${id}`);
+    }
+    if (Object.keys(by).length) { store.set("prSugOn", JSON.stringify([...sugOn])); await loadPrompts(); }
+    return true;
+  }
   // ----- Run now: starts headless Claude with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
+    if (prBlock) { flash(prBlock); return; }
+    if (!(await acceptTicked())) return;
   const AR_CONFIRM = {
     research: () => "Research: Claude will open pages in the tool's own browser (in the background, no window) and add posts to the Library. Log in to the sites first: Browser > Open browser to log in.",
     create: () => "Create: starts image generation (Codex quota) and writes drafts.",
@@ -1506,7 +1584,7 @@ header + * { margin-top: 0; }
   function blNeed() {
     if (!isResearch(prMode)) return [];
     const need = new Set();
-    for (const b of srcBrands()) for (const s of arr(b.sources)) { if (!srcOn(b, s)) continue; const p = srcPlat(b, s); if (blOut(p)) need.add(p); }
+    for (const p of srcScope().plats) if (blOut(p)) need.add(p);
     return [...need].map((p) => BL_NAMES[p] || p);
   }
   function blHint() {
@@ -1517,7 +1595,7 @@ header + * { margin-top: 0; }
   // The platforms that matter now: sources of the brand scope, Google when Flow makes the images.
   function blRelevant() {
     const set = new Set();
-    for (const b of srcBrands()) for (const s of arr(b.sources)) { const p = srcPlat(b, s); if (p) set.add(p); }
+    for (const b of srcBrands()) { for (const s of arr(b.sources)) { const p = srcPlat(b, s); if (p) set.add(p); } for (const x of sugList(b)) { const p = sugPlat(b, x.id); if (p) set.add(p); } }
     if ($("#prImages") && $("#prImages").value === "flow") set.add("google");
     return set;
   }
@@ -1535,6 +1613,9 @@ header + * { margin-top: 0; }
       box.dataset.sig = html; box.innerHTML = html;
       $("#blRefresh").onclick = () => blRefresh({ fresh: true, toastErr: true, announce: true });
       $("#blVisit").onclick = () => blVisit();
+    if (runGuard()) return; 
+    if (prBlock) { flash(prBlock); return; }
+    if (!(await acceptTicked())) return;
       for (const b of $$("#prLogins [data-login]")) b.onclick = () => blLogin(b.dataset.login, b);
     }
     blMarks();
@@ -1551,7 +1632,7 @@ header + * { margin-top: 0; }
   // Check by visiting: explicit press only. Progress hint from GET /api/browser-visit every second while the request runs.
   async function blVisit() {
     if (blBusy || blVisiting) return;
-    if (arState?.active) { toast("A run is active: wait for it or press Stop, then check by visiting."); return; }
+    if (runGuard()) return;
     const platforms = blShown(); if (!platforms.length) { toast("No site selected to check."); return; }
     blVisiting = true; blProg = "Checking…"; blDraw();
     clearInterval(blPoll);
@@ -1565,7 +1646,7 @@ header + * { margin-top: 0; }
   // After Log in: re-check every 5 s for ~30 s (the window is closed by hand), then stop; no other polling.
   function blWatch() { clearTimeout(blTimer); blTries = 0; const tick = async () => { blTries++; await blRefresh({ fresh: true }); if (blTries < 6) blTimer = setTimeout(tick, 5000); }; blTimer = setTimeout(tick, 5000); }
   async function blLogin(platform, btn) {
-    if (arState?.active) { toast("A run is active: wait for it or press Stop, then log in."); return; }
+    if (runGuard()) return;
     if (btn) btn.disabled = true;
     const r = await postJson("/api/open-login-browser", { platform }).catch(() => offline);
     if (r && r.error) { toast(r.error); blDraw(); return; }
@@ -1666,6 +1747,7 @@ header + * { margin-top: 0; }
     } catch { return loc; }
   };
   const loadLogs = safely("#lgList", async () => {
+    if (runGuard()) return; 
     const brand = store.get("lgBrand");
     const r = await getJson("/api/runlogs").catch(() => offline);
     if (r.error) { $("#lgList").innerHTML = errLine(r.error); return; }
@@ -1849,6 +1931,7 @@ function draftTags(d) {
     $(".lb-title", overlay).innerHTML = title;
     $(".lb-extra", overlay).innerHTML = extra;
     $(".lb-body", overlay).innerHTML = body;
+        if (runGuard()) return; 
     lbKeys = keys || null;
     lbItemKeys = itemKeys || null;
     const wasHidden = overlay.hidden;
@@ -2103,6 +2186,7 @@ function draftTags(d) {
     if (r.error) { $("#settingsMsg").innerHTML = errLine(r.error); return; }
     const s = r.settings || {};
     const DAY_NAME = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+    if (runGuard()) return; 
     const range = ([a, b]) => (a === b ? String(a) : `${a}–${b}`);
     const row = (k, v, tip = "") => `<dt title="${esc(tip || k)}">${esc(k)}</dt><dd>${v}</dd>`;
     $("#settingsView").innerHTML = `<dl class="kv">
@@ -2148,6 +2232,7 @@ function draftTags(d) {
     if ($$("#resBody .reject-box, #draftList .reject-box").some((b) => !b.hidden)) return;
     if ($$("#ovList [data-panel]").some((p) => !p.hidden)) return;
     if (!$("#page-overview").hidden) loadOverview();
+    if (runGuard()) return; 
     else if (!$("#page-store").hidden) loadResearch();
     else if (!$("#page-posts").hidden) loadDrafts();
     else if (!$("#page-prompt").hidden) loadModeCounts();
@@ -2156,3 +2241,5 @@ function draftTags(d) {
 </script>
 </body>
 </html>
+    applyRunLock(); // a run may have started meanwhile: the lock wins
+    if (runGuard()) return; 
