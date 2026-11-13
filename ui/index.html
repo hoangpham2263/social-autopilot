@@ -1229,7 +1229,7 @@ header + * { margin-top: 0; }
     publish: () => "Publish approved: will schedule the Approved posts on Metricool.",
   };
   const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
-  let arTimer = 0, arState = null;
+  let arTimer = 0, arState = null; const arToldProblem = new Set();
   // How to run: "Run in the app" (Run now + live panel) or "Copy prompt" (prompt box). Default Copy prompt until the user picks the app once. Only hides; #prText keeps being regenerated.
   const howNow = () => (store.get("prHow") === "app" ? "app" : "copy");
   function applyHow() {
@@ -1254,7 +1254,9 @@ header + * { margin-top: 0; }
     const r = arState, claude = subAllowed();
     applyHow();
     const busy = !!r?.active, noCli = r && r.cli && !r.cli.found;
-    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found" : "Run now starts Claude Code: choose the Claude Code agent");
+    // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
+    const bsel = $("#prBrand").value, noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!bsel || x.id === bsel));
+    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : noBrand ? "No usable brand: link a skill on Overview first" : "Run now starts Claude Code: choose the Claude Code agent");
     setDisabled($("#prCopy"), !!prBlock, prBlock);
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
@@ -1270,17 +1272,35 @@ header + * { margin-top: 0; }
     }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
-    $("#arElapsed").textContent = `${r.mode} · ${arClock(r.elapsed_s || 0)}${r.turns ? ` · ${r.turns} turns` : ""}`;
+    const stepLine = arr(r.tail).filter((l) => l.startsWith("tool: ")).pop(), step = busy && stepLine ? ` · step: ${stepLine.slice(6).replace("mcp__playwright__", "").replace(/^mcp__claude_ai_Metricool_Social_Media_Management__/, "")}` : "";
+    $("#arElapsed").textContent = `${r.mode}${r.flow ? " (Flow)" : ""} · ${arClock(r.elapsed_s || 0)}${r.limit_min ? ` of ${r.limit_min} min max` : ""}${r.turns ? ` · ${r.turns} turns` : ""}${step}`;
     const startMsg = r.mode === "research" ? `Starting… Claude opens pages in your Chrome (profile ${$("#prChromeProf").value || "default"}). Click Connect in Chrome when asked.` : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
-    $("#arLast").textContent = r.error && r.status !== "running" ? r.error : r.last_text || (busy ? startMsg : "");
+    // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
+    $("#arLast").textContent = r.problem?.message || (r.error && r.status !== "running" ? r.error : r.last_text || (busy ? startMsg : ""));
+    $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
   }
   async function loadAgentRun() {
     clearTimeout(arTimer); arTimer = 0;
     const r = await getJson("/api/agent-run").catch(() => null);
-    if (r && !r.error) { arState = r; arDraw(); }
-    if (arState?.active && !$("#page-prompt").hidden) arTimer = setTimeout(loadAgentRun, 3000);
+    if (r && !r.error) {
+      const was = arState; arState = r; arDraw();
+      // The run just ended (also when the person is on another tab): outcome toast + refresh what a run changes.
+      if (was?.active && !r.active) arEnded(r);
+      else if (r.problem && !arToldProblem.has(r.started + r.problem.kind) && (r.active || was)) { arToldProblem.add(r.started + r.problem.kind); toast(r.problem.message); }
+    }
+    if (arState?.active) arTimer = setTimeout(loadAgentRun, $("#page-prompt").hidden ? 5000 : 3000);
+  }
+  function arEnded(r) {
+    const mins = arClock(r.elapsed_s || 0), what = { research: "Research", create: "Create & publish", publish: "Publish approved" }[r.mode] || r.mode;
+    if (r.problem && !arToldProblem.has(r.started + r.problem.kind)) arToldProblem.add(r.started + r.problem.kind);
+    if (r.status === "done" && !r.problem) toast(`${what} finished (${mins}${r.turns ? `, ${r.turns} turns` : ""}). Results are in Posts, Library and Log.`, "ok");
+    else if (r.status === "done") toast(`${what} ended: ${r.problem.message}`);
+    else if (r.status === "stopped") toast(`${what} stopped (${mins}).`);
+    else if (r.status === "timeout") toast(`${what} stopped at the time limit (${r.limit_min} min). ${r.error || ""}`.trim());
+    else toast(`${what} failed: ${r.problem?.message || r.error || "see the live log"}`);
+    for (const fn of [loadDrafts, loadResearch, loadOverview, loadLogs, loadModeCounts, loadProgress]) { try { const p = fn(); if (p?.catch) p.catch(() => {}); } catch {} }
   }
   $("#prRunNow").onclick = async () => {
     if (prBlock) { flash(prBlock); return; }
@@ -1297,7 +1317,7 @@ header + * { margin-top: 0; }
     btn.disabled = true; btn.textContent = "Starting…"; // instant feedback: the click is registered while the app starts Claude
     try {
       const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, ...(key === "create" ? { image_engine: chosenEngine() } : {}) }).catch(() => ({ error: "The app did not answer." }));
-      if (r.error) { flash(r.error); await loadAgentRun(); return; }
+      if (r.error) { flash(r.error); toast(r.error); await loadAgentRun(); return; }
       await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
       await loadAgentRun(); loadProgress();
     } finally { btn.disabled = false; btn.textContent = label; }

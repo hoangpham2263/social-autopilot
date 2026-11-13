@@ -23,7 +23,7 @@ import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
 import { chromeInfo, openChromeProfile, chromeSetupCheck } from "../core/setup/chrome.mjs";
-import { listLogs, showLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
+import { listLogs, showLog, addLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
 import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
@@ -36,7 +36,13 @@ const BASE_PORT = Number(process.env.SA_PORT || 47000 + (parseInt(createHash("sh
 let PORT = BASE_PORT;
 const logs = join(workspace, "logs");
 // Run now: headless Claude for one mode (core/setup/agent-run.mjs); one run at a time, killed when this server stops.
-const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }) });
+// When a run ends the result goes to the run log (Log tab) like a prompt run: the agent normally writes it (runlog.mjs add); this only fills in when it did not (failed, stopped, timeout, or forgot).
+const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }), onEnd: (st) => {
+  const lastLog = listLogs({ mode: st.mode, limit: 1 })[0];
+  if (lastLog && Date.parse(lastLog.ended) >= Date.parse(st.started)) return;
+  const why = { failed: "run failed", stopped: "stopped by the user", timeout: "time limit reached" }[st.status] || "";
+  addLog({ mode: st.mode, agent: "Claude Code (app)", brands: st.brands || [], started: st.started, reason: why ? `${why}${st.error ? ": " + st.error : ""}` : "", warning: why ? "" : "The agent did not write a run log; this one was added by the app." });
+} });
 for (const sig of ["exit", "SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { agentRun.shutdown(); if (sig !== "exit") process.exit(0); });
 const configApi = createConfigApi({ hubRoot: root, pwsh: PWSH, env: toolEnv });
 mkdirSync(logs, { recursive: true });

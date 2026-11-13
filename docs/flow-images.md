@@ -56,3 +56,9 @@ Login wall, captcha, a consent dialog the agent cannot pass, no credits, or a re
 
 ## Run now
 With the Images option of the Run tab on Google Flow (default = settings `image_engine`), a Create run started from the app allows the Playwright browser tools (`browser_tabs`, `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_press_key`, `browser_wait_for`, `browser_run_code_unsafe`, `browser_take_screenshot`, `browser_evaluate`, `browser_file_upload`) next to the create tools, and gets the same wait-for-Connect note as Research. With Codex nothing changes. The choice is per run: the Run tab sends it as `image_engine` in the `/api/agent-run` body and it wins over the setting.
+
+## Run in the app (checklist)
+- Create with Flow from Run now: Playwright browser tools + the wait-for-Connect note; `--add-dir` also covers the Downloads folder (the agent moves downloaded images from there); hard limit 45 minutes and up to 900 turns (settings `agent_run.timeout_minutes.create_flow`, `agent_run.max_turns`).
+- Connect: the Welcome page of the chosen Chrome profile (Run tab > Chrome) must be clicked; if it is not, the run ends with "The Playwright extension did not connect" in the live panel.
+- One browser = one agent: close any other session using the Playwright connect page first (the app cannot detect it; it only refuses a second headless run of its own).
+- Never allowed in Create: Metricool write tools.

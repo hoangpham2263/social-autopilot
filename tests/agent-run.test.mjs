@@ -8,7 +8,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createAgentRunner, sanitize, mcpConfig, validate, ALLOWED_TOOLS, usesFlow, runEngine } from '../core/setup/agent-run.mjs';
+import { createAgentRunner, sanitize, mcpConfig, validate, ALLOWED_TOOLS, usesFlow, runEngine, limitsFor, addDirs, needsBrowser, DEFAULT_MINUTES, DEFAULT_TURNS } from '../core/setup/agent-run.mjs';
+import { classifyProblem, MESSAGES } from '../core/setup/agent-problems.mjs';
 import { findClaude } from '../core/setup/claude-cli.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -65,7 +66,9 @@ test('argv has no prompt, stdin gets it, flags and per-mode tools', async () => 
   r3.start({ mode: 'publish', prompt: PROMPT }); await done(r3);
   const p = recorded(o3).args;
   const tools = p[p.indexOf('--allowedTools') + 1];
-  assert.ok(tools.includes('createScheduledPost') && tools.includes('updateScheduledPost'));
+  for (const n of ['getBrandSettings', 'getBestTimeToPostByNetwork', 'createScheduledPost', 'getScheduledPosts']) assert.ok(tools.includes(n), n);
+  assert.ok(!tools.includes('playwright'), 'publish never gets the browser');
+  assert.ok(!p.includes('--mcp-config'), 'publish does not start the Playwright MCP');
 });
 
 test('single-run lock answers busy, status shows tail', async () => {
@@ -207,4 +210,93 @@ test('per-run image engine: the run choice beats the setting for tools and the C
   assert.equal(usesFlow('create', {}, 'flow'), true);
   assert.equal(usesFlow('publish', {}, 'flow'), false);
   assert.equal(runEngine({ image_engine: 'flow' }, 'codex'), 'codex');
+});
+
+test('per mode: Metricool write tools only in publish; create never has them; research is browser + shell only', () => {
+  const MC = 'mcp__claude_ai_Metricool_Social_Media_Management__';
+  assert.ok(!ALLOWED_TOOLS.research.some((t) => t.includes('Metricool')) && ALLOWED_TOOLS.research.includes('mcp__playwright__*'));
+  assert.ok(!ALLOWED_TOOLS.create.some((t) => /createScheduledPost|updateScheduledPost|ForReview/.test(t)));
+  assert.ok(ALLOWED_TOOLS.create.includes('Bash') && ALLOWED_TOOLS.create.includes('Read') && ALLOWED_TOOLS.create.includes('Write'));
+  assert.ok(ALLOWED_TOOLS.publish.includes(MC + 'createScheduledPost') && ALLOWED_TOOLS.publish.includes('Bash'));
+  assert.ok(!ALLOWED_TOOLS.publish.includes(MC + 'updateScheduledPost'));
+  assert.equal(needsBrowser('research', {}, ''), true);
+  assert.equal(needsBrowser('publish', { image_engine: 'flow' }, ''), false);
+  assert.equal(needsBrowser('create', {}, 'flow'), true);
+  assert.equal(needsBrowser('create', {}, 'codex'), false);
+});
+
+test('add-dir: tool root, skills root, and Downloads only with Flow', async () => {
+  const d = addDirs({ toolRoot: 'T', settings: { skillsRoot: 'S' }, flow: true, home: 'H' });
+  assert.deepEqual(d, ['T', 'S', path.join('H', 'Downloads')]);
+  assert.deepEqual(addDirs({ toolRoot: 'T', settings: { skillsRoot: 'S' }, flow: false, home: 'H' }), ['T', 'S']);
+  const { runner, out, ws } = setup({ image_engine: 'flow' }, { home: 'HOME' });
+  runner.start({ mode: 'create', prompt: PROMPT }); await done(runner);
+  const a = recorded(out).args, i = a.indexOf('--add-dir');
+  assert.deepEqual(a.slice(i + 1, i + 4), [ws, path.join(ws, 'skills'), path.join('HOME', 'Downloads')]);
+});
+
+test('limits per mode: timeouts (create with Flow 45) and max turns, as settings', () => {
+  assert.deepEqual(DEFAULT_MINUTES, { research: 30, create: 30, create_flow: 45, publish: 15 });
+  assert.equal(limitsFor('research', {}).limitMin, 30);
+  assert.equal(limitsFor('create', {}, false).limitMin, 30);
+  assert.equal(limitsFor('create', {}, true).limitMin, 45);
+  assert.equal(limitsFor('publish', {}).limitMin, 15);
+  assert.equal(limitsFor('create', { agent_run: { timeout_minutes: { create: 60 } } }, true).limitMin, 60);
+  assert.equal(limitsFor('create', { agent_run: { timeout_minutes: { create_flow: 50 } } }, true).limitMin, 50);
+  assert.equal(limitsFor('create', {}, true).maxTurns, DEFAULT_TURNS.create_flow);
+  assert.ok(DEFAULT_TURNS.create_flow > DEFAULT_TURNS.create && DEFAULT_TURNS.create > DEFAULT_TURNS.publish);
+  assert.equal(limitsFor('publish', { agent_run: { max_turns: 77 } }).maxTurns, 77);
+  assert.equal(limitsFor('publish', { agent_run: { max_turns: { publish: 55 } } }).maxTurns, 55);
+});
+
+test('turns and limit reach argv and status per mode', async () => {
+  const { runner, out } = setup({ image_engine: 'flow' });
+  runner.start({ mode: 'create', prompt: PROMPT }); await done(runner);
+  const a = recorded(out).args;
+  assert.equal(a[a.indexOf('--max-turns') + 1], String(DEFAULT_TURNS.create_flow));
+  const st = runner.status();
+  assert.equal(st.limit_min, 45); assert.equal(st.flow, true);
+});
+
+test('auth problem: Not logged in is classified live, fails with an actionable message, run log hook called', async () => {
+  process.env.FAKE_CLAUDE_BEHAVIOR = 'notloggedin';
+  const ended = [];
+  const { runner } = setup({}, { onEnd: (st) => ended.push(st) });
+  runner.start({ mode: 'research', prompt: PROMPT }); await done(runner);
+  const st = runner.status();
+  assert.equal(st.status, 'failed');
+  assert.equal(st.problem.kind, 'auth');
+  assert.equal(st.error, MESSAGES.auth);
+  assert.match(st.error, /run `claude` once in a terminal/);
+  assert.equal(ended.length, 1); assert.equal(ended[0].status, 'failed');
+  delete process.env.FAKE_CLAUDE_BEHAVIOR;
+});
+
+test('metricool problem in publish; browser problem after the wait in research and Flow create', async () => {
+  process.env.FAKE_CLAUDE_BEHAVIOR = 'metricool';
+  const { runner } = setup();
+  runner.start({ mode: 'publish', prompt: PROMPT }); await done(runner);
+  assert.equal(runner.status().problem.kind, 'metricool');
+  assert.match(runner.status().error, /Metricool/);
+  process.env.FAKE_CLAUDE_BEHAVIOR = 'noconnect';
+  const { runner: r2 } = setup();
+  r2.start({ mode: 'research', prompt: PROMPT }); await done(r2);
+  assert.equal(r2.status().status, 'done');
+  assert.equal(r2.status().problem.kind, 'browser');
+  assert.match(r2.status().error, /Connect/);
+  const { runner: r3 } = setup({}, {});
+  r3.start({ mode: 'publish', prompt: PROMPT }); await done(r3);
+  assert.equal(r3.status().problem, null, 'a publish run never reports a browser problem');
+  delete process.env.FAKE_CLAUDE_BEHAVIOR;
+});
+
+test('classifyProblem: patterns and scope', () => {
+  for (const t of ['Not logged in · Please run /login', 'API Error: authentication_failed', 'Login required']) assert.equal(classifyProblem(t, { mode: 'create' })?.kind, 'auth', t);
+  assert.equal(classifyProblem('Metricool needs you to sign in again', { mode: 'publish' })?.kind, 'metricool');
+  assert.equal(classifyProblem('Metricool needs you to sign in again', { mode: 'research' }), null);
+  assert.equal(classifyProblem('Flow: please sign in again to Google', { mode: 'create' }), null, 'a Google sign-in is not Metricool');
+  assert.equal(classifyProblem('the browser did not connect', { mode: 'create', needsBrowser: true })?.kind, 'browser');
+  assert.equal(classifyProblem('the browser did not connect', { mode: 'create', needsBrowser: false }), null);
+  assert.equal(classifyProblem('browser not connected', { mode: 'research', needsBrowser: true, kinds: ['auth', 'metricool'] }), null, 'live scan skips browser');
+  assert.equal(classifyProblem('All done', { mode: 'research', needsBrowser: true }), null);
 });

@@ -38,6 +38,10 @@
     "chrome_check_required": false,
     "chrome_check_minutes": 30
   },
+  "agent_run": {
+    "timeout_minutes": { "research": 30, "create": 30, "create_flow": 45, "publish": 15 },
+    "max_turns": { "research": 400, "create": 600, "create_flow": 900, "publish": 200 }
+  },
   "codex": {
     "command": "codex",
     "timeout_minutes": 15,

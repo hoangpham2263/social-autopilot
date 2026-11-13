@@ -6,10 +6,14 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { platform as osPlatform } from "node:os";
+import { platform as osPlatform, homedir } from "node:os";
+import { classifyProblem } from "./agent-problems.mjs";
 
 export const MODES = ["research", "create", "publish"];
-export const DEFAULT_MINUTES = { research: 30, create: 30, publish: 15 };
+// Hard time limits (minutes) and --max-turns per mode. "create_flow" = Create with image engine Flow (images take 20-30 s each, 3-image albums
+// need many turns). Both are settings: agent_run.timeout_minutes.<mode|create_flow>, agent_run.max_turns (a number for all, or an object per mode).
+export const DEFAULT_MINUTES = { research: 30, create: 30, create_flow: 45, publish: 15 };
+export const DEFAULT_TURNS = { research: 400, create: 600, create_flow: 900, publish: 200 };
 export const MAX_LINE = 300, LOG_LINES = 2000, TAIL_LINES = 30;
 const MC = "mcp__claude_ai_Metricool_Social_Media_Management__";
 const BASE = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"];
@@ -17,7 +21,7 @@ const METRICOOL_READ = ["getBrandSettings", "getBestTimeToPostByNetwork", "getSc
 export const ALLOWED_TOOLS = {
   research: ["mcp__playwright__*", "Bash", "Read", "Glob", "Grep"],
   create: [...BASE, ...METRICOOL_READ],
-  publish: [...BASE, ...METRICOOL_READ, MC + "createScheduledPost", MC + "updateScheduledPost"],
+  publish: [...BASE, ...METRICOOL_READ, MC + "createScheduledPost"], // getBrandSettings, getBestTimeToPostByNetwork, getScheduledPosts + createScheduledPost; Create never gets a Metricool write tool
 };
 
 // Create with image engine Google Flow: the agent drives Flow in the signed-in Chrome, so the Playwright browser tools are added.
@@ -25,6 +29,17 @@ export const FLOW_TOOLS = ["browser_tabs", "browser_navigate", "browser_snapshot
 // The engine of a run: the one chosen for this run (Run tab "Images", per run only) when valid, else the tool setting image_engine.
 export const runEngine = (settings = {}, engine = "") => (engine === "codex" || engine === "flow" ? engine : settings?.image_engine === "flow" ? "flow" : "codex");
 export const usesFlow = (mode, settings = {}, engine = "") => mode === "create" && runEngine(settings, engine) === "flow";
+// Which runs drive the browser (Playwright MCP): Research, and Create with Flow. Publish and Create with Codex never touch it.
+export const needsBrowser = (mode, settings = {}, engine = "") => mode === "research" || usesFlow(mode, settings, engine);
+// Folders the agent may read/write: the tool, the skills root (brand-content-skills), the optional brandsRoot, and Downloads for Flow (it moves downloaded images from there).
+export const addDirs = ({ toolRoot, settings = {}, flow = false, home = homedir() }) => [...new Set([toolRoot, settings.skillsRoot, settings.brandsRoot, flow ? join(home, "Downloads") : ""].filter((d) => typeof d === "string" && d))];
+export const limitsFor = (mode, settings = {}, flow = false) => {
+  const key = flow ? "create_flow" : mode, ar = settings.agent_run || {};
+  const m = Number(ar.timeout_minutes?.[key]) > 0 ? Number(ar.timeout_minutes[key]) : flow && Number(ar.timeout_minutes?.create) > 0 ? Math.max(Number(ar.timeout_minutes.create), DEFAULT_MINUTES.create_flow) : DEFAULT_MINUTES[key];
+  const mt = ar.max_turns, pick = (v) => (Number.isInteger(v) && v > 0 ? v : 0);
+  const turns = pick(mt && typeof mt === "object" ? mt[key] ?? (flow ? mt.create : undefined) : mt) || DEFAULT_TURNS[key];
+  return { limitMin: m, maxTurns: turns };
+};
 export const allowedTools = (mode, settings = {}, engine = "") => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : [])];
 
 // Anything that looks like a secret is replaced before a line is kept.
@@ -69,7 +84,7 @@ const defaultNpx = (plat) => {
   } catch { return false; }
 };
 
-export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}), findCli, plat = osPlatform(), spawnFn = spawn, killTree = (c) => defaultKill(c, plat), npxOk = () => defaultNpx(plat), now = () => Date.now(), graceMs = 4000 }) {
+export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}), findCli, plat = osPlatform(), spawnFn = spawn, killTree = (c) => defaultKill(c, plat), npxOk = () => defaultNpx(plat), now = () => Date.now(), graceMs = 4000, onEnd = null, home = homedir() }) {
   const runsDir = join(workspace, "runs"), tmpDir = join(workspace, "tmp");
   const stateFile = join(runsDir, "agent-run.json"), logFile = join(runsDir, "agent-run.log");
   let cur = null; // the active run
@@ -84,19 +99,22 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // Rotating: the file is rewritten from the last 2000 lines every 500 lines.
     try { mkdirSync(runsDir, { recursive: true }); if (++run.written % 500 === 0) writeFileSync(logFile, run.lines.join("\n") + "\n"); else appendFileSync(logFile, line + "\n"); } catch {}
   };
+  // Auth / Metricool problems are visible at once (live); the browser one only from the final text (an agent waiting for Connect is normal).
+  const scan = (run, text, kinds = ["auth", "metricool"]) => { if (run.state.problem) return; const p = classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, kinds }); if (p) touch(run, { problem: p }); };
   const handleLine = (run, raw) => {
     let ev; try { ev = JSON.parse(raw); } catch { addLine(run, raw); return; }
     if (ev.type === "assistant" && Array.isArray(ev.message?.content)) {
       run.state.turns = (run.state.turns || 0) + 1;
+      if (typeof ev.error === "string") scan(run, ev.error);
       for (const c of ev.message.content) {
-        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; }
+        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; }
         else if (c.type === "tool_use" && typeof c.name === "string") addLine(run, "tool: " + c.name);
       }
       touch(run);
     } else if (ev.type === "result") {
       run.result = { is_error: !!ev.is_error, subtype: String(ev.subtype || "") };
       if (typeof ev.num_turns === "number") run.state.turns = ev.num_turns;
-      if (typeof ev.result === "string" && ev.result) run.state.last_text = sanitize(ev.result);
+      if (typeof ev.result === "string" && ev.result) { run.state.last_text = sanitize(ev.result); if (run.result.is_error) scan(run, ev.result); }
       addLine(run, `result: ${run.result.subtype}${run.result.is_error ? " (error)" : ""}`);
       touch(run);
     }
@@ -113,12 +131,21 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (run.buf.trim()) handleLine(run, run.buf.trim());
     try { rmSync(run.cfg, { force: true }); } catch {}
     const status = run.forced || (code === 0 && !run.result?.is_error ? "done" : "failed");
-    const error = status === "failed" ? sanitize(err || run.stderr.at(-1) || (run.result?.is_error ? `Claude reported ${run.result.subtype || "an error"}.` : `Claude exited with code ${code}.`))
-      : status === "timeout" ? `Stopped after the ${run.limitMin}-minute limit.` : "";
+    // Last look for an actionable cause: the exit text, stderr, the final text (browser problems only count here).
+    if (status !== "stopped") {
+      const text = [err, ...run.stderr, run.state.last_text].filter(Boolean).join(" | ");
+      const p = run.state.problem || classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, kinds: status === "failed" ? ["auth", "metricool", "browser"] : ["browser"] });
+      if (p) run.state.problem = p;
+    }
+    const problem = run.state.problem;
+    const error = status === "failed" ? (problem ? problem.message : sanitize(err || run.stderr.at(-1) || (run.result?.is_error ? `Claude reported ${run.result.subtype || "an error"}.` : `Claude exited with code ${code}.`)))
+      : status === "timeout" ? `Stopped after the ${run.limitMin}-minute limit.${problem ? " " + problem.message : ""}` : status === "done" && problem ? problem.message : "";
     addLine(run, `end: ${status}${code === null || code === undefined ? "" : " (exit " + code + ")"}`);
     try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {}
     touch(run, { status, exit_code: code ?? null, error });
     last = run.state; cur = null;
+    // The run result goes to the run log like a prompt run (the server writes it, only when the agent did not).
+    try { onEnd?.({ ...run.state }); } catch {}
   };
 
   function start({ mode, prompt, brands, imageEngine } = {}) {
@@ -131,13 +158,15 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const flow = usesFlow(mode, s, imageEngine);
     if ((mode === "research" || flow) && !npxOk()) return { ok: false, status: 400, error: "npx is not available (it comes with Node.js): the Playwright MCP cannot start." };
     const profile = String(s.research?.chrome_profile || "").trim();
-    const maxTurns = Number.isInteger(s.agent_run?.max_turns) && s.agent_run.max_turns > 0 ? s.agent_run.max_turns : 400;
-    const limitMin = Number(s.agent_run?.timeout_minutes?.[mode]) > 0 ? Number(s.agent_run.timeout_minutes[mode]) : DEFAULT_MINUTES[mode];
+    const browser = needsBrowser(mode, s, imageEngine);
+    const { limitMin, maxTurns } = limitsFor(mode, s, flow);
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
-    writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile })));
-    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", s.skillsRoot || toolRoot, "--mcp-config", cfg];
+    // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
+    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile })));
+    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
+    if (browser) args.push("--mcp-config", cfg);
     if (mode === "research") args.push("--strict-mcp-config");
     const env = { ...process.env, ...(profile ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
@@ -146,8 +175,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     catch (e) { try { rmSync(cfg, { force: true }); } catch {} return { ok: false, status: 500, error: sanitize(e.message) }; }
     const started = new Date(now()).toISOString();
     const run = {
-      child, cfg, lines: [], buf: "", written: 0, stderr: [], limitMin, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", turns: 0, error: "", brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [] },
+      child, cfg, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, ended: false, forced: "", result: null, timer: null,
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", turns: 0, error: "", problem: null, flow, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [] },
     };
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
@@ -191,7 +220,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      last_text: shown?.last_text || "", turns: shown?.turns || 0, error: shown?.error || "",
+      last_text: shown?.last_text || "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [],
       tail: lines.slice(-TAIL_LINES),
       cli: { found: !!cli?.found, path: cli?.path || "" },
     };

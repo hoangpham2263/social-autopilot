@@ -145,3 +145,6 @@ TASK: Publish approved — brand: {{BRAND}} — agent: ChatGPT
 Follow the ChatGPT part of RUNBOOK.md ("Công cụ theo agent", folder {{TOOL}}). Without a pasted payload JSON below, reply only: "To send approved posts to Metricool, paste the JSON of node scripts/metricool-mcp.mjs payload --brand <id>."
 With a payload: send each item with createScheduledPost exactly as given (a scheduled post, never a draft, no AI label), then reply in Vietnamese with the filled record commands.
 ```
+
+## Run now (Run in the app)
+The Run tab button "Run now" sends exactly the text Copy prompt gives (minus the sub-agent lead line) to `claude -p` on stdin; for Research and Create with Flow a RUN-NOW NOTE (wait for the person to click Connect) is put in front of it. Tools, `--add-dir`, time limits and turns per mode: README "Run now".
