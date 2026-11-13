@@ -22,9 +22,9 @@ export const resultFile = (taskDir) => path.join(taskDir, 'page-result.json');
 const hash = (t) => createHash('sha256').update(String(t)).digest('hex');
 const safe = (x) => String(x || '').replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 60) || 'x';
 
-// Folder the Playwright MCP may read files from (browser_run_code_unsafe filename=): under the user's home, not the tool folder.
-export function scriptDir(cfg = settings().research?.script_dir, home = os.homedir()) {
-  return path.resolve(cfg && cfg !== true ? String(cfg) : path.join(home, '.playwright-mcp', 'social-autopilot'));
+// Folder the Playwright MCP may read files from (browser_run_code_unsafe filename=): the own browser's --output-dir (workspace/tmp/playwright-output).
+export function scriptDir(cfg = settings().research?.script_dir, base = workspace) {
+  return path.resolve(cfg && cfg !== true ? String(cfg) : path.join(base, 'tmp', 'playwright-output'));
 }
 export const scriptFile = (brandId, taskId, dir = scriptDir()) => path.join(dir, `${safe(brandId)}-${safe(taskId)}.js`);
 export function cleanScripts(dir = scriptDir()) {

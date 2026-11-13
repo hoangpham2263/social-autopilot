@@ -187,13 +187,13 @@ export async function fromPage(args) {
   const all = [...prevPosts, ...posts];
   const seen = [...new Set([...prevSeen, ...tileKeys(result?.tiles)])];
   writeJson(seenFile(task), seen);
+  const crawlInfo = result?.crawl || null, crawlStop = String(crawlInfo?.stop || '');
   const idle = posts.length || crawlInfo ? (posts.length ? 0 : state0.idle) : state0.idle + 1; // a crawl round that only passed known posts is progress, not an idle extract
   const extracts = state0.extracts + 1;
   writeJson(path.join(task.dir, 'extracts.json'), { extracts, idle });
   const st = adapterStatus(task.platform);
   const blocked = !!r.loginWall;
   const reason = String(result?.reason || '');
-  const crawlInfo = result?.crawl || null, crawlStop = String(crawlInfo?.stop || '');
   const skipKnown = !!(task.mode.full || task.mode.backfill); // a new / partial source skips known posts on its way to the end: all-known is not a stop
   const allKnown = !blocked && !skipKnown && r.read > 0 && r.skippedKnown === r.read && !posts.length;
   const note = blocked ? `${reason || 'login wall / block page'}: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : !all.length && !r.read && !(result?.total_on_page) ? 'error: 0 posts on the page (page empty or selectors no longer fit)' : noImage && !posts.length && r.read ? 'error: posts read but no image could be downloaded' : (allKnown || (!posts.length && !r.read && result?.total_on_page > 0)) ? `all ${r.read || result.total_on_page} posts on the page are already known (stop: known)` : '';

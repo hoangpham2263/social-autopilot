@@ -34,8 +34,8 @@ test('token: a task dir outside workspace/runs is refused', () => {
   const tok = issueToken(other, 'q1', Date.now(), dir);
   assert.equal(redeem({ token: tok, task: 'q1', body, dir, runsRoot }).status, 404);
 });
-test('script_dir default sits under the home .playwright-mcp', () => {
-  assert.equal(scriptDir(undefined, '/h'), path.resolve('/h', '.playwright-mcp', 'social-autopilot'));
+test('script_dir default is the own browser output dir (workspace/tmp/playwright-output)', () => {
+  assert.equal(scriptDir(undefined, '/w'), path.resolve('/w', 'tmp', 'playwright-output'));
   assert.equal(path.basename(scriptFile('grenheim', 'q-1', '/x')), 'grenheim-q-1.js');
 });
 test('token: default validity is 5 minutes (research.token_minutes)', () => {
