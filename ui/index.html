@@ -447,7 +447,7 @@ header + * { margin-top: 0; }
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
       <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
       <div class="field" data-opt="research" id="prPlatField" hidden><span class="label" title="Which platforms this run covers: unticked platforms drop their sources and are left out of discovery (--platforms). Default: all.">Platforms</span><details id="prPlatBox"><summary id="prPlatSum">All</summary><div id="prPlat"></div></details></div>
-      <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = no limit)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
+      <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = 100)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="100"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images of this run only: Codex, or Google Flow in your signed-in Chrome. The default is the tool setting (Settings tab, Image engine); changing it here does not change that setting.">Images</label><select id="prImages" title="This run only. Default = Settings, Image engine."><option value="codex">Codex</option><option value="flow">Google Flow</option></select></div>
       <div class="field" data-opt="create" hidden><span class="label" title="Images per post of this run: random between min and max (1 to 4). Default: Settings, Images per post. min = max gives exactly that many.">Images per post</span><span class="imgrow"><span class="pair"><span class="meta">min</span><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" aria-label="Images per post, min" autocomplete="off"><span class="meta">max</span><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" aria-label="Images per post, max" autocomplete="off"></span></span></div>
@@ -461,6 +461,7 @@ header + * { margin-top: 0; }
       <button class="btn primary" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
+      <span class="meta" id="prExtHint" hidden></span>
       <span class="meta" id="prAppHint">Starts Claude Code for you; the live panel below shows progress.</span>
       <span class="status-tag c-amber" id="prRunPill" hidden>A run is active in the app <button class="linkbtn" type="button" id="prRunPillGo">show</button></span>
     </div>
@@ -468,7 +469,6 @@ header + * { margin-top: 0; }
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
       <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span></div>
-      <span class="meta" id="prExtHint" hidden></span>
       <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span></div>
       <div id="arLast" class="ar-last ar-result"></div>
       <div class="ar-resbar" id="arResBar" hidden><button class="btn" type="button" id="arCopyRes">Copy report</button></div>
@@ -622,6 +622,7 @@ header + * { margin-top: 0; }
   }
   // Link a skill folder to a Metricool brand; a skill made for another brand asks first.
   async function linkSkill(name, dir) {
+    if (runGuard()) return { cancelled: true };
     let r = await postJson("/api/metricool-link", { name, skill_path: dir }).catch(() => offline);
     if (r.needs_confirm) { if (!confirm(r.message)) return { cancelled: true }; r = await postJson("/api/metricool-link", { name, skill_path: dir, confirm: true }).catch(() => offline); }
     return r;
@@ -633,7 +634,6 @@ header + * { margin-top: 0; }
   // A Metricool publication time (wall clock in the brand's timezone) still ahead of now in that timezone.
   const w_future = (pub, tz) => { let now = new Date().toISOString().slice(0, 16); try { now = new Date().toLocaleString("sv-SE", { timeZone: tz }).replace(" ", "T").slice(0, 16); } catch {} return String(pub).slice(0, 16) >= now; };
   const loadOverview = safely("#ovList", async () => {
-    if (runGuard()) return { cancelled: true };
     const [q, b, lg] = await Promise.all([getJson("/api/queue"), getJson("/api/brands"), getJson("/api/runlogs?limit=50").catch(() => ({}))]).catch(() => [offline, {}, {}]);
     const lastRun = (id) => arr(lg?.logs).find((l) => arr(l.brands).some((x) => x.brand === id));
     if (q.error) { $("#ovList").innerHTML = errLine(q.error); return; }
@@ -708,6 +708,7 @@ header + * { margin-top: 0; }
     for (const b2 of $$("#ovList [data-edit]")) b2.onclick = () => openBrand(b2.dataset.edit);
     const keyOf = (el) => el.closest("[data-card]")?.dataset.card || "";
     for (const b2 of $$("#ovList [data-unlink]")) b2.onclick = async () => {
+      if (runGuard()) return; 
       if (!confirm(`Unlink "${b2.dataset.unlink}"? The tool stops making and sending posts for this Metricool brand. The skill folder and the library stay.`)) return;
       const r = await postJson("/api/metricool-link", { name: b2.dataset.unlink, skill_path: null }).catch(() => offline);
       cardMsg(b2.dataset.unlink, r.error || "Unlinked.", !!r.error);
@@ -719,7 +720,6 @@ header + * { margin-top: 0; }
     };
     const panelOf = (el) => el.closest("[data-card]").querySelector("[data-panel]");
     for (const b2 of $$("#ovList [data-pick]")) b2.onclick = () => skillPicker(panelOf(b2), b2.dataset.pick);
-      if (runGuard()) return; 
     for (const b2 of $$("#ovList [data-connect]")) b2.onclick = () => {
       const panel = panelOf(b2);
       if (!panel.hidden) { panel.hidden = true; return; }
@@ -796,6 +796,7 @@ header + * { margin-top: 0; }
     $("#fSources").onclick = async (e) => {
       const row = e.target.closest(".slot");
       if (row && e.target.dataset.recrawl) {
+        if (runGuard()) return; 
         const res = await postJson("/api/source-recrawl", { brand: id, source: row.dataset.id }).catch(() => offline);
         if (res.error) { $("#brandMsg").innerHTML = errLine(res.error); return; }
         $("#brandMsg").innerHTML = `<span class="ok-text">${esc(row.dataset.id)} will be collected fully again on the next run.</span>`;
@@ -807,8 +808,8 @@ header + * { margin-top: 0; }
       editing.added = editing.added.filter((a) => a.id !== row.dataset.id);
       row.parentNode.removeChild(row);
     };
-        if (runGuard()) return; 
     $("#addSrc").onclick = () => {
+      if (runGuard()) return; 
       const u = $("#fNewSrc").value.trim();
       if (!/^https?:\/\//.test(u)) { $("#brandMsg").innerHTML = `<span class="bad-text">The URL must start with http(s)://</span>`; return; }
       const typedName = $("#fNewName").value.trim().slice(0, 60);
@@ -820,11 +821,11 @@ header + * { margin-top: 0; }
     };
     const syncOff = () => { const paused = $("#fPaused").checked; for (const el of $$("#brandForm input, #brandForm select, #brandForm button")) if (el.id !== "fPaused" && el.id !== "fOpen") setDisabled(el, paused, "Paused: untick Paused to change this"); };
     $("#fPaused").onchange = syncOff; syncOff();
-      if (runGuard()) return; 
     show("brand");
   }
   $("#brandBack").onclick = () => show("overview");
   $("#brandSave").onclick = async () => {
+    if (runGuard()) return; 
     const msg = $("#brandMsg");
     const ppd = parseInt($("#fPpd").value, 10);
     const override = {
@@ -836,7 +837,6 @@ header + * { margin-top: 0; }
     msg.textContent = "Saving…";
     const r = await postJson(`/api/brand?id=${encodeURIComponent(editing.id)}`, { override }).catch(() => offline);
     if (r.error) msg.innerHTML = errLine(r.error);
-    if (runGuard()) return; 
     else { msg.innerHTML = `<span class="ok-text">Saved in the tool — the skill is not changed.</span>`; setTimeout(() => show("overview"), 900); }
   };
 
@@ -917,6 +917,7 @@ header + * { margin-top: 0; }
       const it = items.find((x) => x.id === card.dataset.id);
       // At once: the card leaves the list, the request runs in the background (an error brings it back with a toast).
       const setStatus = (status, note = "") => {
+        if (runGuard()) return; 
         card.remove();
         bg(postJson("/api/store-item", { brand: c.brand, id: it.id, status, note }), { onFail: loadResearch, onDone: loadResearch });
       };
@@ -928,7 +929,6 @@ header + * { margin-top: 0; }
   // ‹ Prev / Next › (↑/↓) walk the filtered list without closing.
   function openStoreItem(brand, items, start) {
     let i = start, k = 0, msg = "";
-        if (runGuard()) return; 
     const go = (step) => { if (items[i + step]) { i += step; k = 0; msg = ""; draw(); } };
     const draw = () => {
       const it = items[i], imgs = arr(it.image_paths);
@@ -973,6 +973,7 @@ header + * { margin-top: 0; }
       for (const m of $$("[data-big]", overlay)) m.onclick = () => { openLightbox(imgs.map((x, j) => ({ type: "image", path: x, label: `${it.id} ${j + 1}/${imgs.length}` })), k); lbOnClose = draw; };
       const box = $(".pv-side", overlay);
       const setStatus = (status, note = "") => {
+        if (runGuard()) return; 
         items[i] = { ...it, status, note }; // shown at once
         msg = `<span class="ok-text">${status === "new" ? "Restored." : "Removed."}</span>`;
         draw();
@@ -984,7 +985,6 @@ header + * { margin-top: 0; }
       // Remove opens its reason box.
       if ($("[data-reject]", box)) $("[data-reject]", box).onclick = () => { const r = $(".reject-box", box); r.hidden = !r.hidden; if (!r.hidden) $("input", r).focus(); };
       for (const r of $$(".reject-box", box)) {
-        if (runGuard()) return; 
         $("[data-confirm]", r).onclick = () => setStatus(r.dataset.box, $("input", r).value);
         $("input", r).onkeydown = (e) => { if (e.key === "Enter") setStatus(r.dataset.box, e.target.value); };
       }
@@ -1085,6 +1085,7 @@ header + * { margin-top: 0; }
   }
   function prRestore(prompts, brands) {
     srcOff = new Set(jget("prSrcOff", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.sources).includes(v.slice(b.id.length + 1)))));
+    sugOn = new Set(jget("prSugOn", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.suggested).some((x) => x.id === v.slice(b.id.length + 1)))));
     platOff = new Set(jget("prPlatOff", []).filter((p) => PLATS.includes(p)));
     const mx = parseInt(store.get("prMax"), 10); $("#prMax").value = mx >= 1 ? String(mx) : "";
     for (const [k, el] of [["prWindow", "#prWindow"], ["prStart", "#prStart"]]) { const v = store.get(k); if (v.startsWith("v:") && [...$(el).options].some((o) => o.value === v.slice(2))) $(el).value = v.slice(2); }
@@ -1096,13 +1097,19 @@ header + * { margin-top: 0; }
     $("#prImgMin").value = pair[0]; $("#prImgMax").value = pair[1];
     if (sv) { store.set("prImgSel", ""); store.set("prImg", JSON.stringify(pair)); }
     const ao = jget("prAlbOff", null);
-    sugOn = new Set(jget("prSugOn", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.suggested).some((x) => x.id === v.slice(b.id.length + 1)))));
     albOff = Array.isArray(ao) ? new Set(ao.filter((v) => ALBS.some((x) => x[0] === v))) : defAlbOff();
     if (albOff.size >= ALBS.length) albOff = defAlbOff();
     drawAlbums();
   }
+  // SRC-SCOPE-BEGIN (tests/run-sources.test.mjs evaluates this block with stubs: keep it free of DOM calls)
   const srcPlat = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s); if (info?.platform) return String(info.platform).toLowerCase(); const u = String(info?.url || ""); return PLATS.find((p) => u.includes(p)) || ""; };
   const srcOn = (b, s) => !(platOff.has(srcPlat(b, s)) || srcOff.has(`${b.id}:${s}`));
+  // The picker shows only what is LEFT: sources not fully crawled (registry not complete) + suggested ones. Fully crawled sources are hidden and stay in
+  // the run (top check; only an unticked platform drops them). M (total) = rows shown, k (on) = ticked rows; "all" (no --source flag) = every real source
+  // included; an unticked suggestion is not a source yet, so it never breaks "all". ext = brands with nothing left (every source done, nothing suggested).
+  const srcDone = (b, s) => modeCounts[b.id]?.registry?.[s]?.status === "complete";
+  const sugList = (b) => arr(b.suggested).filter((x) => !arr(b.sources).includes(x.id));
+  const sugPlat = (b, id) => { const x = sugList(b).find((y) => y.id === id); return String(x?.platform || "").toLowerCase() || PLATS.find((p) => String(x?.url || "").includes(p)) || ""; };
   function srcScope() {
     const per = {}, plats = new Set(), ext = []; let total = 0, on = 0, eff = 0, any = 0, all = true;
     for (const b of srcBrands()) {
@@ -1120,27 +1127,20 @@ header + * { margin-top: 0; }
     }
     return { total, on, eff, any, per, plats, ext, all };
   }
+  // Picker summary: k ticked of the M rows shown (only what is left; hidden completed sources are not counted); nothing left = "None left".
+  const srcSumText = ({ total, on, any }) => (!total ? (any ? "None left" : "None") : `${on} of ${total}`);
+  // SRC-SCOPE-END
   function platLabel() {
     const on = PLATS.filter((p) => !platOff.has(p));
     $("#prPlatSum").textContent = on.length === PLATS.length ? "All" : on.length ? on.map((p) => p[0].toUpperCase() + p.slice(1)).join(", ") : "None";
   }
-  // SRC-SCOPE-BEGIN (tests/run-sources.test.mjs evaluates this block with stubs: keep it free of DOM calls)
   function drawPlatforms() {
     const cnt = Object.fromEntries(PLATS.map((p) => [p, 0]));
-  // The picker shows only what is LEFT: sources not fully crawled (registry not complete) + suggested ones. Fully crawled sources are hidden and stay in
-  // the run (top check; only an unticked platform drops them). M (total) = rows shown, k (on) = ticked rows; "all" (no --source flag) = every real source
-  // included; an unticked suggestion is not a source yet, so it never breaks "all". ext = brands with nothing left (every source done, nothing suggested).
-  const srcDone = (b, s) => modeCounts[b.id]?.registry?.[s]?.status === "complete";
-  const sugList = (b) => arr(b.suggested).filter((x) => !arr(b.sources).includes(x.id));
-  const sugPlat = (b, id) => { const x = sugList(b).find((y) => y.id === id); return String(x?.platform || "").toLowerCase() || PLATS.find((p) => String(x?.url || "").includes(p)) || ""; };
     for (const b of srcBrands()) for (const s of arr(b.sources)) { const p = srcPlat(b, s); if (p in cnt) cnt[p]++; }
     const logo = (p) => { const l = PLAT_LOGO[p]; return l ? `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="${l[0]}" d="${l[1]}"/></svg>` : ""; };
     $("#prPlat").innerHTML = PLATS.map((p) => `<label><input type="checkbox" value="${p}"${platOff.has(p) ? "" : " checked"}>${logo(p)}<span>${p[0].toUpperCase() + p.slice(1)}</span><span class="meta">${cnt[p]} source${cnt[p] === 1 ? "" : "s"}</span></label>`).join("");
     for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) platOff.delete(c.value); else platOff.add(c.value); store.set("prPlatOff", JSON.stringify([...platOff])); platLabel(); drawSources(); regenerate(); };
     platLabel();
-  // Picker summary: k ticked of the M rows shown (only what is left; hidden completed sources are not counted); nothing left = "None left".
-  const srcSumText = ({ total, on, any }) => (!total ? (any ? "None left" : "None") : `${on} of ${total}`);
-  // SRC-SCOPE-END
   }
   function srcLabel() {
     const { total, on, any } = srcScope();
@@ -1260,7 +1260,7 @@ header + * { margin-top: 0; }
   function options() {
     const lines = [], brand = $("#prBrand").value;
     if (isResearch(prMode)) {
-      const max = parseInt($("#prMax").value, 10);
+      const max = parseInt($("#prMax").value, 10) || 100; // empty = default 100
       // No source choice: every enabled source of the brand(s), each with the smart crawl decided from its registry; per-source on/off is in the brand Edit page.
       const sc = srcScope();
       const pl = PLATS.filter((p) => !platOff.has(p)), plSome = pl.length < PLATS.length;
@@ -1301,6 +1301,7 @@ header + * { margin-top: 0; }
   let prBlock = ""; // research with nothing to run: the reason (no prompt is made)
   function buildPrompt() {
     prBlock = researchBlock();
+    extHint();
     if (prBlock) return prBlock;
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
     const lead = subAllowed() ? SUB_LINE + "\n" : "";
@@ -1312,7 +1313,6 @@ header + * { margin-top: 0; }
     // skill_line comes from the server (scripts/prompts.mjs skillLine): legacy skill folder, or brand folder (brands/<id>: project and data together) + skill root + --brand <id>.
     const skills = scope.map((x) => x.skill_line || `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
     // {{IMAGES}}: the Google Flow lines when settings image_engine is flow (text from the server, scripts/prompts.mjs); nothing for codex.
-    extHint();
     const images = chosenEngine() === "flow" ? promptData.images_text || "" : "";
     return prBase.replace(/\n?\{\{IMAGES\}\}/g, () => (images ? "\n" + images : "")).replace(/\n?\{\{EXTERNAL\}\}/g, () => (isResearch(prMode) && srcScope().ext.length ? "\n" + (promptData.external_text || "") : "")).replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
@@ -1389,17 +1389,6 @@ header + * { margin-top: 0; }
     return r;
   };
   const flash = (t) => { $("#prMsg").textContent = t; setTimeout(() => { $("#prMsg").textContent = hint; }, 1800); };
-  $("#prCopy").onclick = async () => {
-    if (prBlock) { flash(prBlock); return; }
-    try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
-    { const v = $("#prText").value; clearTimeout(flash.t); $("#prMsg").classList.add("copied"); $("#prMsg").textContent = `Copied · ${v.length.toLocaleString("en-US")} characters`; flash.t = setTimeout(() => { $("#prMsg").classList.remove("copied"); $("#prMsg").textContent = hint; }, 3000); }
-    // A new pending run of this mode: the panel starts over and waits for the agent (brands.mjs --run, Setup).
-    const brandSel = $("#prBrand").value;
-    const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
-    await postJson("/api/progress", { mode: modeKey(prMode), brands, agent: $("#prAgent").value || "" }).catch(() => {});
-    loadProgress();
-  };
-
   // Ticked suggested sources become ordinary sources (POST /api/sources/accept) at the moment of Copy prompt / Run now, never while the prompt text is built;
   // then the brands are reloaded so the prompt is rebuilt with them as real sources. Returns false when it failed (nothing is run).
   async function acceptTicked() {
@@ -1414,9 +1403,20 @@ header + * { margin-top: 0; }
     if (Object.keys(by).length) { store.set("prSugOn", JSON.stringify([...sugOn])); await loadPrompts(); }
     return true;
   }
-  // ----- Run now: starts headless Claude with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
+  $("#prCopy").onclick = async () => {
     if (prBlock) { flash(prBlock); return; }
     if (!(await acceptTicked())) return;
+    if (prBlock) { flash(prBlock); return; }
+    try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
+    { const v = $("#prText").value; clearTimeout(flash.t); $("#prMsg").classList.add("copied"); $("#prMsg").textContent = `Copied · ${v.length.toLocaleString("en-US")} characters`; flash.t = setTimeout(() => { $("#prMsg").classList.remove("copied"); $("#prMsg").textContent = hint; }, 3000); }
+    // A new pending run of this mode: the panel starts over and waits for the agent (brands.mjs --run, Setup).
+    const brandSel = $("#prBrand").value;
+    const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
+    await postJson("/api/progress", { mode: modeKey(prMode), brands, agent: $("#prAgent").value || "" }).catch(() => {});
+    loadProgress();
+  };
+
+  // ----- Run now: starts headless Claude with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
   const AR_CONFIRM = {
     research: () => "Research: Claude will open pages in the tool's own browser (in the background, no window) and add posts to the Library. Log in to the sites first: Browser > Open browser to log in.",
     create: () => "Create: starts image generation (Codex quota) and writes drafts.",
@@ -1613,6 +1613,9 @@ header + * { margin-top: 0; }
     for (const fn of [loadDrafts, loadResearch, loadOverview, loadLogs, loadModeCounts, loadProgress]) { try { const p = fn(); if (p?.catch) p.catch(() => {}); } catch {} }
   }
   $("#prRunNow").onclick = async () => {
+    if (runGuard()) return; 
+    if (prBlock) { flash(prBlock); return; }
+    if (!(await acceptTicked())) return;
     if (prBlock) { flash(prBlock); return; }
     { const n = blNeed(); if (n.length) toast(`Not logged in: ${n.join(", ")}. The run starts anyway; those sources will likely fail. Run > Browser > Log in.`); }
     const key = modeKey(prMode);
@@ -1681,9 +1684,6 @@ header + * { margin-top: 0; }
       box.dataset.sig = html; box.innerHTML = html;
       $("#blRefresh").onclick = () => blRefresh({ fresh: true, toastErr: true, announce: true });
       $("#blVisit").onclick = () => blVisit();
-    if (runGuard()) return; 
-    if (prBlock) { flash(prBlock); return; }
-    if (!(await acceptTicked())) return;
       for (const b of $$("#prLogins [data-login]")) b.onclick = () => blLogin(b.dataset.login, b);
     }
     blMarks();
@@ -1747,6 +1747,7 @@ header + * { margin-top: 0; }
     if (!$("#page-prompt").hidden) browserTimer = setTimeout(loadBrowser, 3000);
   });
   $("#prBrowserLogin").onclick = async () => {
+    if (runGuard()) return; 
     const b = $("#prBrowserLogin"); b.disabled = true;
     const r2 = await postJson("/api/open-login-browser", {}).catch(() => offline);
     if (r2 && r2.error) toast(r2.error); else toast("Login window opened at " + hms(Date.now()) + ". Log in, then close it.", "ok");
@@ -1815,7 +1816,6 @@ header + * { margin-top: 0; }
     } catch { return loc; }
   };
   const loadLogs = safely("#lgList", async () => {
-    if (runGuard()) return; 
     const brand = store.get("lgBrand");
     const r = await getJson("/api/runlogs").catch(() => offline);
     if (r.error) { $("#lgList").innerHTML = errLine(r.error); return; }
@@ -1931,6 +1931,7 @@ header + * { margin-top: 0; }
       for (const btn of $$("[data-act]", card)) btn.onclick = async () => {
         const d = list.find((x) => x.id === card.dataset.id), msg = $(".msg", card);
         if (!d) { loadDrafts(); return; }
+        if (runGuard()) return; 
         if (btn.dataset.act === "drop" && !confirm("Drop this post? It will not be used.")) return;
         if (btn.dataset.act === "unreview") {
           const sure = confirmBack(d); if (!sure.ok) return;
@@ -1999,7 +2000,6 @@ function draftTags(d) {
     $(".lb-title", overlay).innerHTML = title;
     $(".lb-extra", overlay).innerHTML = extra;
     $(".lb-body", overlay).innerHTML = body;
-        if (runGuard()) return; 
     lbKeys = keys || null;
     lbItemKeys = itemKeys || null;
     const wasHidden = overlay.hidden;
@@ -2186,6 +2186,7 @@ function draftTags(d) {
   async function cancelDraft(panel, d, act, nav) {
     const msg = $(".msg", panel), box = $(".reject-box", panel);
     if (act === "cancel") { box.hidden = !box.hidden; if (!box.hidden) $(".note", panel).focus(); return; }
+    if (runGuard()) return; 
     // Approve, Drop and Back to review act at once: the preview moves to the next post, the request runs in the background.
     const sure = act === "unreview" ? confirmBack(d) : { ok: true };
     if (!sure.ok) return;
@@ -2231,6 +2232,7 @@ function draftTags(d) {
   // one-time code to type there.
   let loginTimer = 0;
   async function setupStep(step) {
+    if (runGuard()) return; 
     const msg = $("#setLoginMsg");
     for (const b of $$("#page-settings fieldset .btn")) b.disabled = true;
     msg.innerHTML = `<span class="meta">${step === "login" ? "Opening the ChatGPT sign-in page in Chrome…" : "Installing Codex CLI…"}</span>`;
@@ -2255,7 +2257,6 @@ function draftTags(d) {
     if (r.error) { $("#settingsMsg").innerHTML = errLine(r.error); return; }
     const s = r.settings || {};
     const DAY_NAME = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
-    if (runGuard()) return; 
     const range = ([a, b]) => (a === b ? String(a) : `${a}–${b}`);
     const row = (k, v, tip = "") => `<dt title="${esc(tip || k)}">${esc(k)}</dt><dd>${v}</dd>`;
     $("#settingsView").innerHTML = `<dl class="kv">
@@ -2279,6 +2280,7 @@ function draftTags(d) {
   });
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Edit" : "Close"; };
   $("#settingsSave").onclick = async () => {
+    if (runGuard()) return; 
     const out = { planning: {}, imageHost: {} }; // only what the form edits; the rest stays as saved
     for (const el of $$("#settingsForm [data-s]")) {
       const parts = el.dataset.s.split(".");
@@ -2301,7 +2303,6 @@ function draftTags(d) {
     if ($$("#resBody .reject-box, #draftList .reject-box").some((b) => !b.hidden)) return;
     if ($$("#ovList [data-panel]").some((p) => !p.hidden)) return;
     if (!$("#page-overview").hidden) loadOverview();
-    if (runGuard()) return; 
     else if (!$("#page-store").hidden) loadResearch();
     else if (!$("#page-posts").hidden) loadDrafts();
     else if (!$("#page-prompt").hidden) loadModeCounts();
@@ -2310,5 +2311,3 @@ function draftTags(d) {
 </script>
 </body>
 </html>
-    applyRunLock(); // a run may have started meanwhile: the lock wins
-    if (runGuard()) return; 
