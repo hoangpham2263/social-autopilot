@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createAgentRunner, sanitize, mcpConfig, validate, ALLOWED_TOOLS, usesFlow, runEngine, limitsFor, addDirs, needsBrowser, DEFAULT_MINUTES, DEFAULT_TURNS } from '../core/setup/agent-run.mjs';
+import { createAgentRunner, sanitize, mcpConfig, validate, ALLOWED_TOOLS, usesFlow, runEngine, limitsFor, addDirs, needsBrowser, MODELS, modelFlag, DEFAULT_MINUTES, DEFAULT_TURNS } from '../core/setup/agent-run.mjs';
 import { classifyProblem, MESSAGES } from '../core/setup/agent-problems.mjs';
 import { findClaude } from '../core/setup/claude-cli.mjs';
 
@@ -69,6 +69,43 @@ test('argv has no prompt, stdin gets it, flags and per-mode tools', async () => 
   for (const n of ['getBrandSettings', 'getBestTimeToPostByNetwork', 'createScheduledPost', 'getScheduledPosts']) assert.ok(tools.includes(n), n);
   assert.ok(!tools.includes('playwright'), 'publish never gets the browser');
   assert.ok(!p.includes('--mcp-config'), 'publish does not start the Playwright MCP');
+});
+
+test('model: allow-list validation, --model only when not default, state and status', async () => {
+  assert.match(validate({ mode: 'research', prompt: PROMPT, model: 'gpt' }), /model/);
+  assert.match(validate({ mode: 'research', prompt: PROMPT, model: 5 }), /model/);
+  for (const m of [undefined, null, '', 'default', 'haiku', 'sonnet', 'opus']) assert.equal(validate({ mode: 'research', prompt: PROMPT, model: m }), '', String(m));
+  assert.deepEqual(MODELS, ['default', 'haiku', 'sonnet', 'opus']);
+  assert.equal(modelFlag('default'), '');
+  assert.equal(modelFlag('sonnet'), 'sonnet');
+  assert.equal(modelFlag('haiku', { agent_run: { model_map: { haiku: 'claude-haiku-5-5' } } }), 'claude-haiku-5-5');
+  assert.equal(modelFlag('opus', { agent_run: { model_map: { opus: 'bad id; rm' } } }), 'opus');
+  const { runner, out } = setup();
+  const bad = runner.start({ mode: 'create', prompt: PROMPT, model: 'nope' });
+  assert.equal(bad.ok, false); assert.equal(bad.status, 400);
+  assert.equal(runner.start({ mode: 'create', prompt: PROMPT, model: 'sonnet' }).ok, true);
+  await done(runner);
+  const a = recorded(out).args;
+  assert.equal(a[a.indexOf('--model') + 1], 'sonnet');
+  assert.equal(runner.status().model, 'sonnet');
+  const { runner: r2, out: o2 } = setup();
+  r2.start({ mode: 'create', prompt: PROMPT, model: 'default' }); await done(r2);
+  assert.ok(!recorded(o2).args.includes('--model'), 'default passes no flag');
+  assert.equal(r2.status().model, 'default');
+  const { runner: r3, out: o3 } = setup({ agent_run: { model_map: { opus: 'claude-opus-5-5' } } });
+  r3.start({ mode: 'publish', prompt: PROMPT, model: 'opus' }); await done(r3);
+  const p = recorded(o3).args;
+  assert.equal(p[p.indexOf('--model') + 1], 'claude-opus-5-5');
+});
+
+test('model: UI select, per-mode memory, sent to the server, shown once in the status line', () => {
+  const html = fs.readFileSync(path.join(here, '..', 'ui', 'index.html'), 'utf8');
+  assert.match(html, /<select id="prModel">/);
+  assert.match(html, /"prModel_" \+ mk/);
+  assert.match(html, /"prModel_" \+ modeKey\(prMode\)/);
+  assert.match(html, /model: \$\("#prModel"\)\.value/);
+  assert.match(html, /r\.model && r\.model !== "default"/);
+  assert.match(fs.readFileSync(path.join(here, '..', 'src', 'server.mjs'), 'utf8'), /model: b\.model/);
 });
 
 test('single-run lock answers busy, status shows tail', async () => {

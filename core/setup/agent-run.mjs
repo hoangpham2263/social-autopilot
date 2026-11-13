@@ -41,6 +41,14 @@ export const limitsFor = (mode, settings = {}, flow = false) => {
   const turns = pick(mt && typeof mt === "object" ? mt[key] ?? (flow ? mt.create : undefined) : mt) || DEFAULT_TURNS[key];
   return { limitMin: m, maxTurns: turns };
 };
+// Model of a run (Run tab "Model"): default = no flag (Claude Code's own default); haiku | sonnet | opus = `--model <alias>` (aliases checked with `claude --help`).
+// Setting agent_run.model_map {haiku, sonnet, opus} may map an alias to a full model id; otherwise the alias itself is passed.
+export const MODELS = ["default", "haiku", "sonnet", "opus"];
+export const modelFlag = (model, settings = {}) => {
+  if (!model || model === "default") return "";
+  const custom = settings?.agent_run?.model_map?.[model];
+  return typeof custom === "string" && /^[A-Za-z0-9._:\[\]-]{1,80}$/.test(custom.trim()) ? custom.trim() : model;
+};
 export const allowedTools = (mode, settings = {}, engine = "") => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : [])];
 
 // Anything that looks like a secret is replaced before a line is kept.
@@ -115,8 +123,9 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 
 `;
 
-export function validate({ mode, prompt }) {
+export function validate({ mode, prompt, model }) {
   if (!MODES.includes(mode)) return "mode must be research, create or publish.";
+  if (model !== undefined && model !== null && model !== "" && !MODELS.includes(model)) return "model must be default, haiku, sonnet or opus.";
   if (typeof prompt !== "string") return "prompt must be a string.";
   if (prompt.length < 200 || prompt.length > 60000) return "prompt must be 200 to 60000 characters.";
   if (!prompt.startsWith("TASK:")) return "prompt must start with TASK:.";
@@ -212,8 +221,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     try { onEnd?.({ ...run.state }); } catch {}
   };
 
-  function start({ mode, prompt, brands, imageEngine } = {}) {
-    const bad = validate({ mode, prompt });
+  function start({ mode, prompt, brands, imageEngine, model } = {}) {
+    const bad = validate({ mode, prompt, model });
     if (bad) return { ok: false, status: 400, error: bad };
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
     const found = findCli();
@@ -234,6 +243,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
     if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, own: { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } })));
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
+    const modelKey = MODELS.includes(model) ? model : "default", mflag = modelFlag(modelKey, s);
+    if (mflag) args.push("--model", mflag);
     if (browser) args.push("--mcp-config", cfg);
     if (mode === "research") args.push("--strict-mcp-config");
     const env = { ...process.env };
@@ -244,7 +255,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const started = new Date(now()).toISOString();
     const run = {
       child, cfg, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [] },
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [] },
     };
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
@@ -288,7 +299,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [],
+      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: MODELS.includes(shown?.model) ? shown.model : "default", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [],
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),
       cli: { found: !!cli?.found, path: cli?.path || "" },

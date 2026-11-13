@@ -448,6 +448,7 @@ header + * { margin-top: 0; }
     </div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
+      <div class="field" id="prModelField" hidden><label for="prModel">Model</label><select id="prModel"><option value="default">Default</option><option value="haiku">Haiku</option><option value="sonnet">Sonnet</option><option value="opus">Opus</option></select></div>
       <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
       <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
       <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
@@ -1198,7 +1199,7 @@ header + * { margin-top: 0; }
     prMode = modes.includes(prMode) ? prMode : modes.includes(store.get("prMode")) ? store.get("prMode") : modes[0] || "";
     $("#prMode").innerHTML = modes.map((m) => `<button class="btn" type="button" data-mode="${esc(m)}" aria-pressed="${m === prMode}" title="${esc(MODE_TIP[modeKey(m)] || "")}">${esc(m)}</button>`).join("");
     showModeCounts();
-    for (const b of $$("#prMode button")) b.onclick = () => { prMode = b.dataset.mode; store.set("prMode", prMode); drawPrompt(); };
+    for (const b of $$("#prMode button")) b.onclick = () => { prMode = b.dataset.mode; store.set("prMode", prMode); drawPrompt(); applyHow(); };
     const agents = prompts.filter((p) => p.mode === prMode).map((p) => p.agent);
     const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
@@ -1208,6 +1209,7 @@ header + * { margin-top: 0; }
     // The mode changed (or first draw): that mode's remembered Brand and Posts (a library item pick keeps what it set).
     if (prLastMk !== mk) {
       prLastMk = mk;
+      { const sm = store.get("prModel_" + mk); $("#prModel").value = ["haiku", "sonnet", "opus"].includes(sm) ? sm : "default"; }
       if (!prItem) {
         const sb = store.get("prBrand_" + mk); if (sb) brand = sb === "all" ? "" : brands.some((b) => b.id === sb) ? sb : brand;
         const sc = store.get("prCount_" + mk), n = parseInt(sc.slice(2), 10); $("#prCount").value = sc.startsWith("c:") && n >= 1 ? String(n) : "";
@@ -1378,6 +1380,7 @@ header + * { margin-top: 0; }
     drawPrompt(); applyHow();
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
+  $("#prModel").onchange = () => { store.set("prModel_" + modeKey(prMode), $("#prModel").value); };
   $("#prBrand").onchange = () => { store.set("prBrand_" + modeKey(prMode), $("#prBrand").value || "all"); drawPrompt(); regenerate(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
   for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
@@ -1454,6 +1457,9 @@ header + * { margin-top: 0; }
     // The Chrome connection section is for Run in the app (Run now needs the connection); with Copy prompt it is not shown.
     $("#prChrome").hidden = !app;
     $("#prRunNow").hidden = !app; if (!app) $("#prStop").hidden = true;
+    // Model of the run: only for Run in the app, and only when the agent is Claude Code (Codex / ChatGPT have no --model here).
+    { const mf = $("#prModelField"), mk = modeKey(prMode); mf.hidden = !app || !claude;
+      $("#prModel").title = mk === "create" ? "Model for this run (remembered per mode). Writing + images: Sonnet or Opus. Default = Claude Code's own default." : "Model for this run (remembered per mode). Routine work: Haiku or Sonnet saves quota. Default = Claude Code's own default."; }
     $("#prAppHint").hidden = !app;
     { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
       $("#prAppHint").textContent = claude ? "Starts Claude Code for you; the live panel below shows progress." + (extTxt ? " " + extTxt + "." : "") : "Run in the app needs Claude Code"; }
@@ -1489,7 +1495,7 @@ header + * { margin-top: 0; }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
     // Elapsed and the step live in the progress bar only; here just the mode, the limit and the turns (the current action is in the live log).
-    $("#arElapsed").textContent = [`${r.mode}${r.flow ? " (Flow)" : ""}`, r.limit_min ? `limit ${r.limit_min} min` : "", r.turns ? `${r.turns} turns` : ""].filter(Boolean).join(" · ");
+    $("#arElapsed").textContent = [`${r.mode}${r.flow ? " (Flow)" : ""}`, r.model && r.model !== "default" ? r.model : "", r.limit_min ? `limit ${r.limit_min} min` : "", r.turns ? `${r.turns} turns` : ""].filter(Boolean).join(" · ");
     const startMsg = r.mode === "research" ? "Starting… Claude works in the own browser in the background." : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
     { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : busy ? (arr(r.friendly).length ? "" : startMsg) : full || r.last_text || ""), !bad && !busy && !!(full || r.last_text), !!full); } // while running the raw assistant text stays out (live log has the friendly lines)
@@ -1674,7 +1680,7 @@ header + * { margin-top: 0; }
     const btn = $("#prRunNow"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "Starting…"; // instant feedback: the click is registered while the app starts Claude
     try {
-      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, ...(key === "create" ? { image_engine: chosenEngine() } : {}) }).catch(() => ({ error: "The app did not answer." }));
+      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, model: $("#prModel").value || "default", ...(key === "create" ? { image_engine: chosenEngine() } : {}) }).catch(() => ({ error: "The app did not answer." }));
       if (r.error) { flash(r.error); toast(r.error); await loadAgentRun(); return; }
       await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
       await loadAgentRun(); loadProgress();
