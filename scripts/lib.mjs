@@ -193,7 +193,7 @@ export function saveSettings(input = {}) {
     delete next.approval;
     next.research = changes.research;
     next.metricool = changes.metricool;
-    // Own browser (core/setup/own-browser.mjs): mode own | extension, headless, profile_dir (workspace/browser-profile by default).
+    // Own browser (core/setup/own-browser.mjs): mode own (only), headless, profile_dir (workspace/browser-profile by default).
     const bro = validateBrowserSettings(input.browser, cur.browser || {});
     if (bro) next.browser = bro;
     if (changes.remove_watermark.providers) next.remove_watermark.providers = changes.remove_watermark.providers;

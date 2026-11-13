@@ -226,7 +226,7 @@ function start(args, s) {
   if (args.since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(args.since))) throw new Error('--since cần dạng YYYY-MM-DD.');
   if (args['max-posts'] !== undefined && !(Number.isInteger(Number(args['max-posts'])) && Number(args['max-posts']) > 0)) throw new Error('--max-posts cần số nguyên dương.');
   if (args.full && args.backfill) throw new Error('--full và --backfill không dùng cùng lúc.');
-  const mode = { since: args.since ? String(args.since) : '', max_posts: args['max-posts'] ? Number(args['max-posts']) : 0, full: !!args.full, backfill: !!args.backfill };
+  const mode = { since: args.since ? String(args.since) : '', max_posts: args['max-posts'] ? Number(args['max-posts']) : 100, // default target: 100 new posts per brand full: !!args.full, backfill: !!args.backfill };
   const before = readJson(runFile, null);
   const progress = readProgress(brand.id).sources || {};
   const skipped = [];

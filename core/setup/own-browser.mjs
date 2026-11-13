@@ -1,5 +1,5 @@
 // Own browser: a dedicated Chrome profile (workspace/browser-profile) the person logs in to ONCE; later headless runs use it.
-// Settings: browser.mode "own" (default) | "extension", browser.headless (default true), browser.profile_dir.
+// Settings: browser.mode is always "own" (any stored other value is normalised), browser.headless (default true), browser.profile_dir.
 // The profile holds the person's logins: never committed (workspace/ is gitignored), never logged, never copied except the
 // cookie database METADATA read below (a temp copy, only names/hosts/expiry of allow-listed cookies, never values).
 import { spawn } from "node:child_process";
@@ -8,7 +8,6 @@ import { join, resolve, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { findBrowser } from "./chrome.mjs";
 
-export const BROWSER_MODES = ["own", "extension"];
 export const DEFAULT_PROFILE_DIR = "workspace/browser-profile";
 
 // Sites the person logs in to by hand. The launcher only ever opens these fixed URLs (never an arbitrary one).
@@ -26,7 +25,7 @@ export function browserSettings(settings = {}, toolRoot = process.cwd()) {
   const b = settings?.browser || {};
   const dir = typeof b.profile_dir === "string" && b.profile_dir.trim() ? b.profile_dir.trim() : DEFAULT_PROFILE_DIR;
   return {
-    mode: b.mode === "extension" ? "extension" : "own",
+    mode: "own",
     headless: b.headless === false || b.headless === "false" ? false : true,
     profileDir: isAbsolute(dir) ? resolve(dir) : resolve(toolRoot, dir),
   };
@@ -169,8 +168,8 @@ cachedLoginStatus.cache = null;
 export function validateBrowserSettings(input, cur = {}) {
   if (input === undefined) return undefined;
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("browser phải là object.");
-  const out = { mode: cur.mode || "own", headless: cur.headless ?? true, profile_dir: cur.profile_dir || DEFAULT_PROFILE_DIR };
-  if (input.mode !== undefined) { if (!BROWSER_MODES.includes(input.mode)) throw new Error("browser.mode phải là own hoặc extension."); out.mode = input.mode; }
+  const out = { mode: "own", headless: cur.headless ?? true, profile_dir: cur.profile_dir || DEFAULT_PROFILE_DIR };
+  // browser.mode: only "own" exists; any other value (an old "extension") is ignored and stored as "own".
   if (input.headless !== undefined) { if (input.headless === true || input.headless === "true") out.headless = true; else if (input.headless === false || input.headless === "false") out.headless = false; else throw new Error("browser.headless phải là true hoặc false."); }
   if (input.profile_dir !== undefined) {
     const v = typeof input.profile_dir === "string" ? input.profile_dir.trim() : "";

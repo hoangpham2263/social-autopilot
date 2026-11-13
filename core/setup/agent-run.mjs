@@ -1,6 +1,5 @@
 // "Run now": starts Claude Code headless (`claude -p`) for one mode and keeps a short, sanitized view of its progress.
-// One run at a time (one browser, one agent). The prompt goes to STDIN, never argv. Nothing secret is stored: the token
-// PLAYWRIGHT_MCP_EXTENSION_TOKEN (if the user has it) is only inherited by the child through the OS environment.
+// One run at a time (one browser, one agent). The prompt goes to STDIN, never argv. Nothing secret is stored.
 // Tool/stream output (inputs and results of tools) is never kept: only assistant text and tool NAMES, scrubbed and cut.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
@@ -69,8 +68,7 @@ export function sanitizeReport(text, max = REPORT_MAX) {
   return s;
 }
 
-// Extension mode (default args below): attaches to the person's Chrome through the Playwright MCP Bridge extension.
-// Own mode (own = { userDataDir, headless, outputDir }): its own Chrome profile, already logged in by the person; headless unless own.headless is false.
+// Playwright MCP of a run (own = { userDataDir, headless, outputDir }): the tool's own Chrome profile, already logged in by the person; headless unless own.headless is false.
 // Flags (checked with `npx @playwright/mcp@latest --help`): --browser chrome, --user-data-dir <path>, --headless, --viewport-size WxH, --output-dir <path>.
 // ----- friendly live lines (Vietnamese, for the person): built from tool NAMES and a few safe words of the input; never a path, id, token or JSON -----
 export const FRIENDLY_LINES = 40;
@@ -100,18 +98,16 @@ export function friendlyTool(name, input = {}) {
   return "Đang xử lý…";
 }
 
-export function mcpArgs(own = null) {
-  if (!own) return ["@playwright/mcp@latest", "--extension"];
+export function mcpArgs(own) {
   return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", "1280x900", ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
 }
-export function mcpConfig({ plat = osPlatform(), profile = "", own = null } = {}) {
+export function mcpConfig({ plat = osPlatform(), own } = {}) {
   const a = mcpArgs(own);
   const server = plat === "win32" ? { command: "cmd", args: ["/c", "npx", ...a] } : { command: "npx", args: a };
-  if (profile && !own) server.env = { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile };
   return { mcpServers: { playwright: server } };
 }
 
-// Own-browser note put in front of the prompt (instead of the wait-for-Connect note).
+// Own-browser note put in front of the prompt of a run that uses the browser.
 export const ownNote = (headless = true) => `RUN-NOW NOTE: this run uses the tool's OWN browser (a dedicated Chrome profile the person already logged in to${headless ? ", running in the background (headless)" : ""}). There is no Connect step and no extension: ignore any instruction to click Connect, run chrome-connect.mjs or wait for the person; start with browser_tabs or browser_navigate.
 Downloads: in browser_run_code_unsafe you can capture a download with const [d] = await Promise.all([page.waitForEvent('download'), <click that starts it>]); await d.saveAs(<absolute path under the draft folder or the Downloads folder>); (this works here, unlike in extension mode).
 If a site shows a login wall, a checkpoint / security check or a captcha: STOP, do not try to log in, and report it in one line (name the site and say "login wall" or "checkpoint"): the person must re-open the login window (Run tab > Browser > Open browser to log in).
@@ -164,7 +160,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // Rotating: the file is rewritten from the last 2000 lines every 500 lines.
     try { mkdirSync(runsDir, { recursive: true }); if (++run.written % 500 === 0) writeFileSync(logFile, run.lines.join("\n") + "\n"); else appendFileSync(logFile, line + "\n"); } catch {}
   };
-  // Auth / Metricool problems are visible at once (live); the browser one only from the final text (an agent waiting for Connect is normal).
+  // Auth / Metricool problems are visible at once (live); login / profile problems only from the final text.
   const scan = (run, text, kinds = run.own ? ["metricool"] : ["auth", "metricool"]) => { if (run.state.problem) return; const p = classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, own: run.own, kinds }); if (p) touch(run, { problem: p }); };
   const handleLine = (run, raw) => {
     let ev; try { ev = JSON.parse(raw); } catch { addLine(run, raw); return; }
@@ -196,10 +192,10 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (run.buf.trim()) handleLine(run, run.buf.trim());
     try { rmSync(run.cfg, { force: true }); } catch {}
     const status = run.forced || (code === 0 && !run.result?.is_error ? "done" : "failed");
-    // Last look for an actionable cause: the exit text, stderr, the final text (browser problems only count here).
+    // Last look for an actionable cause: the exit text, stderr, the final text (login / profile problems only count here).
     if (status !== "stopped") {
       const text = [err, ...run.stderr, run.state.last_text].filter(Boolean).join(" | ");
-      const p = run.state.problem || classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, own: run.own, kinds: run.own ? (status === "failed" ? ["login", "profile", "auth", "metricool"] : ["login", "profile"]) : status === "failed" ? ["auth", "metricool", "browser"] : ["browser"] });
+      const p = run.state.problem || classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, own: run.own, kinds: run.own ? (status === "failed" ? ["login", "profile", "auth", "metricool"] : ["login", "profile"]) : status === "failed" ? ["auth", "metricool"] : [] });
       if (p) run.state.problem = p;
     }
     if (!run.state.report && run.lastRaw) run.state.report = sanitizeReport(run.lastRaw);
@@ -224,9 +220,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const s = getSettings() || {};
     const flow = usesFlow(mode, s, imageEngine);
     if ((mode === "research" || flow) && !npxOk()) return { ok: false, status: 400, error: "npx is not available (it comes with Node.js): the Playwright MCP cannot start." };
-    const profile = String(s.research?.chrome_profile || "").trim();
     const browser = needsBrowser(mode, s, imageEngine);
-    const bs = browserSettings(s, toolRoot), own = browser && bs.mode === "own";
+    const bs = browserSettings(s, toolRoot), own = browser;
     if (own) {
       if (loginWindowOpen()) return { ok: false, status: 409, error: "The login window of the own browser is open: close it first (a run needs the profile), then press Run now." };
       const why = browserCheck(bs.profileDir); if (why) return { ok: false, status: 409, error: why };
@@ -236,11 +231,11 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
-    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null })));
+    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, own: { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } })));
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", "--max-turns", String(maxTurns), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
     if (browser) args.push("--mcp-config", cfg);
     if (mode === "research") args.push("--strict-mcp-config");
-    const env = { ...process.env, ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}) };
+    const env = { ...process.env };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
@@ -261,12 +256,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     child.on("error", (e) => finish(run, null, e.message));
     child.on("close", (code) => finish(run, code));
     child.stdin?.on("error", () => {});
-    // Started from the app (Run now): the person is at the screen and will click Connect in Chrome, so help the connect page appear
-    // and wait for it instead of stopping. This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
-    let waitNote = mode === "research" || flow ? "RUN-NOW NOTE: this run was started from the app, so the person is at the computer and will click Connect in Chrome.\nIf the browser is not connected yet (browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail):\n1) The Playwright MCP has ALREADY opened its own Welcome / connect page. Do NOT open a second copy of it (two Welcome tabs confuse the person).\n   Bring that existing tab to the front with browser_run_code_unsafe: async (page) => { await page.bringToFront(); }, and tell the person in one line to click Connect.\n2) Only if that call fails or no Welcome tab exists at all, run ONCE: node scripts/chrome-connect.mjs --url \"<the exact chrome-extension://.../connect.html?mcpRelayUrl=... URL from browser_tabs>\" (never when a Welcome tab already exists).\n3) Do NOT stop: wait up to 3 minutes calling browser_tabs about every 15 seconds until a real page tab appears.\n4) Only if nothing connects after 3 minutes, follow the normal stop rule of step 1.0.\n\n" : "";
-    if (own) waitNote = ownNote(bs.headless);
-    if (flow) waitNote = waitNote.replace("follow the normal stop rule of step 1.0.", "stop and report that Chrome did not connect.");
-    try { child.stdin?.end(waitNote + prompt); } catch {}
+    // This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
+    const note = own ? ownNote(bs.headless) : "";
+    try { child.stdin?.end(note + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
     run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
     run.timer.unref?.();
