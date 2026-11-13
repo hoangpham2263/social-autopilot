@@ -1078,8 +1078,8 @@ header + * { margin-top: 0; }
     const { total, on } = srcScope();
     $("#prSrcSum").textContent = !total ? "None" : on === total ? `All ${total}` : on ? `${on} of ${total}` : "None";
   }
-  // Fully crawled (registry complete) sources are hidden from the rows; they stay in the run (quick top check) unless unticked after "Show".
-  let showDone = false;
+  // Fully crawled (registry complete) sources are hidden from the picker for good (Edit page > Recrawl brings one back); they stay in the run as a quick top check for new posts.
+  const showDone = false;
   const srcDone = (b, s) => modeCounts[b.id]?.registry?.[s]?.status === "complete";
   function drawSources() {
     const brands = srcBrands(), single = !!$("#prBrand").value;
@@ -1088,10 +1088,8 @@ header + * { margin-top: 0; }
     const rows = (b) => arr(b.sources).filter((s) => { if (srcDone(b, s) && !showDone) { hidden++; return false; } shown++; return true; });
     const body = brands.map((b) => { const r = rows(b).map((s) => row(b, s)).join(""); return r ? `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${r}` : ""; }).join("");
     const empty = !brands.some((b) => arr(b.sources).length) ? "No enabled sources." : !shown ? "All sources are fully crawled. A run only checks the top of each page for new posts." : "";
-    const foot = hidden || showDone ? `<div class="meta" style="padding:6px 8px"><label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="prSrcShowDone"${showDone ? " checked" : ""}><span>${showDone ? "Showing fully crawled sources" : `${hidden} fully crawled source${hidden === 1 ? "" : "s"} hidden. Show`}</span></label></div>` : "";
-    $("#prSrc").innerHTML = body + (empty ? `<div class="meta">${empty}</div>` : "") + foot;
+    $("#prSrc").innerHTML = body + (empty ? `<div class="meta">${empty}</div>` : ""); // crawled sources are hidden for good: no "show" switch
     for (const c of $$("#prSrc input[value]")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); store.set("prSrcOff", JSON.stringify([...srcOff])); srcLabel(); regenerate(); };
-    const sd = $("#prSrcShowDone"); if (sd) sd.onchange = () => { showDone = sd.checked; drawSources(); };
     srcLabel(); blMarks();
   }
   function drawPrompt() {
