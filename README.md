@@ -44,7 +44,7 @@ Tool không chép skill, chỉ trỏ tới thư mục skill và **chỉ đọc**
 |---|---|
 | Overview | Brand, skill, trạng thái, số bài; Edit: nguồn nghiên cứu của bạn (thêm tên tuỳ chọn + link, xoá, tick) kèm trạng thái crawl và Recrawl |
 | Library | Bài tham khảo đã crawl: Available (còn dùng được, thẻ ghi "new" hoặc "used N×") / Removed (không dùng nữa, kèm lý do); một bài có thể gợi ý nhiều bài (mỗi lần góc mới); Preview: **Make a post from this** (sang Prompt: Create & publish, 1 bài, `--items`, tuỳ chọn Scene-swap), Remove (lý do tuỳ chọn), Restore |
-| Posts | Bài của mình: To review · Approved (chờ gửi) · Scheduled (trên Metricool) · Posted; bài album xem trước đủ mọi ảnh, ảnh bìa trước |
+| Posts | Thẻ và Preview hiện ngày tạo (YYYY-MM-DD, bên phải dòng phụ) giống Library hiện ngày crawl; Bài của mình: To review · Approved (chờ gửi) · Scheduled (trên Metricool) · Posted; bài album xem trước đủ mọi ảnh, ảnh bìa trước |
 | Prompt | Lấy prompt để chạy |
 | Settings | Tài khoản, yêu cầu, cài đặt tool |
 

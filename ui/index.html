@@ -1569,7 +1569,7 @@ header + * { margin-top: 0; }
       const when = live && drState === "scheduled" ? vnEt(live.publication, live.timezone) : posted ? `Posted ${vnEt(posted.publication, posted.timezone)}` : drState === "approved" ? "Not on Metricool yet" : "";
       return tile({ id: d.id, img: draftThumb(d), title: titleOf(d),
         status: (fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : "") + badge,
-        sub: when, who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (drState === "approved" ? "the next Publish approved sends it" : "")].filter(Boolean).join(" · "),
+        sub: when, subRight: String(d.created || "").slice(0, 10), subRightTip: d.created ? `Created ${String(d.created).slice(0, 16).replace("T", " ")}` : "", who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (drState === "approved" ? "the next Publish approved sends it" : "")].filter(Boolean).join(" · "),
         actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ["approved", "scheduled"].includes(drState) && d.brand_post && MC(d) !== "published" ? `<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
     wireTiles($("#draftList"), (i) => openPreview(list[i], { list, i }));
@@ -1731,6 +1731,7 @@ function draftTags(d) {
         ${review.length ? `<dt>Review only</dt><dd>${esc(review.map((x) => LANG_NAME(x.lang)).join(", "))} <span class="meta">(not posted)</span></dd>` : ""}
         <dt>Viewing</dt><dd>${o ? `${esc(LANG_NAME(o.lang) || "-")} · ${o.review ? `<span class="warn-text">Review only, not posted</span>` : `<span class="ok-text">Posted</span>`}` : "-"}</dd>
         <dt>Status</dt><dd>${draftTags(d)}</dd>
+        <dt>Created</dt><dd>${esc(String(d.created || "-").slice(0, 16).replace("T", " "))}</dd>
         <dt>Time</dt><dd>${esc(liveIds(bp)[0] ? vnEt(liveIds(bp)[0].publication, liveIds(bp)[0].timezone) : plannedOf(d))}</dd>
       </dl>
       ${bp ? hostBlock(d) + mcBlock(bp) : ""}
