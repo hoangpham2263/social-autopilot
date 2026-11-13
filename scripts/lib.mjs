@@ -153,7 +153,7 @@ export function saveSettings(input = {}) {
       // Plan ahead (days): Create & publish makes enough posts to cover this many days at posts_per_day.
       planning: { ahead_days: int(pl.ahead_days ?? cur.planning?.ahead_days ?? 7, 'planning.ahead_days', 1) },
       // Research: only the human-like pause between page actions; there are no run or post limits.
-      research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay, source_minutes: int(r.source_minutes ?? cr.source_minutes ?? 3, 'research.source_minutes', 1),
+      research: { ...Object.fromEntries(Object.entries(cr).filter(([k]) => !RESEARCH_DROPPED.includes(k))), delay_seconds: delay, source_minutes: int(r.source_minutes ?? cr.source_minutes ?? 0, 'research.source_minutes', 0),
         ...(r.chrome_path !== undefined ? { chrome_path: String(r.chrome_path).trim().slice(0, 300) } : {}), ...(r.chrome_user_data_dir !== undefined ? { chrome_user_data_dir: String(r.chrome_user_data_dir).trim().slice(0, 300) } : {}), ...(r.chrome_profile !== undefined ? { chrome_profile: String(r.chrome_profile).trim().slice(0, 60) } : {}), ...(r.chrome_check_required !== undefined ? { chrome_check_required: bool(r.chrome_check_required, 'research.chrome_check_required') } : {}), ...(r.chrome_check_minutes !== undefined ? { chrome_check_minutes: int(r.chrome_check_minutes, 'research.chrome_check_minutes', 0) } : {}) },
       metricool: Object.fromEntries(Object.entries(cur.metricool || {}).filter(([k]) => k !== 'default_mode')),
       codex: { command: str(cx.command ?? cur.codex?.command, 'codex.command'), timeout_minutes: int(cx.timeout_minutes ?? cur.codex?.timeout_minutes, 'codex.timeout_minutes', 1), concurrency: int(cx.concurrency ?? cur.codex?.concurrency ?? 3, 'codex.concurrency', 1), retry_wait_seconds: int(cx.retry_wait_seconds ?? cur.codex?.retry_wait_seconds ?? 60, 'codex.retry_wait_seconds', 0) },
@@ -828,7 +828,7 @@ export function brandDiscovery(social, { force = false } = {}) {
   if (!d || typeof d !== 'object' || (d.enabled !== true && !force)) return { enabled: false, platforms: [], keywords: [], hashtags: [], product_fit, max_per_platform: 0 };
   const platforms = (Array.isArray(d.platforms) ? d.platforms : []).filter((p) => p && p.enabled === true && DISCOVERY_PLATFORMS.includes(p.id)).map((p) => ({ id: p.id, notes: typeof p.notes === 'string' ? p.notes : '' }));
   const retired = (Array.isArray(d.platforms) ? d.platforms : []).filter((p) => p && p.enabled === true && RETIRED_PLATFORMS.includes(p.id)).map((p) => p.id);
-  return { enabled: true, platforms, ...(retired.length ? { retired } : {}), keywords: strs(d.keywords), hashtags: strs(d.hashtags).map((h) => h.replace(/^#/, '')), product_fit, max_per_platform: Number.isInteger(d.max_per_platform) && d.max_per_platform > 0 ? d.max_per_platform : 15 };
+  return { enabled: true, platforms, ...(retired.length ? { retired } : {}), keywords: strs(d.keywords), hashtags: strs(d.hashtags).map((h) => h.replace(/^#/, '')), product_fit, max_per_platform: Number.isInteger(d.max_per_platform) && d.max_per_platform > 0 ? d.max_per_platform : 0 /* 0 = no cap; kept only for old configs, never enforced */ };
 }
 
 export function latestRun(brand) {

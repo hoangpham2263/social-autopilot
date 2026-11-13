@@ -16,6 +16,7 @@ import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial, saveOverride } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
+import { runProgress } from "./run-progress.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar, registryAll, resetRegistry } from "../scripts/store.mjs";
 import { promptList, skillLine, ALL_BRANDS, FLOW_IMAGES_TEXT, EXTERNAL_TEXT } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
@@ -323,6 +324,7 @@ async function handle(req, res) {
   // Prompt tab, Run now: POST starts headless Claude (409 when a run is active), POST /stop kills it, GET = live status (no secrets).
   if (path === "/api/agent-run" && req.method === "GET") return api(res, () => agentRun.status());
   if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); const r = agentRun.start({ mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started } : { error: r.error }); }
+  if (path === "/api/run-progress" && req.method === "GET") return api(res, () => runProgress(agentRun.status(), discovered().brands.filter((b) => b.usable).map((b) => b.id)));
   if (path === "/api/agent-run/stop" && req.method === "POST") { const r = agentRun.stop(); return send(res, r.status, r.ok ? { ok: true } : { error: r.error }); }
   // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
   // current-<mode>.json) and the last run log of the mode. POST = Copy prompt: a new pending run (resets the panel).

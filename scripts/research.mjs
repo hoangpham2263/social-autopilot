@@ -140,7 +140,7 @@ export function platformStats(d) {
     if (q.state === 'pending') s.pending++; else s.done++;
     if (q.state === 'blocked') s.blocked = true;
   }
-  for (const s of Object.values(per)) s.capped = !!d?.max_per_platform && s.kept >= d.max_per_platform;
+  for (const s of Object.values(per)) s.capped = false; /* no per-platform cap: every fitting post is kept */
   return per;
 }
 // What the agent collects next: (1) a reference page without a result (its share of the target); (2) once every
@@ -153,18 +153,19 @@ export function collectInfo(brand, kind, id, platform, share = 0, url = '') {
   const f = `--brand ${brand} --for-${kind} ${id}`;
   return { open: url, scroll: scrollHint(platform, lo, hi), scroll_wait_seconds: [lo, hi],
     script: `node scripts/collect.mjs script ${f}`, script_run: 'Once per session run install.js (node scripts/collect.mjs install; browser_run_code_unsafe + filename); then open the page (after install) and run the small file: it scrolls the page BY ITSELF (polite waits) and returns ONE result per round. That command WRITES the extract script to research.script_dir (~/.playwright-mcp/social-autopilot, the app must be running) and prints its path; run it with browser_run_code_unsafe using the filename parameter (never paste or copy it): the Node side of the script posts the result to the app and returns {saved:true,total,tag,bytes}; if it returns saved:false use the b64 it returns', from_page: `node scripts/collect.mjs from-page ${f}` /* no --b64: only when the script returned saved:false with a b64 */, target: share || 0,
-    stop_rules: 'stop when: the script says crawl.stop end | known | blocked; the session time budget (research.source_minutes, default 3 per source, RESUMABLE) is over -> result --state partial (the resume cursor is saved, nothing is lost); the target is reached; every post is already known (top check). A new or partial source is NOT stopped at known posts: it goes to the end of the page. crawl.stop time = only this round is over: run the same file again. Fallback: ' + FALLBACK,
+    stop_rules: 'stop when: the script says crawl.stop end | known | blocked; NEVER stop for time (no per-source time budget by default; only an explicit research.source_minutes > 0 does, then result --state partial, resumable); a 429 / rate-limit page is NOT the end of a source: wait (back off 30-120 s, doubling) and retry the same page in this run, record blocked only after repeated failures; the target is reached; every post is already known (top check). A new or partial source is NOT stopped at known posts: it goes to the end of the page. crawl.stop time = only this round is over: run the same file again. Fallback: ' + FALLBACK,
     adapter: { platform, ...a } };
 }
 const doText = (brand, kind, id, extra, states) => `ONE path: once per session run install.js (node scripts/collect.mjs install); open the "open" URL with Playwright MCP (browser_navigate, after install); run the script command (it writes the file under research.script_dir and prints its path; the app must be running); run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste or copy it. The script SCROLLS BY ITSELF (polite waits, bringToFront, scrollBy, no waitForFunction) until it meets 3 known posts in a row (top check, only for a complete source), reaches the end of the page, uses its round time (about 24 s) or detects a block (login wall / captcha), then returns ONE result (its Node side posts it to the app and returns {saved:true,total,tag,bytes,crawl:{stop,...}}). Then run from_page with no --b64 (only if the script returned saved:false with a b64, pass it AS IS, never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json, says stop or run again). crawl.stop "time" means only the ROUND is over: run the SAME file again (the page keeps its state; no new script command) and from_page again; stop on crawl.stop end | known | blocked or when from_page says stop${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and run again. The per-source time budget is per SESSION and resumable: over it, record --state partial (the tool saves the resume cursor; the next run continues). ${FALLBACK} ${BROWSER_RULES}`;
 // Per-source time cap: next stamps issued_at the first time it issues a source/query; every later call prints elapsed and, over the limit, stop "time".
-export const sourceMinutes = (cfg = settings().research?.source_minutes) => (Number(cfg) > 0 ? Number(cfg) : 3);
+// 0 / unset = NO per-source time budget (a run never stops for time); a positive value is an explicit user opt-in.
+export const sourceMinutes = (cfg = settings().research?.source_minutes) => (Number(cfg) > 0 ? Number(cfg) : 0);
 export const TIME_NEXT = "over the session time budget of this source: record research.mjs result --state partial --note 'time limit' (nothing is lost: the registry saves a resume cursor and the next run continues from it), keep what you already have, and go to the next source";
 export function timeInfo(issuedAt, now = Date.now(), limit = sourceMinutes()) {
   const t0 = Date.parse(issuedAt || '');
   if (!Number.isFinite(t0)) return {};
-  const sec = Math.max(0, Math.round((now - t0) / 1000)), over = sec >= limit * 60;
-  return { time_limit_minutes: limit, started: issuedAt, elapsed: `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`, ...(over ? { stop: 'time', time_over: true, next: TIME_NEXT } : {}) };
+  const sec = Math.max(0, Math.round((now - t0) / 1000)), over = limit > 0 && sec >= limit * 60;
+  return { ...(limit > 0 ? { time_limit_minutes: limit } : {}), started: issuedAt, elapsed: `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`, ...(over ? { stop: 'time', time_over: true, next: TIME_NEXT } : {}) };
 }
 const FALLBACK = "If the extract script errors, or still returns 0 posts / total_on_page 0 after two EXTRA extracts (scroll once more between them) on a page that visibly has posts, STOP using the script for that source: read the page yourself (Playwright MCP snapshot, a small browser_evaluate, or a screenshot), write the posts you see in the same small JSON the script returns ({platform, url, tiles:[{id, url, image_urls, caption, author, date_text}]}, no checksum) and pass it to collect.mjs from-page --json '<that>' (the tool downloads the images, skips known posts, writes raw.json; verified:false is expected); then the same loop (look at images, fit, counters, stop rules, time cap)." + " Facebook: open the page, scroll once with the scrollBy snippet BEFORE the first extract (the feed only renders after a real scroll); an empty first extract on a page that was NOT scrolled is expected, not a script failure, and does not count toward the two empty extracts of the fallback.";
 export const REFERENCE_RULE = `Every reference source gets its turn before discovery (${'`next`'} will not move to discovery while one has no result). Never skip a source to save output: skipping is allowed only with result --state blocked|partial|known|end and a reason. Login wall (Facebook or any site): result --state blocked --note "login wall", go on, and re-check that source ONCE at the end of this brand's run (Chrome may have been signed in meanwhile).`;
@@ -183,10 +184,10 @@ export function nextTask(run) {
   if (!d?.queries?.length) return { step: 'done', reason: 'reference pages done; no discovery in this run', total, target };
   const per = platformStats(d);
   const cands = (d.platforms || []).map((p) => per[p.id]).filter((s) => s && s.pending && !s.blocked && !s.capped);
-  if (!cands.length) return { step: 'done', reason: d.queries.some((q) => q.state === 'pending') ? 'every platform with queries left is capped (max_per_platform) or blocked' : 'every discovery query is done', total, target };
+  if (!cands.length) return { step: 'done', reason: d.queries.some((q) => q.state === 'pending') ? 'every platform with queries left is blocked' : 'every discovery query is done', total, target };
   const pick = cands.reduce((a, b) => (b.done < a.done ? b : a));
   const q = d.queries.find((x) => x.platform === pick.id && x.state === 'pending');
-  const share = Math.max(0, Math.min(d.max_per_platform - pick.kept, target ? left : Infinity));
+  const share = target ? left : 0; // no per-platform cap: only what is left of the run target (0 = open)
   return { step: 'discovery', query: q.id, platform: q.platform, kind: q.kind, term: q.term, found_by: q.found_by, url: q.url, dir: q.dir, raw_file: q.raw_file, downloads: q.downloads, share, platform_notes: pick.notes, product_fit: d.product_fit, total, target, ...collectInfo(run.brand, 'query', q.id, q.platform, share, q.url),
     ...timeInfo(q.issued_at), do: doText(run.brand, 'query', q.id, `; LOOK at the images and keep only posts whose product is one of product_fit.types (collect.mjs fit; from-page downloads at most ${share} posts)`, 'done|limit|empty|blocked|partial') };
 }
@@ -385,10 +386,10 @@ function ingestQuery(args, brand, { dir, runFile, run }) {
   const { dropped, posts } = checkImages(fresh, q.dir);
   const per = platformStats(d)[q.platform] || { kept: 0 };
   const target = run.mode?.max_posts || 0, left = target ? Math.max(0, target - brandTotal(run)) : Infinity;
-  const cap = Math.max(0, Math.min(d.max_per_platform - per.kept, left));
+  // every fitting post of this round is kept (no per-platform / per-query cap; the target only stops the NEXT round)
+  const cap = 0;
   const src = { id: `discovery-${q.platform}`, url: q.url, name: q.platform, platform: q.platform, found_by: q.found_by, query: q.id };
-  const r = cap > 0 ? addPosts(brand.id, src, posts, { run: run.date, limit: cap, productFit: d.product_fit, requireFit: true })
-    : { added: [], duplicates: [], unhashed: 0, hidden: 0, rejected: [], dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt max_per_platform / mục tiêu của lượt' })) };
+  const r = addPosts(brand.id, src, posts, { run: run.date, limit: cap, productFit: d.product_fit, requireFit: true });
   const seen = before.size ? [] : seenRejected(raw, { platform: q.platform, found_by: q.found_by });
   logRejected(brand.id, seen, { source: src.id, run: run.date, query: q.id });
   q.kept = (q.kept || 0) + r.added.length; q.rejected_off_brand = (q.rejected_off_brand || 0) + r.rejected.length + seen.length; q.duplicates = (q.duplicates || 0) + r.duplicates.length; q.unjudged = (q.unjudged || 0) + (r.unjudged || []).length; q.ingested = stamp();
@@ -443,9 +444,7 @@ function ingest(args) {
     const left = mode.max_posts ? Math.min(Math.max(0, mode.max_posts - brandNew), Math.ceil(Math.max(0, mode.max_posts - brandNew) / waiting)) : 0;
     // Posts that PASSED fit are good posts: all of them are ingested (beyond the share too) and count toward the brand target, so the next shares shrink.
     const keptFit = posts.filter((p) => p.product_fit && String(p.product_fit.type || '').trim()).length;
-    const r = mode.max_posts && !left
-      ? { added: [], duplicates: [], unhashed: 0, dropped: posts.map((p) => ({ post_url: p.post_url, reason: 'vượt --max-posts' })), hidden: 0, rejected: [] }
-      : addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left > 0 ? Math.max(left, keptFit) : left, crawlMode: itemMode, productFit });
+    const r = addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left > 0 ? Math.max(left, keptFit) : 0, crawlMode: itemMode, productFit });
     // truthful counts: kept = fit posts that really passed the store checks (type must be a valid brand type); a repeat ingest keeps the first ingest's numbers
     const prevIngests = readJson(logPath, { ingests: [] }).ingests || [];
     const keptNow = Math.max(0, keptFit - r.rejected.length - (r.unjudged || []).length);

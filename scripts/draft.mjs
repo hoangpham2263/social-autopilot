@@ -410,8 +410,8 @@ export function image(args, s = settings()) {
   try {
     const runCodex = () => c.shell
     // A .cmd shim needs the shell; it gets one command string (no args array with shell: true, Node DEP0190).
-      ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
-      : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+      ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+      : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
     // A rate-limit/quota answer: wait (codex.retry_wait_seconds), try once more, then image_failed.
     const wait = Number(process.env.SA_CODEX_RETRY_WAIT_SECONDS ?? s.codex.retry_wait_seconds ?? 60);
     for (let attempt = 1; ; attempt++) {
@@ -718,8 +718,8 @@ function imageExtras(dir, draft, s, { force = false } = {}) {
     try { release = takeCodexSlot(s); } catch (e) { fail(e.message); continue; }
     try {
       r = c.shell
-        ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
-        : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: s.codex.timeout_minutes * 60000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+        ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+        : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
       fs.appendFileSync(path.join(dir, 'codex.log'), `\n$ codex ${codexArgs.join(' ')} < prompt-${k}.txt\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}\n`, 'utf8');
     } finally { release(); }
     if (!fs.existsSync(target)) { const fresh = fs.readdirSync(dir).filter((x) => !before.has(x) && /\.png$/i.test(x)); if (fresh.length === 1) fs.renameSync(path.join(dir, fresh[0]), target); }
