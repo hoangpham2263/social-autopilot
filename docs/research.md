@@ -193,3 +193,10 @@ Bài trùng ghi vào `duplicates.json` (khớp bài nào, luật nào); báo cá
 - Mở lại lượt cùng ngày từng ingest lại `raw.json` cũ và đếm thành bài trùng giả: `start` giờ chuyển dữ liệu cũ vào `archive/`, `ingest` bỏ qua link đã ingest.
 - Script trích xuất chỉ đọc trang hiện tại nên trả về ngay; việc cuộn và quyết khi nào dừng là của Claude. Selector dễ hỏng khi giao diện đổi: mọi selector gom ở khối `SELECTORS` đầu mỗi adapter, Claude xem DOM, sửa ở đó rồi trích xuất lại.
 - Tìm theo từ khoá ra nhiều sản phẩm lạc loại (đèn LED dây, đồ kim loại...): kiểm `product_fit` trước khi tải, không lưu bài sai loại.
+
+
+## Own browser mode (default)
+
+**Own browser (default, `browser.mode: "own"`).** Research (Run now) can use the tool's own Chrome profile (`workspace/browser-profile`, local, gitignored, never committed or logged) instead of your Chrome + extension. Run tab > Browser > **Open browser to log in** opens a visible Chrome on that profile with Facebook, Instagram, Pinterest, Etsy, Houzz and Flow (Google): log in by hand (the tool never sees passwords), close the window. Runs then start `npx @playwright/mcp@latest --browser chrome --user-data-dir <profile> --headless` in the background: no Connect click, no visible window, no clash with other sessions. The login window and a run cannot hold the profile at the same time (each refuses while the other is active). A login wall or checkpoint ends the run with the hint "Log in again: Run tab > Browser > Open browser to log in". Settings: `browser.mode` (`own` | `extension`), `browser.headless` (default true; switch off if a site blocks headless), `browser.profile_dir`. `extension` keeps the old Connect flow.
+
+Login notes: Facebook and Instagram need a signed-in account to read; Facebook may show a checkpoint for automated browsers (switch `browser.headless` off in Settings if a site blocks headless). Pinterest, Etsy and Houzz work signed out. Flow needs the Google account. Unverified until a real login and headless run have been done once.

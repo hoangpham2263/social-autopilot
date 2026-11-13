@@ -69,3 +69,8 @@ With the Images option of the Run tab on Google Flow (default = settings `image_
 - Connect: the Welcome page of the chosen Chrome profile (Run tab > Chrome) must be clicked; if it is not, the run ends with "The Playwright extension did not connect" in the live panel.
 - One browser = one agent: close any other session using the Playwright connect page first (the app cannot detect it; it only refuses a second headless run of its own).
 - Never allowed in Create: Metricool write tools.
+
+
+## Own browser mode (default)
+
+In Own-browser mode Create with Flow runs in the tool's own Chrome profile (log in to Google once: Run tab > Browser > Open browser to log in), headless in the background; no Connect. Unlike extension mode, downloads can be captured: in `browser_run_code_unsafe` use `const [d] = await Promise.all([page.waitForEvent('download'), <click>]); await d.saveAs(<absolute path under the draft folder or Downloads>)`, then `register-image --from <that file>`. A Google login wall or checkpoint: stop and report; the person re-opens the login window. `browser.mode: "extension"` keeps the Downloads-folder flow above.
