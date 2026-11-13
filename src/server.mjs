@@ -22,9 +22,7 @@ import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
 import { accounts } from "../core/setup/accounts.mjs";
-import { chromeInfo, openChromeProfile, chromeSetupCheck } from "../core/setup/chrome.mjs";
 import { listLogs, showLog, addLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs";
-import { readCheck, checkStatus } from "../scripts/chrome-check.mjs";
 import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 import { findClaude } from "../core/setup/claude-cli.mjs";
@@ -328,8 +326,6 @@ async function handle(req, res) {
   if (path === "/api/agent-run/stop" && req.method === "POST") { const r = agentRun.stop(); return send(res, r.status, r.ok ? { ok: true } : { error: r.error }); }
   // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
   // current-<mode>.json) and the last run log of the mode. POST = Copy prompt: a new pending run (resets the panel).
-  // Prompt tab, Chrome check line: reads workspace/runs/chrome-check.json only (never touches Chrome).
-  if (path === "/api/chrome-check" && req.method === "GET") return api(res, () => { const record = readCheck(); return { record, status: checkStatus(record) }; });
   if (path === "/api/progress" && req.method === "GET") return api(res, () => {
     const view = progressView(get("mode"));
     const last = listLogs({ mode: view.mode, limit: 1 })[0];
@@ -393,9 +389,6 @@ async function handle(req, res) {
   });
   // Tổng quan, Chọn skill / Đổi skill: the skill folders found in a source folder (default the vaniecom-workspace skills).
   // POST (session token), so no other page can list folders on this machine.
-  // Chrome profiles (read only) and opening a window in one profile (session token via the POST guard, loopback only, no CORS; allow-lists in core/setup/chrome.mjs).
-  if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => chromeInfo({ settings: settings() }));
-  if (path === "/api/chrome-setup-check" && req.method === "GET") return api(res, () => ({ ...chromeSetupCheck({ profile: new URL(req.url, "http://x").searchParams.get("profile") || "", settings: settings() }), last_full_check: readCheck() }));
   // Own browser (core/setup/own-browser.mjs): status, the visible login window (fixed site URLs only, refused while a headless run holds the profile),
   // and the login state per site from cookie METADATA (names/expiry of allow-listed cookies; never values, never logged). Same guards as every /api route.
   if (path === "/api/browser" && req.method === "GET") return api(res, () => browserInfo({ settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }));
@@ -413,7 +406,6 @@ async function handle(req, res) {
     return { ok: true, logins: rows.map(outRow), summary: buildSummary(pickRows(rows, platforms.join(",")), { source: "visit" }), visit: visitProgress(), leftover: r.leftover };
   });
   if (path === "/api/open-login-browser" && req.method === "POST") return api(res, async () => { const b = await body(req); const platform = String(b.platform ?? ""); if (platform && !PLATFORMS.some((x) => x.id === platform)) throw new Error("Unknown platform."); if (visitActive()) throw new Error("A login check is running: wait until it ends, then open the login window."); const r = openLoginBrowser({ platform, settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }); cachedLoginStatus.cache = null; clearVisitResults(); return r; });
-  if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
   if (path === "/api/skills" && req.method === "GET") return api(res, () => ({ default_source: defaultSource() }));
