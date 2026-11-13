@@ -163,7 +163,7 @@ details[open] > summary { margin-bottom: 6px; }
 .ar-logbox { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
 .ar-bar { display: flex; align-items: center; gap: 4px 12px; min-height: 22px; }
 .ar-bar[hidden] { display: none; }
-.ar-track { position: relative; flex: 1 1 auto; height: 6px; border-radius: 999px; background: #e4e6eb; overflow: hidden; }
+.ar-track { position: relative; flex: 1 1 auto; height: 10px; border-radius: 999px; background: #e4e6eb; overflow: hidden; }
 .ar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: var(--accent); transition: width .4s ease; }
 .ar-seg { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.65) 50%, rgba(255,255,255,0) 100%); background-size: 200% 100%; animation: arShimmer 1.4s linear infinite; }
 .ar-seg[hidden] { display: none; }
@@ -171,7 +171,11 @@ details[open] > summary { margin-bottom: 6px; }
 .ar-track.ok .ar-fill { background: #2e8b57; } .ar-track.bad .ar-fill { background: rgb(176, 0, 0); } .ar-track.warn .ar-fill { background: #b06000; }
 .ar-barmeta { flex: 0 0 auto; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 @keyframes arShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .ar-seg { animation: none; background: rgba(255,255,255,.35); } .ar-track.indet .ar-fill { animation: none; background: var(--accent); opacity: .45; } .ar-fill { transition: none; } }
+/* While a run is active the bar visibly MOVES: diagonal stripes run along the filled part and the next segment, so it never looks frozen. */
+.ar-track.run:not(.indet) .ar-fill { background-color: var(--accent); background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.30) 0 10px, rgba(255,255,255,0) 10px 20px); background-size: 28px 28px; animation: arStripe .7s linear infinite; }
+.ar-track.run .ar-seg { background-color: rgba(24,119,242,.35); background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.55) 0 10px, rgba(255,255,255,0) 10px 20px); background-size: 28px 28px; animation: arStripe .7s linear infinite; }
+@keyframes arStripe { from { background-position: 0 0; } to { background-position: 28px 0; } }
+@media (prefers-reduced-motion: reduce) { .ar-track.run:not(.indet) .ar-fill, .ar-track.run .ar-seg { animation-duration: 2.4s; } .ar-seg { animation: none; background: rgba(255,255,255,.35); } .ar-track.indet .ar-fill { animation: none; background: var(--accent); opacity: .45; } .ar-fill { transition: none; } }
 .ar-feed { margin: 0; padding: 8px; min-height: 4.5em; max-height: 40vh; border: 1px solid var(--line); background: #fafafa; overflow: auto; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
 .ar-feed .ar-fl { overflow-wrap: anywhere; } .ar-feed .ar-ft { color: var(--muted); font-size: 12px; margin-right: 6px; font-variant-numeric: tabular-nums; } .ar-feed .ar-fn { color: var(--muted); }
 .ar-tech { font-size: 12px; } .ar-tech > summary { color: var(--muted); cursor: default; width: max-content; } .ar-tech > .ar-log { margin-top: 4px; }
@@ -1451,7 +1455,7 @@ header + * { margin-top: 0; }
       label = `step ${Math.min(ps.total, cur)} of ${ps.total}`;
       if (!busy && st === "done") pct = 100;
     } else if (!busy) pct = st === "done" ? 100 : 0;
-    track.className = "ar-track " + cls + (busy && !ps ? " indet" : "");
+    track.className = "ar-track " + cls + (busy ? " run" : "") + (busy && !ps ? " indet" : "");
     fill.style.width = busy && !ps ? "" : pct + "%";
     if (busy && ps) { seg.hidden = false; seg.style.left = pct + "%"; seg.style.width = Math.min(100 / ps.total, 100 - pct) + "%"; } else seg.hidden = true;
     track.setAttribute("aria-valuenow", String(pct));
