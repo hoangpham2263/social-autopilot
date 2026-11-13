@@ -63,23 +63,23 @@ export function sanitize(text, max = MAX_LINE) {
 // ----- friendly live lines (Vietnamese, for the person): built from tool NAMES and a few safe words of the input; never a path, id, token or JSON -----
 export const FRIENDLY_LINES = 40;
 const MODE_VI = { research: "Research", create: "Create", publish: "Publish" };
-const baseName = (f) => String(f || "").split(/[\/]/).pop().toLowerCase();
+const baseName = (f) => String(f || "").split(/[\\/]/).pop().toLowerCase();
 export function friendlyTool(name, input = {}) {
   const n = String(name || ""), i = input && typeof input === "object" ? input : {};
   if (n === "Bash") {
     const c = String(i.command || "");
-    if (/pipeline.mjss+create/.test(c)) return "Đang tạo bài (pipeline create)";
-    if (/pipeline.mjs/.test(c)) return "Đang chạy quy trình bài đăng";
-    if (/draft.mjss+register-image/.test(c)) return "Đang đăng ký ảnh vào bài nháp";
-    if (/draft.mjss+flow-brief/.test(c)) return "Đang chuẩn bị mô tả ảnh";
-    if (/draft.mjs/.test(c)) return "Đang xử lý bài nháp";
-    if (/(?:research|collect).mjs/.test(c)) { const m = /--source[= ]+([a-z0-9][a-z0-9,-]{0,60})/i.exec(c); return m ? `Đang đọc nguồn ${m[1]}` : "Đang đọc nguồn"; }
-    if (/host-image|finalize.mjss+approve/.test(c)) return "Đang đưa ảnh lên host";
-    if (/queue.mjs|brands.mjs/.test(c)) return "Đang kiểm tra trạng thái";
+    if (/pipeline\.mjs\s+create/.test(c)) return "Đang tạo bài (pipeline create)";
+    if (/pipeline\.mjs/.test(c)) return "Đang chạy quy trình bài đăng";
+    if (/draft\.mjs\s+register-image/.test(c)) return "Đang đăng ký ảnh vào bài nháp";
+    if (/draft\.mjs\s+flow-brief/.test(c)) return "Đang chuẩn bị mô tả ảnh";
+    if (/draft\.mjs/.test(c)) return "Đang xử lý bài nháp";
+    if (/(?:research|collect)\.mjs/.test(c)) { const m = /--source[= ]+([a-z0-9][a-z0-9,-]{0,60})/i.exec(c); return m ? `Đang đọc nguồn ${m[1]}` : "Đang đọc nguồn"; }
+    if (/host-image|finalize\.mjs\s+approve/.test(c)) return "Đang đưa ảnh lên host";
+    if (/queue\.mjs|brands\.mjs/.test(c)) return "Đang kiểm tra trạng thái";
     return "Đang xử lý…";
   }
   if (n === "Write" || n === "Edit") return /caption|idea/.test(baseName(i.file_path)) ? "Đang viết nội dung (caption/ý tưởng)" : "Đang ghi dữ liệu";
-  if (n === "Read") return /.(png|jpe?g|webp|gif)$/.test(baseName(i.file_path)) ? "Đang xem ảnh" : "Đang đọc tài liệu";
+  if (n === "Read") return /\.(png|jpe?g|webp|gif)$/.test(baseName(i.file_path)) ? "Đang xem ảnh" : "Đang đọc tài liệu";
   if (n === "Glob" || n === "Grep") return "Đang tìm dữ liệu";
   if (n === "mcp__playwright__browser_navigate") { try { return `Đang mở ${new URL(String(i.url)).hostname}`; } catch { return "Đang mở trang web"; } }
   if (/^mcp__playwright__browser_(click|type|press_key|run_code_unsafe|fill_form|select_option|file_upload|evaluate)$/.test(n)) return "Đang thao tác trên trình duyệt";
@@ -136,11 +136,11 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
 
   const friendlyFile = join(runsDir, "agent-run-friendly.json");
   const saveFriendly = (run) => { try { mkdirSync(runsDir, { recursive: true }); writeFileSync(friendlyFile, JSON.stringify(run.friendly)); } catch {} };
-  const friendlyView = (list) => list.slice(-FRIENDLY_LINES).map((f) => (f.n > 1 ? `${f.text} ×${f.n}` : f.text));
+  const friendlyView = (list) => (Array.isArray(list) ? list : []).slice(-FRIENDLY_LINES).map((f) => ({ t: f.t || "", text: String(f.text || ""), n: f.n || 1 }));
   const say = (run, text) => {
     const t = sanitize(text, 160); if (!t) return;
     const last = run.friendly.at(-1);
-    if (last && last.text === t) last.n++; else { run.friendly.push({ text: t, n: 1 }); if (run.friendly.length > 200) run.friendly.splice(0, run.friendly.length - 200); }
+    if (last && last.text === t) { last.n++; last.t = new Date(now()).toISOString(); } else { run.friendly.push({ t: new Date(now()).toISOString(), text: t, n: 1 }); if (run.friendly.length > 200) run.friendly.splice(0, run.friendly.length - 200); }
     saveFriendly(run);
   };
   const readState = () => { try { return JSON.parse(readFileSync(stateFile, "utf8")); } catch { return null; } };
@@ -160,7 +160,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       run.state.turns = (run.state.turns || 0) + 1;
       if (typeof ev.error === "string") scan(run, ev.error);
       for (const c of ev.message.content) {
-        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); say(run, c.text.replace(/s+/g, " ").trim()); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; }
+        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); say(run, c.text.replace(/\s+/g, " ").trim()); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; }
         else if (c.type === "tool_use" && typeof c.name === "string") { addLine(run, "tool: " + c.name); say(run, friendlyTool(c.name, c.input)); }
       }
       touch(run);

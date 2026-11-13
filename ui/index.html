@@ -150,6 +150,20 @@ details[open] > summary { margin-bottom: 6px; }
 .ar-logbox > .label { font-size: 12px; color: var(--muted); }
 .ar-logbox[hidden] { display: none; }
 .ar-logbox { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
+.ar-bar { display: flex; align-items: center; gap: 4px 12px; min-height: 22px; }
+.ar-bar[hidden] { display: none; }
+.ar-track { position: relative; flex: 1 1 auto; height: 6px; border-radius: 999px; background: #e4e6eb; overflow: hidden; }
+.ar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: var(--accent); transition: width .4s ease; }
+.ar-seg { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.65) 50%, rgba(255,255,255,0) 100%); background-size: 200% 100%; animation: arShimmer 1.4s linear infinite; }
+.ar-seg[hidden] { display: none; }
+.ar-track.indet .ar-fill { width: 100%; background: linear-gradient(90deg, #cfe2fd 0%, var(--accent) 50%, #cfe2fd 100%); background-size: 200% 100%; animation: arShimmer 1.4s linear infinite; }
+.ar-track.ok .ar-fill { background: #2e8b57; } .ar-track.bad .ar-fill { background: rgb(176, 0, 0); } .ar-track.warn .ar-fill { background: #b06000; }
+.ar-barmeta { flex: 0 0 auto; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@keyframes arShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ar-seg { animation: none; background: rgba(255,255,255,.35); } .ar-track.indet .ar-fill { animation: none; background: var(--accent); opacity: .45; } .ar-fill { transition: none; } }
+.ar-feed { margin: 0; padding: 8px; min-height: 4.5em; max-height: 40vh; border: 1px solid var(--line); background: #fafafa; overflow: auto; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.ar-feed .ar-fl { overflow-wrap: anywhere; } .ar-feed .ar-ft { color: var(--muted); font-size: 12px; margin-right: 6px; font-variant-numeric: tabular-nums; } .ar-feed .ar-fn { color: var(--muted); }
+.ar-tech { font-size: 12px; } .ar-tech > summary { color: var(--muted); cursor: default; width: max-content; } .ar-tech > .ar-log { margin-top: 4px; }
 .ar-log { margin: 0; flex: 0 1 auto; min-height: 4.5em; max-height: 40vh; padding: 8px; border: 1px solid var(--line); background: #fafafa; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .dot-run { background: var(--accent); }
 .run-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
@@ -263,6 +277,20 @@ details.sec[open] > summary { margin-bottom: 12px; }
 #page-settings details.sec > summary { margin: 0; } #page-settings details.sec[open] > summary { margin-bottom: 12px; }
 #page-prompt details.sec { flex: 0 0 auto; }
 #page-prompt #prChrome { margin: 0 0 12px; box-sizing: border-box; }
+#prLogins { margin: 10px 0 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; box-sizing: border-box; }
+#prLogins .bl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 28px; }
+#prLogins .bl-head b { font-weight: 600; margin-right: auto; }
+#prLogins .bl-list { min-height: 66px; margin: 4px 0 0; }
+#prLogins .bl-row { display: flex; align-items: center; gap: 6px 10px; min-height: 32px; flex-wrap: wrap; }
+#prLogins .bl-name { min-width: 110px; }
+#prLogins .bl-req { font-size: 11px; letter-spacing: .04em; color: #0b4fb3; background: #e7f0fe; border: 1px solid #8ab4f8; border-radius: 10px; padding: 0 7px; }
+#prLogins .btn { background: #e7f0fe; border-color: #8ab4f8; color: #0b4fb3; border-radius: 8px; }
+#prLogins .btn:hover:not(:disabled) { background: #d2e3fc; border-color: var(--accent); }
+#prLogins .btn:disabled { background: var(--line); border-color: var(--line); color: #6b7280; cursor: not-allowed; }
+#prLogins .bl-row .btn { margin-left: auto; padding: 2px 10px; }
+.bl-lk { display: inline-flex; vertical-align: middle; margin-left: 4px; color: #b45309; cursor: help; }
+.bl-lk:empty { display: none; }
+#prLoginHint { min-height: 0; margin: 6px 0 0; color: #b45309; }
 .sec .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; } .sec .chips:empty { display: none; }
 /* Quiet action: text link in a row of secondary actions. */
 .row-actions .linkbtn { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--accent); text-decoration: underline; cursor: default; }
@@ -402,10 +430,12 @@ header + * { margin-top: 0; }
       <span class="meta" id="prAppHint">Starts Claude Code for you; the live panel below shows progress.</span>
       <span class="status-tag c-amber" id="prRunPill" hidden>A run is active in the app <button class="linkbtn" type="button" id="prRunPillGo">show</button></span>
     </div>
+    <div class="meta" id="prLoginHint" role="status" hidden></div>
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
+      <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span></div>
       <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span> <span id="arLast" class="ar-last"></span></div>
-      <div class="ar-logbox" id="arLogBox"><span class="label">Live log</span><pre class="ar-log" id="arLog"></pre></div>
+      <div class="ar-logbox" id="arLogBox"><span class="label">Live log</span><div class="ar-feed" id="arFeed" aria-live="polite"></div><details class="ar-tech"><summary>Chi tiết kỹ thuật</summary><pre class="ar-log" id="arLog"></pre></details></div>
     </div>
     <!-- Browser for runs: Own browser (dedicated profile, log in once, headless runs) or My Chrome (extension: read only status from GET /api/chrome-check; profile + helpers inside). -->
     <details class="sec" id="prChrome">
@@ -1313,7 +1343,7 @@ header + * { margin-top: 0; }
   for (const b of $$("#prHow button")) b.onclick = () => { store.set("prHow", b.dataset.how); arDraw(); };
   $("#prRunPillGo").onclick = () => { store.set("prHow", "app"); arDraw(); };
   // Run progress: Copy prompt mode keeps "waiting or going"; Run in the app shows it only for an app run or recent steps.
-  let progState = null;
+  let progState = null, progSteps = null, arTick = 0;
   function prRunVis() { const p = progState; $("#prRun").hidden = !p || (howNow() === "app" ? !(arState?.active || p.stepped) : !p.active); }
   const arClock = (n) => (n < 60 ? `${n} s` : `${Math.floor(n / 60)} min ${n % 60} s`);
   function arDraw() {
@@ -1327,12 +1357,12 @@ header + * { margin-top: 0; }
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
     box.hidden = howNow() !== "app"; prRunVis();
-    if (!show) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
+    if (!show) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
     $("#arLast").className = "ar-last"; $("#arLogBox").hidden = false; box.classList.add("has-log");
-    if (noCli) { $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
+    if (noCli) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const endedAt = r.started ? Date.parse(r.started) + (r.elapsed_s || 0) * 1000 : 0;
     if (!busy && endedAt && Date.now() - endedAt > 10 * 60000) { // stale result: one quiet line instead of the result block
-      $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last";
+      $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last";
       $("#arLast").textContent = `Last run ${(AR_CHIP[r.status]?.[0] || r.status).toLowerCase()} ${when(new Date(endedAt).toISOString())}`;
       $("#arLogBox").hidden = true; box.classList.remove("has-log"); return;
     }
@@ -1346,6 +1376,40 @@ header + * { margin-top: 0; }
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
+    arFeedDraw(r); arBarDraw(r);
+  }
+  // Live log for the person: friendly Vietnamese lines (r.friendly = [{t, text, n}]), newest at the bottom; scrolls only when the person is already at the bottom.
+  function arFeedDraw(r) {
+    const feed = $("#arFeed"), list = arr(r.friendly).slice(-40);
+    const html = list.map((f) => `<div class="ar-fl"><span class="ar-ft">${f.t ? esc(hms(f.t)) : ""}</span>${esc(f.text)}${f.n > 1 ? ` <span class="ar-fn">×${f.n}</span>` : ""}</div>`).join("");
+    if (feed.dataset.sig === html) return;
+    const atEnd = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 8;
+    feed.innerHTML = html || `<span class="meta">Chưa có hoạt động.</span>`; feed.dataset.sig = html;
+    if (atEnd) feed.scrollTop = feed.scrollHeight;
+  }
+  const arMmss = (n) => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+  // Progress bar: fill = done steps / total steps of the mode (Run progress data); no step data yet = indeterminate shimmer.
+  function arBarDraw(r) {
+    const bar = $("#arBar"), track = $("#arTrack"), fill = $("#arFill"), seg = $("#arSeg"), meta = $("#arBarMeta");
+    const busy = !!r.active, st = r.status, ps = progSteps && progSteps.mode === r.mode && progSteps.total > 0 ? progSteps : null;
+    bar.hidden = false;
+    const cls = busy ? "" : st === "done" ? "ok" : st === "failed" ? "bad" : "warn";
+    const elapsed = busy && r.started ? Math.max(0, Math.round((Date.now() - Date.parse(r.started)) / 1000)) : r.elapsed_s || 0;
+    let pct = 0, label = "";
+    if (ps) {
+      pct = Math.round((ps.done / ps.total) * 100);
+      const cur = ps.run >= 0 ? ps.run + 1 : Math.min(ps.total, ps.done + 1);
+      label = `step ${Math.min(ps.total, cur)} of ${ps.total}`;
+      if (!busy && st === "done") pct = 100;
+    } else if (!busy) pct = st === "done" ? 100 : 0;
+    track.className = "ar-track " + cls + (busy && !ps ? " indet" : "");
+    fill.style.width = busy && !ps ? "" : pct + "%";
+    if (busy && ps) { seg.hidden = false; seg.style.left = pct + "%"; seg.style.width = Math.min(100 / ps.total, 100 - pct) + "%"; } else seg.hidden = true;
+    track.setAttribute("aria-valuenow", String(pct));
+    const text = (e) => [label, `elapsed ${arMmss(e)}`].filter(Boolean).join(" · ");
+    meta.textContent = text(elapsed);
+    clearInterval(arTick); arTick = 0;
+    if (busy && r.started) arTick = setInterval(() => { if (!arState?.active) { clearInterval(arTick); arTick = 0; return; } meta.textContent = text(Math.max(0, Math.round((Date.now() - Date.parse(arState.started)) / 1000))); }, 1000);
   }
   async function loadAgentRun() {
     clearTimeout(arTimer); arTimer = 0;
@@ -1530,6 +1594,8 @@ header + * { margin-top: 0; }
       const tip = [skipped ? "Skipped" : RUN_TEXT[x.state] || x.state, x.detail, clock(x.at)].filter(Boolean).join(" · ");
       return `<li class="${now ? "now" : skipped ? "skipped" : x.state}" title="${esc(tip)}"><span class="dot ${RUN_DOT[x.state] || "dot-grey"}"></span>${x.n}. ${esc(x.name)}</li>`;
     }).join("");
+    progSteps = run ? { mode, total: states.length, done: states.filter((x) => x.state === "done").length, run: states.findIndex((x) => x.state === "running"), began: lastBegun } : null;
+    try { arDraw(); } catch {}
     const logLink = `<a href="#" data-goto-log>see Log</a>`;
     const parts = [];
     if (run && active) {

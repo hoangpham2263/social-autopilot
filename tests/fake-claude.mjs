@@ -16,6 +16,15 @@ if (behavior === 'secret') out({ type: 'assistant', message: { content: [{ type:
 if (behavior === 'notloggedin') { out({ type: 'assistant', error: 'authentication_failed', message: { content: [{ type: 'text', text: 'Not logged in · Please run /login' }] } }); out({ type: 'result', subtype: 'success', is_error: true, num_turns: 1, result: 'Not logged in · Please run /login' }); process.exit(1); }
 else if (behavior === 'metricool') { out({ type: 'result', subtype: 'success', is_error: true, num_turns: 3, result: 'The Metricool connector needs you to sign in again.' }); process.exit(1); }
 else if (behavior === 'noconnect') { out({ type: 'result', subtype: 'success', is_error: false, num_turns: 9, result: 'Stopped: the browser did not connect after 3 minutes.' }); process.exit(0); }
-else if (behavior === 'sleep' || behavior === 'secret') setInterval(() => {}, 1000);
+else if (behavior === 'friendly') {
+  const tu = (name, input) => out({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } });
+  for (let k = 0; k < 3; k++) tu('Bash', { command: 'node scripts/pipeline.mjs create --brand demo' });
+  tu('Bash', { command: 'node scripts/draft.mjs register-image --id D1 --file C:/x/a.png' });
+  tu('Write', { file_path: 'C:/w/drafts/D1/caption.txt' });
+  tu('Read', { file_path: 'C:/w/drafts/D1/img1.png' });
+  tu('mcp__claude_ai_Metricool_Social_Media_Management__createScheduledPost', {});
+  tu('SomethingNew', { secret: 'x' });
+  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 3, result: 'All done' }); process.exit(0);
+} else if (behavior === 'sleep' || behavior === 'secret') setInterval(() => {}, 1000);
 else if (behavior === 'fail') { console.error('boom: failed with token=ERRSECRET'); process.exit(3); }
 else { out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: 'All done' }); process.exit(0); }

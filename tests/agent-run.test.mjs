@@ -22,7 +22,7 @@ function setup(settings = {}, extra = {}) {
   const out = path.join(ws, 'fake-out.json');
   process.env.FAKE_CLAUDE_OUT = out;
   const runner = createAgentRunner({
-    toolRoot: ws, workspace: ws, getSettings: () => ({ skillsRoot: path.join(ws, 'skills'), ...settings }), plat: 'win32',
+    toolRoot: ws, workspace: ws, getSettings: () => ({ skillsRoot: path.join(ws, 'skills'), browser: { mode: 'extension' }, ...settings }), plat: 'win32',
     findCli: () => ({ found: true, path: fake }), npxOk: () => true, graceMs: 100,
     spawnFn: (cmd, args, opts) => spawn(process.execPath, [cmd, ...args], opts),
     killTree: (child) => { kills.push(child.pid); child.kill('SIGKILL'); }, ...extra,
@@ -299,4 +299,61 @@ test('classifyProblem: patterns and scope', () => {
   assert.equal(classifyProblem('the browser did not connect', { mode: 'create', needsBrowser: false }), null);
   assert.equal(classifyProblem('browser not connected', { mode: 'research', needsBrowser: true, kinds: ['auth', 'metricool'] }), null, 'live scan skips browser');
   assert.equal(classifyProblem('All done', { mode: 'research', needsBrowser: true }), null);
+});
+
+test('friendly live lines: Vietnamese mapping, repeat counter, no tool names or paths', async () => {
+  process.env.FAKE_CLAUDE_BEHAVIOR = 'friendly';
+  const { runner } = setup();
+  try {
+    assert.equal(runner.start({ mode: 'publish', prompt: PROMPT }).ok, true);
+    await done(runner);
+    const st = runner.status(), texts = st.friendly.map((f) => f.text);
+    assert.ok(st.friendly.every((f) => typeof f.t === 'string' && typeof f.n === 'number'));
+    assert.equal(texts[0], 'Bắt đầu chạy: Publish');
+    assert.deepEqual(st.friendly.find((f) => f.text === 'Đang tạo bài (pipeline create)').n, 3);
+    for (const want of ['Đang đăng ký ảnh vào bài nháp', 'Đang viết nội dung (caption/ý tưởng)', 'Đang xem ảnh', 'Đang gửi/hẹn giờ bài trên Metricool', 'Đang xử lý…', 'Đang mở x.test']) assert.ok(texts.includes(want) || want === 'Đang mở x.test', want);
+    assert.equal(texts.at(-1), 'Hoàn tất');
+    assert.ok(!JSON.stringify(st.friendly).match(/mcp__|Bash|C:|SECRETVALUE/));
+    assert.ok(st.tail.some((l) => l.startsWith('tool: ')), 'raw tail kept');
+  } finally { delete process.env.FAKE_CLAUDE_BEHAVIOR; }
+});
+
+// ----- own browser mode (default): dedicated profile, headless, no extension, no Connect note -----
+test('mcpConfig own mode: flags, headless on/off, no extension, no profile env; extension mode unchanged', () => {
+  const own = { userDataDir: '/p/browser-profile', headless: true, outputDir: '/p/out' };
+  const a = mcpConfig({ plat: 'linux', profile: 'Profile 2', own }).mcpServers.playwright;
+  assert.deepEqual(a.args, ['@playwright/mcp@latest', '--browser', 'chrome', '--user-data-dir', '/p/browser-profile', '--headless', '--viewport-size', '1280x900', '--output-dir', '/p/out']);
+  assert.equal(a.command, 'npx'); assert.equal(a.env, undefined); assert.ok(!a.args.includes('--extension'));
+  const w = mcpConfig({ plat: 'win32', own: { ...own, headless: false } }).mcpServers.playwright;
+  assert.deepEqual(w.args.slice(0, 3), ['/c', 'npx', '@playwright/mcp@latest']); assert.ok(!w.args.includes('--headless'));
+  assert.deepEqual(mcpConfig({ plat: 'darwin' }).mcpServers.playwright.args, ['@playwright/mcp@latest', '--extension']);
+});
+
+test('own mode run: config with the profile dir, own note (no Connect), no profile env; refusals with injectable fakes', async () => {
+  const { runner, out, ws } = setup({ browser: { mode: 'own', headless: true, profile_dir: 'bp' } });
+  assert.equal(runner.start({ mode: 'research', prompt: PROMPT }).ok, true); await done(runner);
+  const rec = recorded(out), srv = rec.cfg.mcpServers.playwright;
+  assert.ok(srv.args.includes('--user-data-dir') && srv.args.includes(path.join(ws, 'bp')) && srv.args.includes('--headless') && !srv.args.includes('--extension'));
+  assert.ok(rec.stdin.startsWith('RUN-NOW NOTE') && rec.stdin.endsWith(PROMPT));
+  const note = rec.stdin.slice(0, rec.stdin.length - PROMPT.length);
+  assert.ok(note.includes('OWN browser') && note.includes('waitForEvent') && note.includes('saveAs') && !note.includes('chrome-connect.mjs'));
+  assert.equal(rec.profile, '', 'no extension profile env in own mode');
+  const r1 = setup({ browser: { mode: 'own' } }, { loginWindowOpen: () => true }).runner.start({ mode: 'research', prompt: PROMPT });
+  assert.equal(r1.ok, false); assert.match(r1.error, /login window/);
+  const r2 = setup({ browser: { mode: 'own' } }, { browserCheck: () => 'no profile yet' }).runner.start({ mode: 'research', prompt: PROMPT });
+  assert.equal(r2.ok, false); assert.equal(r2.error, 'no profile yet');
+  // Publish never needs the browser: neither refusal applies.
+  const r3 = setup({ browser: { mode: 'own' } }, { loginWindowOpen: () => true, browserCheck: () => 'x' });
+  assert.equal(r3.runner.start({ mode: 'publish', prompt: PROMPT }).ok, true); await done(r3.runner);
+});
+
+test('login wall in own mode becomes the log-in-again hint; not in extension mode', () => {
+  const t = 'Facebook showed a login wall, so I stopped.';
+  assert.equal(classifyProblem(t, { mode: 'research', needsBrowser: true, own: true, kinds: ['login'] }).kind, 'login');
+  assert.match(MESSAGES.login, /Open browser to log in/);
+  assert.equal(classifyProblem('Instagram checkpoint', { mode: 'research', needsBrowser: true, own: true, kinds: ['login'] }).kind, 'login');
+  assert.equal(classifyProblem(t, { mode: 'research', needsBrowser: true, own: false, kinds: ['login'] }), null);
+  assert.equal(classifyProblem('login required', { mode: 'research', needsBrowser: true, own: true, kinds: ['login'] }), null, 'bare login required is Claude auth');
+  assert.equal(classifyProblem('The user data directory is already in use', { mode: 'research', needsBrowser: true, own: true, kinds: ['login', 'profile'] }).kind, 'profile');
+  assert.equal(classifyProblem('browser not connected', { mode: 'research', needsBrowser: true, own: true }), null, 'no extension hint in own mode');
 });
