@@ -301,6 +301,30 @@ test('classifyProblem: patterns and scope', () => {
   assert.equal(classifyProblem('All done', { mode: 'research', needsBrowser: true }), null);
 });
 
+test('final report: newlines kept, secrets hidden, 12000 cap with notice, saved next to the status', async () => {
+  try {
+    process.env.FAKE_CLAUDE_BEHAVIOR = 'report';
+    const a = setup();
+    assert.equal(a.runner.start({ mode: 'publish', prompt: PROMPT }).ok, true);
+    await done(a.runner);
+    const st = a.runner.status();
+    assert.match(st.report, /^## Report\n\n\*\*Done:\*\* two drafts\.\n\n- first bullet\n- second bullet/);
+    assert.ok(!st.report.includes('zzz9') && !st.report.includes('abc.def.ghi'));
+    assert.match(st.report, /\[hidden\]|X-Collect-Token \[hidden\]/);
+    assert.ok(!st.last_text.includes('\n') && st.last_text.length <= 300, 'headline stays one short line');
+    const saved = JSON.parse(fs.readFileSync(path.join(a.ws, 'runs', 'agent-run.json'), 'utf8'));
+    assert.equal(saved.report, st.report);
+    process.env.FAKE_CLAUDE_BEHAVIOR = 'bigreport';
+    const b = setup();
+    assert.equal(b.runner.start({ mode: 'publish', prompt: PROMPT }).ok, true);
+    await done(b.runner);
+    const big = b.runner.status().report;
+    assert.ok(big.includes('\n') && big.endsWith('\n(report shortened)'));
+    assert.ok(big.length <= 12000 + '\n(report shortened)'.length);
+    assert.ok(big.length > 11000);
+  } finally { delete process.env.FAKE_CLAUDE_BEHAVIOR; }
+});
+
 test('friendly live lines: Vietnamese mapping, repeat counter, no tool names or paths', async () => {
   process.env.FAKE_CLAUDE_BEHAVIOR = 'friendly';
   const { runner } = setup();

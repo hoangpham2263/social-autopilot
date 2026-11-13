@@ -1,5 +1,5 @@
 // Stand-in for `claude` in tests: records its arguments and stdin in FAKE_CLAUDE_OUT, prints stream-json lines.
-// FAKE_CLAUDE_BEHAVIOR: ok (default) | sleep (stays busy) | fail (exit 3) | secret (prints token-like text) | notloggedin | metricool | noconnect. Never calls an AI.
+// FAKE_CLAUDE_BEHAVIOR: ok (default) | sleep (stays busy) | fail (exit 3) | secret (prints token-like text) | notloggedin | metricool | noconnect | report | bigreport. Never calls an AI.
 import fs from 'node:fs';
 const args = process.argv.slice(2);
 const stdin = fs.readFileSync(0, 'utf8');
@@ -15,7 +15,10 @@ out({ type: 'user', message: { content: [{ type: 'tool_result', content: 'TOOLRE
 if (behavior === 'secret') out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Bearer abc.def.ghi X-Collect-Token: zzz9 PLAYWRIGHT_MCP_EXTENSION_TOKEN=TOPSECRET ' + 'A'.repeat(80) }] } });
 if (behavior === 'notloggedin') { out({ type: 'assistant', error: 'authentication_failed', message: { content: [{ type: 'text', text: 'Not logged in · Please run /login' }] } }); out({ type: 'result', subtype: 'success', is_error: true, num_turns: 1, result: 'Not logged in · Please run /login' }); process.exit(1); }
 else if (behavior === 'metricool') { out({ type: 'result', subtype: 'success', is_error: true, num_turns: 3, result: 'The Metricool connector needs you to sign in again.' }); process.exit(1); }
-else if (behavior === 'noconnect') { out({ type: 'result', subtype: 'success', is_error: false, num_turns: 9, result: 'Stopped: the browser did not connect after 3 minutes.' }); process.exit(0); }
+else if (behavior === 'report' || behavior === 'bigreport') {
+  const body = behavior === 'bigreport' ? 'line of report text\n'.repeat(1000) : '## Report\n\n**Done:** two drafts.\n\n- first bullet\n- second bullet\n\nX-Collect-Token: zzz9 and Bearer abc.def.ghi\n\nLast paragraph.';
+  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 4, result: body }); process.exit(0);
+} else if (behavior === 'noconnect') { out({ type: 'result', subtype: 'success', is_error: false, num_turns: 9, result: 'Stopped: the browser did not connect after 3 minutes.' }); process.exit(0); }
 else if (behavior === 'friendly') {
   const tu = (name, input) => out({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } });
   for (let k = 0; k < 3; k++) tu('Bash', { command: 'node scripts/pipeline.mjs create --brand demo' });

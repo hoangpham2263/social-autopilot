@@ -57,6 +57,18 @@ export function sanitize(text, max = MAX_LINE) {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
+// The final report keeps its line breaks (markdown) and is cut only at REPORT_MAX characters.
+export const REPORT_MAX = 12000;
+export function sanitizeReport(text, max = REPORT_MAX) {
+  let s = String(text ?? "").replace(/\r\n?/g, "\n").split("\n").map((l) => {
+    let t = l.replace(/[ \t]+/g, " ").replace(/\s+$/, "");
+    for (const [re, to] of SCRUBS) t = t.replace(re, to);
+    return t;
+  }).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (s.length > max) s = s.slice(0, max).replace(/\s+$/, "") + "\n(report shortened)";
+  return s;
+}
+
 // Extension mode (default args below): attaches to the person's Chrome through the Playwright MCP Bridge extension.
 // Own mode (own = { userDataDir, headless, outputDir }): its own Chrome profile, already logged in by the person; headless unless own.headless is false.
 // Flags (checked with `npx @playwright/mcp@latest --help`): --browser chrome, --user-data-dir <path>, --headless, --viewport-size WxH, --output-dir <path>.
@@ -160,14 +172,14 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       run.state.turns = (run.state.turns || 0) + 1;
       if (typeof ev.error === "string") scan(run, ev.error);
       for (const c of ev.message.content) {
-        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); say(run, c.text.replace(/\s+/g, " ").trim()); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; }
+        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); say(run, c.text.replace(/\s+/g, " ").trim()); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; run.lastRaw = c.text; }
         else if (c.type === "tool_use" && typeof c.name === "string") { addLine(run, "tool: " + c.name); say(run, friendlyTool(c.name, c.input)); }
       }
       touch(run);
     } else if (ev.type === "result") {
       run.result = { is_error: !!ev.is_error, subtype: String(ev.subtype || "") };
       if (typeof ev.num_turns === "number") run.state.turns = ev.num_turns;
-      if (typeof ev.result === "string" && ev.result) { run.state.last_text = sanitize(ev.result); if (run.result.is_error) scan(run, ev.result); }
+      if (typeof ev.result === "string" && ev.result) { run.state.last_text = sanitize(ev.result); run.state.report = sanitizeReport(ev.result); if (run.result.is_error) scan(run, ev.result); }
       addLine(run, `result: ${run.result.subtype}${run.result.is_error ? " (error)" : ""}`);
       touch(run);
     }
@@ -190,6 +202,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       const p = run.state.problem || classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, own: run.own, kinds: run.own ? (status === "failed" ? ["login", "profile", "auth", "metricool"] : ["login", "profile"]) : status === "failed" ? ["auth", "metricool", "browser"] : ["browser"] });
       if (p) run.state.problem = p;
     }
+    if (!run.state.report && run.lastRaw) run.state.report = sanitizeReport(run.lastRaw);
     const problem = run.state.problem;
     const error = status === "failed" ? (problem ? problem.message : sanitize(err || run.stderr.at(-1) || (run.result?.is_error ? `Claude reported ${run.result.subtype || "an error"}.` : `Claude exited with code ${code}.`)))
       : status === "timeout" ? `Stopped after the ${run.limitMin}-minute limit.${problem ? " " + problem.message : ""}` : status === "done" && problem ? problem.message : "";
@@ -235,7 +248,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const started = new Date(now()).toISOString();
     const run = {
       child, cfg, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", turns: 0, error: "", problem: null, flow, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [] },
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [] },
     };
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
@@ -282,7 +295,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      last_text: shown?.last_text || "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [],
+      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [],
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),
       cli: { found: !!cli?.found, path: cli?.path || "" },

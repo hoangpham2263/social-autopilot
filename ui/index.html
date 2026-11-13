@@ -1397,20 +1397,20 @@ header + * { margin-top: 0; }
     $("#arElapsed").textContent = `${r.mode}${r.flow ? " (Flow)" : ""} · ${arClock(r.elapsed_s || 0)}${r.limit_min ? ` of ${r.limit_min} min max` : ""}${r.turns ? ` · ${r.turns} turns` : ""}${step}`;
     const startMsg = r.mode === "research" && browserMode === "own" ? "Starting… Claude works in the own browser in the background." : r.mode === "research" ? `Starting… Claude opens pages in your Chrome (profile ${$("#prChromeProf").value || "default"}). Click Connect in Chrome when asked.` : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
-    { const bad = !!r.problem || !!(r.error && r.status !== "running"); arSetResult(r.problem?.message || (bad ? r.error : r.last_text || (busy ? startMsg : "")), !bad && !busy && !!r.last_text); }
+    { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : full || r.last_text || (busy ? startMsg : "")), !bad && !busy && !!(full || r.last_text), !!full); }
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
     arFeedDraw(r); arBarDraw(r);
   }
   // Markdown-lite for the final report: HTML is escaped first, then #/## headings, **bold**, `code`, "- "/"* " bullets and blank lines.
-  function mdLite(src) {
+  function mdLite(src, real = false) {
     const inl = (t) => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
     let out = "", inList = false;
     const close = () => { if (inList) { out += "</ul>"; inList = false; } };
     let text = String(src || "").replace(/\r/g, "");
-    // The server flattens the report to one line: restore breaks before headings, bold labels and dash bullets.
-    if (!text.includes("\n")) text = text.replace(/ (#{1,6} )/g, "\n$1").replace(/ (\*\*[^*]{1,60}\*\*)/g, "\n$1").replace(/ - (?=\S)/g, "\n- ");
+    // Old saved runs only have the flattened one-line last_text (no `report`): restore breaks before headings, bold labels and dash bullets.
+    if (!real && !text.includes("\n")) text = text.replace(/ (#{1,6} )/g, "\n$1").replace(/ (\*\*[^*]{1,60}\*\*)/g, "\n$1").replace(/ - (?=\S)/g, "\n- ");
     for (const line of text.split("\n")) {
       let m;
       if (/^\s*$/.test(line)) { close(); out += `<div class="md-gap"></div>`; }
@@ -1421,9 +1421,9 @@ header + * { margin-top: 0; }
     close(); return out;
   }
   let arResultRaw = "";
-  function arSetResult(text, copyable) {
+  function arSetResult(text, copyable, real = false) {
     const el = $("#arLast"); arResultRaw = String(text || "");
-    if (el.dataset.raw !== arResultRaw || (arResultRaw && !el.firstElementChild)) { el.dataset.raw = arResultRaw; el.innerHTML = mdLite(arResultRaw); }
+    if (el.dataset.raw !== arResultRaw || (arResultRaw && !el.firstElementChild)) { el.dataset.raw = arResultRaw; el.innerHTML = mdLite(arResultRaw, real); }
     $("#arResBar").hidden = !(copyable && arResultRaw.length > 80);
   }
   $("#arCopyRes").onclick = async () => { try { await navigator.clipboard.writeText(arResultRaw); } catch {} const b = $("#arCopyRes"); b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy report"; }, 1500); };
