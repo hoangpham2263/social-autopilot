@@ -287,7 +287,7 @@ Chỉ gửi lên Metricool các bài người dùng đã **Approve** mà chưa g
 node scripts/runlog.mjs add --mode publish --agent "<Claude Code|Codex>"
 ```
 
-3.2. Báo cáo cho người dùng, tiếng Việt, **luôn đúng các mục**: **Kết quả chung** (N bài đã hẹn giờ · N lỗi), **Đã hẹn giờ** (POST-xx · giờ đăng · plannerUrl), **Lỗi** (bài lỗi Metricool hoặc bị chặn, kèm lý do), **Khác** (brand Metricool mới/mất, bài đã đăng). Nhắc: bài chờ duyệt (To review) vẫn nằm ở tab **Posts**.
+3.2. Báo cáo cho người dùng, tiếng Việt, **luôn đúng các mục**: **Kết quả chung** (N bài đã hẹn giờ · N lỗi), **Đã hẹn giờ** (POST-xx · giờ đăng · plannerUrl), **Lỗi** (bài lỗi Metricool hoặc bị chặn, kèm lý do), **Khác** (mỗi brand một dòng lấy từ brand_lines của pipeline publish: "<brand>: N đã hẹn" hoặc "<brand>: bỏ qua (lý do)"; brand Metricool mới/mất, bài đã đăng). Nhắc: bài chờ duyệt (To review) vẫn nằm ở tab **Posts**.
 
 ## Phụ lục: ảnh/video host
 

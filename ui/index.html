@@ -1443,7 +1443,7 @@ header + * { margin-top: 0; }
   const AR_CONFIRM = {
     research: () => "Research: Claude will open pages in the tool's own browser (in the background, no window) and add posts to the Library. Log in to the sites first: Browser > Open browser to log in.",
     create: () => "Create: starts image generation (Codex quota) and writes drafts.",
-    publish: () => "Publish approved: will schedule the Approved posts on Metricool.",
+    publish: (lines) => `Publish approved: will schedule these Approved posts on Metricool.\n\n${lines}\n\nContinue?`,
   };
   const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
   let browserState = null;
@@ -1670,7 +1670,12 @@ header + * { margin-top: 0; }
     { const n = blNeed(); if (n.length) toast(`Not logged in: ${n.join(", ")}. The run starts anyway; those sources will likely fail. Run > Browser > Log in.`); }
     const key = modeKey(prMode);
     // Only Publish approved asks first (it schedules real posts on Metricool); Research and Create start at once and say what they do in the live panel.
-    if (key === "publish" && !confirm(AR_CONFIRM[key]())) return;
+    if (key === "publish") {
+      const sel = $("#prBrand").value, scopeB = az(arr(promptData.brands).filter((x) => (sel ? x.id === sel : x.usable)), (x) => x.id);
+      const lim = parseInt($("#prCount").value, 10), per = scopeB.map((x) => { const n = modeCounts[x.id]?.publish || 0; return [x.name || x.id, lim >= 1 ? Math.min(n, lim) : n]; });
+      const lines = per.map(([n, c]) => `- ${n}: ${c ? c + " post(s) to schedule" : "nothing to schedule (no approved post waiting)"}`).join("\n");
+      if (!confirm(AR_CONFIRM[key](lines + "\nTotal: " + per.reduce((t, [, c]) => t + c, 0)))) return;
+    }
     // The same text Copy prompt copies, minus the sub-agent lead line (a headless run is its own agent, so that line means nothing to it).
     let text = $("#prText").value;
     if (text.startsWith(SUB_LINE)) text = text.slice(SUB_LINE.length).replace(/^\s+/, "");

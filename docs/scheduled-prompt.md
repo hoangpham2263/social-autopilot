@@ -113,11 +113,11 @@ TOOL: {{TOOL}}
 {{SKILLS}}
 STEPS (follow RUNBOOK.md Mode 3, fast path "pipeline.mjs publish"; in order, do not skip):
 1. Setup: cd {{TOOL}}; read AGENTS.md + RUNBOOK.md "Rules for every run"; for each SKILL line read its SKILL.md (shared brand-content-skills: the skill root's; only that brand's folder; scripts with --brand <id>); node scripts/brands.mjs --run publish.
-2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> → make its Metricool MCP calls, save each answer to its save_to file.
-3. 2.1 node scripts/pipeline.mjs publish --brand <id|all> --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (+ OPTIONS flags) → send each item NOW (createScheduledPost exactly, then its record command; past send_before → payload again).
+2. 2.0 node scripts/pipeline.mjs mcp-plan --brand <id|all> (BRAND above is a brand id: that id; "all usable brands": the word all, never one brand picked by you) → make its Metricool MCP calls, save each answer to its save_to file.
+3. 2.1 node scripts/pipeline.mjs publish --brand <same value>  --brand-settings workspace/tmp/brand-settings.json --best-times-dir workspace/tmp (+ OPTIONS flags) → send each item NOW (createScheduledPost exactly, then its record command; past send_before → payload again).
 4. 2.2 Reconcile: each status_query → getScheduledPosts (PUBLISHED → posts.mjs mark-published); 2.8: node scripts/pipeline.mjs publish --resume (queue + run log).
 5. 3.1 Run log: written by publish --resume (runlog.mjs add --mode publish); stopped early: node scripts/runlog.mjs add --mode publish --agent "Claude Code" --reason "<why>".
-6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2.
+6. 3.2 Report to me in Vietnamese with the fixed headings of RUNBOOK 3.2, and under "Khác" one line per brand copied from brand_lines of the publish output ("<brand>: N scheduled" or "<brand>: skipped (reason)"); never leave a brand out.
 STOP IF: a Metricool tool error (record nothing for that post). Then still the run log (with the reason) and the report.
 NEVER: make ideas or posts, open a browser, approve posts, write into a skill or brand folder, send a post that already has a Metricool id (Scheduled), make Metricool drafts, add AI labels, set posting times by hand, use another blogId.
 ```

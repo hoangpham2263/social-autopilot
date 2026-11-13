@@ -442,7 +442,14 @@ function publishRun(args) {
   const { sync, publish } = syncAndPayload(args, scope, notes, errors, flags);
   writeJson(publishState(), { run_started, agent, scope, notes, errors });
   const items = Object.values(publish.brands).reduce((n, b) => n + b.items.length, 0);
-  return { brands: scope, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items, publish: publish.brands, notes, errors, timing_ms: Date.now() - t0,
+  // One line per brand of the whole discovery (the report must say which brands were processed and why one was skipped).
+  const brand_lines = (br.brands || []).map((b) => {
+    if (!scope.includes(b.id)) return `${b.id}: skipped (${brandArg !== 'all' && b.usable ? `not selected: this run is for ${brandArg} only` : b.usable ? 'not in scope' : b.enabled ? `not usable: ${(b.problems || []).join('; ') || 'skill check failed'}` : 'disabled (social.json enabled: false)'})`;
+    const x = publish.brands[b.id] || {};
+    const n = (x.items || []).length, bl = (x.blocked || []).length;
+    return `${b.id}: ${n ? `${n} approved post(s) to send now (${(x.items || []).map((i) => i.post).join(', ')})` : 'skipped (no approved post waiting to be sent' + (bl ? '; blocked: ' + x.blocked.join(' / ') : '') + ')'}`;
+  });
+  return { brands: scope, brand_lines, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items, publish: publish.brands, notes, errors, timing_ms: Date.now() - t0,
     next: [
       items ? 'Send NOW (times were just computed): for each item createScheduledPost with exactly its args, then its record command. An item already past send_before: do not send it; run metricool-mcp.mjs payload --brand <id> (same flags) again for it.' : 'Nothing approved to send.',
       'Reconcile: each status_query -> getScheduledPosts; PUBLISHED -> posts.mjs mark-published; ERROR -> report (RUNBOOK 2.2).',
