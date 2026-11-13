@@ -30,6 +30,7 @@ import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 import { findClaude } from "../core/setup/claude-cli.mjs";
 import { createAgentRunner } from "../core/setup/agent-run.mjs";
 import { browserInfo, openLoginBrowser, cachedLoginStatus, profileLocked, profileProblem, browserSettings, PLATFORMS } from "../core/setup/own-browser.mjs";
+import { runVisitCheck, visitResults, clearVisitResults, visitActive, visitProgress, mergeLogins, buildSummary, readChecks } from "../core/setup/login-visit.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -40,7 +41,7 @@ const logs = join(workspace, "logs");
 // When a run ends the result goes to the run log (Log tab) like a prompt run: the agent normally writes it (runlog.mjs add); this only fills in when it did not (failed, stopped, timeout, or forgot).
 const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }),
   // Own browser: a run refuses to start while the login window holds the profile (or when there is no profile yet).
-  loginWindowOpen: () => { const d = browserSettings(settings(), root).profileDir; return existsSync(d) && profileLocked(d); },
+  loginWindowOpen: () => { const d = browserSettings(settings(), root).profileDir; return visitActive() || (existsSync(d) && profileLocked(d)); },
   browserCheck: (dir) => profileProblem({ dir, exists: existsSync(dir), locked: false }),
   onEnd: (st) => {
   const lastLog = listLogs({ mode: st.mode, limit: 1 })[0];
@@ -389,8 +390,20 @@ async function handle(req, res) {
   // Own browser (core/setup/own-browser.mjs): status, the visible login window (fixed site URLs only, refused while a headless run holds the profile),
   // and the login state per site from cookie METADATA (names/expiry of allow-listed cookies; never values, never logged). Same guards as every /api route.
   if (path === "/api/browser" && req.method === "GET") return api(res, () => browserInfo({ settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }));
-  if (path === "/api/browser-logins" && req.method === "GET") return api(res, async () => ({ logins: (await cachedLoginStatus({ settings: settings(), toolRoot: root, fresh: get("fresh") === "1" })).map((l) => ({ platform: l.platform, name: l.name, required: l.required, state: l.state, reason: l.reason })) }));
-  if (path === "/api/open-login-browser" && req.method === "POST") return api(res, async () => { const b = await body(req); const platform = String(b.platform ?? ""); if (platform && !PLATFORMS.some((x) => x.id === platform)) throw new Error("Unknown platform."); const r = openLoginBrowser({ platform, settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }); cachedLoginStatus.cache = null; return r; });
+  // Logins = cookie hint merged with the last "Check by visiting" result (in memory). p = comma list of the sites the person sees (for the summary).
+  const loginRows = async (fresh) => mergeLogins(await cachedLoginStatus({ settings: settings(), toolRoot: root, fresh }), visitResults());
+  const pickRows = (rows, p) => { const ids = String(p || "").split(",").filter((x) => PLATFORMS.some((y) => y.id === x)); return ids.length ? rows.filter((r) => ids.includes(r.platform)) : rows; };
+  const outRow = (l) => ({ platform: l.platform, name: l.name, required: l.required, state: l.state, reason: l.reason, source: l.source, checked_at: l.checked_at || "" });
+  if (path === "/api/browser-logins" && req.method === "GET") return api(res, async () => { const rows = await loginRows(get("fresh") === "1"); return { logins: rows.map(outRow), summary: buildSummary(pickRows(rows, get("p")), { source: "cookies" }), visit: visitProgress(), checks: readChecks(workspace) }; });
+  if (path === "/api/browser-visit" && req.method === "GET") return api(res, () => visitProgress());
+  // Check by visiting: explicit button only. Headless Chrome on the own profile, one login-required page per site, decides from the final URL only.
+  if (path === "/api/browser-visit" && req.method === "POST") return api(res, async () => {
+    const b = await body(req); const platforms = (Array.isArray(b.platforms) ? b.platforms : []).map(String).filter((x) => PLATFORMS.some((y) => y.id === x));
+    const r = await runVisitCheck({ platforms, settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive(), loginWindowOpen: false });
+    cachedLoginStatus.cache = null; const rows = await loginRows(true);
+    return { ok: true, logins: rows.map(outRow), summary: buildSummary(pickRows(rows, platforms.join(",")), { source: "visit" }), visit: visitProgress(), leftover: r.leftover };
+  });
+  if (path === "/api/open-login-browser" && req.method === "POST") return api(res, async () => { const b = await body(req); const platform = String(b.platform ?? ""); if (platform && !PLATFORMS.some((x) => x.id === platform)) throw new Error("Unknown platform."); if (visitActive()) throw new Error("A login check is running: wait until it ends, then open the login window."); const r = openLoginBrowser({ platform, settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }); cachedLoginStatus.cache = null; clearVisitResults(); return r; });
   if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));

@@ -1319,10 +1319,10 @@ header + * { margin-top: 0; }
 
   const baseHint = $("#prMsg").textContent;
   let hint = baseHint;
-  const toast = (text, kind = "error") => {
+  const toast = (text, kind = "error", ms = 0) => {
     let box = $("#toasts"); if (!box) { box = document.createElement("div"); box.id = "toasts"; document.body.append(box); }
     const el = document.createElement("div"); el.className = "toast" + (kind === "ok" ? " ok" : ""); el.textContent = String(text || "Something went wrong.").slice(0, 400);
-    el.onclick = () => el.remove(); box.append(el); setTimeout(() => el.remove(), kind === "ok" ? 3000 : 9000);
+    el.onclick = () => el.remove(); box.append(el); setTimeout(() => el.remove(), ms || (kind === "ok" ? 3000 : 9000));
   };
   // Optimistic action: the screen changes at once, the request runs in the background; on an error a toast says why and the list is reloaded (put back).
   const bg = async (req, { onFail = () => {}, onDone = () => {} } = {}) => {
@@ -1508,7 +1508,7 @@ header + * { margin-top: 0; }
   const BL_NAMES = { facebook: "Facebook", instagram: "Instagram", pinterest: "Pinterest", etsy: "Etsy", houzz: "Houzz", google: "Google (Flow)" };
   const BL_STATE = { logged_in: ["logged in", "dot-green"], logged_out: ["not logged in", "dot-red"], unknown: ["unknown", "dot-grey"] };
   const BL_LOCK = `<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 1 1 6 0v3H9V6z"/></svg>`;
-  let blList = [], blAll = false, blTimer = 0, blTries = 0, blBusy = false, blLoaded = false;
+  let blList = [], blAll = false, blTimer = 0, blTries = 0, blBusy = false, blLoaded = false, blVisiting = false, blSum = "", blProg = "", blPoll = 0;
   const blOf = (p) => blList.find((x) => x.platform === p);
   const blOut = (p) => browserMode === "own" && blLoaded && !!blOf(p)?.required && blOf(p).state === "logged_out";
   const blLockTip = (p) => `${BL_NAMES[p] || p}: not logged in. Run > Browser > Log in`;
@@ -1545,24 +1545,41 @@ header + * { margin-top: 0; }
     const rows = blList.filter((x) => blAll || rel.has(x.platform));
     const list = !blLoaded ? `<div class="meta">Checking…</div>` : !blList.length ? `<div class="meta">Could not read the login state.</div>` : !rows.length ? `<div class="meta">No site in this selection needs a login. Show all lists every site.</div>` : rows.map((x) => {
       const [word, dot] = BL_STATE[x.state] || BL_STATE.unknown;
-      return `<div class="bl-row" data-p="${esc(x.platform)}"><span class="bl-name"><span class="dot ${dot}"></span>${esc(x.name || BL_NAMES[x.platform] || x.platform)}</span><span class="meta" title="${esc(x.reason || "")}">${word}</span>${x.required ? `<span class="bl-req" title="Runs need this login">REQUIRED</span>` : ""}<button class="btn" type="button" data-login="${esc(x.platform)}"${busyRun ? ` disabled title="A run is active: wait for it or press Stop"` : ` title="Opens the own browser on ${esc(BL_NAMES[x.platform] || x.platform)}: log in, then close the window"`}>Log in</button></div>`;
+      const tip = [x.reason || "", "Source: " + (x.source === "visit" ? "visit" : "cookies"), x.checked_at ? "Checked " + new Date(x.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""].filter(Boolean).join(" · ");
+      return `<div class="bl-row" data-p="${esc(x.platform)}"><span class="bl-name"><span class="dot ${dot}"></span>${esc(x.name || BL_NAMES[x.platform] || x.platform)}</span><span class="meta" title="${esc(tip)}">${word}${x.state === "unknown" ? ` <span title="${esc(tip)}">(?)</span>` : ""}</span>${x.required ? `<span class="bl-req" title="Runs need this login">REQUIRED</span>` : ""}<button class="btn" type="button" data-login="${esc(x.platform)}"${busyRun ? ` disabled title="A run is active: wait for it or press Stop"` : ` title="Opens the own browser on ${esc(BL_NAMES[x.platform] || x.platform)}: log in, then close the window"`}>Log in</button></div>`;
     }).join("");
-    const html = `<div class="bl-head"><b>Logins</b><button class="btn" type="button" id="blAll">${blAll ? "Show fewer" : "Show all"}</button><button class="btn" type="button" id="blRefresh" title="Check the login state again (reads cookie names and expiry only)"${blBusy ? " disabled" : ""}>Refresh</button></div><div class="bl-list">${list}</div><div class="meta">Based on cookies: a login can look fine here yet be expired on the site.</div>`;
+    const html = `<div class="bl-head"><b>Logins</b><button class="btn" type="button" id="blAll">${blAll ? "Show fewer" : "Show all"}</button><button class="btn" type="button" id="blRefresh" title="Check the login state again (reads cookie names and expiry only)"${blBusy || blVisiting ? " disabled" : ""}>Refresh</button><button class="btn" type="button" id="blVisit" title="Opens one account page per site in a background browser and reads only the address it ends on"${blBusy || blVisiting || busyRun ? " disabled" : ""}>${blVisiting ? "Checking…" : "Check by visiting"}</button></div>${blSum || blProg ? `<div class="meta" id="blSum" role="status">${esc(blVisiting ? blProg || "Checking…" : blSum)}</div>` : ""}<div class="bl-list">${list}</div><div class="meta">Refresh is a quick hint from cookies: a login can look fine here yet be expired on the site. Check by visiting opens the account pages in a background browser with your logged-in session (only when you press it); Facebook may show a checkpoint to automated browsers.</div>`;
     if (html !== box.dataset.sig) {
       box.dataset.sig = html; box.innerHTML = html;
       $("#blAll").onclick = () => { blAll = !blAll; blDraw(); };
-      $("#blRefresh").onclick = () => blRefresh({ fresh: true, toastErr: true });
+      $("#blRefresh").onclick = () => blRefresh({ fresh: true, toastErr: true, announce: true });
+      $("#blVisit").onclick = () => blVisit();
       for (const b of $$("#prLogins [data-login]")) b.onclick = () => blLogin(b.dataset.login, b);
     }
     blMarks();
   }
-  async function blRefresh({ fresh = false, toastErr = false } = {}) {
-    if (blBusy) return; blBusy = true;
+  const blShown = () => { const rel = blRelevant(); return Object.keys(BL_NAMES).filter((p) => blAll || rel.has(p)); };
+  async function blRefresh({ fresh = false, toastErr = false, announce = false } = {}) {
+    if (blBusy || blVisiting) return; blBusy = true;
     try {
-      const r = await getJson("/api/browser-logins" + (fresh ? "?fresh=1" : "")).catch(() => offline);
+      const r = await getJson("/api/browser-logins?p=" + blShown().join(",") + (fresh ? "&fresh=1" : "")).catch(() => offline);
       if (r.error) { if (toastErr) toast("Could not read the login state: " + r.error); }
-      else { blList = arr(r.logins); blLoaded = true; }
+      else { blList = arr(r.logins); blLoaded = true; if (announce && r.summary) { blSum = r.summary.line + " · " + r.summary.toast; toast(r.summary.line + ". " + r.summary.toast, "ok", 12000); } }
     } finally { blBusy = false; blDraw(); }
+  }
+  // Check by visiting: explicit press only. Progress hint from GET /api/browser-visit every second while the request runs.
+  async function blVisit() {
+    if (blBusy || blVisiting) return;
+    if (arState?.active) { toast("A run is active: wait for it or press Stop, then check by visiting."); return; }
+    const platforms = blShown(); if (!platforms.length) { toast("No site selected to check."); return; }
+    blVisiting = true; blProg = "Checking…"; blDraw();
+    clearInterval(blPoll);
+    blPoll = setInterval(async () => { const v = await getJson("/api/browser-visit").catch(() => null); if (!v || v.error || !blVisiting) return; const nm = (p) => String(BL_NAMES[p] || p).replace(/s*(.*)/, ""); blProg = "Checking: " + [...arr(v.done).map(nm), v.current ? nm(v.current) + "…" : ""].filter(Boolean).join(" · "); const e = $("#blSum"); if (e) e.textContent = blProg; }, 1000);
+    try {
+      const r = await postJson("/api/browser-visit", { platforms }).catch(() => offline);
+      if (r.error) { toast(r.error); blSum = ""; }
+      else { blList = arr(r.logins); blLoaded = true; blSum = r.summary.line + " · " + r.summary.toast; toast(r.summary.line + ". " + r.summary.toast + (r.leftover ? " (A background browser may still be closing: if the login window will not open, wait a moment.)" : ""), "ok", 14000); }
+    } finally { clearInterval(blPoll); blVisiting = false; blProg = ""; blDraw(); }
   }
   // After Log in: re-check every 5 s for ~30 s (the window is closed by hand), then stop; no other polling.
   function blWatch() { clearTimeout(blTimer); blTries = 0; const tick = async () => { blTries++; await blRefresh({ fresh: true }); if (blTries < 6) blTimer = setTimeout(tick, 5000); }; blTimer = setTimeout(tick, 5000); }
