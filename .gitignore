@@ -8,3 +8,7 @@ node_modules/
 
 # saved Playwright MCP token (never commit)
 workspace/secrets/
+
+# own browser profile (holds logins; default is under /workspace/ above)
+/workspace/browser-profile/
+browser-profile/

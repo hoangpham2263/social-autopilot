@@ -29,6 +29,7 @@ import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 import { findClaude } from "../core/setup/claude-cli.mjs";
 import { createAgentRunner } from "../core/setup/agent-run.mjs";
+import { browserInfo, openLoginBrowser, profileLocked, profileProblem, browserSettings, PLATFORMS } from "../core/setup/own-browser.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -37,7 +38,11 @@ let PORT = BASE_PORT;
 const logs = join(workspace, "logs");
 // Run now: headless Claude for one mode (core/setup/agent-run.mjs); one run at a time, killed when this server stops.
 // When a run ends the result goes to the run log (Log tab) like a prompt run: the agent normally writes it (runlog.mjs add); this only fills in when it did not (failed, stopped, timeout, or forgot).
-const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }), onEnd: (st) => {
+const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }),
+  // Own browser: a run refuses to start while the login window holds the profile (or when there is no profile yet).
+  loginWindowOpen: () => { const d = browserSettings(settings(), root).profileDir; return existsSync(d) && profileLocked(d); },
+  browserCheck: (dir) => profileProblem({ dir, exists: existsSync(dir), locked: false }),
+  onEnd: (st) => {
   const lastLog = listLogs({ mode: st.mode, limit: 1 })[0];
   if (lastLog && Date.parse(lastLog.ended) >= Date.parse(st.started)) return;
   const why = { failed: "run failed", stopped: "stopped by the user", timeout: "time limit reached" }[st.status] || "";
@@ -381,6 +386,10 @@ async function handle(req, res) {
   // Chrome profiles (read only) and opening a window in one profile (session token via the POST guard, loopback only, no CORS; allow-lists in core/setup/chrome.mjs).
   if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => chromeInfo({ settings: settings() }));
   if (path === "/api/chrome-setup-check" && req.method === "GET") return api(res, () => ({ ...chromeSetupCheck({ profile: new URL(req.url, "http://x").searchParams.get("profile") || "", settings: settings() }), last_full_check: readCheck() }));
+  // Own browser (core/setup/own-browser.mjs): status, the visible login window (fixed site URLs only, refused while a headless run holds the profile),
+  // and the login state per site from cookie METADATA (names/expiry of allow-listed cookies; never values, never logged). Same guards as every /api route.
+  if (path === "/api/browser" && req.method === "GET") return api(res, () => browserInfo({ settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }));
+  if (path === "/api/open-login-browser" && req.method === "POST") return api(res, async () => { const b = await body(req); const platform = String(b.platform ?? ""); if (platform && !PLATFORMS.some((x) => x.id === platform)) throw new Error("Unknown platform."); const r = openLoginBrowser({ platform, settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }); return r; });
   if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
