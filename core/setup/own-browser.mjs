@@ -114,8 +114,9 @@ export function readCookieMeta(profileDir, { exists = existsSync, copy = copyFil
     for (const ext of ["-wal", "-journal"]) if (exists(src + ext)) { try { copy(src + ext, file + ext); } catch {} }
     const db = new Db(file, { readOnly: true });
     try {
-      const rows = db.prepare(`SELECT host_key, name, expires_utc FROM cookies WHERE name IN (${ALLOWED_NAMES.map(() => "?").join(",")})`).all(...ALLOWED_NAMES);
-      return rows.map((r) => { const e = Number(r.expires_utc); return { host: String(r.host_key), name: String(r.name), expires: e > 0 ? Math.round((e - WIN_EPOCH_US) / 1000) : 0 }; });
+      const rows = db.prepare(`SELECT host_key, name, CAST(expires_utc / 1000000 AS INTEGER) AS expires_s FROM cookies WHERE name IN (${ALLOWED_NAMES.map(() => "?").join(",")})`).all(...ALLOWED_NAMES);
+      // expires_utc is ~1.3e16 (above 2^53): the SQL divides to seconds first so no precision error or RangeError.
+      return rows.map((r) => { const e = Number(r.expires_s); return { host: String(r.host_key), name: String(r.name), expires: e > 0 ? (e - WIN_EPOCH_US / 1e6) * 1000 : 0 }; });
     } finally { db.close(); }
   } finally { try { rmSync(dir, { recursive: true, force: true }); } catch {} }
 }

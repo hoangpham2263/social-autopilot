@@ -317,3 +317,5 @@ node scripts/writeback.mjs --id <draft>                                    # ch�
 node scripts/posts.mjs list|check|mark-published --brand <id> [--post POST-xx] [...]   # sổ bài của tool (workspace/posts/<brand>/)
 ```
 Các lựa chọn của Run tab được nhớ trong trình duyệt/app này (localStorage, khóa `pr*`; không lưu Library item).
+
+- **Quản lý đăng nhập (own browser)**: Run tab > Browser > Logins liệt kê từng nền tảng (Facebook, Instagram, Google/Flow bắt buộc; Pinterest, Etsy, Houzz không) với trạng thái đã đăng nhập / chưa / không rõ, nút Log in mở cửa sổ own browser đúng trang, Refresh. Trạng thái chỉ đọc METADATA cookie (tên, host, hạn) từ bản sao tạm của file cookie trong workspace/browser-profile (`core/setup/own-browser.mjs`, GET `/api/browser-logins`), không giải mã, không trả giá trị. Biết được: cookie đăng nhập có mặt và chưa hết hạn. Không biết được: phiên còn hợp lệ trên site hay không (bị đăng xuất phía server, checkpoint, đổi mật khẩu); Etsy và Houzz luôn là Unknown vì chưa có cookie đăng nhập xác nhận. Nguồn cần đăng nhập BẮT BUỘC mà chưa đăng nhập hiện ổ khóa và cảnh báo trước Run now (không chặn).

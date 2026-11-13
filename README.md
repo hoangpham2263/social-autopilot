@@ -118,3 +118,5 @@ workspace/                 dữ liệu riêng của máy (không lên git)
 - `docs/metricool.md` — Metricool
 - `docs/scheduled-prompt.md` — prompt mẫu
 Các lựa chọn của Run tab (Agent, How to run, Brand, Max posts, Sources/Platforms, Images, Images per post (min/max), Image types, Posts, Time, Start) được nhớ trong trình duyệt/app này (localStorage); Library item thì không.
+
+- **Quản lý đăng nhập (own browser)**: Run tab > Browser > Logins liệt kê từng nền tảng (Facebook, Instagram, Google/Flow bắt buộc; Pinterest, Etsy, Houzz không) với trạng thái đã đăng nhập / chưa / không rõ, nút Log in mở cửa sổ own browser đúng trang, Refresh. Trạng thái chỉ đọc METADATA cookie (tên, host, hạn) từ bản sao tạm của file cookie trong workspace/browser-profile (`core/setup/own-browser.mjs`, GET `/api/browser-logins`), không giải mã, không trả giá trị. Biết được: cookie đăng nhập có mặt và chưa hết hạn. Không biết được: phiên còn hợp lệ trên site hay không (bị đăng xuất phía server, checkpoint, đổi mật khẩu); Etsy và Houzz luôn là Unknown vì chưa có cookie đăng nhập xác nhận. Nguồn cần đăng nhập BẮT BUỘC mà chưa đăng nhập hiện ổ khóa và cảnh báo trước Run now (không chặn).

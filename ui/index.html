@@ -735,10 +735,11 @@ header + * { margin-top: 0; }
     $("#brandTitle").textContent = skill.brand || id;
     $("#brandLegend").textContent = skill.brand || id;
     const regs = r.registry || {};
+    const blPlat = (x) => { const p = String(x?.platform || "").toLowerCase(); return BL_NAMES[p] ? p : PLATS.find((q) => String(x?.url || "").includes(q)) || ""; };
     const srcRow = (x, kind, note = "added in the tool") => {
       const inSkillOff = kind === "skill" && !x.enabled;
       const tip = inSkillOff ? "Off in the skill: turn it on in the skill folder" : "Tick = crawled";
-      return `<div class="slot" data-kind="${kind}" data-id="${esc(x.id)}"><input type="checkbox"${!inSkillOff && !off.has(x.id) ? " checked" : ""}${inSkillOff ? " disabled" : ""} title="${esc(tip)}"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}${kind === "tool" && note !== "added in the tool" ? ` <span class="meta">(${esc(note)})</span>` : ""}</span><span class="meta src-reg"><span class="dot ${(REG[regs[x.id]?.status] || REG.none)[1]}"></span>${esc(regLine(regs[x.id]))}</span>${regs[x.id] && regs[x.id].status !== "none" ? `<button class="btn" type="button" data-recrawl="1" title="Treat this source as never crawled: the next run collects it fully again, to the end of the page (nothing is deleted)">Recrawl</button>` : ""}${kind === "tool" ? `<button class="btn" type="button" data-rmsrc="1">Remove</button>` : ""}</div>`;
+      return `<div class="slot" data-kind="${kind}" data-id="${esc(x.id)}"><input type="checkbox"${!inSkillOff && !off.has(x.id) ? " checked" : ""}${inSkillOff ? " disabled" : ""} title="${esc(tip)}"><span class="src-url" title="${esc(x.url)}">${esc(x.name || x.id)}<span class="bl-lk" data-p="${esc(blPlat(x))}"></span>${kind === "tool" && note !== "added in the tool" ? ` <span class="meta">(${esc(note)})</span>` : ""}</span><span class="meta src-reg"><span class="dot ${(REG[regs[x.id]?.status] || REG.none)[1]}"></span>${esc(regLine(regs[x.id]))}</span>${regs[x.id] && regs[x.id].status !== "none" ? `<button class="btn" type="button" data-recrawl="1" title="Treat this source as never crawled: the next run collects it fully again, to the end of the page (nothing is deleted)">Recrawl</button>` : ""}${kind === "tool" ? `<button class="btn" type="button" data-rmsrc="1">Remove</button>` : ""}</div>`;
     };
     const rows = [...arr(skill.research?.sources).filter((x) => x && x.id).map((x) => srcRow(x, "skill")), ...editing.added.map((x) => srcRow(x, "tool"))];
     // Posting times are automatic (Metricool's best times, else the research table); channels are the Metricool brand's.
@@ -752,6 +753,7 @@ header + * { margin-top: 0; }
         <div class="field wide"><span class="label">Sources</span><div id="fSources">${rows.join("") || `<div class="meta">No sources yet. Add a page link below (name optional), Save, then tick it in the Run tab.</div>`}</div>
           <div class="slot"><input type="text" id="fNewName" placeholder="Name (optional)" style="flex: 0 1 200px"><input type="text" id="fNewSrc" placeholder="Page URL (https://...)"><button class="btn" type="button" id="addSrc">Add</button></div></div>
       </div>`;
+    blMarks();
     $("#fOpen").onclick = async () => { const x = await postJson("/api/open-skill", { id }).catch(() => offline); if (x.error) $("#brandMsg").innerHTML = errLine(x.error); };
     $("#fSources").onclick = async (e) => {
       const row = e.target.closest(".slot");
@@ -1081,7 +1083,7 @@ header + * { margin-top: 0; }
   const srcDone = (b, s) => modeCounts[b.id]?.registry?.[s]?.status === "complete";
   function drawSources() {
     const brands = srcBrands(), single = !!$("#prBrand").value;
-    const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, reg = modeCounts[b.id]?.registry?.[s], pOff = platOff.has(srcPlat(b, s)); return `<label title="${esc(info?.url || s)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" value="${esc(v)}"${srcOff.has(v) || pOff ? "" : " checked"}${pOff ? " disabled" : ""}><span>${esc(info?.name || s)}</span><span class="meta"><span class="dot ${(REG[reg?.status] || REG.none)[1]}"></span>${esc(regLine(reg))}</span></label>`; };
+    const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, reg = modeCounts[b.id]?.registry?.[s], pOff = platOff.has(srcPlat(b, s)); return `<label title="${esc(info?.url || s)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" value="${esc(v)}"${srcOff.has(v) || pOff ? "" : " checked"}${pOff ? " disabled" : ""}><span>${esc(info?.name || s)}</span><span class="bl-lk" data-p="${esc(srcPlat(b, s))}"></span><span class="meta"><span class="dot ${(REG[reg?.status] || REG.none)[1]}"></span>${esc(regLine(reg))}</span></label>`; };
     let hidden = 0, shown = 0;
     const rows = (b) => arr(b.sources).filter((s) => { if (srcDone(b, s) && !showDone) { hidden++; return false; } shown++; return true; });
     const body = brands.map((b) => { const r = rows(b).map((s) => row(b, s)).join(""); return r ? `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${r}` : ""; }).join("");
@@ -1090,7 +1092,7 @@ header + * { margin-top: 0; }
     $("#prSrc").innerHTML = body + (empty ? `<div class="meta">${empty}</div>` : "") + foot;
     for (const c of $$("#prSrc input[value]")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); store.set("prSrcOff", JSON.stringify([...srcOff])); srcLabel(); regenerate(); };
     const sd = $("#prSrcShowDone"); if (sd) sd.onchange = () => { showDone = sd.checked; drawSources(); };
-    srcLabel();
+    srcLabel(); blMarks();
   }
   function drawPrompt() {
     const prompts = arr(promptData.prompts), brands = arr(promptData.brands);
@@ -1266,6 +1268,7 @@ header + * { margin-top: 0; }
     if (r.brands) { const first = !Object.keys(modeCounts).length; modeCounts = r.brands; showModeCounts(); const sig = JSON.stringify(Object.values(modeCounts).map((c) => c.registry)); if ((first || sig !== regSig) && arr(promptData.prompts).length) drawPrompt(); regSig = sig; }
   }
   const loadPrompts = safely("#prMsg", async () => {
+    try { blRefresh(); } catch {}
     loadModeCounts();
     const r = await getJson("/api/prompts").catch(() => offline);
     if (r.error) { $("#prText").value = r.error; prBoxSync(); return; }
@@ -1348,7 +1351,7 @@ header + * { margin-top: 0; }
   const arClock = (n) => (n < 60 ? `${n} s` : `${Math.floor(n / 60)} min ${n % 60} s`);
   function arDraw() {
     const r = arState, claude = subAllowed();
-    applyHow();
+    applyHow(); try { blDraw(); } catch {}
     const busy = !!r?.active, noCli = r && r.cli && !r.cli.found;
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
     const bsel = $("#prBrand").value, noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!bsel || x.id === bsel));
@@ -1434,6 +1437,7 @@ header + * { margin-top: 0; }
   }
   $("#prRunNow").onclick = async () => {
     if (prBlock) { flash(prBlock); return; }
+    { const n = blNeed(); if (n.length) toast(`Not logged in: ${n.join(", ")}. The run starts anyway; those sources will likely fail. Run > Browser > Log in.`); }
     const key = modeKey(prMode);
     // Only Publish approved asks first (it schedules real posts on Metricool); Research and Create start at once and say what they do in the live panel.
     if (key === "publish" && !confirm(AR_CONFIRM[key]())) return;
@@ -1453,6 +1457,79 @@ header + * { margin-top: 0; }
     } finally { btn.disabled = false; btn.textContent = label; }
   };
   $("#prStop").onclick = async () => { const r = await postJson("/api/agent-run/stop", {}).catch(() => ({ error: "The app did not answer." })); if (r.error) flash(r.error); setTimeout(loadAgentRun, 800); };
+  // ----- Own-browser logins (#prLogins): cookie presence/expiry per site from GET /api/browser-logins (names/expiry only, never values) -----
+  // Own-browser mode only (browserMode). Shows the platforms of this run's sources (+ Google for Flow); lock marks and a soft pre-run hint use the same state.
+  const BL_NAMES = { facebook: "Facebook", instagram: "Instagram", pinterest: "Pinterest", etsy: "Etsy", houzz: "Houzz", google: "Google (Flow)" };
+  const BL_STATE = { logged_in: ["logged in", "dot-green"], logged_out: ["not logged in", "dot-red"], unknown: ["unknown", "dot-grey"] };
+  const BL_LOCK = `<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 1 1 6 0v3H9V6z"/></svg>`;
+  let blList = [], blAll = false, blTimer = 0, blTries = 0, blBusy = false, blLoaded = false;
+  const blOf = (p) => blList.find((x) => x.platform === p);
+  const blOut = (p) => browserMode === "own" && blLoaded && !!blOf(p)?.required && blOf(p).state === "logged_out";
+  const blLockTip = (p) => `${BL_NAMES[p] || p}: not logged in. Run > Browser > Log in`;
+  // Lock icons for every .bl-lk placeholder (Run tab Sources rows, brand Edit page source rows), then the pre-run hint.
+  function blMarks() {
+    for (const el of $$(".bl-lk")) { const p = el.dataset.p || "", out = blOut(p); el.innerHTML = out ? BL_LOCK : ""; el.title = out ? blLockTip(p) : ""; el.setAttribute("aria-label", out ? blLockTip(p) : ""); }
+    blHint();
+  }
+  // Required platforms that are logged out among the enabled sources of a Research run (Unknown stays silent).
+  function blNeed() {
+    if (browserMode !== "own" || !isResearch(prMode)) return [];
+    const need = new Set();
+    for (const b of srcBrands()) for (const s of arr(b.sources)) { if (!srcOn(b, s)) continue; const p = srcPlat(b, s); if (blOut(p)) need.add(p); }
+    return [...need].map((p) => BL_NAMES[p] || p);
+  }
+  function blHint() {
+    const h = $("#prLoginHint"); if (!h) return;
+    const n = blNeed();
+    h.hidden = !n.length; h.textContent = n.length ? `Not logged in: ${n.join(", ")}. Run > Browser > Log in first, or those sources will fail.` : "";
+  }
+  // The platforms that matter now: sources of the brand scope, Google when Flow makes the images.
+  function blRelevant() {
+    const set = new Set();
+    for (const b of srcBrands()) for (const s of arr(b.sources)) { const p = srcPlat(b, s); if (p) set.add(p); }
+    if ($("#prImages") && $("#prImages").value === "flow") set.add("google");
+    return set;
+  }
+  function blDraw() {
+    const box = $("#prLogins"); if (!box) return;
+    const own = browserMode === "own";
+    box.hidden = !own;
+    if (!own) { blMarks(); return; }
+    const rel = blRelevant(), busyRun = !!arState?.active;
+    const rows = blList.filter((x) => blAll || rel.has(x.platform));
+    const list = !blLoaded ? `<div class="meta">Checking…</div>` : !blList.length ? `<div class="meta">Could not read the login state.</div>` : !rows.length ? `<div class="meta">No site in this selection needs a login. Show all lists every site.</div>` : rows.map((x) => {
+      const [word, dot] = BL_STATE[x.state] || BL_STATE.unknown;
+      return `<div class="bl-row" data-p="${esc(x.platform)}"><span class="bl-name"><span class="dot ${dot}"></span>${esc(x.name || BL_NAMES[x.platform] || x.platform)}</span><span class="meta" title="${esc(x.reason || "")}">${word}</span>${x.required ? `<span class="bl-req" title="Runs need this login">REQUIRED</span>` : ""}<button class="btn" type="button" data-login="${esc(x.platform)}"${busyRun ? ` disabled title="A run is active: wait for it or press Stop"` : ` title="Opens the own browser on ${esc(BL_NAMES[x.platform] || x.platform)}: log in, then close the window"`}>Log in</button></div>`;
+    }).join("");
+    const html = `<div class="bl-head"><b>Logins</b><button class="linkbtn" type="button" id="blAll">${blAll ? "Show fewer" : "Show all"}</button><button class="btn" type="button" id="blRefresh" title="Check the login state again (reads cookie names and expiry only)"${blBusy ? " disabled" : ""}>Refresh</button></div><div class="bl-list">${list}</div><div class="meta">Based on cookies: a login can look fine here yet be expired on the site.</div>`;
+    if (html !== box.dataset.sig) {
+      box.dataset.sig = html; box.innerHTML = html;
+      $("#blAll").onclick = () => { blAll = !blAll; blDraw(); };
+      $("#blRefresh").onclick = () => blRefresh({ fresh: true, toastErr: true });
+      for (const b of $$("#prLogins [data-login]")) b.onclick = () => blLogin(b.dataset.login, b);
+    }
+    blMarks();
+  }
+  async function blRefresh({ fresh = false, toastErr = false } = {}) {
+    if (blBusy) return; blBusy = true;
+    try {
+      const r = await getJson("/api/browser-logins" + (fresh ? "?fresh=1" : "")).catch(() => offline);
+      if (r.error) { if (toastErr) toast("Could not read the login state: " + r.error); }
+      else { blList = arr(r.logins); blLoaded = true; }
+    } finally { blBusy = false; blDraw(); }
+  }
+  // After Log in: re-check every 5 s for ~30 s (the window is closed by hand), then stop; no other polling.
+  function blWatch() { clearTimeout(blTimer); blTries = 0; const tick = async () => { blTries++; await blRefresh({ fresh: true }); if (blTries < 6) blTimer = setTimeout(tick, 5000); }; blTimer = setTimeout(tick, 5000); }
+  async function blLogin(platform, btn) {
+    if (arState?.active) { toast("A run is active: wait for it or press Stop, then log in."); return; }
+    if (btn) btn.disabled = true;
+    const r = await postJson("/api/open-login-browser", { platform }).catch(() => offline);
+    if (r && r.error) { toast(r.error); blDraw(); return; }
+    toast(`Login window opened on ${BL_NAMES[platform] || platform}. Log in, then close the window.`, "ok");
+    blWatch(); try { loadChrome(); } catch {}
+  }
+  { const lb = $("#prBrowserLogin"); if (lb) lb.addEventListener("click", () => blWatch()); }
+  $("#prImages").addEventListener("change", () => blDraw());
 
   // ----- Run progress: the steps of the selected mode with their state; polls every 3 s while a run is active -----
   const RUN_DOT = { pending: "dot-grey", running: "dot-run", done: "dot-green", failed: "dot-red", stopped: "dot-amber" };
