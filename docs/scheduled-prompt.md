@@ -149,6 +149,6 @@ With a payload: send each item with createScheduledPost exactly as given (a sche
 ```
 
 ## Run now (Run in the app)
-The Run tab button "Run now" sends exactly the text Copy prompt gives (minus the sub-agent lead line) to `claude -p` on stdin; for Research and Create with Flow a RUN-NOW NOTE (wait for the person to click Connect) is put in front of it. Tools, `--add-dir`, time limits and turns per mode: README "Run now".
+The Run tab button "Run now" sends exactly the text Copy prompt gives (minus the sub-agent lead line) to `claude -p` on stdin; for Research and Create with Flow an own-browser RUN-NOW NOTE is put in front of it. Tools, `--add-dir`, time limits and turns per mode: README "Run now".
 
-In Own-browser mode (default) Run now replaces that Connect note by an own-browser note: no Connect, no extension; downloads can be captured with `page.waitForEvent('download')` + `download.saveAs(path)`; a login wall or checkpoint means STOP and report. Copy prompt then adds an OPTIONS line naming the profile the session's Playwright MCP must be started with (`--browser chrome --user-data-dir <profile> [--headless]`); the person starts that MCP themselves (snippet in README).
+The own-browser note says: the run uses the tool's own logged-in Chrome profile in the background, no Connect step; downloads can be captured with `page.waitForEvent('download')` + `download.saveAs(path)`; a login wall or checkpoint means STOP and report. Copy prompt then adds an OPTIONS line naming the profile the session's Playwright MCP must be started with (`--browser chrome --user-data-dir <profile> [--headless]`); the person starts that MCP themselves (snippet in README).
