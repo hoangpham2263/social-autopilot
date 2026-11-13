@@ -32,6 +32,8 @@
 //        image (n = 1 main image.png, 2 = image-02.png, 3 = image-03.png, 4 = image-04.png): the raw download is kept (image-generated-flow-original.jpg|png,
 //        extras image-0N-flow-original.*), converted to PNG, Google's sparkle removed locally (scripts/image-unsparkle.mjs), then the
 //        usual metadata clean, watermark when the brand has it on, and the automatic check. Status: image_engine flow, sparkle removed|none.
+//   node scripts/draft.mjs flow-queue [--ids a,b | --brand <id>]   Flow batch: every missing image in submission order (covers, then extras) with tag <draft>#<n>
+//   node scripts/draft.mjs register-batch --map <map.json>   register many downloads at once: [{id,n,from}]
 //   node scripts/draft.mjs flow-brief --id <draft> [--n 1..4]   Flow helper: condensed English prompt, ratio, reference copied under Downloads, register command
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
 //                                                           product_images.watermark.enabled (default off; needs ffmpeg)
@@ -327,19 +329,37 @@ export function waitingForImage(brand, force = false, s = settings()) {
 // A slot whose process is gone is taken over.
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
-export function takeCodexSlot(s = settings(), { waitMs = ((Number(s.codex?.timeout_minutes) || 15) * 2 + 5) * 60000 } = {}) {
-  const n = Math.max(1, Number(s.codex?.concurrency) || 3), dir = path.join(workspace, 'tmp', 'codex-slots'), until = Date.now() + waitMs;
-  fs.mkdirSync(dir, { recursive: true });
+// One pass over the slots: the release function of the first free (or dead-owner) slot, else null.
+// A slot is a folder made atomically; its pid file is only for taking over a dead owner's slot (several holders may share one pid).
+function tryCodexSlot(n, dir) {
+  for (let i = 0; i < n; i++) {
+    const slot = path.join(dir, `slot-${i}`), pidFile = path.join(slot, 'pid');
+    try { fs.mkdirSync(slot); fs.writeFileSync(pidFile, String(process.pid)); return () => fs.rmSync(slot, { recursive: true, force: true }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    let pid = 0; try { pid = Number(fs.readFileSync(pidFile, 'utf8')) || 0; } catch {}
+    let young = false; try { young = Date.now() - fs.statSync(slot).mtimeMs < 60000; } catch {}
+    if (pid ? !alive(pid) : !young) { try { if ((Number(fs.readFileSync(pidFile, 'utf8')) || 0) === pid) fs.rmSync(slot, { recursive: true, force: true }); } catch { fs.rmSync(slot, { recursive: true, force: true }); } }
+  }
+  return null;
+}
+const slotSetup = (s) => { const dir = path.join(workspace, 'tmp', 'codex-slots'); fs.mkdirSync(dir, { recursive: true }); return { n: Math.max(1, Number(s.codex?.concurrency) || 3), dir }; };
+const slotWait = (s) => ((Number(s.codex?.timeout_minutes) || 15) * 2 + 5) * 60000;
+export function takeCodexSlot(s = settings(), { waitMs = slotWait(s) } = {}) {
+  const { n, dir } = slotSetup(s), until = Date.now() + waitMs;
   for (;;) {
-    for (let i = 0; i < n; i++) {
-      const slot = path.join(dir, `slot-${i}`), pidFile = path.join(slot, 'pid');
-      try { fs.mkdirSync(slot); fs.writeFileSync(pidFile, String(process.pid)); return () => fs.rmSync(slot, { recursive: true, force: true }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
-      let pid = 0; try { pid = Number(fs.readFileSync(pidFile, 'utf8')) || 0; } catch {}
-      let young = false; try { young = Date.now() - fs.statSync(slot).mtimeMs < 60000; } catch {}
-      if (pid ? !alive(pid) : !young) { try { if ((Number(fs.readFileSync(pidFile, 'utf8')) || 0) === pid) fs.rmSync(slot, { recursive: true, force: true }); } catch { fs.rmSync(slot, { recursive: true, force: true }); } }
-    }
+    const release = tryCodexSlot(n, dir);
+    if (release) return release;
     if (Date.now() > until) throw new Error(`Codex bận: cả ${n} lượt (codex.concurrency) đang chạy quá lâu.`);
     sleepMs(300);
+  }
+}
+// Same slots, but waits without blocking the event loop (several album extras of one post wait for slots at once).
+export async function takeCodexSlotAsync(s = settings(), { waitMs = slotWait(s) } = {}) {
+  const { n, dir } = slotSetup(s), until = Date.now() + waitMs;
+  for (;;) {
+    const release = tryCodexSlot(n, dir);
+    if (release) return release;
+    if (Date.now() > until) throw new Error(`Codex bận: cả ${n} lượt (codex.concurrency) đang chạy quá lâu.`);
+    await new Promise((r) => setTimeout(r, 300));
   }
 }
 
@@ -372,12 +392,12 @@ export async function imageBatch(args, s = settings()) {
     next: 'Xem từng ảnh; ảnh đạt thì viết caption (có thể viết trong lúc ảnh khác đang chạy) rồi draft.mjs check.' };
 }
 
-export function image(args, s = settings()) {
+export async function image(args, s = settings()) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const target = path.join(dir, 'image.png');
   if (fs.existsSync(target) && !args.force) {
     // Main image made: only the album extras still missing (or all again with --force-extras).
-    const album = draftImages(draft).length > 1 ? imageExtras(dir, draft, s, { force: !!args['force-extras'] }) : null;
+    const album = draftImages(draft).length > 1 ? await imageExtras(dir, draft, s, { force: !!args['force-extras'] }) : null;
     return ({ id: draft.id, skipped: !album, image: target, ...(album ? { album } : {}), ...(album?.failed.length ? { ok: false, error: album.failed.map((x) => `${x.file}: ${x.error}`).join('; ') } : {}), note: 'Đã có image.png (thêm --force để làm lại).' });
   }
   const prompt = fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8');
@@ -410,8 +430,8 @@ export function image(args, s = settings()) {
   try {
     const runCodex = () => c.shell
     // A .cmd shim needs the shell; it gets one command string (no args array with shell: true, Node DEP0190).
-      ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
-      : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+      ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+      : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
     // A rate-limit/quota answer: wait (codex.retry_wait_seconds), try once more, then image_failed.
     const wait = Number(process.env.SA_CODEX_RETRY_WAIT_SECONDS ?? s.codex.retry_wait_seconds ?? 60);
     for (let attempt = 1; ; attempt++) {
@@ -441,7 +461,7 @@ export function image(args, s = settings()) {
   const cleaned = cleanDraftImage(dir, { generator: 'codex', force: true }, s);
   const st = readJson(path.join(dir, 'status.json'));
   // Album: the extras follow the NEW main image (same scene), so they are made again after every main image.
-  const album = draftImages(draft).length > 1 ? imageExtras(dir, draft, s, { force: true }) : null;
+  const album = draftImages(draft).length > 1 ? await imageExtras(dir, draft, s, { force: true }) : null;
   const st2 = readJson(path.join(dir, 'status.json'));
   return ({ id: draft.id, image: target, images: draftImages(draft).map((x) => path.join(dir, x)), ...(album ? { album } : {}), ...(album?.failed.length ? { album_failed: album.failed } : {}), ...(retried ? { retried_after_rate_limit: true } : {}), original: cleaned.original, metadata_removed: cleaned.removed, warnings: logoWarnings(prompt), status: st2.status, next: `Xem ${album ? 'mọi ảnh (image.png là ảnh bìa)' : 'ảnh'}; nếu đạt, viết caption theo brief.md rồi chạy draft.mjs check --id ${draft.id}.` });
 }
@@ -535,6 +555,32 @@ export function flowBrief(args, s = settings()) {
     reference: n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
     ...(n > 1 && !fs.existsSync(ref) ? { warning: 'image 1 is not registered yet (extras follow the cover).' } : {}),
     register: `node scripts/draft.mjs register-image --id ${draft.id} --n ${n} --from <downloaded file>` };
+}
+
+// Google Flow batch helpers (plumbing only; the batching rules live in the skill, references/image-guide.md).
+// flow-queue: every image still missing, in SUBMISSION ORDER: wave 1 = all covers (n=1) of all drafts, wave 2 = all album extras
+// (they take image 1 of their post as reference, so they go after the covers exist in the Flow project). Each item has a stable
+// `tag` (<draft>#<n>) and `order`, the condensed prompt, the reference file and the register command. --ids a,b or --brand <id>.
+export function flowQueue(args, s = settings()) {
+  const ids = args.ids && args.ids !== true ? String(args.ids).split(',').map((x) => x.trim()).filter(Boolean) : null;
+  const drafts = ids ? ids.map((id) => findDraft(id)) : listDrafts(args.brand && args.brand !== true ? String(args.brand) : undefined).filter((d) => !['approved', 'rejected'].includes(d.status.status));
+  const items = [];
+  for (const d of drafts) for (const [i, f] of draftImages(d.draft).entries()) if (!fs.existsSync(path.join(d.dir, f))) items.push({ id: d.draft.id, n: i + 1 });
+  items.sort((a, b) => (a.n === 1 ? 0 : 1) - (b.n === 1 ? 0 : 1)); // stable: covers first, then extras, drafts keep their order
+  const queue = items.map((it, k) => { const b = flowBrief({ id: it.id, n: String(it.n) }, s); return { order: k + 1, wave: it.n === 1 ? 1 : 2, tag: `${it.id}#${it.n}`, id: it.id, n: it.n, file: b.file, album_mode: b.album_mode, prompt: b.prompt, reference: b.reference, ...(b.warning_scene ? { warning_scene: b.warning_scene } : {}), register: b.register }; });
+  return { count: queue.length, wave1: queue.filter((q) => q.wave === 1).length, wave2: queue.filter((q) => q.wave === 2).length, queue,
+    next: 'Submit wave 1 in this order without waiting, wait once, then submit wave 2 the same way, wait once, download every tile, write map.json [{"id","n","from"}] and run: node scripts/draft.mjs register-batch --map <map.json>.' };
+}
+// register-batch: register many downloaded files in one call. --map <json file>: [{ "id": "<draft>", "n": 1..4, "from": "<file>" }, ...].
+// Covers (n=1) first; one failing item does not stop the others (its error is listed, re-submit only that prompt in Flow).
+export function registerBatch(args, s = settings()) {
+  const map = JSON.parse(fs.readFileSync(path.resolve(String(need(args, 'map'))), 'utf8'));
+  if (!Array.isArray(map) || !map.length) throw new Error('--map must be a JSON array [{id, n, from}, ...].');
+  const results = [];
+  for (const m of [...map].sort((a, b) => (Number(a.n || 1) === 1 ? 0 : 1) - (Number(b.n || 1) === 1 ? 0 : 1))) {
+    try { const r = registerImage({ id: m.id, n: String(m.n || 1), from: m.from }, s); results.push({ tag: `${m.id}#${m.n || 1}`, ok: true, status: r.status, sparkle: r.sparkle, problems: r.problems, ...(r.images_missing ? { images_missing: r.images_missing } : {}) }); } catch (e) { results.push({ tag: `${m.id}#${m.n || 1}`, ok: false, error: e.message }); }
+  }
+  return { registered: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).map((r) => ({ tag: r.tag, error: r.error })), results };
 }
 
 // Optional post-processing, default off: the brand's logo as a small overlay in one corner of the finished image, never
@@ -661,10 +707,12 @@ if (isMain(import.meta.url)) main(async () => {
   const s = settings();
   const cmd = args._[0];
   if (cmd === 'new') return out(newDraft(args));
-  if (cmd === 'image') return out(image(args, s));
+  if (cmd === 'image') return out(await image(args, s));
   if (cmd === 'image-batch') return out(await imageBatch(args, s));
   if (cmd === 'register-image') return out(registerImage(args, s));
   if (cmd === 'flow-brief') return out(flowBrief(args, s));
+  if (cmd === 'flow-queue') return out(flowQueue(args, s));
+  if (cmd === 'register-batch') return out(registerBatch(args, s));
   if (cmd === 'reprompt') return out(reprompt(args));
   if (cmd === 'check') return out(check(args));
   if (cmd === 'watermark') return out(watermark(args, s));
@@ -673,7 +721,7 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'contact-sheet') return out(contactSheets(args, s));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
-  throw new Error('Lệnh: new | reprompt | image | register-image | flow-brief | image-batch | watermark | confirm-clean | size-check | check | show | list');
+  throw new Error('Lệnh: new | reprompt | image | register-image | flow-brief | flow-queue | register-batch | image-batch | watermark | confirm-clean | size-check | check | show | list');
 });
 
 // Album: one prompt per extra image (prompt-02.txt, ...), filled from prompts/album-extra.txt. {{PRODUCT_DESCRIPTION}}
@@ -697,40 +745,61 @@ function writeExtraPrompts(dir, draft, brand, sizeFill) {
 
 // Album extras: each extra is one more Codex run (its own global Codex slot), input = the clean main image.png
 // (+ the product photo), output image-0k.png, cleaned by the remove-watermark skill like the main image.
-// Status per image in status.json images { <file>: { state: ok|failed, sha1 (clean copy), error } }.
-function imageExtras(dir, draft, s, { force = false } = {}) {
+// The extras of a post run IN PARALLEL (they only need image.png), limited by the shared codex.concurrency slots;
+// each Codex run works in its own folder (<draft>/.extra-0k) so parallel runs never see each other's files.
+// Status per image in status.json images { <file>: { state: ok|failed, sha1 (clean copy), error } } (merged under the status lock).
+const runCodexAsync = (c, codexArgs, cwd, input, timeoutMs) => new Promise((resolve) => {
+  const q = (a) => (c.shell ? `"${a}"` : a);
+  const p = c.shell
+    ? spawn([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd, shell: true, windowsHide: true })
+    : spawn(c.file, [...c.pre, ...codexArgs], { cwd, windowsHide: true });
+  let stdout = '', stderr = '', error = null, timer = null;
+  if (timeoutMs > 0) timer = setTimeout(() => { try { p.kill(); } catch {} }, timeoutMs);
+  p.stdout.on('data', (x) => { stdout += x; }); p.stderr.on('data', (x) => { stderr += x; });
+  p.on('error', (e) => { error = e; });
+  p.on('close', (status) => { if (timer) clearTimeout(timer); resolve({ stdout, stderr, status, error }); });
+  p.stdin.on('error', () => {});
+  p.stdin.end(input);
+});
+function setImageState(dir, f, value, extra = {}) {
+  const file = path.join(dir, 'status.json');
+  withLock(file, () => { const st = readJson(file, {}); writeJson(file, { ...st, ...extra, images: { ...(st.images || {}), [f]: value }, updated: stamp() }); });
+}
+export async function imageExtras(dir, draft, s, { force = false } = {}) {
   const files = draftImages(draft).slice(1), done = [], failed = [];
-  for (const f of files) {
+  const hardMs = Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0;
+  const one = async (f) => {
     const target = path.join(dir, f), k = f.match(/(\d+)\.png$/)[1];
-    if (fs.existsSync(target) && !force) { done.push(f); continue; }
+    if (fs.existsSync(target) && !force) { done.push(f); return; }
     const promptFile = path.join(dir, `prompt-${k}.txt`);
     const prompt = fs.existsSync(promptFile) ? fs.readFileSync(promptFile, 'utf8') : '';
     const left = prompt.match(/\{\{\w+\}\}/g);
-    const fail = (error) => { failed.push({ file: f, error }); const st = readJson(path.join(dir, 'status.json'), {}); setStatus(dir, st.status, { images: { ...(st.images || {}), [f]: { state: 'failed', error } } }); };
-    if (!prompt || left) { fail(`prompt-${k}.txt ${prompt ? `còn ${[...new Set(left)].join(', ')}` : 'không có'}`); continue; }
-    const raw = path.join(dir, `image-${k}-generated.png`);
+    const fail = (error) => { failed.push({ file: f, error }); setImageState(dir, f, { state: 'failed', error }); };
+    if (!prompt || left) return fail(`prompt-${k}.txt ${prompt ? `còn ${[...new Set(left)].join(', ')}` : 'không có'}`);
+    const raw = path.join(dir, `image-${k}-generated.png`), work = path.join(dir, `.extra-${k}`);
     if (force && fs.existsSync(target)) fs.renameSync(target, path.join(dir, `image-old-${Date.now()}-${f}`));
-    fs.rmSync(raw, { force: true });
+    fs.rmSync(raw, { force: true }); fs.rmSync(work, { recursive: true, force: true }); fs.mkdirSync(work, { recursive: true });
     const codexArgs = ['exec', '--skip-git-repo-check', '-s', 'workspace-write', '-', '-i', path.join(dir, 'image.png'), '-i', draft.product_image];
-    const c = codexCommand(s), q = (a) => (c.shell ? `"${a}"` : a);
-    const before = new Set(fs.readdirSync(dir));
+    const c = codexCommand(s);
     let r, release;
-    try { release = takeCodexSlot(s); } catch (e) { fail(e.message); continue; }
+    try { release = await takeCodexSlotAsync(s); } catch (e) { return fail(e.message); }
     try {
-      r = c.shell
-        ? spawnSync([c.file, ...c.pre, ...codexArgs].map(q).join(' '), { cwd: dir, input: prompt, encoding: 'utf8', shell: true, timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
-        : spawnSync(c.file, [...c.pre, ...codexArgs], { cwd: dir, input: prompt, encoding: 'utf8', timeout: Number(s.codex.hard_timeout_minutes) > 0 ? Number(s.codex.hard_timeout_minutes) * 60000 : 0, // no limit unless codex.hard_timeout_minutes is set windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+      r = await runCodexAsync(c, codexArgs, work, prompt, hardMs);
       fs.appendFileSync(path.join(dir, 'codex.log'), `\n$ codex ${codexArgs.join(' ')} < prompt-${k}.txt\n\n${r.stdout || ''}\n${r.stderr || ''}\n${r.error ? 'ERROR ' + r.error.message : ''}\n`, 'utf8');
     } finally { release(); }
-    if (!fs.existsSync(target)) { const fresh = fs.readdirSync(dir).filter((x) => !before.has(x) && /\.png$/i.test(x)); if (fresh.length === 1) fs.renameSync(path.join(dir, fresh[0]), target); }
-    if (!fs.existsSync(target)) { fail(QUOTA.test(`${r.stdout}${r.stderr}`) ? 'Codex hết hạn mức ảnh' : `Codex không tạo được ${f} (mã ${r.status})`); continue; }
-    fs.renameSync(target, raw);
+    // The result: the file Codex was told to save (image-0k.png) in its own folder, or the one PNG it saved under another name.
+    const made = fs.readdirSync(work).filter((x) => /\.png$/i.test(x));
+    const pick = made.includes(f) ? f : made.length === 1 ? made[0] : '';
+    if (pick) fs.renameSync(path.join(work, pick), raw);
+    else if (fs.existsSync(target)) fs.renameSync(target, raw); // Codex wrote next to the draft instead of its cwd
+    fs.rmSync(work, { recursive: true, force: true });
+    if (!fs.existsSync(raw)) return fail(QUOTA.test(`${r.stdout}${r.stderr}`) ? 'Codex hết hạn mức ảnh' : `Codex không tạo được ${f} (mã ${r.status})`);
     try {
       const sha = cleanExtraImage(raw, target, s);
-      const st = readJson(path.join(dir, 'status.json'), {});
-      setStatus(dir, st.status, { images: { ...(st.images || {}), [f]: { state: 'ok', sha1: sha, updated: stamp() } }, logo_check: null });
+      setImageState(dir, f, { state: 'ok', sha1: sha, updated: stamp() }, { logo_check: null });
       done.push(f);
     } catch (e) { fail(e.message); }
-  }
-  return { done, failed };
+  };
+  await Promise.all(files.map(one));
+  return { done: files.filter((f) => done.includes(f)), failed };
 }
