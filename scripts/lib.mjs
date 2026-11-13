@@ -611,17 +611,117 @@ export function normalizeOverride(input = {}) {
   // Album size per post (posts.images_per_post [min, max], 1-4); missing = the tool default (settings posts.images_per_post).
   const ipp = o.posts?.images_per_post;
   const album = Array.isArray(ipp) && ipp.length === 2 && ipp.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && ipp[0] <= ipp[1] ? { posts: { images_per_post: ipp } } : {};
-  return { posts_per_day: ppd, paused: o.paused === true, sources_add: add, sources_disabled: disabled, ...album };
+  return { posts_per_day: ppd, paused: o.paused === true, sources_add: add, sources_disabled: disabled, ...album, suggested: normalizeSuggested(o.suggested), dismissed_suggestions: normalizeDismissed(o.dismissed_suggestions) };
 }
 export function readBrandOverride(id) {
   try { return normalizeOverride(readJson(brandOverrideFile(id), {})); } catch { return normalizeOverride({}); }
 }
+// The brand Edit save never carries the suggestions: they are kept as they are on disk (only the suggest/accept/dismiss functions below change them).
 export function saveBrandOverride(id, input) {
   if (!SRC_ID.test(String(id || ''))) throw new Error(`Bad brand id "${id}".`);
-  const ov = normalizeOverride(input);
+  const checked = normalizeOverride(input);
   const file = brandOverrideFile(id);
-  withLock(file, () => writeJson(file, { ...ov, updated: stamp() }));
+  let ov = checked;
+  withLock(file, () => {
+    const cur = readBrandOverride(id);
+    ov = { ...checked, suggested: input && 'suggested' in input ? checked.suggested : cur.suggested, dismissed_suggestions: input && 'dismissed_suggestions' in input ? checked.dismissed_suggestions : cur.dismissed_suggestions };
+    writeJson(file, { ...ov, updated: stamp() });
+  });
   return { id, file, override: ov };
+}
+
+// ----- suggested sources: new pages the agent found OUTSIDE the user's list (Research with nothing left to crawl) -----
+// workspace/brands/<id>.json suggested[] { id, name, platform, url, reason, found_at } and dismissed_suggestions[] (ids and url keys, never suggested again).
+// Written only by suggestSource / acceptSuggestions / dismissSuggestions (sources.mjs suggest|accept|dismiss, POST /api/sources/accept|dismiss), under the same file lock.
+export const SUGGEST_PLATFORMS = ['instagram', 'pinterest', 'facebook', 'etsy', 'houzz'];
+export const MAX_SUGGEST_PER_RUN = 5; // per brand per run (counted per calendar day: a run is one day's research)
+// Same page, same key: host without www, path without a trailing slash, query without tracking parameters, no hash.
+export function urlKey(raw) {
+  let u; try { u = new URL(String(raw || '')); } catch { return ''; }
+  if (!/^https?:$/.test(u.protocol)) return '';
+  const q = [...u.searchParams.entries()].filter(([k]) => !/^(utm_|fbclid|igshid|mibextid|ref$|rdid)/i.test(k)).sort(([x], [y]) => x.localeCompare(y)).map(([k, v]) => `${k}=${v}`).join('&');
+  return u.hostname.toLowerCase().replace(/^www\./, '') + u.pathname.replace(/\/+$/, '').toLowerCase() + (q ? `?${q}` : '');
+}
+function normalizeSuggested(list) {
+  const out = [];
+  for (const x of Array.isArray(list) ? list : []) {
+    const key = urlKey(x?.url), id = String(x?.id || '');
+    if (!key || !SRC_ID.test(id) || out.some((y) => y.id === id || urlKey(y.url) === key)) continue;
+    out.push({ id, name: String(x.name || id).slice(0, 120), platform: SUGGEST_PLATFORMS.includes(String(x.platform)) ? String(x.platform) : '', url: new URL(x.url).href, reason: String(x.reason || '').slice(0, 300), found_at: String(x.found_at || '') });
+  }
+  return out;
+}
+function normalizeDismissed(list) {
+  return [...new Set((Array.isArray(list) ? list : []).map((v) => String(v || '').trim()).filter(Boolean))].slice(-500);
+}
+const sugSlug = (key) => ('sug-' + key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')).slice(0, 48).replace(/-$/, '');
+export function listSuggested(id) {
+  const ov = readBrandOverride(id);
+  return { suggested: ov.suggested, dismissed: ov.dismissed_suggestions.length };
+}
+// knownUrls / knownIds: every source the brand already has (skill + added in the tool, enabled or not), so a suggestion never repeats one.
+export function suggestSource(id, input = {}, { knownUrls = [], knownIds = [], now = new Date() } = {}) {
+  if (!SRC_ID.test(String(id || ''))) throw new Error(`Bad brand id "${id}".`);
+  let u; try { u = new URL(String(input.url || '')); } catch { throw new Error(`Suggested URL "${input.url || ''}" is not a link.`); }
+  if (!/^https?:$/.test(u.protocol)) throw new Error(`Suggested URL "${input.url}" must start with http(s)://`);
+  const platform = String(input.platform || '').toLowerCase();
+  if (!SUGGEST_PLATFORMS.includes(platform)) throw new Error(`Suggested platform "${input.platform || ''}" must be one of ${SUGGEST_PLATFORMS.join(', ')}.`);
+  const name = String(input.name || '').trim().slice(0, 120);
+  if (!name) throw new Error('Suggested page needs a name.');
+  const reason = String(input.reason || '').trim().slice(0, 300);
+  if (!reason) throw new Error('Suggested page needs a short reason.');
+  u.hash = '';
+  for (const k of [...u.searchParams.keys()]) if (/^(utm_|fbclid|igshid|mibextid|ref$|rdid)/i.test(k)) u.searchParams.delete(k);
+  const key = urlKey(u.href), file = brandOverrideFile(id), day = now.toISOString().slice(0, 10);
+  return withLock(file, () => {
+    const cur = readBrandOverride(id);
+    const skip = (why) => ({ added: false, reason: why, url: u.href });
+    if (cur.dismissed_suggestions.includes(key)) return skip('dismissed');
+    if (cur.suggested.some((x) => urlKey(x.url) === key)) return skip('already suggested');
+    if ([...knownUrls, ...cur.sources_add.map((x) => x.url)].some((x) => urlKey(x) === key)) return skip('already a source');
+    if (cur.suggested.filter((x) => String(x.found_at).startsWith(day)).length >= MAX_SUGGEST_PER_RUN) return skip(`limit: ${MAX_SUGGEST_PER_RUN} suggestions per brand per run`);
+    const taken = new Set([...knownIds, ...cur.sources_add.map((x) => x.id), ...cur.suggested.map((x) => x.id)]);
+    let sid = sugSlug(key); const base = sid;
+    for (let n = 2; taken.has(sid) || cur.dismissed_suggestions.includes(sid); n++) sid = `${base.slice(0, 44)}-${n}`;
+    const item = { id: sid, name, platform, url: u.href, reason, found_at: now.toISOString() };
+    writeJson(file, { ...cur, suggested: [...cur.suggested, item], updated: stamp() });
+    return { added: true, suggestion: item, pending: cur.suggested.length + 1 };
+  });
+}
+// Accept = move the suggestions into sources_add as ordinary user sources (enabled, crawled by the next run). Unknown ids are ignored.
+export function acceptSuggestions(id, ids = []) {
+  if (!SRC_ID.test(String(id || ''))) throw new Error(`Bad brand id "${id}".`);
+  const want = new Set((Array.isArray(ids) ? ids : []).map(String));
+  const file = brandOverrideFile(id);
+  return withLock(file, () => {
+    const cur = readBrandOverride(id);
+    const take = cur.suggested.filter((x) => want.has(x.id));
+    if (!take.length) return { accepted: [], pending: cur.suggested.length };
+    const add = [...cur.sources_add];
+    const accepted = [];
+    for (const x of take) {
+      if (add.some((a) => urlKey(a.url) === urlKey(x.url))) continue;
+      const item = { id: x.id, name: x.name, platform: x.platform, url: x.url, enabled: true, what_to_take: '', notes: x.reason ? `suggested: ${x.reason}` : '' };
+      add.push(item); accepted.push(item);
+    }
+    const next = normalizeOverride({ ...cur, sources_add: add, suggested: cur.suggested.filter((x) => !want.has(x.id)) });
+    writeJson(file, { ...next, updated: stamp() });
+    return { accepted: accepted.map((x) => ({ id: x.id, name: x.name, platform: x.platform, url: x.url })), pending: next.suggested.length };
+  });
+}
+// Dismiss = drop the suggestion and remember its id and URL: it is never suggested again.
+export function dismissSuggestions(id, ids = []) {
+  if (!SRC_ID.test(String(id || ''))) throw new Error(`Bad brand id "${id}".`);
+  const want = new Set((Array.isArray(ids) ? ids : []).map(String));
+  const file = brandOverrideFile(id);
+  return withLock(file, () => {
+    const cur = readBrandOverride(id);
+    const gone = cur.suggested.filter((x) => want.has(x.id));
+    if (!gone.length) return { dismissed: [], pending: cur.suggested.length };
+    const next = normalizeOverride({ ...cur, suggested: cur.suggested.filter((x) => !want.has(x.id)), dismissed_suggestions: [...cur.dismissed_suggestions, ...gone.flatMap((x) => [x.id, urlKey(x.url)])] });
+    writeJson(file, { ...next, updated: stamp() });
+    return { dismissed: gone.map((x) => x.id), pending: next.suggested.length };
+  });
 }
 // The skill's social.json with the tool's override on top (a copy; the skill file is never written).
 export function applyBrandOverride(social, ov) {

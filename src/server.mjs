@@ -10,14 +10,14 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
-import { workspace, discoverBrands, listDrafts, brandAvatar, readJson, rawSettings, saveSettings, settings, imageEngine, brandOverview, metricoolBrands, saveMetricoolBrands, linkMetricool } from "../scripts/lib.mjs";
+import { workspace, discoverBrands, listDrafts, brandAvatar, readJson, rawSettings, saveSettings, settings, imageEngine, brandOverview, metricoolBrands, saveMetricoolBrands, linkMetricool, readBrandOverride, acceptSuggestions, dismissSuggestions } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial, saveOverride } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar, registryAll, resetRegistry } from "../scripts/store.mjs";
-import { promptList, skillLine, ALL_BRANDS, FLOW_IMAGES_TEXT } from "../scripts/prompts.mjs";
+import { promptList, skillLine, ALL_BRANDS, FLOW_IMAGES_TEXT, EXTERNAL_TEXT } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
 import { REGISTRY as PLATFORM_REGISTRY } from "../scripts/platforms/index.mjs";
 import { redeem, tokenFor, MAX_BODY } from "../scripts/collect-transfer.mjs";
@@ -262,6 +262,15 @@ async function handle(req, res) {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(source)) throw new Error("Invalid source.");
     return { source, registry: resetRegistry(brand, source) };
   });
+  // Suggested sources (workspace/brands/<id>.json suggested[]): the Run tab accepts the ticked ones right before Run now / Copy prompt; the brand Edit page accepts or dismisses.
+  // Explicit actions only: building a prompt never writes. Accept = the page becomes an ordinary user source; Dismiss = never suggested again.
+  if ((path === "/api/sources/accept" || path === "/api/sources/dismiss") && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    const brand = String(b.brand ?? "");
+    if (!discovered().brands.some((x) => x.id === brand)) throw new Error(`Unknown brand "${brand}".`);
+    if (!Array.isArray(b.ids) || b.ids.length > 50 || !b.ids.every((x) => typeof x === "string")) throw new Error("ids must be a list of suggestion ids.");
+    return path.endsWith("/accept") ? acceptSuggestions(brand, b.ids) : dismissSuggestions(brand, b.ids);
+  });
   if (path === "/api/store" && req.method === "GET") return api(res, () => {
     const brands = discovered().brands;
     const brand = get("brand"), status = get("status"), source = get("source"), platform = get("platform");
@@ -309,7 +318,7 @@ async function handle(req, res) {
     const short = (n) => { const t = String(n || "").split(/[.;]| \(/)[0].trim(); return t.length > 110 ? `${t.slice(0, 107)}...` : t; };
     return { platforms: Object.entries(PLATFORM_REGISTRY).map(([id, e]) => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), status: e.status, checked: e.checked || "", note: short(e.note), enabled_for: brands.filter((b) => (b.discovery_platforms || []).includes(id)).map((b) => b.id) })), brands: brands.map((b) => ({ id: b.id, name: b.brand })) };
   });
-  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), image_engine: imageEngine(settings()), images_per_post: settings().posts?.images_per_post, album_mode: settings().posts?.album_mode || "random", images_text: FLOW_IMAGES_TEXT, all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, skill_root: b.skillRoot || b.dir, shared: !!b.shared, skill_line: skillLine(b), metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], sources_info: b.sources_info || [], discovery_platforms: b.discovery_platforms || [], discovery_enabled: !!b.discovery_enabled, posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
+  if (path === "/api/prompts" && req.method === "GET") return api(res, () => ({ prompts: promptList(), image_engine: imageEngine(settings()), images_per_post: settings().posts?.images_per_post, album_mode: settings().posts?.album_mode || "random", images_text: FLOW_IMAGES_TEXT, external_text: EXTERNAL_TEXT, all_brands: ALL_BRANDS, tool_root: root, ahead_days: settings().planning?.ahead_days || 7, brands: discovered().brands.map((b) => ({ id: b.id, name: b.brand, usable: b.usable, dir: b.dir, skill_root: b.skillRoot || b.dir, shared: !!b.shared, skill_line: skillLine(b), metricool_timezone: (() => { try { return (metricoolBrands().brands || []).find((m) => m.skill_id === b.id)?.timezone || ""; } catch { return ""; } })(), sources: b.sources || [], sources_info: b.sources_info || [], suggested: readBrandOverride(b.id).suggested, discovery_platforms: b.discovery_platforms || [], discovery_enabled: !!b.discovery_enabled, posts_per_week: b.posts_per_week ?? null, reference_redraw: !!b.reference_redraw })) }));
   // Log tab: the agent runs (scripts/runlog.mjs), newest first; one in full.
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));

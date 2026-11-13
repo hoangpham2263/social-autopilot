@@ -26,6 +26,11 @@ export const FLOW_IMAGES_TEXT = [
   '  Flow STOP: login wall, captcha, consent dialog you cannot pass, no credits, or a Flow refusal → stop, report, do not retry endlessly. Never ask Flow to remove a watermark or change a brand name.',
 ].join('\n');
 export const imagesText = (engine = imageEngine()) => (engine === 'flow' ? FLOW_IMAGES_TEXT : '');
+// {{EXTERNAL}} = the extra Research step "External sources": filled ONLY when a brand has nothing left to crawl (every enabled source fully
+// crawled, no suggestion pending); the Run tab then adds "external sources for: <brands>" to OPTIONS. Empty otherwise (the line disappears).
+// The wording is documented in docs/scheduled-prompt.md and docs/research.md.
+export const EXTERNAL_TEXT = 'EXTRA STEP 1.4b External sources (do it after 1.4 and before the run log; ONLY for the brands named in OPTIONS "external sources for", one brand at a time): every source of that brand is fully crawled and no suggestion is pending, so look OUTSIDE my list for NEW pages and only SUGGEST them. Run node scripts/sources.mjs queries --brand <id> (add --platforms a,b when OPTIONS has --platforms): it prints the search pages built from the skill research.discovery keywords/hashtags/platforms, used even if discovery.enabled is false and narrowed by the Platforms option (nothing printed: take the product types from project.md). Open each search page with Playwright MCP (one tab, same pace and login/stop rules as 1.2) and look for PAGES (Facebook pages/groups, Instagram accounts, Pinterest boards/profiles, Etsy shops, Houzz pros) whose products fit the brand product_fit. For each good candidate (max 5 per brand per run) record a suggestion and do NOT crawl it: node scripts/sources.mjs suggest --brand <id> --url <page url> --name "<page name>" --platform <instagram|pinterest|facebook|etsy|houzz> --reason "<why it fits, short>" (it refuses a bad URL and skips pages that are already a source, already suggested or dismissed: added:false is fine, go on). Public business pages only: never a private or personal profile, never a competitor personal account; no like, follow or join. Nothing from a suggested page is ingested in this run (I choose in the Run tab or the brand Edit page). List the suggestions (name, platform, reason) in the 1.6 report.';
+export const externalText = (on = false) => (on ? EXTERNAL_TEXT : '');
 // {{TOOL}} = this tool's folder (never a fixed path), {{BRAND}} = the brand or all, {{OPTIONS}} = this run's options.
 // One SKILL line per brand in scope (all usable brands when none is given), A-Z, with its linked skill folder: the
 // terminal agent cannot pick a skill, so the prompt says where each one is.
@@ -42,7 +47,7 @@ export function skillLines(brand = '', brands = discoverBrands().brands) {
   const list = brands.filter((b) => (brand ? b.id === brand : b.usable)).sort((a, b) => a.id.localeCompare(b.id));
   return list.map(skillLine).join('\n') || 'SKILL: (no linked, usable brand)';
 }
-export const fillPrompt = (text, brand, options = 'defaults', skills = skillLines(brand), images = imagesText()) => String(text).replace(/\n?\{\{IMAGES\}\}/g, () => (images ? '\n' + images : '')).replace(/\{\{TOOL\}\}/g, toolRoot).replace(/\{\{BRAND\}\}/g, brand || ALL_BRANDS).replace(/\{\{OPTIONS\}\}/g, options).replace(/\{\{SKILLS\}\}/g, skills);
+export const fillPrompt = (text, brand, options = 'defaults', skills = skillLines(brand), images = imagesText(), external = '') => String(text).replace(/\n?\{\{IMAGES\}\}/g, () => (images ? '\n' + images : '')).replace(/\n?\{\{EXTERNAL\}\}/g, () => (external ? '\n' + external : '')).replace(/\{\{TOOL\}\}/g, toolRoot).replace(/\{\{BRAND\}\}/g, brand || ALL_BRANDS).replace(/\{\{OPTIONS\}\}/g, options).replace(/\{\{SKILLS\}\}/g, skills);
 
 if (isMain(import.meta.url)) main(() => {
   const args = parseArgs();
