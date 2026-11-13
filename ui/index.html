@@ -776,8 +776,8 @@ header + * { margin-top: 0; }
   // A whole card opens its preview (click or Enter); its buttons do their own thing.
   function wireTiles(box, open) {
     $$(".tile", box).forEach((card, i) => {
-      card.onclick = (e) => { if (e.target.closest("a, button, input, select")) return; open(i); };
-      card.onkeydown = (e) => { if (e.target === card && e.key === "Enter") { e.preventDefault(); open(i); } };
+      card.onclick = (e) => { if (e.target.closest("a, button, input, select")) return; open(i, card); };
+      card.onkeydown = (e) => { if (e.target === card && e.key === "Enter") { e.preventDefault(); open(i, card); } };
       for (const b of $$("button", card)) b.addEventListener("click", (e) => e.stopPropagation());
     });
   }
@@ -1560,7 +1560,7 @@ header + * { margin-top: 0; }
     const making = drafts.filter((d) => !stateOf(d) && d.status !== "rejected").length, failed = drafts.filter((d) => stateOf(d) && failedOf(d)).length;
     $("#drExtra").innerHTML = [failed ? `<span class="count-bad">${failed} failed</span>` : "", making ? `${making} in progress` : ""].filter(Boolean).join(" · ");
     const list = drafts.filter((d) => stateOf(d) === drState);
-    drList = list;
+    drList = list.slice(); // the preview overlay edits its own copy; the tiles below keep the list they were drawn from
     $("#draftList").innerHTML = list.length ? `<div class="tiles">${list.map((d) => {
       const fail = failedOf(d), review = drState === "review" && !fail, live = liveIds(d.brand_post)[0];
       // Scheduled: "On Metricool" + its time (VN first, ET in brackets); Approved: "Waiting to send".
@@ -1572,10 +1572,12 @@ header + * { margin-top: 0; }
         sub: when, subRight: String(d.created || "").slice(0, 10), subRightTip: d.created ? `Created ${String(d.created).slice(0, 16).replace("T", " ")}` : "", who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (drState === "approved" ? "the next Publish approved sends it" : "")].filter(Boolean).join(" · "),
         actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ["approved", "scheduled"].includes(drState) && d.brand_post && MC(d) !== "published" ? `<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
-    wireTiles($("#draftList"), (i) => openPreview(list[i], { list, i }));
-    $$("#draftList .tile").forEach((card, i) => {
+    // A tile is tied to its post by id (never by its position): tiles can be removed from the page at once and the list can change.
+    wireTiles($("#draftList"), (i, card) => { const j = list.findIndex((x) => x.id === card?.dataset.id); if (j >= 0) openPreview(list[j], { list, i: j }); });
+    $$("#draftList .tile").forEach((card) => {
       for (const btn of $$("[data-act]", card)) btn.onclick = async () => {
-        const d = list[i], msg = $(".msg", card);
+        const d = list.find((x) => x.id === card.dataset.id), msg = $(".msg", card);
+        if (!d) { loadDrafts(); return; }
         if (btn.dataset.act === "drop" && !confirm("Drop this post? It will not be used.")) return;
         if (btn.dataset.act === "unreview") {
           const sure = confirmBack(d); if (!sure.ok) return;
@@ -1697,6 +1699,7 @@ function draftTags(d) {
   });
   // nav: { list, i } when opened from the list: ‹ Prev / Next › (↑/↓) walk it without closing.
   function openPreview(d, nav = null) {
+    if (!d) { loadDrafts(); return; } // the post is gone (approved or dropped just now): refresh instead of failing
     const go = nav ? (step) => { const j = nav.i + step; if (nav.list[j]) openPreview(nav.list[j], { list: nav.list, i: j }); } : null;
     const bp = d.brand_post, canCancel = !bp && d.status !== "rejected", canUnreview = !!bp && bp.metricool !== "published", swap = d.image_mode === "scene-swap";
     const p = d.preview || { posts: [], media: [] };
