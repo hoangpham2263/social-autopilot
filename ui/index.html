@@ -145,8 +145,19 @@ details[open] > summary { margin-bottom: 6px; }
 .run-steps li.now { border-color: var(--accent); }
 .run-steps li.skipped, .run-steps li.pending { color: var(--muted); }
 #page-prompt .ar-panel { gap: 8px; margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--line); background: #fff; box-sizing: border-box; }
-#page-prompt > #prAgentRun { flex: 0 1 auto; min-height: 0; max-height: 100%; }
+#page-prompt > #prAgentRun { flex: 0 0 auto; min-height: 0; max-height: none; margin-bottom: 12px; overflow: visible; }
 #page-prompt > #prAgentRun.has-log { min-height: 0; }
+#prAgentRun > * { min-width: 0; }
+.ar-result { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; line-height: 1.45; }
+.ar-result:empty { display: none; }
+.ar-result .md-h { font-weight: 600; margin: 8px 0 2px; } .ar-result .md-h:first-child { margin-top: 0; }
+.ar-result .md-p { margin: 0 0 6px; } .ar-result .md-gap { height: 6px; }
+.ar-result ul { margin: 0 0 6px; padding-left: 20px; } .ar-result li { margin: 1px 0; }
+.ar-result b { font-weight: 600; }
+.ar-result code { background: #eef2f7; border-radius: 4px; padding: 0 4px; font-size: 12px; }
+.ar-resbar { display: flex; justify-content: flex-end; }
+.ar-resbar[hidden] { display: none; }
+.ar-resbar .btn { padding: 1px 10px; font-size: 12px; }
 .ar-logbox > .label { font-size: 12px; color: var(--muted); }
 .ar-logbox[hidden] { display: none; }
 .ar-logbox { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; } .ar-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .ar-last { overflow-wrap: anywhere; }
@@ -276,13 +287,22 @@ details.sec > summary { color: var(--ink); font-size: inherit; display: flex; fl
 details.sec[open] > summary { margin-bottom: 12px; }
 #page-settings details.sec > summary { margin: 0; } #page-settings details.sec[open] > summary { margin-bottom: 12px; }
 #page-prompt details.sec { flex: 0 0 auto; }
-#page-prompt #prChrome { margin: 0 0 12px; box-sizing: border-box; }
-#prLogins { margin: 10px 0 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; box-sizing: border-box; }
-#prLogins .bl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 28px; }
+#page-prompt #prChrome { margin: 0 0 12px; box-sizing: border-box; width: 100%; }
+#prBrowser, #prOwnBox { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+#prBrowser .fields, #prOwnBox .row-actions, #prOwnBox .meta { margin: 0; }
+#prOwnBox .row-actions { align-items: flex-start; }
+#prOwnBox .row-actions + :not(.msg):not([hidden]) { margin-top: 0; }
+#prBrowserStatus { color: var(--muted); }
+#prLogins { margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; box-sizing: border-box; min-height: 150px; display: flex; flex-direction: column; gap: 8px; }
+#prLogins[hidden] { display: none; }
+#prLogins > .meta { margin: 0; }
+#prLogins .bl-head { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-height: 28px; }
 #prLogins .bl-head b { font-weight: 600; margin-right: auto; }
-#prLogins .bl-list { min-height: 66px; margin: 4px 0 0; }
-#prLogins .bl-row { display: flex; align-items: center; gap: 6px 10px; min-height: 32px; flex-wrap: wrap; }
-#prLogins .bl-name { min-width: 110px; }
+#prLogins .bl-head .btn { padding: 2px 10px; }
+#prLogins .bl-list { min-height: 72px; flex: 1 1 auto; }
+#prLogins .bl-row { display: flex; align-items: center; gap: 8px 12px; min-height: 34px; flex-wrap: nowrap; }
+#prLogins .bl-name { flex: 0 0 8rem; width: 8rem; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#prLogins .bl-row > .meta { flex: 0 1 auto; white-space: nowrap; }
 #prLogins .bl-req { font-size: 11px; letter-spacing: .04em; color: #0b4fb3; background: #e7f0fe; border: 1px solid #8ab4f8; border-radius: 10px; padding: 0 7px; }
 #prLogins .btn { background: #e7f0fe; border-color: #8ab4f8; color: #0b4fb3; border-radius: 8px; }
 #prLogins .btn:hover:not(:disabled) { background: #d2e3fc; border-color: var(--accent); }
@@ -290,7 +310,7 @@ details.sec[open] > summary { margin-bottom: 12px; }
 #prLogins .bl-row .btn { margin-left: auto; padding: 2px 10px; }
 .bl-lk { display: inline-flex; vertical-align: middle; margin-left: 4px; color: #b45309; cursor: help; }
 .bl-lk:empty { display: none; }
-#prLoginHint { min-height: 0; margin: 6px 0 0; color: #b45309; }
+#prLoginHint { min-height: 0; margin: 8px 0; color: #b45309; }
 .sec .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; } .sec .chips:empty { display: none; }
 /* Quiet action: text link in a row of secondary actions. */
 .row-actions .linkbtn { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--accent); text-decoration: underline; cursor: default; }
@@ -348,6 +368,8 @@ nav.tabs button { margin-right: 0; }
 nav.tabs { gap: 6px; margin: 0 0 0 20px; }
 main > header { border-bottom: 1px solid var(--line); margin-bottom: 14px; height: 60px; }
 header + * { margin-top: 0; }
+@media (max-width: 800px) { main > header { height: auto; min-height: 60px; flex-wrap: wrap; padding: 6px 0; gap: 6px 0; } nav.tabs { margin-left: 8px; flex-wrap: wrap; } }
+#page-prompt:not([hidden]) { padding-right: 8px; box-sizing: border-box; }
 .fields { margin-bottom: 14px; }
 .btn, a.btn, button.btn, nav.tabs button, input:not([type=checkbox]):not([type=radio]), select, textarea, .card, fieldset, .plat, .status-tag, .setup-status, .reject-box, .ar-panel, .run-panel { border-radius: var(--r); }
 .status-tag { border-radius: 999px; }
@@ -434,7 +456,9 @@ header + * { margin-top: 0; }
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
       <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span></div>
-      <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span> <span id="arLast" class="ar-last"></span></div>
+      <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span></div>
+      <div id="arLast" class="ar-last ar-result"></div>
+      <div class="ar-resbar" id="arResBar" hidden><button class="btn" type="button" id="arCopyRes">Copy report</button></div>
       <div class="ar-logbox" id="arLogBox"><span class="label">Live log</span><div class="ar-feed" id="arFeed" aria-live="polite"></div><details class="ar-tech"><summary>Chi tiết kỹ thuật</summary><pre class="ar-log" id="arLog"></pre></details></div>
     </div>
     <!-- Browser for runs: Own browser (dedicated profile, log in once, headless runs) or My Chrome (extension: read only status from GET /api/chrome-check; profile + helpers inside). -->
@@ -446,9 +470,9 @@ header + * { margin-top: 0; }
         </div>
         <div id="prOwnBox">
           <div class="row-actions"><button class="btn" type="button" id="prBrowserLogin" title="Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
-          <div class="meta" id="prBrowserStatus" role="status" style="margin-top:8px"></div>
+          <div class="meta" id="prBrowserStatus" role="status"></div>
           <div id="prLogins"></div>
-          <div class="meta" style="margin-top:6px">Runs use this profile in the background (headless). Facebook may show a checkpoint for automated browsers; if a site blocks headless runs, switch browser.headless off in Settings. Sites you log in to: Facebook, Instagram, Pinterest, Etsy, Houzz, Google (Flow).</div>
+          <div class="meta">Runs use this profile in the background (headless). Facebook may show a checkpoint for automated browsers; if a site blocks headless runs, switch browser.headless off in Settings. Sites you log in to: Facebook, Instagram, Pinterest, Etsy, Houzz, Google (Flow).</div>
         </div>
       </div>
       <div id="prExtBox">
@@ -1358,12 +1382,12 @@ header + * { margin-top: 0; }
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
     box.hidden = howNow() !== "app"; prRunVis();
-    if (!show) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
-    $("#arLast").className = "ar-last"; $("#arLogBox").hidden = false; box.classList.add("has-log");
+    if (!show) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last ar-result"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
+    $("#arLast").className = "ar-last ar-result"; $("#arLogBox").hidden = false; box.classList.add("has-log");
     if (noCli) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const endedAt = r.started ? Date.parse(r.started) + (r.elapsed_s || 0) * 1000 : 0;
     if (!busy && endedAt && Date.now() - endedAt > 10 * 60000) { // stale result: one quiet line instead of the result block
-      $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last";
+      $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last ar-result";
       $("#arLast").textContent = `Last run ${(AR_CHIP[r.status]?.[0] || r.status).toLowerCase()} ${when(new Date(endedAt).toISOString())}`;
       $("#arLogBox").hidden = true; box.classList.remove("has-log"); return;
     }
@@ -1373,12 +1397,36 @@ header + * { margin-top: 0; }
     $("#arElapsed").textContent = `${r.mode}${r.flow ? " (Flow)" : ""} · ${arClock(r.elapsed_s || 0)}${r.limit_min ? ` of ${r.limit_min} min max` : ""}${r.turns ? ` · ${r.turns} turns` : ""}${step}`;
     const startMsg = r.mode === "research" && browserMode === "own" ? "Starting… Claude works in the own browser in the background." : r.mode === "research" ? `Starting… Claude opens pages in your Chrome (profile ${$("#prChromeProf").value || "default"}). Click Connect in Chrome when asked.` : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
-    $("#arLast").textContent = r.problem?.message || (r.error && r.status !== "running" ? r.error : r.last_text || (busy ? startMsg : ""));
+    { const bad = !!r.problem || !!(r.error && r.status !== "running"); arSetResult(r.problem?.message || (bad ? r.error : r.last_text || (busy ? startMsg : "")), !bad && !busy && !!r.last_text); }
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
     arFeedDraw(r); arBarDraw(r);
   }
+  // Markdown-lite for the final report: HTML is escaped first, then #/## headings, **bold**, `code`, "- "/"* " bullets and blank lines.
+  function mdLite(src) {
+    const inl = (t) => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    let out = "", inList = false;
+    const close = () => { if (inList) { out += "</ul>"; inList = false; } };
+    let text = String(src || "").replace(/\r/g, "");
+    // The server flattens the report to one line: restore breaks before headings, bold labels and dash bullets.
+    if (!text.includes("\n")) text = text.replace(/ (#{1,6} )/g, "\n$1").replace(/ (\*\*[^*]{1,60}\*\*)/g, "\n$1").replace(/ - (?=\S)/g, "\n- ");
+    for (const line of text.split("\n")) {
+      let m;
+      if (/^\s*$/.test(line)) { close(); out += `<div class="md-gap"></div>`; }
+      else if ((m = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line))) { close(); out += `<div class="md-h">${inl(m[1])}</div>`; }
+      else if ((m = /^\s*[-*]\s+(.*)$/.exec(line))) { if (!inList) { out += "<ul>"; inList = true; } out += `<li>${inl(m[1])}</li>`; }
+      else { close(); out += `<div class="md-p">${inl(line)}</div>`; }
+    }
+    close(); return out;
+  }
+  let arResultRaw = "";
+  function arSetResult(text, copyable) {
+    const el = $("#arLast"); arResultRaw = String(text || "");
+    if (el.dataset.raw !== arResultRaw || (arResultRaw && !el.firstElementChild)) { el.dataset.raw = arResultRaw; el.innerHTML = mdLite(arResultRaw); }
+    $("#arResBar").hidden = !(copyable && arResultRaw.length > 80);
+  }
+  $("#arCopyRes").onclick = async () => { try { await navigator.clipboard.writeText(arResultRaw); } catch {} const b = $("#arCopyRes"); b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy report"; }, 1500); };
   // Live log for the person: friendly Vietnamese lines (r.friendly = [{t, text, n}]), newest at the bottom; scrolls only when the person is already at the bottom.
   function arFeedDraw(r) {
     const feed = $("#arFeed"), list = arr(r.friendly).slice(-40);
@@ -1499,7 +1547,7 @@ header + * { margin-top: 0; }
       const [word, dot] = BL_STATE[x.state] || BL_STATE.unknown;
       return `<div class="bl-row" data-p="${esc(x.platform)}"><span class="bl-name"><span class="dot ${dot}"></span>${esc(x.name || BL_NAMES[x.platform] || x.platform)}</span><span class="meta" title="${esc(x.reason || "")}">${word}</span>${x.required ? `<span class="bl-req" title="Runs need this login">REQUIRED</span>` : ""}<button class="btn" type="button" data-login="${esc(x.platform)}"${busyRun ? ` disabled title="A run is active: wait for it or press Stop"` : ` title="Opens the own browser on ${esc(BL_NAMES[x.platform] || x.platform)}: log in, then close the window"`}>Log in</button></div>`;
     }).join("");
-    const html = `<div class="bl-head"><b>Logins</b><button class="linkbtn" type="button" id="blAll">${blAll ? "Show fewer" : "Show all"}</button><button class="btn" type="button" id="blRefresh" title="Check the login state again (reads cookie names and expiry only)"${blBusy ? " disabled" : ""}>Refresh</button></div><div class="bl-list">${list}</div><div class="meta">Based on cookies: a login can look fine here yet be expired on the site.</div>`;
+    const html = `<div class="bl-head"><b>Logins</b><button class="btn" type="button" id="blAll">${blAll ? "Show fewer" : "Show all"}</button><button class="btn" type="button" id="blRefresh" title="Check the login state again (reads cookie names and expiry only)"${blBusy ? " disabled" : ""}>Refresh</button></div><div class="bl-list">${list}</div><div class="meta">Based on cookies: a login can look fine here yet be expired on the site.</div>`;
     if (html !== box.dataset.sig) {
       box.dataset.sig = html; box.innerHTML = html;
       $("#blAll").onclick = () => { blAll = !blAll; blDraw(); };
