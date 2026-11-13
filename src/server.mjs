@@ -422,6 +422,9 @@ async function handle(req, res) {
     res.writeHead(out ? 200 : 502, { "content-type": TYPES[".json"] });
     return res.end(out || JSON.stringify({ error: why || "update check failed" }));
   }
+  // A restart kills the headless run's process tree: refuse while a run started from this app is active.
+  const runBusy = () => !!agentRun.status()?.active;
+  if ((path === "/api/update" || path === "/api/reload") && req.method === "POST" && runBusy()) return send(res, 409, { error: "A run is active: stop it or wait for it to finish." });
   if (path === "/api/update" && req.method === "POST") {
     const ok = await pwshOut(`. '${q(join(root, "core", "update.ps1"))}' -NoRun; Update-App '${q(root)}'`, 300000).then(() => true, () => false);
     send(res, ok ? 200 : 500, { ok });

@@ -329,6 +329,11 @@ details.sec[open] > summary { margin-bottom: 12px; }
 /* Everything clickable shows the pointer. */
 button:not(:disabled), .btn:not(:disabled), a[href], select:not(:disabled), summary, label[for], input[type=checkbox]:not(:disabled), input[type=radio]:not(:disabled), [data-act], [data-card], [data-page], .open-card, .linkbtn, [role=button] { cursor: pointer; }
 button:disabled, .btn:disabled { cursor: default; }
+/* Run lock: while a run started from the app is active, controls that could disturb it are disabled (setRunLock in the script). */
+.run-locked, .run-locked * { cursor: not-allowed !important; }
+button.run-locked, .btn.run-locked, select.run-locked, input.run-locked, textarea.run-locked, details.run-locked { opacity: .55; }
+.run-lock-bar { margin: 0 0 10px; padding: 6px 10px; border: 1px solid #b06000; background: #fff4e0; color: #7a4b00; font-size: 13px; border-radius: var(--r); }
+#runLockPill { margin-left: 10px; align-self: center; }
 .home { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
 .home h1 { margin: 0; }
 /* Library, Posts and Log: the filter bar stays at the top while the list scrolls. */
@@ -392,6 +397,7 @@ header + * { margin-top: 0; }
       <button type="button" data-page="log">Log</button>
       <button type="button" data-page="settings">Settings</button>
     </nav>
+    <span class="status-tag c-amber" id="runLockPill" hidden></span>
   </header>
   <div id="setupStatus" class="setup-status" hidden></div>
 
@@ -428,6 +434,7 @@ header + * { margin-top: 0; }
   </section>
 
   <section class="page" id="page-prompt" hidden>
+    <div class="run-lock-bar" id="runLockBar" role="status" hidden></div>
     <!-- Row 1: Mode. Row 2: Agent, Brand, then the options of the chosen mode (same-width fields). Row 3:
          Copy prompt and the hint. Then the prompt. -->
     <div class="fields">
@@ -538,7 +545,11 @@ header + * { margin-top: 0; }
   const az = (list, name) => arr(list).slice().sort((a, b) => byName(name(a), name(b)));
   // Every request of the page goes through call(): GET without data, POST with it.
   // Every write carries the session token the server puts in this page (meta sa-token); without it the server refuses.
-  const call = (url, data) => fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", headers: { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" }, body: JSON.stringify(data) }).then((r) => r.json());
+  // Run lock: while a run started from the app is active (arState.active), writes except Stop/progress/log are refused here too (setRunLock below).
+  const RUN_LOCK_MSG = "A run is active: wait for it to finish or press Stop";
+  let runLocked = false;
+  const runBlocked = (url, data) => data !== undefined && runLocked && !/^\/api\/(agent-run\/stop|client-error|progress|setup-login)/.test(url);
+  const call = (url, data) => runBlocked(url, data) ? Promise.resolve({ error: RUN_LOCK_MSG }) : fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", headers: { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" }, body: JSON.stringify(data) }).then((r) => r.json());
   const getJson = (url) => call(url);
   const postJson = (url, data) => call(url, data);
   const img = (p) => `/file?path=${encodeURIComponent(p)}`;
@@ -1532,8 +1543,65 @@ header + * { margin-top: 0; }
       if (was?.active && !r.active) arEnded(r);
       else if (r.problem && !arToldProblem.has(r.started + r.problem.kind) && (r.active || was)) { arToldProblem.add(r.started + r.problem.kind); toast(r.problem.message); }
     }
+    if (r && !r.error) arFails = 0; else arFails++;
+    runLockSync();
     if (arState?.active) arTimer = setTimeout(loadAgentRun, $("#page-prompt").hidden ? 5000 : 3000);
   }
+  // ----- Run lock: one central function. setRunLock(true) disables, setRunLock(false) restores exactly what it disabled -----
+  // Only elements that were enabled are locked and marked (data-run-locked); on unlock only marked elements are enabled again, with their old title,
+  // so nothing that was disabled for another reason is ever enabled. A MutationObserver re-applies the lock to redrawn elements (pickers, tiles, Edit rows, overlays).
+  // Any other control can opt in with data-runlock. runGuard() is the JS guard at the top of every mutating click handler.
+  const RUN_LOCK_HEAD = "A run is active: stop it or wait for it to finish";
+  const RUN_LOCK_BANNER = "A run is active \u2014 controls are locked until it finishes. Stop is available in the Run tab.";
+  const RUN_LOCK_RUN_SEL = "#page-prompt button, #page-prompt input, #page-prompt select, #page-prompt textarea";
+  const RUN_LOCK_KEEP = "#prStop, #prRunPillGo, #prText, #prAgentRun, #prAgentRun *, #runLockBar";
+  const RUN_LOCK_DATA_SEL = "[data-runlock], #settingsSave, #setRecheck, #setLogin, #brandSave, #addSrc, [data-install], [data-link], [data-unlink], [data-rmsrc], [data-recrawl], [data-accept], [data-dismiss], [data-confirm], [data-act=approve], [data-act=drop], [data-act=cancel], [data-act=cancel-go], [data-act=unreview], [data-restore], [data-reject]";
+  const RUN_LOCK_HEAD_SEL = "header .reload, header .config, header [data-runlock-head]";
+  let arFails = 0;
+  const runGuard = () => { if (!runLocked) return false; toast(RUN_LOCK_MSG); return true; };
+  function runLockOne(el, msg) {
+    if (el.dataset.runLocked) { el.disabled = true; return; }
+    if (el.disabled) return; // disabled for another reason: leave it alone
+    el.dataset.runLocked = "1"; el.dataset.runTitle = el.hasAttribute("title") ? el.getAttribute("title") : "\0";
+    el.disabled = true; el.classList.add("run-locked"); el.setAttribute("title", msg);
+  }
+  function applyRunLock() {
+    if (!runLocked) return;
+    for (const el of $$(RUN_LOCK_RUN_SEL)) if (!el.matches(RUN_LOCK_KEEP)) runLockOne(el, RUN_LOCK_MSG);
+    for (const el of $$(RUN_LOCK_DATA_SEL)) if (!el.closest("#prAgentRun")) runLockOne(el, RUN_LOCK_MSG);
+    for (const el of $$(RUN_LOCK_HEAD_SEL)) runLockOne(el, RUN_LOCK_HEAD);
+    for (const d of $$("#page-prompt .field details")) { d.open = false; d.classList.add("run-locked"); } // pickers: closed and not openable
+  }
+  function releaseRunLock() {
+    for (const el of $$("[data-run-locked]")) {
+      el.disabled = false; el.classList.remove("run-locked");
+      if (el.dataset.runTitle === "\0") el.removeAttribute("title"); else el.setAttribute("title", el.dataset.runTitle || "");
+      delete el.dataset.runLocked; delete el.dataset.runTitle;
+    }
+    for (const d of $$("details.run-locked")) d.classList.remove("run-locked");
+  }
+  function runLockBanner() {
+    const bar = $("#runLockBar"), pill = $("#runLockPill"); if (!bar || !pill) return;
+    const secs = arState?.started ? Math.max(0, Math.round((Date.now() - Date.parse(arState.started)) / 1000)) : 0;
+    const onRun = !$("#page-prompt").hidden;
+    bar.hidden = !(runLocked && onRun); pill.hidden = !(runLocked && !onRun);
+    if (runLocked) { bar.textContent = RUN_LOCK_BANNER + " Elapsed " + arMmss(secs) + "."; pill.textContent = "Run active \u00b7 " + arMmss(secs) + " \u00b7 controls locked"; pill.title = RUN_LOCK_BANNER; }
+  }
+  function setRunLock(on) {
+    on = !!on; if (on === runLocked) { runLockBanner(); return; }
+    runLocked = on;
+    if (on) applyRunLock(); else releaseRunLock();
+    runLockBanner();
+  }
+  // Locked while the app's own headless run is active and the status request works (after 3 failed polls: treated as unlocked, never locked forever).
+  function runLockSync() { setRunLock(!!arState?.active && arFails < 3); }
+  { let queued = false;
+    new MutationObserver(() => { if (!runLocked || queued) return; queued = true; queueMicrotask(() => { queued = false; applyRunLock(); }); }).observe(document.body, { childList: true, subtree: true }); }
+  setInterval(() => { if (runLocked) runLockBanner(); }, 1000);
+  document.addEventListener("click", (e) => {
+    if (runLocked && e.target.closest?.("#page-prompt .field details > summary")) { e.preventDefault(); e.stopPropagation(); return; } // pickers cannot be opened
+    if (e.target.closest?.("[data-page], #home")) setTimeout(runLockBanner, 0);
+  }, true);
   function arEnded(r) {
     const mins = arClock(r.elapsed_s || 0), what = { research: "Research", create: "Create & publish", publish: "Publish approved" }[r.mode] || r.mode;
     if (r.problem && !arToldProblem.has(r.started + r.problem.kind)) arToldProblem.add(r.started + r.problem.kind);
@@ -2175,6 +2243,7 @@ function draftTags(d) {
     const r = await postJson("/api/setup-step", { step }).catch(() => offline);
     clearInterval(loginTimer); delete msg.dataset.code;
     for (const b of $$("#page-settings fieldset .btn")) b.disabled = false;
+    applyRunLock(); // a run may have started meanwhile: the lock wins
     if (r.superseded) return;
     msg.innerHTML = r.error ? errLine(r.error) : `<span class="ok-text">${step === "login" ? "Signed in." : "Installed."}</span>`;
     loadAccounts();
