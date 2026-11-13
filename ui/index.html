@@ -1033,11 +1033,20 @@ header + * { margin-top: 0; }
     const { total, on } = srcScope();
     $("#prSrcSum").textContent = !total ? "None" : on === total ? `All ${total}` : on ? `${on} of ${total}` : "None";
   }
+  // Fully crawled (registry complete) sources are hidden from the rows; they stay in the run (quick top check) unless unticked after "Show".
+  let showDone = false;
+  const srcDone = (b, s) => modeCounts[b.id]?.registry?.[s]?.status === "complete";
   function drawSources() {
     const brands = srcBrands(), single = !!$("#prBrand").value;
     const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, reg = modeCounts[b.id]?.registry?.[s], pOff = platOff.has(srcPlat(b, s)); return `<label title="${esc(info?.url || s)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" value="${esc(v)}"${srcOff.has(v) || pOff ? "" : " checked"}${pOff ? " disabled" : ""}><span>${esc(info?.name || s)}</span><span class="meta"><span class="dot ${(REG[reg?.status] || REG.none)[1]}"></span>${esc(regLine(reg))}</span></label>`; };
-    $("#prSrc").innerHTML = brands.map((b) => `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${arr(b.sources).map((s) => row(b, s)).join("")}`).join("") || `<div class="meta">No enabled sources.</div>`;
-    for (const c of $$("#prSrc input")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); store.set("prSrcOff", JSON.stringify([...srcOff])); srcLabel(); regenerate(); };
+    let hidden = 0, shown = 0;
+    const rows = (b) => arr(b.sources).filter((s) => { if (srcDone(b, s) && !showDone) { hidden++; return false; } shown++; return true; });
+    const body = brands.map((b) => { const r = rows(b).map((s) => row(b, s)).join(""); return r ? `${single ? "" : `<div class="opt-group">${esc(b.name || b.id)}</div>`}${r}` : ""; }).join("");
+    const empty = !brands.some((b) => arr(b.sources).length) ? "No enabled sources." : !shown ? "All sources are fully crawled. A run only checks the top of each page for new posts." : "";
+    const foot = hidden || showDone ? `<div class="meta" style="padding:6px 8px"><label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="prSrcShowDone"${showDone ? " checked" : ""}><span>${showDone ? "Showing fully crawled sources" : `${hidden} fully crawled source${hidden === 1 ? "" : "s"} hidden. Show`}</span></label></div>` : "";
+    $("#prSrc").innerHTML = body + (empty ? `<div class="meta">${empty}</div>` : "") + foot;
+    for (const c of $$("#prSrc input[value]")) c.onchange = () => { if (c.checked) srcOff.delete(c.value); else srcOff.add(c.value); store.set("prSrcOff", JSON.stringify([...srcOff])); srcLabel(); regenerate(); };
+    const sd = $("#prSrcShowDone"); if (sd) sd.onchange = () => { showDone = sd.checked; drawSources(); };
     srcLabel();
   }
   function drawPrompt() {
