@@ -572,8 +572,12 @@ export function brandAvatar(dir) {
   } catch {}
   return '';
 }
-// The page name a post shows: the enabled Facebook channel's account, else the brand name.
-export const pageName = (social) => String((social?.channels || []).find((c) => c?.enabled && c.network === 'facebook' && c.account)?.account || social?.brand || '');
+// The page name a post shows: the enabled Facebook channel's DISPLAY name (channel.name / page_name, when the skill sets one),
+// else the brand name. Never the channel's `account`: that is the username (e.g. "dreamyvows.neon"), not the page name.
+export const pageName = (social) => {
+  const fb = (social?.channels || []).find((c) => c?.enabled && c.network === 'facebook');
+  return String(fb?.name || fb?.page_name || fb?.display_name || social?.brand || '');
+};
 
 // ----- per-brand overrides kept IN THE TOOL (skills are read-only) -----
 // workspace/brands/<id>.json { posts_per_day, paused, sources_add[], sources_disabled[] } is merged over the skill's
