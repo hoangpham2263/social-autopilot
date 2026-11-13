@@ -134,3 +134,16 @@ test('without assumePresent a flat picture stays unchanged; the anchor grows fro
   assert.equal(sparkleAnchor(1024, 1024), 102);
   assert.equal(sparkleAnchor(2048, 2048), 120);
 });
+
+// A strong veil over a sharp horizontal edge (dark floor above, lighter rug below): the star is found, the strength stays what the
+// picture shows (the interior and the edge-free outline agree), and nothing outside the star box changes.
+test('a star across a sharp edge with different luminance on both sides is removed without a dark patch', () => {
+  const make = () => { const img = gradient(); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, k = y < H - 101 ? 0.45 : 1.3; for (let c = 0; c < 3; c++) img.data[i + c] = Math.min(255, Math.round(img.data[i + c] * k)); } return img; };
+  const clean = make(), shown = make(), outside = Buffer.from(shown.data);
+  addStar(shown, 0.32);
+  const r = removeSparkle(shown);
+  assert.equal(r.applied, true);
+  assert.ok(r.alpha >= 0.22 && r.alpha <= 0.4, `alpha ${r.alpha}`);
+  assert.ok(maxDiff(clean, shown) < 20, `left ${maxDiff(clean, shown)}`);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (Math.abs(x - (W - 101)) > 40 || Math.abs(y - (H - 101)) > 40) for (let c = 0; c < 3; c++) assert.equal(shown.data[(y * W + x) * 4 + c], outside[(y * W + x) * 4 + c]);
+});

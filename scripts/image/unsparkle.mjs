@@ -15,7 +15,7 @@ import { decodeJpeg, isJpeg } from "./jpeg.mjs";
 // inside is brightest against the ring around it wins. The radius follows the picture's size between those two anchors (25.8 px from
 // centre to tip at 1K; the 2K star is not twice as big). (A shape measured on 18 real pictures instead of this formula was tried and
 // not kept: what limits the result is the guess of the background under the star, not the shape.)
-const RADIUS_1K = 25.8, RADIUS_2K = 25.0, CURVE = 0.66, MIN_SIDE = 400, NEAR_MIN = 90, NEAR_MAX = 130, CORE = 0.98, MIN_SCORE = 20, EDGE_DIST = 2.5, ANCHOR_1K = 102, ANCHOR_2K = 120, ALPHA_LOW = 0.25, ALPHA_HIGH = 0.36, ALPHA_DEFAULT = 0.30;
+const RADIUS_1K = 25.8, RADIUS_2K = 25.0, CURVE = 0.66, MIN_SIDE = 400, NEAR_MIN = 90, NEAR_MAX = 130, CORE = 0.98, MIN_SCORE = 20, EDGE_DIST = 2.5, ANCHOR_1K = 102, ANCHOR_2K = 120, ALPHA_LOW = 0.25, ALPHA_HIGH = 0.36, ALPHA_DEFAULT = 0.30, BAND_LOW = 0.22, BAND_HIGH = 0.38, AGREE = 0.06, STRONG_MIX = 0.5;
 
 // Star radius (centre to tip, px) for a picture: 25.8 up to 1K-ish sizes, 25.0 at 2K, linear between, flat beyond.
 export function sparkleRadius(width, height) {
@@ -115,20 +115,23 @@ function refine(image, lum, r, guess) {
 
 // Strength from the outline: for each outline point a = (inside - outside) / (255 - outside), only where the outside is not nearly white
 // (there the veil adds almost nothing and the ratio is noise); the median of those.
-function edgeAlpha(lum, W, pts, cx, cy) {
-  const as = [];
+// With flatOnly only the outline points whose outside neighbourhood is flat count (no strong edge of the picture itself within ~7 px outside
+// or inside of the point), so a sharp edge crossing the star (wood floor over a rug) cannot pull the median.
+function edgeAlpha(lum, W, pts, cx, cy, flatOnly = false) {
+  const as = [], L = (x, y) => lum[Math.round(y) * W + Math.round(x)];
   for (const [x, y, nx, ny] of pts) {
+    if (flatOnly && (Math.abs(L(cx + x - EDGE_DIST * nx, cy + y - EDGE_DIST * ny) - L(cx + x - 7 * nx, cy + y - 7 * ny)) > 10 || Math.abs(L(cx + x + EDGE_DIST * nx, cy + y + EDGE_DIST * ny) - L(cx + x + 7 * nx, cy + y + 7 * ny)) > 10)) continue;
     const lin = lum[Math.round(cy + y + EDGE_DIST * ny) * W + Math.round(cx + x + EDGE_DIST * nx)], lout = lum[Math.round(cy + y - EDGE_DIST * ny) * W + Math.round(cx + x - EDGE_DIST * nx)];
     if (255 - lout >= 40) as.push((lin - lout) / (255 - lout));
   }
-  if (as.length < 20) return null;
+  if (as.length < (flatOnly ? 12 : 20)) return null;
   as.sort((a, b) => a - b);
   return as[as.length >> 1];
 }
 
-// Strength from the inside: the median lift of the pixels the star fully covers over a smooth guess of the background under it (the
-// ring's mean, diffused inwards); null when the star does not lift nearly all of them.
-function interiorAlpha(image, cover, inside, [x0, y0, x1, y1]) {
+// A smooth guess of the background under the star: the ring's mean, diffused inwards.
+// Strength from the inside (next function): the median lift of the pixels the star fully covers over that guess; null when the star does not lift nearly all of them.
+function smoothBackground(image, cover, inside, [x0, y0, x1, y1]) {
   const { width: W, data } = image, at = (x, y) => (y * W + x) * 4;
   const bg = new Float32Array(W * image.height * 3), ring = [0, 0, 0]; let n = 0;
   for (let y = y0 - 1; y <= y1 + 1; y++) for (let x = x0 - 1; x <= x1 + 1; x++) {
@@ -140,6 +143,11 @@ function interiorAlpha(image, cover, inside, [x0, y0, x1, y1]) {
     const i = (y * W + x) * 3 + c;
     bg[i] = (bg[i - W * 3] + bg[i + W * 3] + bg[i - 3] + bg[i + 3]) / 4;
   }
+  return bg;
+}
+
+function interiorAlpha(image, cover, inside, bg) {
+  const { width: W, data } = image, at = (x, y) => (y * W + x) * 4;
   const lifts = []; let lifted = 0, tested = 0;
   for (const [x, y] of inside) {
     if (cover[y * W + x] < CORE) continue;
@@ -172,13 +180,22 @@ export function removeSparkle(image, { assumePresent = false } = {}) {
   const at = (x, y) => (y * W + x) * 4;
   const inside = [];
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (cover[y * W + x] > 0.02) inside.push([x, y]);
-  const ia = interiorAlpha(image, cover, inside, [x0, y0, x1, y1]), ea = edgeAlpha(found.lum, W, found.pts, W - pos.right, H - pos.bottom);
+  const bgGuess = smoothBackground(image, cover, inside, [x0, y0, x1, y1]), ia = interiorAlpha(image, cover, inside, bgGuess), ea = edgeAlpha(found.lum, W, found.pts, W - pos.right, H - pos.bottom);
   const plausible = (v, lo, hi) => v !== null && v >= lo && v <= hi;
-  let alpha;
+  let alpha, robust = null;
   if (clear) {
     // The star shows clearly: take the measured strength (any plausible one), with or without the Flow assumption.
     if (!plausible(ia, 0.1, 0.8) && !plausible(ea, 0.1, 0.8)) { if (!assumePresent) return { applied: false, alpha: 0 }; alpha = ALPHA_DEFAULT; }
     else alpha = plausible(ia, 0.1, 0.8) ? ia : ea;
+    // Every clean Flow measurement is 0.27..0.33. An estimate outside the band is checked again with the outline points that are NOT near
+    // a strong edge of the picture; when that one agrees with the interior one the veil really is that strong on this picture (dark
+    // scene) and is kept; when it does not, the band value that fits (or the middle of the band) is used.
+    if (alpha < BAND_LOW || alpha > BAND_HIGH) {
+      const ra = edgeAlpha(found.lum, W, found.pts, W - pos.right, H - pos.bottom, true);
+      robust = ra;
+      if (plausible(ra, 0.1, 0.7) && plausible(ia, 0.1, 0.7) && Math.abs(ra - ia) <= AGREE) alpha = (ra + ia) / 2;
+      else alpha = plausible(ra, BAND_LOW, BAND_HIGH) ? ra : ALPHA_DEFAULT;
+    }
   } else {
     // Only reached with assumePresent (the star is there but does not show): take the measured strength when it is in the range seen
     // on real Flow pictures, else the middle of that range.
@@ -188,6 +205,15 @@ export function removeSparkle(image, { assumePresent = false } = {}) {
   for (const [x, y] of inside) {
     const a = alpha * cover[y * W + x], i = at(x, y);
     for (let c = 0; c < 3; c++) data[i + c] = clamp((data[i + c] - 255 * a) / (1 - a));
+  }
+  // A strong veil (above the band) squeezes what lies under it hard (the JPEG kept little colour there): the colour of those pixels is
+  // taken from the smooth guess of the background, the brightness detail stays from the reverse blend.
+  if (alpha > BAND_HIGH) {
+    const lumOf = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+    for (const [x, y] of inside) {
+      const i = at(x, y), j = (y * W + x) * 3, w = cover[y * W + x], yr = lumOf(data[i], data[i + 1], data[i + 2]), yb = lumOf(bgGuess[j], bgGuess[j + 1], bgGuess[j + 2]);
+      for (let c = 0; c < 3; c++) data[i + c] = clamp(data[i + c] * (1 - w) + (yr * (1 - STRONG_MIX) + yb * STRONG_MIX + (bgGuess[j + c] - yb)) * w);
+    }
   }
   // (A pixel that is 255 in the source stays 255 by the formula, which is right: the background there was at least that bright.)
   // The edge of the star is where the measured shape is soft: a pixel only partly covered, whose strength is the least certain. Those
@@ -206,7 +232,7 @@ export function removeSparkle(image, { assumePresent = false } = {}) {
     const i = at(x, y);
     for (let c = 0; c < 3; c++) data[i + c] = clamp(before[i + c] * 0.2 + (t[c] / m) * 0.8);
   }
-  return { applied: true, alpha, method, interior: ia, edgeAlpha: ea, score: found.score, right: pos.right, bottom: pos.bottom };
+  return { applied: true, alpha, method, interior: ia, robust, edgeAlpha: ea, score: found.score, right: pos.right, bottom: pos.bottom };
 }
 
 // Reads a PNG or JPEG file into RGBA pixels.
