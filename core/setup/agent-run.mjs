@@ -60,6 +60,34 @@ export function sanitize(text, max = MAX_LINE) {
 // Extension mode (default args below): attaches to the person's Chrome through the Playwright MCP Bridge extension.
 // Own mode (own = { userDataDir, headless, outputDir }): its own Chrome profile, already logged in by the person; headless unless own.headless is false.
 // Flags (checked with `npx @playwright/mcp@latest --help`): --browser chrome, --user-data-dir <path>, --headless, --viewport-size WxH, --output-dir <path>.
+// ----- friendly live lines (Vietnamese, for the person): built from tool NAMES and a few safe words of the input; never a path, id, token or JSON -----
+export const FRIENDLY_LINES = 40;
+const MODE_VI = { research: "Research", create: "Create", publish: "Publish" };
+const baseName = (f) => String(f || "").split(/[\/]/).pop().toLowerCase();
+export function friendlyTool(name, input = {}) {
+  const n = String(name || ""), i = input && typeof input === "object" ? input : {};
+  if (n === "Bash") {
+    const c = String(i.command || "");
+    if (/pipeline.mjss+create/.test(c)) return "Đang tạo bài (pipeline create)";
+    if (/pipeline.mjs/.test(c)) return "Đang chạy quy trình bài đăng";
+    if (/draft.mjss+register-image/.test(c)) return "Đang đăng ký ảnh vào bài nháp";
+    if (/draft.mjss+flow-brief/.test(c)) return "Đang chuẩn bị mô tả ảnh";
+    if (/draft.mjs/.test(c)) return "Đang xử lý bài nháp";
+    if (/(?:research|collect).mjs/.test(c)) { const m = /--source[= ]+([a-z0-9][a-z0-9,-]{0,60})/i.exec(c); return m ? `Đang đọc nguồn ${m[1]}` : "Đang đọc nguồn"; }
+    if (/host-image|finalize.mjss+approve/.test(c)) return "Đang đưa ảnh lên host";
+    if (/queue.mjs|brands.mjs/.test(c)) return "Đang kiểm tra trạng thái";
+    return "Đang xử lý…";
+  }
+  if (n === "Write" || n === "Edit") return /caption|idea/.test(baseName(i.file_path)) ? "Đang viết nội dung (caption/ý tưởng)" : "Đang ghi dữ liệu";
+  if (n === "Read") return /.(png|jpe?g|webp|gif)$/.test(baseName(i.file_path)) ? "Đang xem ảnh" : "Đang đọc tài liệu";
+  if (n === "Glob" || n === "Grep") return "Đang tìm dữ liệu";
+  if (n === "mcp__playwright__browser_navigate") { try { return `Đang mở ${new URL(String(i.url)).hostname}`; } catch { return "Đang mở trang web"; } }
+  if (/^mcp__playwright__browser_(click|type|press_key|run_code_unsafe|fill_form|select_option|file_upload|evaluate)$/.test(n)) return "Đang thao tác trên trình duyệt";
+  if (/^mcp__playwright__/.test(n)) return "Đang xem trang trên trình duyệt";
+  if (n.startsWith("mcp__claude_ai_Metricool")) return /create|update|send/i.test(n) ? "Đang gửi/hẹn giờ bài trên Metricool" : "Đang đọc cài đặt Metricool";
+  return "Đang xử lý…";
+}
+
 export function mcpArgs(own = null) {
   if (!own) return ["@playwright/mcp@latest", "--extension"];
   return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", "1280x900", ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
@@ -106,6 +134,15 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   let cur = null; // the active run
   let last = null; // the finished run's state (this process)
 
+  const friendlyFile = join(runsDir, "agent-run-friendly.json");
+  const saveFriendly = (run) => { try { mkdirSync(runsDir, { recursive: true }); writeFileSync(friendlyFile, JSON.stringify(run.friendly)); } catch {} };
+  const friendlyView = (list) => list.slice(-FRIENDLY_LINES).map((f) => (f.n > 1 ? `${f.text} ×${f.n}` : f.text));
+  const say = (run, text) => {
+    const t = sanitize(text, 160); if (!t) return;
+    const last = run.friendly.at(-1);
+    if (last && last.text === t) last.n++; else { run.friendly.push({ text: t, n: 1 }); if (run.friendly.length > 200) run.friendly.splice(0, run.friendly.length - 200); }
+    saveFriendly(run);
+  };
   const readState = () => { try { return JSON.parse(readFileSync(stateFile, "utf8")); } catch { return null; } };
   const saveState = (st) => { try { mkdirSync(runsDir, { recursive: true }); writeFileSync(stateFile, JSON.stringify(st, null, 2)); } catch {} };
   const touch = (run, patch = {}) => { Object.assign(run.state, patch, { updated: new Date(now()).toISOString() }); saveState(run.state); };
@@ -123,8 +160,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       run.state.turns = (run.state.turns || 0) + 1;
       if (typeof ev.error === "string") scan(run, ev.error);
       for (const c of ev.message.content) {
-        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; }
-        else if (c.type === "tool_use" && typeof c.name === "string") addLine(run, "tool: " + c.name);
+        if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); say(run, c.text.replace(/s+/g, " ").trim()); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; }
+        else if (c.type === "tool_use" && typeof c.name === "string") { addLine(run, "tool: " + c.name); say(run, friendlyTool(c.name, c.input)); }
       }
       touch(run);
     } else if (ev.type === "result") {
@@ -156,6 +193,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const problem = run.state.problem;
     const error = status === "failed" ? (problem ? problem.message : sanitize(err || run.stderr.at(-1) || (run.result?.is_error ? `Claude reported ${run.result.subtype || "an error"}.` : `Claude exited with code ${code}.`)))
       : status === "timeout" ? `Stopped after the ${run.limitMin}-minute limit.${problem ? " " + problem.message : ""}` : status === "done" && problem ? problem.message : "";
+    say(run, status === "failed" ? `Lỗi: ${error}` : status === "stopped" ? "Bị dừng" : status === "timeout" ? "Hết thời gian" : problem ? `Hoàn tất, nhưng cần xem: ${problem.message}` : "Hoàn tất");
     addLine(run, `end: ${status}${code === null || code === undefined ? "" : " (exit " + code + ")"}`);
     try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {}
     touch(run, { status, exit_code: code ?? null, error });
@@ -201,6 +239,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     };
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
+    run.friendly = [];
+    say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
     addLine(run, `start: ${mode} run ${runId}`);
     saveState(run.state);
     child.stdout?.on("data", (c) => feed(run, c));
@@ -244,6 +284,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
       last_text: shown?.last_text || "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [],
       tail: lines.slice(-TAIL_LINES),
+      friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),
       cli: { found: !!cli?.found, path: cli?.path || "" },
     };
   }

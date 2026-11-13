@@ -29,7 +29,7 @@ import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 import { findClaude } from "../core/setup/claude-cli.mjs";
 import { createAgentRunner } from "../core/setup/agent-run.mjs";
-import { browserInfo, openLoginBrowser, profileLocked, profileProblem, browserSettings, PLATFORMS } from "../core/setup/own-browser.mjs";
+import { browserInfo, openLoginBrowser, cachedLoginStatus, profileLocked, profileProblem, browserSettings, PLATFORMS } from "../core/setup/own-browser.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -389,7 +389,8 @@ async function handle(req, res) {
   // Own browser (core/setup/own-browser.mjs): status, the visible login window (fixed site URLs only, refused while a headless run holds the profile),
   // and the login state per site from cookie METADATA (names/expiry of allow-listed cookies; never values, never logged). Same guards as every /api route.
   if (path === "/api/browser" && req.method === "GET") return api(res, () => browserInfo({ settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }));
-  if (path === "/api/open-login-browser" && req.method === "POST") return api(res, async () => { const b = await body(req); const platform = String(b.platform ?? ""); if (platform && !PLATFORMS.some((x) => x.id === platform)) throw new Error("Unknown platform."); const r = openLoginBrowser({ platform, settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }); return r; });
+  if (path === "/api/browser-logins" && req.method === "GET") return api(res, async () => ({ logins: (await cachedLoginStatus({ settings: settings(), toolRoot: root, fresh: get("fresh") === "1" })).map((l) => ({ platform: l.platform, name: l.name, required: l.required, state: l.state, reason: l.reason })) }));
+  if (path === "/api/open-login-browser" && req.method === "POST") return api(res, async () => { const b = await body(req); const platform = String(b.platform ?? ""); if (platform && !PLATFORMS.some((x) => x.id === platform)) throw new Error("Unknown platform."); const r = openLoginBrowser({ platform, settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }); cachedLoginStatus.cache = null; return r; });
   if (path === "/api/open-chrome" && req.method === "POST") return api(res, async () => { const b = await body(req); return openChromeProfile({ profile: b.profile, url: b.url, settings: settings() }); });
   // Settings, Accounts and Requirements (core/setup/accounts.mjs): names only, never a token.
   if (path === "/api/accounts" && req.method === "GET") return api(res, () => accounts({ metricool: (() => { try { return metricoolBrands(); } catch { return {}; } })() }));
