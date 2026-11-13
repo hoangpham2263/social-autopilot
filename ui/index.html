@@ -136,6 +136,7 @@ details[open] > summary { margin-bottom: 6px; }
 .sug-tag { font-size: 11px; line-height: 16px; padding: 0 5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; }
 #prText { display: block; flex: 1 1 auto; height: 100%; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prMsg.copied { color: var(--ink); }
+#prExtHint[data-fold="1"] { display: none; }
 #prText[readonly] { background: #fafafa; }
 /* Prompt, Run progress: the fixed steps of the mode (numbered like the prompt), one dot each; the current step framed. */
 #page-prompt .run-panel { flex: 0 0 auto; margin: 0 0 12px; display: grid; gap: 8px; }
@@ -1087,7 +1088,9 @@ header + * { margin-top: 0; }
     srcOff = new Set(jget("prSrcOff", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.sources).includes(v.slice(b.id.length + 1)))));
     sugOn = new Set(jget("prSugOn", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.suggested).some((x) => x.id === v.slice(b.id.length + 1)))));
     platOff = new Set(jget("prPlatOff", []).filter((p) => PLATS.includes(p)));
-    const mx = parseInt(store.get("prMax"), 10); $("#prMax").value = mx >= 1 ? String(mx) : "";
+    // The default changed 50 -> 100: a value remembered before that (prMaxV unset) may be the old default, so it is dropped once instead of shown as if chosen.
+    if (store.get("prMaxV") !== "100") { store.set("prMax", ""); store.set("prMaxV", "100"); }
+    const mx = parseInt(store.get("prMax"), 10); $("#prMax").value = mx >= 1 && mx !== 100 ? String(mx) : "";
     for (const [k, el] of [["prWindow", "#prWindow"], ["prStart", "#prStart"]]) { const v = store.get(k); if (v.startsWith("v:") && [...$(el).options].some((o) => o.value === v.slice(2))) $(el).value = v.slice(2); }
     // min/max: the stored pair prImg; the old select key prImgSel maps once: random -> defaults, one -> 1/1, album -> 2/4, custom -> stored pair, then it is cleared.
     const d = defIpp(), st = jget("prImg", null), sv = store.get("prImgSel").replace(/^"|"$/g, "");
@@ -1153,6 +1156,7 @@ header + * { margin-top: 0; }
     const sc = isResearch(prMode) && !prBlock ? srcScope() : null, names = sc ? sc.ext.map((b) => b.name || b.id) : [];
     el.hidden = !names.length;
     el.textContent = !names.length ? "" : sc.total === 0 ? "All sources are done: this run looks for new sources" : `All sources are done for ${names.join(", ")}: this run looks for new sources there`;
+    try { applyHow(); } catch {} // in the app mode both hints are folded into one line
   }
   // Fully crawled (registry complete) sources are hidden from the picker for good (Edit page > Recrawl brings one back); they stay in the run as a quick top check for new posts.
   function drawSources() {
@@ -1435,7 +1439,8 @@ header + * { margin-top: 0; }
     $("#prChrome").hidden = !app;
     $("#prRunNow").hidden = !app; if (!app) $("#prStop").hidden = true;
     $("#prAppHint").hidden = !app;
-    $("#prAppHint").textContent = claude ? "Starts Claude Code for you; the live panel below shows progress." : "Run in the app needs Claude Code";
+    { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
+      $("#prAppHint").textContent = claude ? "Starts Claude Code for you; the live panel below shows progress." + (extTxt ? " " + extTxt + "." : "") : "Run in the app needs Claude Code"; }
     $("#prAppHint").style.color = claude ? "" : "#b06000";
     $("#prRunPill").hidden = app || !busy;
   }
@@ -1467,11 +1472,11 @@ header + * { margin-top: 0; }
     }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
-    const stepLine = arr(r.tail).filter((l) => l.startsWith("tool: ")).pop(), step = busy && stepLine ? ` · step: ${stepLine.slice(6).replace("mcp__playwright__", "").replace(/^mcp__claude_ai_Metricool_Social_Media_Management__/, "")}` : "";
-    $("#arElapsed").textContent = `${r.mode}${r.flow ? " (Flow)" : ""} · ${arClock(r.elapsed_s || 0)}${r.limit_min ? ` of ${r.limit_min} min max` : ""}${r.turns ? ` · ${r.turns} turns` : ""}${step}`;
+    // Elapsed and the step live in the progress bar only; here just the mode, the limit and the turns (the current action is in the live log).
+    $("#arElapsed").textContent = [`${r.mode}${r.flow ? " (Flow)" : ""}`, r.limit_min ? `limit ${r.limit_min} min` : "", r.turns ? `${r.turns} turns` : ""].filter(Boolean).join(" · ");
     const startMsg = r.mode === "research" ? "Starting… Claude works in the own browser in the background." : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
-    { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : full || r.last_text || (busy ? startMsg : "")), !bad && !busy && !!(full || r.last_text), !!full); }
+    { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : busy ? (arr(r.friendly).length ? "" : startMsg) : full || r.last_text || ""), !bad && !busy && !!(full || r.last_text), !!full); } // while running the raw assistant text stays out (live log has the friendly lines)
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
@@ -1503,7 +1508,12 @@ header + * { margin-top: 0; }
   $("#arCopyRes").onclick = async () => { try { await navigator.clipboard.writeText(arResultRaw); } catch {} const b = $("#arCopyRes"); b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy report"; }, 1500); };
   // Live log for the person: friendly Vietnamese lines (r.friendly = [{t, text, n}]), newest at the bottom; scrolls only when the person is already at the bottom.
   function arFeedDraw(r) {
-    const feed = $("#arFeed"), list = arr(r.friendly).slice(-40);
+    const feed = $("#arFeed"), all = arr(r.friendly), FILL = /^Đang xử lý…?$/;
+    // Drop filler ("Đang xử lý…") when a more specific line follows within 6 s, then merge consecutive identical lines (×N added up).
+    const kept = all.filter((f, i) => !(FILL.test(f.text) && all.slice(i + 1).some((g) => !FILL.test(g.text) && (!f.t || !g.t || Date.parse(g.t) - Date.parse(f.t) < 6000))));
+    const list = [];
+    for (const f of kept) { const p = list.at(-1); if (p && p.text === f.text) list[list.length - 1] = { ...p, t: f.t, n: (p.n || 1) + (f.n || 1) }; else list.push({ ...f }); }
+    list.splice(0, Math.max(0, list.length - 40));
     const html = list.map((f) => `<div class="ar-fl"><span class="ar-ft">${f.t ? esc(hms(f.t)) : ""}</span>${esc(f.text)}${f.n > 1 ? ` <span class="ar-fn">×${f.n}</span>` : ""}</div>`).join("");
     if (feed.dataset.sig === html) return;
     const atEnd = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 8;
@@ -1585,7 +1595,7 @@ header + * { margin-top: 0; }
     const secs = arState?.started ? Math.max(0, Math.round((Date.now() - Date.parse(arState.started)) / 1000)) : 0;
     const onRun = !$("#page-prompt").hidden;
     bar.hidden = !(runLocked && onRun); pill.hidden = !(runLocked && !onRun);
-    if (runLocked) { bar.textContent = RUN_LOCK_BANNER + " Elapsed " + arMmss(secs) + "."; pill.textContent = "Run active \u00b7 " + arMmss(secs) + " \u00b7 controls locked"; pill.title = RUN_LOCK_BANNER; }
+    if (runLocked) { bar.textContent = RUN_LOCK_BANNER; pill.textContent = "Run active \u00b7 " + arMmss(secs) + " \u00b7 controls locked"; pill.title = RUN_LOCK_BANNER; }
   }
   function setRunLock(on) {
     on = !!on; if (on === runLocked) { runLockBanner(); return; }
@@ -1743,7 +1753,7 @@ header + * { margin-top: 0; }
     const line = bi.error ? "Could not read the browser status: " + bi.error : bi.window_open ? "The login window is open: log in, then close it before a run." : busy ? "A run is using the own browser now (headless)." : bi.profile_exists ? "Profile ready" + (bi.last_opened ? ", last opened " + when(bi.last_opened) : "") + (bi.headless ? " · runs in the background" : " · runs with a visible window") : "No profile yet: press Open browser to log in, log in to the sites, then close the window.";
     bst.textContent = line;
     login.disabled = busy || !!bi.window_open; login.title = busy ? "A headless run holds the profile: wait for it or press Stop" : bi.window_open ? "The login window is already open" : login.title;
-    sum.innerHTML = bi.error ? '<span class="status-tag c-amber">· unavailable</span>' : `<span class="status-tag ${bi.window_open ? "c-amber" : bi.profile_exists ? "c-green" : "c-amber"}">· own browser: ${esc(bi.window_open ? "login window open" : bi.profile_exists ? "ready" : "log in once")}</span>`;
+    sum.innerHTML = bi.error ? '<span class="status-tag c-amber">unavailable</span>' : `<span class="status-tag ${bi.window_open ? "c-amber" : bi.profile_exists ? "c-green" : "c-amber"}">own browser:${esc(bi.window_open ? "login window open" : bi.profile_exists ? "ready" : "log in once")}</span>`;
     if (!$("#page-prompt").hidden) browserTimer = setTimeout(loadBrowser, 3000);
   });
   $("#prBrowserLogin").onclick = async () => {
@@ -1780,9 +1790,10 @@ header + * { margin-top: 0; }
     if (run && active) {
       const begun = lastBegun >= 0;
       const cur = states.find((x) => x.state === "running") || states[lastBegun];
-      parts.push(begun ? `<span>${esc(RUN_TEXT[cur?.state] || "Running")}${cur ? ` · step ${cur.n} ${esc(cur.name)}` : ""}</span>` : `<span>Waiting for the agent (prompt copied ${esc(clock(run.created))})</span>`);
+      const app = howNow() === "app"; // Run in the app: state, step and time are already in the live panel (chip, bar); only the counter is unique here
+      if (!app) parts.push(begun ? `<span>${esc(RUN_TEXT[cur?.state] || "Running")}${cur ? ` · step ${cur.n} ${esc(cur.name)}` : ""}</span>` : `<span>Waiting for the agent (prompt copied ${esc(clock(run.created))})</span>`);
       if (run.items?.label) parts.push(`<span>${esc(run.items.label)} ${run.items.done}${run.items.total === null || run.items.total === undefined ? "" : "/" + run.items.total}</span>`);
-      if (begun) parts.push(`<span class="meta">${esc(took(run.started))}</span>`);
+      if (begun && !app) parts.push(`<span class="meta">${esc(took(run.started))}</span>`);
     } else if (run && run.finished) {
       parts.push(`<span>Last run ${run.result === "stopped" ? "stopped" : "finished"} ${esc(when(run.finished))}${run.started ? ` <span class="meta">(${esc(took(run.started, run.finished))})</span>` : ""} — ${logLink}</span>`);
     } else if (run && r.stale) {
