@@ -129,11 +129,17 @@ const killTreeDefault = (child, plat = process.platform) => {
   try { child.kill("SIGKILL"); } catch {}
 };
 
+// Sites the check by visiting never opens: optional (they read fine signed out) and some show a bot-protection page ("Access is temporarily
+// restricted") after automated visits. They keep only the quiet cookie hint, or "unknown".
+export const NEVER_VISIT = new Set(["etsy", "houzz", "pinterest"]);
+
 // Runs one check. Throws Error(message) when it must not run (same refusals as the login window and runs). Never leaves Chrome running.
 export async function runVisitCheck({ platforms = [], settings = {}, toolRoot, workspace, runActive = false, loginWindowOpen = false, plat = process.platform, env = process.env, exists = existsSync, which, locked = profileLocked, spawnFn = spawn, killTree = killTreeDefault, connect = openCdp, getPort = freePort, sleep = sleepReal, now = () => Date.now(), capMs = 90000, pauseMs = 2000, settleMinMs = 6000, settleMaxMs = 12000, pages = VISIT_PAGES } = {}) {
   const bs = browserSettings(settings, toolRoot);
-  const ids = [...new Set(platforms)].filter((p) => PLATFORMS.some((x) => x.id === p));
-  if (!ids.length) throw new Error("No site selected to check.");
+  const wanted = [...new Set(platforms)].filter((p) => PLATFORMS.some((x) => x.id === p));
+  if (!wanted.length) throw new Error("No site selected to check.");
+  const ids = wanted.filter((p) => !NEVER_VISIT.has(p)); // optional sites are never visited (bot protection); cookies are their only hint
+  if (!ids.length) throw new Error("Nothing to check by visiting: the selected sites (Etsy, Houzz, Pinterest) are optional, work signed out and are never visited.");
   if (busy) throw new Error("A login check is already running.");
   if (runActive) throw new Error("A run is using the own browser right now (headless): wait for it to finish or press Stop, then check the logins.");
   const why = profileProblem({ dir: bs.profileDir, locked: !!locked(bs.profileDir), exists: exists(bs.profileDir), windowOpen: !!loginWindowOpen });
@@ -172,6 +178,7 @@ export function mergeLogins(cookieRows, visits = {}) {
   return cookieRows.map((r) => {
     const v = visits[r.platform];
     if (v && v.state !== "unknown") return { ...r, state: v.state, reason: v.reason, source: "visit", checked_at: v.checked_at, cookie_state: r.state };
+    if (r.state === "unknown" && NEVER_VISIT.has(r.platform)) return { ...r, reason: `Not checked on purpose: ${short(r.name)} is optional and works signed out; opening it from a background browser can trigger its bot protection.`, source: "cookies", checked_at: "" };
     if (r.state === "unknown") {
       const base = /not confirmed/.test(r.reason || "") ? `Cookies cannot tell for ${short(r.name)}: use Check by visiting.` : `${r.reason || "Could not tell"}. Use Check by visiting.`;
       return { ...r, reason: v ? `${base} The last visit could not tell either.` : base, source: v ? "visit" : "cookies", checked_at: v?.checked_at || "" };
