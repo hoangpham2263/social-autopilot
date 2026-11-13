@@ -128,5 +128,5 @@ test('flow batch: register-image --n 2/3/4, flow-brief for the extras, --images 
   const pipe = fs.readFileSync(path.join(root, 'scripts', 'pipeline.mjs'), 'utf8');
   assert.ok(pipe.includes("args.images") && pipe.includes('images_choice') && pipe.includes("'--images'") && pipe.includes('needs_image1_as_reference'));
   const html = fs.readFileSync(path.join(root, 'ui', 'index.html'), 'utf8');
-  assert.ok(html.includes('id="prImgSel"') && !html.includes('id="prAlbum"') && html.includes('id="prImgMin"') && html.includes('id="prImgMax"') && html.includes('--images') && html.includes('setIppMin'));
+  assert.ok(!html.includes('id="prImgSel"') && !html.includes('id="prImgCustom"') && html.includes('id="prAlbBox"') && !html.includes('id="prAlbum"') && html.includes('id="prImgMin"') && html.includes('id="prImgMax"') && html.includes('--images') && html.includes('setIppMin'));
 });

@@ -116,23 +116,23 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt .fields { gap: 16px 8px; }
 #page-prompt .fields > .field:not(.auto):not(:has(#prStart)) { width: 146px; flex: 0 1 146px; }
 /* Images per post: the select keeps a readable width ("Random 1 to 4", "Album 2 to 4", "Custom..."); in Custom mode the cell grows to hold min and max. */
-#page-prompt .fields > .field:has(#prImgSel) { width: auto !important; flex: 0 0 auto !important; min-width: 0; } /* sized by its content, so the row wraps to a new line instead of scrolling sideways */
+#page-prompt .fields > .field:has(#prImgMin) { width: auto !important; flex: 0 0 auto !important; min-width: 0; } /* sized by its content, so the row wraps to a new line instead of scrolling sideways */
 #page-prompt { overflow-x: hidden; }
-#page-prompt .imgrow { display: flex; gap: 6px; align-items: center; } #page-prompt .imgrow select { flex: 0 0 9.5rem; width: 9.5rem; min-width: 9.5rem; } #page-prompt .imgrow .pair { flex: 0 0 auto; } #page-prompt .imgrow .pair[hidden] { display: none; }
-#page-prompt .pair { display: flex; gap: 6px; align-items: center; } #page-prompt .pair input { width: 4.6rem; flex: 0 0 4.6rem; min-width: 0; text-align: center; }
+#page-prompt .imgrow { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
+#page-prompt .pair { display: flex; gap: 6px; align-items: center; } #page-prompt .pair input { width: 4.5rem; flex: 0 0 4.5rem; min-width: 0; text-align: center; }
 #page-prompt .pair .meta { font-size: 12px; }
 /* Research Sources: a select-like dropdown; the panel floats over the page (no layout jump). */
-#prSrcField, #prPlatField { position: relative; }
-#prSrcBox > summary, #prPlatBox > summary { display: flex; align-items: center; height: var(--ctl-h); box-sizing: border-box; padding: var(--ctl-pad); font-size: var(--ctl-font); color: var(--ink); background: #fff; border: var(--ctl-border); border-radius: var(--r); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; list-style: none; }
-#prSrcBox > summary::-webkit-details-marker, #prPlatBox > summary::-webkit-details-marker { display: none; }
-#prSrcBox > summary::after, #prPlatBox > summary::after { content: ""; margin-left: auto; border: 4px solid transparent; border-top-color: var(--muted); border-bottom-width: 0; }
-#prSrcBox > summary:hover, #prSrcBox[open] > summary, #prPlatBox > summary:hover, #prPlatBox[open] > summary { border-color: var(--accent); }
-#prSrcBox[open] > summary, #prPlatBox[open] > summary { margin: 0; }
-#prSrc, #prPlat { position: absolute; left: 0; top: calc(100% + 2px); z-index: 12; box-sizing: border-box; min-width: 100%; width: max-content; max-width: min(520px, calc(100vw - 32px)); max-height: 320px; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--accent); border-radius: var(--r); display: grid; gap: 2px; }
-#prSrc .opt-group, #prPlat .opt-group { padding: 6px 6px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
-#prSrc label, #prPlat label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
-#prSrc label:hover, #prPlat label:hover { background: var(--soft-hover); }
-#prSrc .meta, #prPlat .meta { font-size: 12px; }
+#prSrcField, #prPlatField, #prAlbField { position: relative; }
+#prSrcBox > summary, #prPlatBox > summary, #prAlbBox > summary { display: flex; align-items: center; height: var(--ctl-h); box-sizing: border-box; padding: var(--ctl-pad); font-size: var(--ctl-font); color: var(--ink); background: #fff; border: var(--ctl-border); border-radius: var(--r); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; list-style: none; }
+#prSrcBox > summary::-webkit-details-marker, #prPlatBox > summary::-webkit-details-marker, #prAlbBox > summary::-webkit-details-marker { display: none; }
+#prSrcBox > summary::after, #prPlatBox > summary::after, #prAlbBox > summary::after { content: ""; margin-left: auto; border: 4px solid transparent; border-top-color: var(--muted); border-bottom-width: 0; }
+#prSrcBox > summary:hover, #prSrcBox[open] > summary, #prPlatBox > summary:hover, #prPlatBox[open] > summary, #prAlbBox > summary:hover, #prAlbBox[open] > summary { border-color: var(--accent); }
+#prSrcBox[open] > summary, #prPlatBox[open] > summary, #prAlbBox[open] > summary { margin: 0; }
+#prSrc, #prPlat, #prAlb { position: absolute; left: 0; top: calc(100% + 2px); z-index: 12; box-sizing: border-box; min-width: 100%; width: max-content; max-width: min(520px, calc(100vw - 32px)); max-height: 320px; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--accent); border-radius: var(--r); display: grid; gap: 2px; }
+#prSrc .opt-group, #prPlat .opt-group, #prAlb .opt-group { padding: 6px 6px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+#prSrc label, #prPlat label, #prAlb label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
+#prSrc label:hover, #prPlat label:hover, #prAlb label:hover { background: var(--soft-hover); }
+#prSrc .meta, #prPlat .meta, #prAlb .meta { font-size: 12px; }
 #prText { display: block; flex: 1 1 auto; height: 100%; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prMsg.copied { color: var(--ink); }
 #prText[readonly] { background: #fafafa; }
@@ -388,7 +388,8 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = no limit)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="no limit"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images of this run only: Codex, or Google Flow in your signed-in Chrome. The default is the tool setting (Settings tab, Image engine); changing it here does not change that setting.">Images</label><select id="prImages" title="This run only. Default = Settings, Image engine."><option value="codex">Codex</option><option value="flow">Google Flow</option></select></div>
-      <div class="field" data-opt="create" hidden><label for="prImgSel" title="Images per post of this run: Random 1 to 4 (default, per Settings), exactly 1, an album of 2 to 4 (type random: other angles or other scenes), or a custom range (min and max, 1 to 4). Album type: Settings, Album.">Images per post</label><span class="imgrow" title="Images per post of this run: Random 1 to 4 (default, per Settings), exactly 1, an album of 2 to 4 (type random: other angles or other scenes), or a custom range (min and max, 1 to 4). Album type: Settings, Album."><select id="prImgSel"><option value="random">Random 1 to 4</option><option value="one">1 image</option><option value="album">Album 2 to 4</option><option value="custom">Custom…</option></select><span class="pair" id="prImgCustom" hidden><span class="meta">min</span><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" placeholder="min" aria-label="Images per post, min" autocomplete="off"><span class="meta">max</span><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" placeholder="max" aria-label="Images per post, max" autocomplete="off"></span></span></div>
+      <div class="field" data-opt="create" hidden><span class="label" title="Images per post of this run: random between min and max (1 to 4). Default: Settings, Images per post. min = max gives exactly that many.">Images per post</span><span class="imgrow"><span class="pair"><span class="meta">min</span><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" aria-label="Images per post, min" autocomplete="off"><span class="meta">max</span><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" aria-label="Images per post, max" autocomplete="off"></span></span></div>
+      <div class="field" data-opt="create" id="prAlbField" hidden><span class="label" title="Which kinds of album posts with 2 or more images can be (random between the ticked ones, per post). Posts with a single image ignore it. Default: Settings, Album.">Image types</span><details id="prAlbBox"><summary id="prAlbSum">All 2</summary><div id="prAlb"></div></details></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
@@ -952,42 +953,62 @@ header + * { margin-top: 0; }
   let platOff = new Set();
   // Run tab choices are remembered in this browser (localStorage via store; nothing secret). Keys: prAgent, prHow, prMode (as before),
   // prBrand_<mode> + prCount_<mode> (mode = research|create|publish), prMax, prSrcOff (unticked "brand:source" ids), prPlatOff (unticked platforms),
-  // prEngine, prImgSel (random|one|album|custom; absent = random) + prImg ([min,max], custom only; old keys migrate), prWindow, prStart. The library item is never stored.
+  // prEngine, prImg ([min,max]; the old prImgSel select maps once on load), prAlbOff (unticked image types), prWindow, prStart. The library item is never stored.
   // Restored once on the first draw, then validated (unknown ids dropped, numbers clamped, invalid -> defaults).
   const jget = (k, d) => { try { const v = JSON.parse(store.get(k)); return v ?? d; } catch { return d; } };
   let prRestored = false, prLastMk = "";
   const defIpp = () => { const r = promptData.images_per_post; return Array.isArray(r) && r.length === 2 && r.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && r[0] <= r[1] ? r : [1, 4]; };
   const clampImg = (v, d) => { const n = Math.round(Number(v)); return v === null || v === undefined || String(v).trim() === "" || !Number.isFinite(n) ? d : Math.min(4, Math.max(1, n)); };
-  // Images per post of this run: the select (random | one | album | custom); custom shows min/max (clamped to 1..4, min <= max).
+  // Images per post of this run: min and max inputs (always visible; clamped to 1..4, min <= max).
   function imgPairVal(changed) {
     const d = defIpp(); let a = clampImg($("#prImgMin").value, d[0]), b = clampImg($("#prImgMax").value, d[1]);
     if (a > b) { if (changed === "max") a = b; else b = a; }
     return [a, b];
   }
-  const IMG_SELS = ["random", "one", "album", "custom"];
-  function imgSelShow() { $("#prImgCustom").hidden = $("#prImgSel").value !== "custom"; const d = defIpp(); $("#prImgSel").options[0].textContent = `Random ${d[0]} to ${d[1]}`; }
-  // The --images value of this run: "" = the tool default (no flag), "N" = exactly N, "min-max" = range.
+  // The --images value of this run: "" = the Settings default (no flag), "N" = exactly N, "min-max" = range.
   function imgFlag() {
-    const v = $("#prImgSel").value;
-    if (v === "one") return "1";
-    if (v === "album") return "2-4";
-    if (v !== "custom") return "";
-    const [a, b] = imgPairVal(); return a === b ? String(a) : `${a}-${b}`;
+    const [a, b] = imgPairVal(), d = defIpp();
+    if (a === d[0] && b === d[1]) return "";
+    return a === b ? String(a) : `${a}-${b}`;
   }
-  // Album type is random per post (Settings, Album: posts.album_mode; CLI --album); there is no Run tab control for it.
+  // Image types (album kinds for posts with 2+ images): albOff = unticked kinds (remembered, at least one stays ticked). Same picker as Platforms.
+  const ALBS = [["angle", "Same scene, other angles", "Other angles"], ["scene", "Other scenes", "Other scenes"]];
+  let albOff = new Set();
+  const defAlbOff = () => { const m = promptData.album_mode; return new Set(m === "angle" ? ["scene"] : m === "scene" ? ["angle"] : []); };
+  function albLabel() {
+    const on = ALBS.filter((x) => !albOff.has(x[0]));
+    $("#prAlbSum").textContent = on.length === ALBS.length ? `All ${ALBS.length}` : on.map((x) => x[2]).join(", ");
+  }
+  const albOn = () => ALBS.filter((x) => !albOff.has(x[0])).map((x) => x[0]);
+  // The --album value of this run: "" = the Settings default (no flag), else angle | scene.
+  function albFlag() {
+    const on = albOn(), d = ALBS.filter((x) => !defAlbOff().has(x[0])).map((x) => x[0]);
+    return on.join() === d.join() || on.length !== 1 ? "" : on[0];
+  }
+  function drawAlbums() {
+    $("#prAlb").innerHTML = ALBS.map((x) => `<label><input type="checkbox" value="${x[0]}"${albOff.has(x[0]) ? "" : " checked"}><span>${x[1]}</span></label>`).join("");
+    for (const c of $$("#prAlb input")) c.onchange = () => {
+      if (c.checked) albOff.delete(c.value); else if (albOff.size < ALBS.length - 1) albOff.add(c.value); else c.checked = true;
+      store.set("prAlbOff", JSON.stringify([...albOff])); albLabel(); regenerate();
+    };
+    albLabel();
+  }
   function prRestore(prompts, brands) {
     srcOff = new Set(jget("prSrcOff", []).filter((v) => typeof v === "string" && brands.some((b) => v.startsWith(b.id + ":") && arr(b.sources).includes(v.slice(b.id.length + 1)))));
     platOff = new Set(jget("prPlatOff", []).filter((p) => PLATS.includes(p)));
     const mx = parseInt(store.get("prMax"), 10); $("#prMax").value = mx >= 1 ? String(mx) : "";
     for (const [k, el] of [["prWindow", "#prWindow"], ["prStart", "#prStart"]]) { const v = store.get(k); if (v.startsWith("v:") && [...$(el).options].some((o) => o.value === v.slice(2))) $(el).value = v.slice(2); }
+    // min/max: the stored pair prImg; the old select key prImgSel maps once: random -> defaults, one -> 1/1, album -> 2/4, custom -> stored pair, then it is cleared.
     const d = defIpp(), st = jget("prImg", null), sv = store.get("prImgSel").replace(/^"|"$/g, "");
     const ok = Array.isArray(st) && st.length === 2 && st.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && st[0] <= st[1];
-    let sel = IMG_SELS.includes(sv) ? sv : "random";
-    if (!IMG_SELS.includes(sv) && ok) sel = st[0] === 1 && st[1] === 1 ? "one" : st[0] === 2 && st[1] === 4 ? "album" : "custom";
-    if (sel === "custom" && !ok) sel = "random";
-    $("#prImgSel").value = sel;
-    $("#prImgMin").value = ok ? st[0] : d[0]; $("#prImgMax").value = ok ? st[1] : d[1];
-    imgSelShow();
+    let pair = d;
+    if (sv === "one") pair = [1, 1]; else if (sv === "album") pair = [2, 4]; else if ((sv === "custom" || sv === "") && ok) pair = st;
+    $("#prImgMin").value = pair[0]; $("#prImgMax").value = pair[1];
+    if (sv) { store.set("prImgSel", ""); store.set("prImg", JSON.stringify(pair)); }
+    const ao = jget("prAlbOff", null);
+    albOff = Array.isArray(ao) ? new Set(ao.filter((v) => ALBS.some((x) => x[0] === v))) : defAlbOff();
+    if (albOff.size >= ALBS.length) albOff = defAlbOff();
+    drawAlbums();
   }
   const srcPlat = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s); if (info?.platform) return String(info.platform).toLowerCase(); const u = String(info?.url || ""); return PLATS.find((p) => u.includes(p)) || ""; };
   const srcOn = (b, s) => !(platOff.has(srcPlat(b, s)) || srcOff.has(`${b.id}:${s}`));
@@ -1128,9 +1149,10 @@ header + * { margin-top: 0; }
       else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts per brand (pipeline.mjs create --count ${count})`);
       if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
       if (!pub) lines.push(`images by ${chosenEngine() === "flow" ? "Google Flow" : "Codex"} (pipeline.mjs create --image-engine ${chosenEngine()}; this run only)`);
-      const imf = pub ? "" : imgFlag();
-      if (imf) lines.push(imf === "2-4" ? "album of 2 to 4 images (type random: other angles or other scenes) (pipeline.mjs create --images 2-4; this run only)" : imf === "1" ? "exactly 1 image (pipeline.mjs create --images 1; this run only)" : `custom ${imf.replace("-", " to ")} images per post (--images ${imf}; this run only)`);
+      const imf = pub ? "" : imgFlag(), alf = pub ? "" : albFlag();
+      if (imf) lines.push(/^\d$/.test(imf) ? `exactly ${imf} image${imf === "1" ? "" : "s"} (pipeline.mjs create --images ${imf}; this run only)` : `${imf.replace("-", " to ")} images per post (--images ${imf}; this run only)`);
       else if (!pub) lines.push(`images per post: random ${defIpp().join(" to ")}`);
+      if (!pub && imgPairVal()[1] > 1) lines.push(alf ? `album types: ${alf === "angle" ? "angle only" : "scene only"} (--album ${alf}; this run only)` : "album types: random between angle and scene");
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");
     }
@@ -1201,11 +1223,10 @@ header + * { margin-top: 0; }
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
   $("#prBrand").onchange = () => { store.set("prBrand_" + modeKey(prMode), $("#prBrand").value || "all"); drawPrompt(); regenerate(); };
-  document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
-  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgSel", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
+  document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
+  for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
     const v = $(id).value;
     if (id === "#prImages") { $(id).dataset.touched = "1"; store.set("prEngine", v); }
-    else if (id === "#prImgSel") { store.set("prImgSel", v); imgSelShow(); }
     else if (id === "#prMax") store.set("prMax", v);
     else if (id === "#prCount") store.set("prCount_" + modeKey(prMode), "c:" + v);
     else if (id === "#prWindow" || id === "#prStart") store.set(id === "#prWindow" ? "prWindow" : "prStart", "v:" + v);
@@ -1948,8 +1969,8 @@ function draftTags(d) {
       ${r.times ? row("Times", `${esc(range(r.times.primary))} primary + ${esc(range(r.times.backup))} backup + ${esc(range(r.times.acceptable || [0, 0]))} acceptable per day <span class="meta">research table; Metricool's best times replace it once synced</span>`, "Backup, then acceptable hours are used only when the primary hours cannot hold posts per day 3 hours apart") : ""}
       ${row("Plan ahead", `${esc(s.planning?.ahead_days ?? 7)} days`, "Create & publish makes enough posts to fill this many days")}
       ${row("Image engine", `${s.image_engine === "flow" ? "Google Flow" : "Codex"} <span class="meta">${s.image_engine === "flow" ? "the agent makes each image in Flow (Chrome + Playwright MCP); Google's sparkle is removed locally" : "Codex CLI makes the images"}</span>`, "Which tool makes the post images")}
-      ${row("Images per post", `${esc((s.posts?.images_per_post || [1, 4]).join(" to "))} <span class="meta">random per post; one run can change it in the Run tab (Images per post select)</span>`, "Every post is an album of this many images (random between min and max, 1 to 4) of the same scene")}
-      ${row("Album", `${esc({ angle: "Same scene, other angles", scene: "Other scenes" }[s.posts?.album_mode] || "Random")} <span class="meta">for posts with 2 or more images (random by default; no Run tab control)</span>`, "Albums are either the same scene with other camera angles or the same product in other scenes; Random picks one per post")}
+      ${row("Images per post", `${esc((s.posts?.images_per_post || [1, 4]).join(" to "))} <span class="meta">random per post; one run can change it in the Run tab (Images per post, min and max)</span>`, "Every post is an album of this many images (random between min and max, 1 to 4) of the same scene")}
+      ${row("Album", `${esc({ angle: "Same scene, other angles", scene: "Other scenes" }[s.posts?.album_mode] || "Random")} <span class="meta">for posts with 2 or more images (random by default; one run can change it in the Run tab, Image types)</span>`, "Albums are either the same scene with other camera angles or the same product in other scenes; Random picks one per post")}
       ${s.imageHost ? row("Auto-host images", s.imageHost.auto_after_writeback !== false ? "Yes" : "No", "Push the image to the image repo (inside the tool: workspace/image-host, cloned from imageHost.remote_url when missing) right after approval") : ""}
       ${arr(r.times?.table).length ? row("Posting times", `<details><summary>Ranked hours per day (best first)</summary><div class="table-wrap"><table class="edit times"><thead><tr><th>Day</th><th>Primary</th><th>Backup</th><th>Acceptable</th></tr></thead><tbody>${r.times.table.map((t) => `<tr><td>${esc(DAY_NAME[t.day] || t.day)}</td>${["primary", "backup", "acceptable"].map((k) => `<td>${t[k].map((h, i) => `<span class="meta">${i + 1}.</span>${esc(h)}`).join(" ")}</td>`).join("")}</tr>`).join("")}</tbody></table></div><div class="meta">Primary: the studies' best hours; Backup: their next-best hours for that day (Sprout Social, Buffer, Hootsuite); Acceptable: the rest of 07:00–22:00 by the overall Facebook engagement curve. Research table (America/New_York); Metricool's best times replace Primary and lead Backup once synced. Edit in config/best-times.json.</div></details>`) : ""}
       ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
