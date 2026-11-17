@@ -5,7 +5,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, platform as osPlatform } from "node:os";
 
-const defaultWhich = (name, plat) => { try { const out = execFileSync(plat === "win32" ? "where" : "which", [name], { encoding: "utf8", windowsHide: true, timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }); return out.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || ""; } catch { return ""; } };
+const defaultWhich = (name, plat) => { try { const out = execFileSync(plat === "win32" ? "where" : "which", [name], { encoding: "utf8", windowsHide: true, timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }); const all = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean); return (plat === "win32" && all.find((s) => /\.(exe|cmd|bat)$/i.test(s))) || all[0] || ""; } catch { return ""; } };
 const versionOf = (name) => (/claude-code-(\d+(?:\.\d+)*)/.exec(name)?.[1] || "0").split(".").map(Number);
 export const compareVersions = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = (a[i] || 0) - (b[i] || 0); if (d) return d; } return 0; };
 
