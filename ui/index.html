@@ -772,6 +772,7 @@ header + * { margin-top: 0; }
     const skillPerDay = Number.isInteger(cad.posts_per_day) && cad.posts_per_day > 0 ? cad.posts_per_day : Number.isInteger(cad.posts_per_week) && cad.posts_per_week > 0 ? Math.ceil(cad.posts_per_week / 7) : 1;
     const off = new Set(arr(ov.sources_disabled)), sugs = arr(ov.suggested);
     const skillOff = skill.enabled !== true;
+    const chanOn = arr(ov.channels).length ? arr(ov.channels) : arr(skill.channels).filter((c) => c.enabled).map((c) => String(c.network).toLowerCase());
     $("#brandTitle").textContent = skill.brand || id;
     $("#brandLegend").textContent = skill.brand || id;
     const regs = r.registry || {};
@@ -787,6 +788,7 @@ header + * { margin-top: 0; }
       <div class="fields">
         <div class="field"><label for="fPpd" title="Posts every day; times are chosen automatically (Metricool best times). Empty = the skill's value (${esc(skillPerDay)})">Posts per day</label><input type="number" id="fPpd" min="1" max="20" step="1" placeholder="${esc(skillPerDay)}" value="${ov.posts_per_day ? esc(ov.posts_per_day) : ""}"></div>
         <div class="field"><span class="label">Status</span><div class="checks"><label title="${skillOff ? "Off in the skill (enabled: false): turn it on in the skill folder" : "A paused brand gets no new posts and nothing sent"}"><input type="checkbox" id="fPaused"${ov.paused || skillOff ? " checked" : ""}${skillOff ? " disabled" : ""}> Paused</label></div></div>
+        <div class="field"><span class="label" title="Where each post is sent. Instagram needs the account connected to this brand in Metricool.">Post to</span><div class="checks">${["facebook", "instagram"].map((n) => `<label><input type="checkbox" class="fChan" value="${n}"${chanOn.includes(n) ? " checked" : ""}> ${n === "facebook" ? "Facebook" : "Instagram"}</label>`).join("")}</div></div>
         <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">${icon("folder")}<span>Open skill folder</span></button></div>
       </div>
       <div class="fields">
@@ -847,6 +849,7 @@ header + * { margin-top: 0; }
     const override = {
       posts_per_day: ppd > 0 ? ppd : null,
       paused: editing.skill.enabled === true && $("#fPaused").checked,
+      channels: $$(".fChan").filter((c) => c.checked).map((c) => c.value),
       sources_add: editing.added,
       sources_disabled: $$("#fSources .slot[data-id]").filter((row) => { const c = $("input", row); return !c.disabled && !c.checked; }).map((row) => row.dataset.id),
     };

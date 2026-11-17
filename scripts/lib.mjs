@@ -611,8 +611,11 @@ export function normalizeOverride(input = {}) {
   // Album size per post (posts.images_per_post [min, max], 1-4); missing = the tool default (settings posts.images_per_post).
   const ipp = o.posts?.images_per_post;
   const album = Array.isArray(ipp) && ipp.length === 2 && ipp.every((x) => Number.isInteger(x) && x >= 1 && x <= 4) && ipp[0] <= ipp[1] ? { posts: { images_per_post: ipp } } : {};
-  return { posts_per_day: ppd, paused: o.paused === true, sources_add: add, sources_disabled: disabled, ...album, suggested: normalizeSuggested(o.suggested), dismissed_suggestions: normalizeDismissed(o.dismissed_suggestions) };
+  // Networks this brand posts to (subset of POST_NETWORKS); null = the skill's own channels.
+  const chans = Array.isArray(o.channels) ? [...new Set(o.channels.map((c) => String(c).toLowerCase()).filter((c) => POST_NETWORKS.includes(c)))] : null;
+  return { posts_per_day: ppd, paused: o.paused === true, channels: chans && chans.length ? chans : null, sources_add: add, sources_disabled: disabled, ...album, suggested: normalizeSuggested(o.suggested), dismissed_suggestions: normalizeDismissed(o.dismissed_suggestions) };
 }
+export const POST_NETWORKS = ['facebook', 'instagram']; // the networks the Metricool MCP route can send
 export function readBrandOverride(id) {
   try { return normalizeOverride(readJson(brandOverrideFile(id), {})); } catch { return normalizeOverride({}); }
 }
@@ -729,6 +732,13 @@ export function applyBrandOverride(social, ov) {
   if (!ov) return s;
   if (ov.posts_per_day) s.cadence = { ...(s.cadence || {}), posts_per_day: ov.posts_per_day };
   if (ov.paused) { s.enabled = false; s.paused_in_tool = true; }
+  if (ov.channels) {
+    const cur = Array.isArray(s.channels) ? s.channels : [];
+    const base = cur.find((x) => x && x.enabled) || cur[0] || {};
+    const kept = cur.map((x) => ({ ...x, enabled: ov.channels.includes(String(x.network).toLowerCase()) }));
+    for (const n of ov.channels) if (!kept.some((x) => String(x.network).toLowerCase() === n)) kept.push({ network: n, account: '', url: '', lang: base.lang || ['en'], enabled: true });
+    s.channels = kept;
+  }
   const off = new Set(ov.sources_disabled || []);
   if (off.size || (ov.sources_add || []).length) {
     s.research = { ...(s.research || {}) };
