@@ -779,8 +779,8 @@ header + * { margin-top: 0; }
     const skillOff = skill.enabled !== true;
     const CHAN_NAME = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", linkedin: "LinkedIn", twitter: "X", threads: "Threads", pinterest: "Pinterest", gmb: "Google Business" };
     const mcBrand = arr(brandData.metricool?.brands).find((m) => m.skill_id === id);
-    const chanList = [...new Set(["facebook", "instagram", ...arr(mcBrand?.networks)])];
-    const chanOn = arr(ov.channels).length ? arr(ov.channels) : arr(skill.channels).filter((c) => c.enabled).map((c) => String(c.network).toLowerCase());
+    const chanList = arr(mcBrand?.networks).length ? arr(mcBrand.networks) : ["facebook", "instagram"];
+    const chanOn = arr(ov.channels).length ? arr(ov.channels) : chanList.filter((n) => n === "facebook" || n === "instagram"); // default: every connected network
     $("#brandTitle").textContent = skill.brand || id;
     $("#brandLegend").textContent = skill.brand || id;
     const regs = r.registry || {};
@@ -857,7 +857,8 @@ header + * { margin-top: 0; }
     const override = {
       posts_per_day: ppd > 0 ? ppd : null,
       paused: editing.skill.enabled === true && $("#fPaused").checked,
-      channels: $$(".fChan").filter((c) => c.checked).map((c) => c.value),
+      // every connected network ticked = automatic (new connections join by themselves); otherwise the explicit list
+      channels: $$(".fChan:not(:disabled)").every((c) => c.checked) ? null : $$(".fChan").filter((c) => c.checked).map((c) => c.value),
       sources_add: editing.added,
       sources_disabled: $$("#fSources .slot[data-id]").filter((row) => { const c = $("input", row); return !c.disabled && !c.checked; }).map((row) => row.dataset.id),
     };

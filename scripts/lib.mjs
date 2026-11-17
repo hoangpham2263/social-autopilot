@@ -749,7 +749,14 @@ export function applyBrandOverride(social, ov) {
   return s;
 }
 export const skillSocial = (dir) => readJson(path.join(dir, 'project', 'social.json'));
-export const brandSocial = (dir, id = skillIdOf(dir)) => applyBrandOverride(skillSocial(dir), readBrandOverride(id));
+// Default channels = every sendable network the brand has connected in Metricool; ticks in Edit brand (override.channels) narrow it down.
+export function brandSocial(dir, id = skillIdOf(dir)) {
+  const ov = readBrandOverride(id), s = applyBrandOverride(skillSocial(dir), ov);
+  if (ov.channels) return s;
+  let nets = [];
+  try { nets = ((metricoolBrands().brands || []).find((b) => b.skill_id === id)?.networks || []).map((n) => String(n).toLowerCase()).filter((n) => POST_NETWORKS.includes(n)); } catch {}
+  return nets.length ? applyBrandOverride(s, { channels: nets }) : s;
+}
 
 // One brand = one brand folder (<skillsRoot>/<skill>/brands/<id>, interim <brands root>/<id>, or legacy <id>-skills; under skillsRoot or linked by path from Tổng quan) with project/project.md and project/social.json, and SKILL.md at its skillRoot.
 // Readiness is the skill's own check (scripts/check-skill.mjs --tool-ready, exit 0 = ready); the tool does not
