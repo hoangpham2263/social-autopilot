@@ -273,7 +273,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     try { child.stdin?.end(note + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
     if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
-    run.timer.unref?.();
+    run.timer?.unref?.();
     return { ok: true, status: 200, run_id: runId, mode, started };
   }
 
