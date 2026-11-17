@@ -389,6 +389,8 @@ header + * { margin-top: 0; }
 .btn, a.btn, button.btn, nav.tabs button, input:not([type=checkbox]):not([type=radio]), select, textarea, .card, fieldset, .plat, .status-tag, .setup-status, .reject-box, .ar-panel, .run-panel { border-radius: var(--r); }
 .status-tag { border-radius: 999px; }
 .pv:not(.ig) { border-radius: 8px; }
+  .chan, .checks label:has(.fChan) { display: inline-flex; align-items: center; gap: 5px; margin-right: 10px; }
+  .chan .ico, .checks label:has(.fChan) .ico { flex: none; }
 </style>
 </head>
 <body>
@@ -539,7 +541,7 @@ header + * { margin-top: 0; }
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const arr = (x) => (Array.isArray(x) ? x : []);
   // Inline 16px icons (Lucide-style paths, stroke currentColor) for buttons: icon("copy") + text. Same set as hub.js.
-  const ICONS = { copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>' };
+  const ICONS = { facebook: '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>', instagram: '<rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>', youtube: '<path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/>', network: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>' };
   const icon = (name) => `<svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
   for (const [sel, name] of [["#prCopy", "copy"]]) { const b = document.querySelector(sel); if (b) b.innerHTML = icon(name) + `<span>${b.textContent}</span>`; }
   // Every "Label (N)" in the app (Mode, Posts, Library, Log, Overview): one format, a no-break space before the count.
@@ -701,7 +703,7 @@ header + * { margin-top: 0; }
       return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
         <div class="head-row"><h3>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}<span class="dot after ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span></h3>${actions(m)}</div>
         <dl class="kv">
-          <dt>Channels</dt><dd title="Enabled in the skill; Metricool has connected: ${esc(arr(m.networks).map(net).join(", ") || "none")}">${esc((arr(s?.channels).length ? arr(s.channels) : arr(m.networks)).map(net).join(", ") || "no channels")} · ${esc(m.timezone || "-")}</dd>
+          <dt>Channels</dt><dd title="Enabled in the skill; Metricool has connected: ${esc(arr(m.networks).map(net).join(", ") || "none")}">${(arr(s?.channels).length ? arr(s.channels) : arr(m.networks)).map((n) => `<span class="chan" title="${esc(net(n))}">${icon(ICONS[n] ? n : "network")} ${esc(net(n))}</span>`).join(" ") || "no channels"} · ${esc(m.timezone || "-")}</dd>
           ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}${sug}
           ${x ? `<dt>Library</dt><dd>${kho}</dd>
           <dt>Posts</dt><dd>${posts}</dd>
@@ -772,6 +774,9 @@ header + * { margin-top: 0; }
     const skillPerDay = Number.isInteger(cad.posts_per_day) && cad.posts_per_day > 0 ? cad.posts_per_day : Number.isInteger(cad.posts_per_week) && cad.posts_per_week > 0 ? Math.ceil(cad.posts_per_week / 7) : 1;
     const off = new Set(arr(ov.sources_disabled)), sugs = arr(ov.suggested);
     const skillOff = skill.enabled !== true;
+    const CHAN_NAME = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", linkedin: "LinkedIn", twitter: "X", threads: "Threads", pinterest: "Pinterest", gmb: "Google Business" };
+    const mcBrand = arr(brandData.metricool?.brands).find((m) => m.skill_id === id);
+    const chanList = [...new Set(["facebook", "instagram", ...arr(mcBrand?.networks)])];
     const chanOn = arr(ov.channels).length ? arr(ov.channels) : arr(skill.channels).filter((c) => c.enabled).map((c) => String(c.network).toLowerCase());
     $("#brandTitle").textContent = skill.brand || id;
     $("#brandLegend").textContent = skill.brand || id;
@@ -788,7 +793,7 @@ header + * { margin-top: 0; }
       <div class="fields">
         <div class="field"><label for="fPpd" title="Posts every day; times are chosen automatically (Metricool best times). Empty = the skill's value (${esc(skillPerDay)})">Posts per day</label><input type="number" id="fPpd" min="1" max="20" step="1" placeholder="${esc(skillPerDay)}" value="${ov.posts_per_day ? esc(ov.posts_per_day) : ""}"></div>
         <div class="field"><span class="label">Status</span><div class="checks"><label title="${skillOff ? "Off in the skill (enabled: false): turn it on in the skill folder" : "A paused brand gets no new posts and nothing sent"}"><input type="checkbox" id="fPaused"${ov.paused || skillOff ? " checked" : ""}${skillOff ? " disabled" : ""}> Paused</label></div></div>
-        <div class="field"><span class="label" title="Where each post is sent. Instagram needs the account connected to this brand in Metricool.">Post to</span><div class="checks">${["facebook", "instagram"].map((n) => `<label><input type="checkbox" class="fChan" value="${n}"${chanOn.includes(n) ? " checked" : ""}> ${n === "facebook" ? "Facebook" : "Instagram"}</label>`).join("")}</div></div>
+        <div class="field"><span class="label" title="Where each post is sent. Instagram needs the account connected to this brand in Metricool.">Post to</span><div class="checks">${chanList.map((n) => { const sendable = n === "facebook" || n === "instagram"; return `<label title="${sendable ? "Connected in Metricool" : "Connected in Metricool, but the tool cannot send to it yet"}"><input type="checkbox" class="fChan" value="${n}"${chanOn.includes(n) ? " checked" : ""}${sendable ? "" : " disabled"}> ${icon(ICONS[n] ? n : "network")}<span>${esc(CHAN_NAME[n] || n)}</span>${sendable ? "" : ` <span class="meta">(not supported yet)</span>`}</label>`; }).join("")}</div></div>
         <div class="field auto"><span class="label">&nbsp;</span><button class="btn" type="button" id="fOpen" title="Everything else is edited in the skill folder">${icon("folder")}<span>Open skill folder</span></button></div>
       </div>
       <div class="fields">
