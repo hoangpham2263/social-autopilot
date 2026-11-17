@@ -199,7 +199,7 @@ function flowTodo(st) {
   }
   return todo;
 }
-const FLOW_NEXT = 'Google Flow, BATCH (docs/flow-images.md): one Flow project per run; per image run flow-brief (condensed prompt + ratio + reference copied to Downloads). SUBMIT every cover image.png of every draft one after another without waiting, wait ONCE, then submit every extra (n>=2: attach the draft image 1 from the project via "+" > thumbnail > "Thêm vào câu lệnh"), wait once more, then download each result (1K), match it to its draft/n (order of thumbnails or the prompt in the detail view; Downloads names come from Flow, not our id) and register it with the register command of that image. Then: node scripts/pipeline.mjs create --resume.';
+const FLOW_NEXT = 'Google Flow, BATCH (docs/flow-images.md): one Flow project per run; per image run flow-brief (condensed prompt + ratio + reference copied to Downloads). PACE LIKE A HUMAN (Flow blocks bursts): submit images in groups of 3-4 (covers first, then extras n>=2: attach the draft image 1 from the project via "+" > thumbnail > "Thêm vào câu lệnh"), a random 5-12 s pause between prompts, wait for the group to render, a random 20-45 s pause between groups, never more than ~8 prompts in 2 minutes. After each group download each result (1K, random 2-5 s between downloads), match it to its draft/n (the prompt in the detail view; Downloads names come from Flow, not our id) and register it right away with the register command of that image. Then: node scripts/pipeline.mjs create --resume.';
 
 // ----- Stage B -----
 function spawnImages(st, ids) {

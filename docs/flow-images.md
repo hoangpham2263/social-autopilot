@@ -41,7 +41,7 @@ In the Flow download menu: **1K "Kích thước gốc" (original) is the default
 ## Timing and parallelism
 Parallelism lives INSIDE Flow, driven by one agent in one browser: one Flow project per run, every prompt of a wave submitted back-to-back (Flow runs them concurrently and queues what it cannot run; no artificial cap), one wait per wave, one download pass. Matching rules, retries and the x2-x4 rule are in the skill (`references/image-guide.md`, "Tạo nhiều ảnh song song"); this file only has the plumbing (`flow-queue`, `register-batch`). Codex side: see "Codex parallelism" at the end.
 
-One image takes about 20-30 s; Flow renders several at once. So never submit one image and wait for it: submit everything, wait once, download everything. A post of 4 images in 3 posts = 12 images, about 2 waits of 30 s instead of 12.
+One image takes about 20-30 s; Flow renders several at once. Do not submit one image and wait for it, and do not fire everything at once either: submit small groups of 3-4 with random human pauses (see "Human pacing" below), one wait per group.
 
 ## Procedure (Vietnamese Flow interface, plan PLUS; adapt if the language or layout differs; use text/role locators, never fixed coordinates unless unavoidable)
 Setup (once per run, one Flow project per run or per brand):
@@ -52,7 +52,7 @@ Batch, phase 1 (submit the covers of ALL posts, no waiting): for each draft, ima
 3. CLICK THE BOTTOM PROMPT BOX and paste the condensed prompt. Pitfall: the first `role=textbox` on the page is the PROJECT TITLE field at the top; typing there renames the project (if it happens, press the X next to it).
 4. Reference image if any: the "+" button at the left of the prompt box, the upload button at the bottom-left of the picker, choose the file (the Playwright file chooser only reads under `C:UsersAdmin`: `flow-brief` already copied the reference from the tool workspace to `C:UsersAdminDownloads`; remove nothing). Say exactly what must stay.
 5. Press the round arrow button at the right of the box and go straight to the next prompt (do not wait). Note the order (draft id, n) you submitted.
-Then wait ONCE until every thumbnail is ready (about 20 to 30 s per image, they render in parallel).
+**Human pacing (mandatory; Flow blocked a run with "unusual activity" after 40+ back-to-back prompts):** submit in groups of 3-4 images. Between two prompts of a group pause a random 5-12 s (`browser_wait_for` with `time`, a different number each time, never a fixed rhythm). After a group wait for its thumbnails (about 30 s), pause another random 20-45 s, then start the next group. Never more than about 8 prompts in 2 minutes. After each group download and register its images (phase 3) before the next group, so a block mid-run loses nothing. Pause a random 2-5 s between two downloads. The same pacing applies to phase 2.
 
 Batch, phase 2 (album extras, only drafts with more than 1 image): for each extra n = 2..4 of each post (`flow-brief --id <draft> --n k`):
 6. Click the bottom prompt box, then "+": the list shows the project's own results under the Tất cả / Hình ảnh tabs: click the thumbnail of THAT draft's image 1, then "Thêm vào câu lệnh". Paste the album prompt of the shot (detail / wide) and send; do not wait, go on to the next extra. Wait once more for all of them.
