@@ -1,8 +1,10 @@
 Use your built-in image generation / image editing tool to EDIT the attached images. Do NOT write code, scripts, or use PIL/canvas to draw anything.
 
-ALBUM IMAGE {{INDEX}} OF {{COUNT}} (a different scene). The FIRST attached image is the post's MAIN image ({{MAIN_IMAGE}}). Make one more photo of the SAME product in a DIFFERENT scene: keep exactly the same product (the same shape, the same text character for character, the same colours, materials, lettering style and size) and put it in a new, believable setting. The scene, the room and the light are NOT those of the main image.
+ALBUM IMAGE {{INDEX}} OF {{COUNT}} (a different scene). The FIRST attached image is the post's MAIN image ({{MAIN_IMAGE}}). Make one more photo of the SAME product in a DIFFERENT scene: keep exactly the same product (the same shape, the same colours, materials, lettering style and size; the sign wording follows the SIGN WORDING line below) and put it in a new, believable setting. The scene, the room and the light are NOT those of the main image.
 
 NEW SCENE FOR THIS IMAGE: {{ALBUM_SCENE}}
+
+SIGN WORDING FOR THIS IMAGE: {{ALBUM_SIGN_RULE}}
 
 THE PRODUCT (exactly as in the main image):
 {{PRODUCT_DESCRIPTION}}

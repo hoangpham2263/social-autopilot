@@ -2,9 +2,9 @@ Use your built-in image generation / image editing tool to EDIT the first attach
 
 MODE: NEW SCENE. The reference photo shows a person, so nothing of that photo may stay except the product: take the product out of it and put it in a completely new real-life setting. Remove every person entirely (faces, bodies, hands, reflections, silhouettes); no person from the reference photo may appear in any form.
 
-THE PRODUCT (take it ENTIRELY from the reference photo, its text included; everything around it is new; this is a product type the brand makes to order):
+THE PRODUCT (take the product itself from the reference photo; its words follow the TEXT ON THE PRODUCT rule below; everything around it is new; this is a product type the brand makes to order):
 {{PRODUCT_DESCRIPTION}}
-Keep the product exactly: same shape, the same text character for character, lettering style, colors, materials and proportions. Do not add stands, feet, brackets, cables or any part not visible in the original.
+Keep the product exactly: same shape, lettering style, colors, materials and proportions (the words themselves: see TEXT ON THE PRODUCT). Do not add stands, feet, brackets, cables or any part not visible in the original.
 
 REMOVE EVERYTHING THAT BELONGS TO THE SOURCE SHOP:
 - Remove every shop logo, shop name, watermark, badge, sticker, size label, price tag, phone number, website, QR code, frame/border and any text overlay from the photo (the source shop is "{{SOURCE_SHOP}}"; its name must not appear anywhere).

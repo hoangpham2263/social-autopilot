@@ -215,7 +215,28 @@ function imageExt(name) {
 
 // fast: a short wait only (raw link for an image, no check for a video); used right after an approval so it returns
 // quickly. Importable: never exits the process (the server calls it in-process).
-export async function publish({ brand: brandId, post: postId, video: wantVideo = false, fast = false }, s = settings()) {
+// Every failure is kept in the post's catalog entry (host_error {at, message}) so it is never silent; success clears it.
+function markHost(brandId, postId, error) {
+  try {
+    const { catalogFile, entry } = postOf(brandId, postId);
+    if (!error && !entry.host_error) return;
+    withLock(catalogFile, () => {
+      const catalog = readJson(catalogFile);
+      const e = catalog.posts.find((p) => p.id === postId);
+      if (!e) return;
+      if (error) e.host_error = { at: new Date().toISOString(), message: String(error).slice(0, 500) }; else delete e.host_error;
+      catalog.updated = today(); writeJson(catalogFile, catalog);
+    });
+  } catch { /* no catalog entry: nothing to mark */ }
+}
+export async function publish(input, s = settings()) {
+  try {
+    const r = await publishMedia(input, s);
+    if (!r.pending) markHost(input.brand, input.post, '');
+    return r;
+  } catch (e) { markHost(input.brand, input.post, e.message); throw e; }
+}
+async function publishMedia({ brand: brandId, post: postId, video: wantVideo = false, fast = false }, s = settings()) {
   const h = hostConfig(s);
   const { brand, catalogFile, entry } = postOf(brandId, postId);
   if (!APPROVED.includes(entry.status)) throw new Error(`${postId} đang "${entry.status}"; chỉ host media của bài đã duyệt (approved/scheduled/published).`);
@@ -264,6 +285,54 @@ export async function publish({ brand: brandId, post: postId, video: wantVideo =
     ...check, commit: git1.commit, committed: git1.committed, pushed: git1.pushed, catalog: catalogFile,
     reused: !git1.copied && !git1.committed && !written, check_post: checkPost(brand, postId),
   };
+}
+
+// READ-ONLY check of the links a post already has (nothing is uploaded): each URL must answer 200, with image/* (video/mp4 for
+// a video) and the same bytes as the post's own file (fallback: the copy in the image repo). A post with no link, or any bad
+// link, is marked in the catalog (host_error) like a failed hosting, so the app shows "Ảnh chưa lên repo" and Gửi lại ảnh
+// fixes it (publish re-checks the live link and re-copies / re-pushes the file). A fully good post gets its host_error cleared.
+async function checkOne(h, brand, entry) {
+  const problems = [];
+  let items = [];
+  try { items = mediaOf(brand, entry, entry.id, false); } catch (e) { problems.push(e.message); }
+  const want = (field, i) => items.find((it) => it.field === field && (it.index === undefined || it.index === i));
+  const links = [];
+  for (const f of URL_FIELDS) [].concat(entry[f] || []).filter(Boolean).forEach((u, i) => links.push({ field: f, i, url: u }));
+  if (!links.length) problems.push('chưa có link ảnh/video');
+  for (const l of links) {
+    const it = want(l.field, l.i);
+    const rel = relOf(h, l.url), repoFile = rel ? path.join(h.repo, ...rel.split('/')) : '';
+    const src = it?.file && fs.existsSync(it.file) ? it.file : repoFile && fs.existsSync(repoFile) ? repoFile : '';
+    const kind = l.field === 'video_url' ? 'video' : 'image';
+    const okType = kind === 'video' ? (h.pagesBase ? /^video\/mp4\b/i : /^(video\/mp4|application\/octet-stream)\b/i) : /^image\//i;
+    const tag = l.field + (l.i ? '[' + (l.i + 1) + ']' : '');
+    try {
+      const r = await fetch(l.url, { cache: 'no-store', signal: AbortSignal.timeout(30000) });
+      const type = r.headers.get('content-type') || '';
+      const body = Buffer.from(await r.arrayBuffer());
+      if (r.status !== 200) problems.push(tag + ': HTTP ' + r.status);
+      else if (!okType.test(type)) problems.push(tag + ': content-type "' + (type || '(trống)') + '" sai');
+      else if (src && sha(body) !== sha(fs.readFileSync(src))) problems.push(tag + ': nội dung khác file gốc (' + body.length + ' byte so với ' + fs.statSync(src).size + ')');
+    } catch (e) { problems.push(tag + ': ' + (e.name === 'TimeoutError' ? 'timeout' : e.cause?.code || e.message)); }
+  }
+  return problems;
+}
+export async function checkHosted({ brand: brandId, posts = [], concurrency = 3 }, s = settings()) {
+  const h = hostConfig(s);
+  const brand = loadBrand(brandId, { allowDisabled: true });
+  const list = (readJson(postsCatalogFile(brand.id), { posts: [] }).posts || []).filter((p) => ['approved', 'scheduled'].includes(p.status) && (!posts.length || posts.includes(p.id)));
+  const results = [];
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, list.length) }, async () => {
+    while (next < list.length) {
+      const entry = list[next++];
+      const problems = await checkOne(h, brand, entry);
+      markHost(brand.id, entry.id, problems.length ? 'Link ảnh hỏng: ' + problems.join('; ') : '');
+      results.push({ post: entry.id, ok: !problems.length, problems });
+    }
+  }));
+  results.sort((a, b) => a.post.localeCompare(b.post));
+  return { brand: brand.id, checked: results.length, ok_count: results.filter((r) => r.ok).length, bad_count: results.filter((r) => !r.ok).length, results };
 }
 
 export function remove({ brand: brandId, post: postId, force = false }, s = settings()) {
@@ -335,8 +404,9 @@ export async function hostAfterWriteback(result, s = settings(), { background = 
 if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
   const cmd = args._[0];
+  if (cmd === 'check') return out(await checkHosted({ brand: need(args, 'brand'), posts: typeof args.posts === 'string' ? args.posts.split(',').map((x) => x.trim()).filter(Boolean) : [] }));
   const input = { brand: need(args, 'brand'), post: need(args, 'post') };
   if (cmd === 'publish') return out(await publish({ ...input, video: args.video === true }));
   if (cmd === 'remove') return out(remove({ ...input, force: args.force === true }));
-  throw new Error('Lệnh: publish [--video] | remove [--force]');
+  throw new Error('Lệnh: publish [--video] | remove [--force] | check --brand <id> [--posts POST-1,POST-2] (chỉ đọc)');
 });

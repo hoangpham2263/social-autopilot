@@ -472,6 +472,18 @@ export function assertLinked(brand) {
   if (byBlog?.removed) throw new Error(`Metricool brand "${byBlog.name}" is no longer in the account: nothing is sent to it.`);
   if (byBlog && (byBlog.skill_id !== brand.id || path.resolve(linkedDir(byBlog)).toLowerCase() !== path.resolve(brand.dir).toLowerCase())) throw new Error(`Brand Metricool "${byBlog.name}" không nối với bộ skill ${brand.id} (Tổng quan: Chọn skill / Ngắt kết nối): không gửi gì lên Metricool.`);
 }
+// Approved posts of a brand that Publish approved can still send (not on Metricool yet, with media), oldest approved first.
+// Same selection as planPosts without --posts; pipeline.mjs publish --limit N counts the stock with it across brands.
+export function publishStock(brandId, { root = settings().skillsRoot } = {}) {
+  const brand = findBrand(brandId, root);
+  const keys = [...new Set((brand.social.channels || []).filter((c) => c.enabled).map((c) => String(c.network).toLowerCase()))];
+  const when = (p) => String(p.approval?.date || p.approved || p.created || p.id);
+  return (readPosts(brand.id).posts || [])
+    .filter((p) => p.status === 'approved' && !keys.some((n) => sentNetworks(p).includes(n)) && (list(p.media_url).length || list(p.video_url).length))
+    .sort((a, b) => when(a).localeCompare(when(b)))
+    .map((p) => ({ brand: brand.id, id: p.id, when: when(p) }));
+}
+
 export function planPosts(args, { now = new Date(), root = settings().skillsRoot, brand = null } = {}) {
   brand = brand || findBrand(need(args, 'brand'), root);
   assertLinked(brand);

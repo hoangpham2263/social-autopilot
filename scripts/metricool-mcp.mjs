@@ -104,6 +104,7 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
     };
     if (plan.networkKeys.includes('facebook')) info.facebookData = { type: it.facebook_post_type };
     if (plan.networkKeys.includes('instagram')) info.instagramData = { type: it.video ? 'REEL' : 'POST', isAiGenerated: false };
+    const pre = `node scripts/metricool-mcp.mjs precheck --brand ${brand.id} --post ${p.id}`;
     const rec = ['node scripts/metricool-mcp.mjs record', `--brand ${brand.id}`, `--post ${p.id}`, '--id "<id>"', '--uuid "<uuid>"', '--planner-url "<plannerUrl>"', '--publication "<publicationDate.dateTime>"', '--tz "<publicationDate.timezone>"', `--time-source "${it.when.source || ''}"`].join(' ');
     items.push({
       post: p.id, lang: it.texts[0].lang, networks: plan.networkKeys, draft, time_source: it.when.source, planned: it.planned,
@@ -111,6 +112,7 @@ function payloadItems(args, { now = new Date(), root = settings().skillsRoot } =
       args: { blogId, date: isoWithOffset(date, time, tz), info: JSON.stringify(info) },
       // Send before this moment (the slot itself); later, run payload again for the next slot.
       send_before: isoWithOffset(date, time, tz),
+      precheck: pre,
       record: rec,
     });
   }
@@ -139,6 +141,53 @@ function runPayload(args) {
 const isUrl = (v) => { try { return new URL(v).protocol === 'https:'; } catch { return false; } };
 // Delivery check of a register post (posts.mjs checkPost; the skill is never run on the tool's posts).
 const checkPost = (brand, postId) => checkRegisterPost(brand, postId);
+
+// Run IMMEDIATELY before createScheduledPost of a post: publish.json can be stale (an earlier attempt may have sent the post already).
+// ok:true = the post is approved and has no live Metricool id: send it. Otherwise it throws: do NOT send (a post is never sent twice).
+export function precheck(args) {
+  const brand = findBrand(need(args, 'brand'), settings().skillsRoot);
+  const postId = need(args, 'post');
+  const entry = (readJson(postsCatalogFile(brand.id), { posts: [] }).posts || []).find((p) => p.id === postId);
+  if (!entry) throw new Error(`DO NOT SEND: ${postId} is not in the catalog of ${brand.id}.`);
+  if (entry.status !== 'approved') throw new Error(`DO NOT SEND: ${postId} is "${entry.status}", only approved posts are sent (publish.json is stale: re-run the payload step).`);
+  const mc = entry.metricool && typeof entry.metricool === 'object' && !Array.isArray(entry.metricool) ? entry.metricool : {};
+  const live = Object.entries(mc).filter(([, r]) => r && r.id && r.draft !== true);
+  if (live.length) throw new Error(`DO NOT SEND: ${postId} is already on Metricool (${live.map(([n, r]) => `${n} id ${r.id}`).join(', ')}); publish.json is stale. A post is never sent twice.`);
+  // Sending lock: precheck marks the post as being sent; a second precheck within 15 minutes is refused (the first send may have
+  // reached Metricool without its record). record clears the lock. After 15 minutes a failed send can be retried.
+  const catalogFile = postsCatalogFile(brand.id);
+  const lockMs = 15 * 60 * 1000;
+  withLock(catalogFile, () => {
+    const cat = readJson(catalogFile, { posts: [] });
+    const e = (cat.posts || []).find((p) => p.id === postId);
+    const at = e?.metricool_sending?.at ? Date.parse(e.metricool_sending.at) : 0;
+    if (at && Date.now() - at < lockMs) throw new Error(`DO NOT SEND: ${postId} was already prechecked for sending at ${e.metricool_sending.at} (less than 15 minutes ago); it may already be on Metricool. Check getScheduledPosts for its text before anything else.`);
+    e.metricool_sending = { at: new Date().toISOString() };
+    writeJson(catalogFile, cat);
+  });
+  return { ok: true, post: postId, note: 'approved and not on Metricool yet: send it now (once), then run its record command.' };
+}
+
+// After sending: find duplicates in a saved getScheduledPosts answer (same text + same publication time): keep the EARLIEST created, list the rest.
+//   node scripts/metricool-mcp.mjs dupes --file <getScheduledPosts json file>
+export function dupes(args) {
+  const raw = fs.readFileSync(need(args, 'file'), 'utf8');
+  const j = JSON.parse(raw.slice(raw.search(/[\[{]/)));
+  const arr = Array.isArray(j) ? j : j.data || Object.values(j).find(Array.isArray) || [];
+  const groups = new Map();
+  for (const p of arr) {
+    const key = String(p.text || '').replace(/\s+/g, ' ').trim() + '|' + (p.publicationDate?.dateTime || '');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ id: p.id, uuid: p.uuid, created: p.creationDate?.dateTime || '', when: p.publicationDate?.dateTime || '', text: String(p.text || '').slice(0, 50) });
+  }
+  const dup = [];
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    g.sort((a, b) => String(a.created).localeCompare(String(b.created)));
+    dup.push({ keep: g[0], delete: g.slice(1) });
+  }
+  return { ok: true, posts: arr.length, duplicate_groups: dup.length, to_delete: dup.reduce((n, d) => n + d.delete.length, 0), groups: dup, note: dup.length ? 'Duplicates on Metricool: report their ids to the user, never send anything else; the user (or the Delete button in Metricool) removes them.' : 'No duplicates.' };
+}
 
 export function record(args, { root = settings().skillsRoot, now = new Date() } = {}) {
   const brand = findBrand(need(args, 'brand'), root);
@@ -177,6 +226,7 @@ export function record(args, { root = settings().skillsRoot, now = new Date() } 
     // A legacy Metricool draft of this post is replaced by the scheduled post (the draft stays in Metricool; delete it there).
     const live = Object.entries(mc).filter(([, r]) => r && r.id && r.draft !== true && String(r.id) !== id);
     if (live.length) throw new Error(`${postId}: already on Metricool (${live.map(([n, r]) => `${n} id ${r.id}`).join(', ')}), not ${id}: a post is never sent twice. If it was pulled back in Metricool, run posts.mjs unsend first.`);
+    delete entry.metricool_sending;
     const sentAt = stamp();
     for (const n of networks) {
       const old = mc[n] || {};
@@ -284,6 +334,8 @@ if (isMain(import.meta.url)) main(async () => {
   try {
     if (cmd === 'payload') runPayload(args);
     else if (cmd === 'record') out(record(args));
+    else if (cmd === 'precheck') out(precheck(args));
+    else if (cmd === 'dupes') out(dupes(args));
     else if (cmd === 'status') out(status(args));
     else if (cmd === 'sync-times') out(syncTimes(args));
     else if (cmd === 'sync-brands') {

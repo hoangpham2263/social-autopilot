@@ -29,7 +29,7 @@ User-visible states (Posts tab, in order): **To review** (draft `ready`) · **Ap
 ## Main commands per mode
 - Mode 1 Research: `research.mjs browser --state ok` → `research.mjs start` → loop `research.mjs next` (prints `open`, `scroll`, `script`, `from_page`, `target`, `stop_rules`, `adapter.status`) → open the page, loop `collect.mjs script` → `browser_run_code_unsafe` → `collect.mjs from-page` → scroll → `collect.mjs fit` → `research.mjs ingest --source|--query` → `result` → `store.mjs classify|verdict` → `research.mjs report` → `runlog.mjs add --mode research`.
 - Mode 2 Create (fast path): `pipeline.mjs mcp-plan` → MCP calls → `pipeline.mjs create --brand <id|all> --brand-settings … --best-times-dir …` → ideas file → `--resume --ideas f` → `--resume` (contact sheet) → captions file → `--resume --captions f` (checks, queue, run log). Step-by-step fallback: RUNBOOK 2.0-2.10.
-- Mode 3 Publish: `pipeline.mjs publish --brand … [--limit|--window|--start today]` → MCP sends + record → `pipeline.mjs publish --resume`.
+- Mode 3 Publish: `pipeline.mjs publish --brand … [--limit N (total over brands, oldest approved first; stop:true when none)|--window|--start today]` → MCP sends + record → `pipeline.mjs publish --resume`.
 - Look at images: `draft.mjs contact-sheet [--ids a,b]` (pure-Node PNG; ffmpeg only for JPEG/WebP).
 - Brand overrides: `social.mjs show|override --brand <id>`.
 

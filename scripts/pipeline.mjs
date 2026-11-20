@@ -32,10 +32,24 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isoWithOffset } from './metricool-mcp.mjs';
-import { nowIn } from './metricool-csv.mjs';
+import { nowIn, publishStock } from './metricool-csv.mjs';
 import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, imageEngine, loadBrand, findDraft, cleanText, metricoolBrands, isMain } from './lib.mjs';
 import { previousUses } from './store.mjs';
 import { REUSE_RULE } from './ideas.mjs';
+import { requireSignRules, ideaSignProblems, isCustomText, cause, WORKFLOW_VERSION, perImageSigns } from './signtext.mjs';
+
+// Shown at the top of the ideas todo for custom-text brands (rules: the brand skill's "Sign wording rules"; checkpoints: signtext.mjs).
+const SIGN_CHECKLIST = [
+  'ORDER (custom-text brands). Each step has a checkpoint that fails with [CAUSE:..] when an earlier step was skipped:',
+  '1. IDEA + AUDIENCE: fill the idea fields and "audience" (who this post is for).',
+  '2. SCENE TYPE: "scene_type" = one key of the skill table (_context.sign_rules); the scene must fit that row (the sign type decides the scene).',
+  '3. NEW SIGN WORDING: "sign_text" = NEW English wording fitting this scene + audience, "text_reason" = why; "ref_text" = what the reference sign reads. Checkpoint: node scripts/ideas.mjs check --brand <id> --id <I...> ([CAUSE:missing-audience|missing-scene-type|scene-mismatch|missing-sign-text|missing-text-reason|sign-not-english|sign-copied-from-reference|sign-name-from-reference|sign-repeats-recent|missing-ref-text|description-has-ref-text]).',
+  '4. IMAGE PROMPT carries the wording exactly (the tool builds it from sign_text). Checkpoint: draft.mjs check-prompt --id <draft> ([CAUSE:prompt-missing-sign-text]; also run by flow-brief and register-image).',
+  '5. IMAGE, then LOOK at it and run: draft.mjs sign-check --id <draft> --reads "<the words seen on the sign>" (custom-text SCENE album: each extra image has its OWN wording from album_signs: add --reads-02 ".." --reads-03 "..") ([CAUSE:image-text-mismatch|image-not-checked]).',
+  '6. CAPTION written from the idea + audience, never from the image; it quotes sign_text exactly ([CAUSE:caption-before-image-check] when step 5 was skipped).',
+  '7. CHECK: draft.mjs check (pipeline does it).',
+  'NEVER: copy or lightly edit the reference wording, its names, foreign-language text or numbers; use a real or customer name; repeat the wording of the last 10 posts; pick the wording before the scene; write the caption from the image; skip a checkpoint or work around a [CAUSE:..] error (fix the earlier step).',
+];
 import { draftImages, parseImagesOpt, parseAlbumOpt, albumModeOf, albumSceneOf, extraShotOf } from './draft-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -89,13 +103,22 @@ function syncAndPayload(args, scope, notes, errors, payloadFlags = []) {
     }
   } else notes.push('Metricool not synced this run (no --brand-settings): run pipeline.mjs mcp-plan first when the agent has the Metricool MCP.');
   // 2.1 payload + 2.2 status per brand
-  const publish = { brands: {} };
+  const publish = { generated_at: new Date().toISOString(), note: 'Valid ONLY for the run that just wrote it. Never reuse this file in a later run: re-run pipeline.mjs create; run each item\'s precheck right before sending.', brands: {} };
   for (const id of scope) {
-    const p = step('metricool-mcp.mjs', ['payload', '--brand', id, ...payloadFlags]);
+    const p = step('metricool-mcp.mjs', ['payload', '--brand', id, ...(typeof payloadFlags === 'function' ? payloadFlags(id) : payloadFlags)]);
     const s = step('metricool-mcp.mjs', ['status', '--brand', id]);
+    // Hosted links are checked (read-only) before anything is sent: a post whose link is dead or differs from its file is
+    // blocked with the reason instead of going to Metricool; the app then offers Gửi lại ảnh.
+    const hostBlocked = [];
+    if (p.ok !== false && (p.items || []).length) {
+      const hc = step('host-image.mjs', ['check', '--brand', id, '--posts', p.items.map((i) => i.post).join(',')]);
+      if (hc.ok === false) notes.push(id + ': kiểm link ảnh không chạy được (' + String(hc.error).slice(0, 200) + '); bài vẫn đi theo link đã lưu.');
+      else for (const r of hc.results || []) if (!r.ok) hostBlocked.push(r.post + ': ảnh chưa lên repo / link hỏng (' + r.problems.join('; ') + '); mở tab Posts, Kiểm tra ảnh, Gửi lại ảnh.');
+      if (hostBlocked.length) p.items = p.items.filter((i) => !(hc.results || []).some((r) => !r.ok && r.post === i.post));
+    }
     publish.brands[id] = {
-      items: p.ok === false ? [] : (p.items || []).map(({ post, time_source, send_before, tool, args: a, record }) => ({ post, time_source, send_before, tool, args: a, record })),
-      blocked: p.ok === false ? [p.error] : p.blocked || [],
+      items: p.ok === false ? [] : (p.items || []).map(({ post, time_source, send_before, tool, args: a, precheck, record }) => ({ post, time_source, send_before, tool, args: a, precheck, record })),
+      blocked: [...(p.ok === false ? [p.error] : p.blocked || []), ...hostBlocked],
       status_query: s.ok === false ? null : s.query || null, ignore_ids: s.ignore_ids || [],
     };
     if (s.ok === false) errors.push(`${id} status: ${s.error}`);
@@ -148,8 +171,10 @@ function stageA(args) {
   lap('sync_payload_status', t);
   // 2.3 ideas init per brand -> one ideas file for every brand
   t = Date.now();
-  const todo = { how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), compare (the comparison object in the scene with ITS real size, e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"; the product stays at most 60% of it unless the brand sets other size_limits), sign_text (when _context.custom_text; a text that fits the scene, never a placeholder), description (the exact product: every letter and accent of its text, font, colours, material, proportions). Albums (a post with 2+ images gets album_mode angle|scene when the draft is made): for an expected SCENE album you may add "album_scenes": [one scene line per extra image] (each a believable setting for this exact product per the brand project.md section 10 table, different from the cover scene and from each other, never a forbidden one; props in the same line); omit it to choose them at Stage C. A reused library item (_context.previous_uses): a NEW angle, a different scene (new-scene) OR a different sign_text (keep-scene) than every previous use; the same scene + sign_text + product is rejected. Reference-based post / scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the PRODUCT always comes from the reference photo; every foreign logo, shop name, watermark, phone, price is removed); LOOK at _context.ref_image and set "ref_has_face" (true when any human face / identifiable person shows) and "ref_mode": no face -> "keep-scene" (the scene/background/framing stay; sign_text = NEW text in the SAME language/script as the original, fitting the scene, no placeholder, no third-party brand, no real customer name; "ref_text" = what the reference reads exactly; compare not needed), face -> "new-scene" (a new real-life scene, every person removed; the product text stays as is: sign_text empty or only what it already reads; compare + proportion rules apply). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
+  const todo = { ...(scope.some((x) => { try { return isCustomText(loadBrand(x)); } catch { return false; } }) ? { checklist: SIGN_CHECKLIST } : {}), how: 'Fill every entry (one pass, all brands). Per idea EITHER "reject": "<reason>" OR: idea fields (abstract, prompts/idea-abstract.md: no copied words, phone, link or shop name), product (the brand\'s own photo, from _context.product_folders), size (real size, cm + in, from _context.size_source), compare (the comparison object in the scene with ITS real size, e.g. "the 4-seat wooden table below, 120 cm (47 in) wide"; the product stays at most 60% of it unless the brand sets other size_limits), audience + scene_type + sign_text + text_reason (when _context.custom_text: follow the checklist and _context.sign_rules; the wording is NEW English that fits scene + audience, never taken from the reference, never a placeholder), description (the exact product: every letter and accent of its text (custom_text brands: NOT the words, describe the lettering style only; the words come from sign_text), font, colours, material, proportions). Albums (a post with 2+ images gets album_mode angle|scene when the draft is made): for an expected SCENE album you may add "album_scenes": [one scene line per extra image] (each a believable setting for this exact product per the brand project.md section 10 table, different from the cover scene and from each other, never a forbidden one; props in the same line); omit it to choose them at Stage C. For a custom-text brand ALSO add "album_signs": [one NEW English sign wording per extra image, in the same order as album_scenes], each fitting ITS scene (never the cover wording, the reference wording or each other); the cover keeps sign_text and the caption quotes only sign_text. A reused library item (_context.previous_uses): a NEW angle, a different scene (new-scene) OR a different sign_text (keep-scene) than every previous use; the same scene + sign_text + product is rejected. Reference-based post / scene-swap (only when _context.reference_redraw): "scene_swap": true + "brand_can_produce": true instead of product (the PRODUCT always comes from the reference photo; every foreign logo, shop name, watermark, phone, price is removed); LOOK at _context.ref_image and set "ref_has_face" (true when any human face / identifiable person shows) and "ref_mode": no face -> "keep-scene" (the scene/background/framing stay; sign_text = NEW wording per _context.sign_rules (never the reference wording, names or foreign-language text; no placeholder, no third-party brand, no real customer name); "ref_text" = what the reference reads exactly; compare not needed), face -> "new-scene" (a new real-life scene, every person removed; the product text stays as is ONLY when not _context.custom_text; with custom_text the wording is NEW too (sign_text + ref_text + the rest of the checklist); compare + proportion rules apply). Delete nothing else. Then: node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.json', brands: {}, ideas: [] };
   for (const id of scope) {
+    let signRulesOf = null;
+    try { signRulesOf = requireSignRules(loadBrand(id)); } catch (e) { errors.push(e.message); continue; } // custom-text brand whose skill has no sign wording rules: stop here
     const r = step('ideas.mjs', ['init', '--brand', id, ...(args.restart ? ['--reset'] : []), ...(pickIds.length ? ['--items', pickIds.join(',')] : args.count && args.count !== true ? ['--count', String(args.count)] : [])]);
     for (const n of r.notes || []) notes.push(`${id}: ${n}`);
     if (r.ok === false) { if (/trống/.test(r.error || '')) { needsResearch.push(id); errors.push(`${id}: stop: needs research (Library is empty): run Research for ${id} first, then Create again.`); } else errors.push(`${id} ideas: ${r.error}`); continue; }
@@ -163,20 +188,20 @@ function stageA(args) {
     for (const i of ideas) {
       const it = items.find((x) => x.id === i.item) || {};
       const prev = previousUses(it);
-      todo.ideas.push({ brand: id, id: i.id, _context: { item: i.item, ref_image: i.ref_image, reference_caption: String(it.caption || '').slice(0, 400), source: i.source, ...(prev.length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(todo.brands[id].reference_redraw ? { reference_redraw: true } : {}) }, idea: Object.fromEntries(IDEA_FIELDS.map((f) => [f, i[f] || ''])), product: '', size: i.product_size || '', compare: i.size_compare || '', sign_text: i.sign_text || '', description: '', reject: '', ...(todo.brands[id].reference_redraw ? { scene_swap: false, brand_can_produce: false, ref_has_face: i.ref_has_face ?? null, ref_mode: i.ref_mode || '', ref_text: i.ref_text || '' } : {}) });
+      todo.ideas.push({ brand: id, id: i.id, _context: { item: i.item, ref_image: i.ref_image, reference_caption: String(it.caption || '').slice(0, 400), source: i.source, ...(prev.length ? { previous_uses: prev, reuse_rule: REUSE_RULE } : {}), ...(todo.brands[id].reference_redraw ? { reference_redraw: true } : {}), ...(signRulesOf ? { custom_text: true, sign_rules: signRulesOf.text, scene_types: signRulesOf.rows.map((x) => x.key) } : {}) }, idea: Object.fromEntries(IDEA_FIELDS.map((f) => [f, i[f] || ''])), product: '', size: i.product_size || '', compare: i.size_compare || '', sign_text: i.sign_text || '', description: '', reject: '', ...(todo.brands[id].reference_redraw ? { scene_swap: false, brand_can_produce: false, ref_has_face: i.ref_has_face ?? null, ref_mode: i.ref_mode || '', ref_text: i.ref_text || '' } : {}) });
     }
   }
   const ideasFile = path.join(pipeDir(), 'ideas-todo.json');
   writeJson(ideasFile, todo);
   lap('ideas_init', t);
-  const st = saveState({ run_started: started, image_engine_choice: engineArg, images_choice: imagesArg, album_choice: albumArg, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
+  const st = saveState({ run_started: started, image_engine_choice: engineArg, images_choice: imagesArg, album_choice: albumArg, agent, brand: brandArg, scope, stage: todo.ideas.length ? 'ideas' : 'captions', ideas_file: ideasFile, requested: args.count && args.count !== true ? Number(args.count) : null, drafts: [], redos: {}, notes, errors, timing: { A: Date.now() - t0, ...timing } });
   const items = Object.values(publish.brands).reduce((n, b) => n + b.items.length, 0);
   return {
     stage: 'A done', stop: todo.ideas.length ? 'ideas' : needsResearch.length ? 'needs research' : 'captions', ...(needsResearch.length ? { needs_research: needsResearch } : {}), brands: scope, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items,
     status_queries: Object.fromEntries(Object.entries(publish.brands).filter(([, b]) => b.status_query).map(([id, b]) => [id, b.status_query])),
     ideas_file: ideasFile, ideas: todo.ideas.length, notes, errors, timing_ms: st.timing,
     next: [
-      items ? `Metricool (now, fast): for each item in ${rel(path.join(pipeDir(), 'publish.json'))}: createScheduledPost with exactly its args (skip an item already past send_before: run metricool-mcp.mjs payload --brand <id> again for it), then run its record command.` : 'Metricool: nothing approved to send.',
+      items ? `Metricool (now, fast): for each item in ${rel(path.join(pipeDir(), 'publish.json'))}: FIRST its precheck command (it fails with DO NOT SEND when the post is already on Metricool: then skip it, never send), then createScheduledPost with exactly its args (skip an item already past send_before: run metricool-mcp.mjs payload --brand <id> again for it), then run its record command (send each post ONCE: never call createScheduledPost twice for a post, even if a call looked slow or failed; check getScheduledPosts for its text first). After the last send: getScheduledPosts for the brand (a few days per call), save the answer to a file and run node scripts/metricool-mcp.mjs dupes --file <file>; any duplicate group = report the ids to the user and send nothing more.` : 'Metricool: nothing approved to send.',
       'Reconcile: for each status_queries entry call getScheduledPosts with it; PUBLISHED -> posts.mjs mark-published (RUNBOOK 2.2); ERROR -> report.',
       todo.ideas.length ? `STOP (i): fill ${rel(ideasFile)} (all brands, one pass; read each brand's SKILL.md + project.md + image-guide.md first), then: node scripts/pipeline.mjs create --resume --ideas ${rel(ideasFile)}` : 'No new ideas needed: node scripts/pipeline.mjs create --resume (finishes: queue + run log).',
     ],
@@ -194,12 +219,12 @@ function flowTodo(st) {
     if (!missing.length) continue;
     // EVERY missing image of the post: image.png (cover, n=1) and the album extras image-02.png.. (n>=2, same scene: image 1 is their reference).
     const am = albumModeOf(d.draft);
-    todo.push({ id, brand: d.draft.brand, album_images: files.length, ...(am ? { album_mode: am, album_note: am === 'scene' ? 'SCENE album: the same product in a different scene per extra (pick each scene per the brand table, project.md section 10; never a forbidden scene; write it as draft.album_scenes or on the "NEW SCENE FOR THIS IMAGE:" line of prompt-0N.txt)' : 'ANGLE album: the same scene, a different camera shot per extra' } : {}), product_image: d.draft.product_image || '',
+    todo.push({ id, brand: d.draft.brand, album_images: files.length, ...(am ? { album_mode: am, album_note: am === 'scene' ? 'SCENE album: the same product in a different scene per extra (pick each scene per the brand table, project.md section 10; never a forbidden scene; write it as draft.album_scenes or on the "NEW SCENE FOR THIS IMAGE:" line of prompt-0N.txt; custom-text brand: each extra ALSO has its OWN new sign wording fitting its scene, draft.mjs reprompt --id <draft> --album-signs "<image 2>|<image 3>|..", and sign-check needs --reads-02 --reads-03 ..)' : 'ANGLE album: the same scene, a different camera shot per extra' } : {}), product_image: d.draft.product_image || '',
       images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, ...(n > 1 ? { make: am === 'scene' ? `a different scene: ${albumSceneOf(d.dir, d.draft, n) || '(not chosen yet: pick per the brand table)'}` : `same scene, ${extraShotOf(n - 1)} shot` } : { make: 'cover' }), brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n} --from <downloaded file>` }; }) });
   }
   return todo;
 }
-const FLOW_NEXT = 'Google Flow, BATCH (docs/flow-images.md): one Flow project per run; per image run flow-brief (condensed prompt + ratio + reference copied to Downloads). PACE LIKE A HUMAN (Flow blocks bursts): submit images in groups of 3-4 (covers first, then extras n>=2: attach the draft image 1 from the project via "+" > thumbnail > "Thêm vào câu lệnh"), a random 5-12 s pause between prompts, wait for the group to render, a random 20-45 s pause between groups, never more than ~8 prompts in 2 minutes. After each group download each result (1K, random 2-5 s between downloads), match it to its draft/n (the prompt in the detail view; Downloads names come from Flow, not our id) and register it right away with the register command of that image. Then: node scripts/pipeline.mjs create --resume.';
+const FLOW_NEXT = 'Google Flow, BATCH (docs/flow-images.md): one Flow project per run; per image run flow-brief (condensed prompt + ratio + reference copied to Downloads). PACE LIKE A HUMAN (Flow blocks bursts). BEFORE EVERY prompt you submit run: node scripts/flow-pace.mjs gate --tag <draft>#<n> (it WAITS the human-like time by itself and records the submission; submit right after it returns; never skip it, never batch several prompts behind one gate). Submit images in groups of 3-4 (covers first, then extras n>=2: attach the draft image 1 from the project via "+" > thumbnail > "Thêm vào câu lệnh"), a random 5-12 s pause between prompts, wait for the group to render, a random 20-45 s pause between groups, never more than ~8 prompts in 2 minutes. After each group download each result (1K, random 2-5 s between downloads), match it to its draft/n (the prompt in the detail view; Downloads names come from Flow, not our id) and register it right away with the register command of that image. Then: node scripts/pipeline.mjs create --resume.';
 
 // ----- Stage B -----
 function spawnImages(st, ids) {
@@ -232,6 +257,12 @@ function stageB(st, file) {
     const tag = `${e.brand} ${e.id}`;
     if (e.reject) { const r = step('ideas.mjs', ['reject', '--brand', e.brand, '--id', e.id, '--note', String(e.reject)]); r.ok === false ? problems.push(`${tag}: ${r.error}`) : rejected.push(tag); continue; }
     const swap = e.scene_swap === true;
+    // Steps 1-3 (audience, scene_type fits the scene, NEW English wording, not copied, not one of the last 10): a custom-text idea cannot skip them.
+    const bObj = loadBrand(e.brand, { allowDisabled: true }), custom = isCustomText(bObj);
+    if (custom) {
+      const sp = ideaSignProblems(bObj, { ...e.idea, sign_text: String(e.sign_text || e.idea?.sign_text || ''), ref_text: String(e.ref_text || ''), ref_mode: swap ? String(e.ref_mode || '') : '', description: String(e.description || '') }, { exceptIdea: e.id });
+      if (sp.length) { problems.push(`${tag}: ${sp.join(' | ')}`); continue; }
+    }
     const miss = [...(swap ? [] : ['product']), 'size', 'description'].filter((k) => !String(e[k] || '').trim());
     if (swap && e.brand_can_produce !== true) { problems.push(`${tag}: scene_swap needs "brand_can_produce": true (the brand makes this exact product, project.md section 5)`); continue; }
     // The agent looked at the reference: a face -> new-scene, none -> keep-scene (new sign_text + ref_text required).
@@ -241,8 +272,8 @@ function stageB(st, file) {
       if (typeof e.ref_has_face !== 'boolean') rp.push('"ref_has_face": true|false (LOOK at the reference: any human face?)');
       if (!['keep-scene', 'new-scene'].includes(refMode)) rp.push('"ref_mode": "keep-scene" (no face) or "new-scene" (face)');
       else if (typeof e.ref_has_face === 'boolean' && e.ref_has_face !== (refMode === 'new-scene')) rp.push(`ref_has_face ${e.ref_has_face} does not fit ref_mode ${refMode} (face -> new-scene, no face -> keep-scene)`);
-      if (refMode === 'keep-scene' && !String(e.ref_text || '').trim()) rp.push('keep-scene needs "ref_text" (what the reference reads)');
-      if (refMode === 'keep-scene' && !String(e.sign_text || '').trim()) rp.push('keep-scene needs "sign_text" (the NEW text, same language/script as the original)');
+      if ((refMode === 'keep-scene' || custom) && !String(e.ref_text || '').trim()) rp.push(`${refMode} needs "ref_text" (what the reference reads; "unreadable" when it cannot be read)`);
+      if ((refMode === 'keep-scene' || custom) && !String(e.sign_text || '').trim()) rp.push(`${refMode} needs "sign_text" (the NEW English wording)`);
       if (rp.length) { problems.push(`${tag}: ${rp.join('; ')}`); continue; }
     }
     if (miss.length) { problems.push(`${tag}: missing ${miss.join(', ')}`); continue; }
@@ -254,7 +285,7 @@ function stageB(st, file) {
     const p = step('ideas.mjs', ['pick', '--brand', e.brand, '--id', e.id]);
     if (p.ok === false) { problems.push(`${tag}: ${p.error}`); continue; }
     const refImage = swap ? String(e.ref_image || e._context?.ref_image || '') : '';
-    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce', '--ref-mode', refMode, '--ref-has-face', String(e.ref_has_face), ...(e.ref_text ? ['--ref-text', String(e.ref_text)] : [])] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : []), ...(st.images_choice ? ['--images', String(st.images_choice)] : []), ...(st.album_choice ? ['--album', String(st.album_choice)] : []), ...(Array.isArray(e.album_scenes) && e.album_scenes.length ? ['--album-scenes', e.album_scenes.map((x) => String(x).replace(/\|/g, ' ')).join('|')] : [])]);
+    const n = step('draft.mjs', ['new', '--brand', e.brand, '--idea', e.id, ...(swap ? ['--ref-image', refImage, '--brand-can-produce', '--ref-mode', refMode, '--ref-has-face', String(e.ref_has_face), ...(e.ref_text ? ['--ref-text', String(e.ref_text)] : [])] : ['--product', String(e.product)]), '--size', String(e.size), ...(e.compare ? ['--compare', String(e.compare)] : []), ...(e.sign_text ? ['--sign-text', String(e.sign_text)] : []), ...(e.scene_image ? ['--scene', String(e.scene_image)] : []), ...(st.images_choice ? ['--images', String(st.images_choice)] : []), ...(st.album_choice ? ['--album', String(st.album_choice)] : []), ...(Array.isArray(e.album_scenes) && e.album_scenes.length ? ['--album-scenes', e.album_scenes.map((x) => String(x).replace(/\|/g, ' ')).join('|')] : []), ...(Array.isArray(e.album_signs) && e.album_signs.length ? ['--album-signs', e.album_signs.map((x) => String(x).replace(/\|/g, ' ')).join('|')] : [])]);
     if (n.ok === false) { problems.push(`${tag}: ${n.error}`); continue; }
     fillDescription(n.dir, cleanText(String(e.description)).text);
     made.push(n.id);
@@ -286,15 +317,16 @@ function waitImages(st, maxMs) {
   return true;
 }
 function captionTemplate(st) {
-  const tpl = { how: 'LOOK at every contact sheet first. Per draft EITHER the captions (one key per language in langs: the posted ones and the reviewer-only ones; follow brief.md, SKILL.md section A, project.md; mention sign_text exactly; Website line + fixed hashtag; no Markdown, no AI label, no source shop name) plus "size_check": { "product_pct": N, "object_pct": N } measured on the image (product width as % of the image width and of the comparison object; not for ref_mode keep-scene, which keeps the original framing), plus for a scene-swap draft "confirm_clean": { "by": "<name>", "no_people": true|false } once you LOOKED at the image beside _context.reference_image (no shop name, logo, watermark, phone, price left; new-scene: no person left, no_people true; keep-scene: the new sign_text reads exactly), OR "redo": { "description": "...", "size": "...", "compare": "...", "smaller": N, "sign_text": "..." } (only what changes; "smaller": N when the product is too big, N from the size limits; at most 2 redos per draft). Then: node scripts/pipeline.mjs create --resume --captions workspace/pipeline/captions-todo.json', drafts: {} };
+  const tpl = { how: 'LOOK at every contact sheet first. Per draft EITHER the captions (one key per language in langs: the posted ones and the reviewer-only ones; follow brief.md, SKILL.md section A, project.md; mention sign_text exactly; write it from the idea + audience, not from the image; Website line + fixed hashtag; no Markdown, no AI label, no source shop name) plus "size_check": { "product_pct": N, "object_pct": N } measured on the image (product width as % of the image width and of the comparison object; not for ref_mode keep-scene, which keeps the original framing), plus for a custom-text draft "sign_check": { "reads": "<the words you SEE on the sign>", "by": "<name>" } (step 5: it must equal sign_text; without it the captions are not accepted: [CAUSE:caption-before-image-check]), plus for a scene-swap draft "confirm_clean": { "by": "<name>", "no_people": true|false } once you LOOKED at the image beside _context.reference_image (no shop name, logo, watermark, phone, price left; new-scene: no person left, no_people true; keep-scene: the new sign_text reads exactly), OR "redo": { "description": "...", "size": "...", "compare": "...", "smaller": N, "sign_text": "..." } (only what changes; "smaller": N when the product is too big, N from the size limits; at most 2 redos per draft). Then: node scripts/pipeline.mjs create --resume --captions workspace/pipeline/captions-todo.json', drafts: {} };
   const old = readJson(path.join(pipeDir(), 'captions-todo.json'), { drafts: {} }).drafts || {};
   for (const id of st.drafts) {
     let d; try { d = findDraft(id); } catch { continue; }
     if (['approved', 'rejected', 'ready'].includes(d.status.status)) continue;
     const langs = Object.keys(d.draft.captions || {});
     const prev = old[id]?.captions || {};
-    tpl.drafts[id] = { _context: { brand: d.draft.brand, status: d.status.status, error: d.status.error || '', problems: d.status.problems || [], image: path.join(d.dir, 'image.png'), brief: path.join(d.dir, 'brief.md'), sign_text: d.draft.sign_text || '', ...(d.draft.image_mode === 'scene-swap' ? { ref_mode: d.draft.ref_mode || '', ref_text: d.draft.ref_text || '', reference_image: d.draft.reference_image } : {}), idea: d.draft.idea, posted_langs: d.draft.languages || [], review_langs: d.draft.review_languages || [] },
+    tpl.drafts[id] = { _context: { brand: d.draft.brand, status: d.status.status, error: d.status.error || '', problems: d.status.problems || [], image: path.join(d.dir, 'image.png'), brief: path.join(d.dir, 'brief.md'), sign_text: d.draft.sign_text || '', ...(d.draft.custom_text ? { audience: d.draft.idea?.audience || '', scene_type: d.draft.idea?.scene_type || '', text_reason: d.draft.idea?.text_reason || '', write_from: 'the IDEA + audience (idea, hook, why, audience), NOT from what the image shows; the image only confirms sign_text reads exactly' } : {}), ...(d.draft.image_mode === 'scene-swap' ? { ref_mode: d.draft.ref_mode || '', ref_text: d.draft.ref_text || '', reference_image: d.draft.reference_image } : {}), idea: d.draft.idea, posted_langs: d.draft.languages || [], review_langs: d.draft.review_languages || [] },
       ...(d.draft.ref_mode === 'keep-scene' ? {} : { size_check: { product_pct: d.status.size_check?.product_pct ?? '', object_pct: d.status.size_check?.object_pct ?? '' } }),
+      ...(d.draft.custom_text && d.draft.sign_text ? { sign_check: { reads: '', ...(perImageSigns(d.draft) ? Object.fromEntries(draftImages(d.draft).slice(1).map((_, k) => ['reads_' + String(k + 2).padStart(2, '0'), ''])) : {}), by: '' } } : {}),
       ...(d.draft.image_mode === 'scene-swap' ? { confirm_clean: { by: '', no_people: d.draft.ref_mode === 'new-scene' ? false : null } } : {}),
       captions: Object.fromEntries(langs.map((l) => [l, prev[l] || (fs.existsSync(path.join(d.dir, `content-${l}.txt`)) ? fs.readFileSync(path.join(d.dir, `content-${l}.txt`), 'utf8') : '')])) };
   }
@@ -345,11 +377,6 @@ function stageD(st, file, args) {
     // The measured proportions of the image (draft.mjs size-check); over the limit: the check blocks it, give a redo with "smaller".
     const sc = e.size_check || {};
     if (String(sc.product_pct ?? '').trim()) { const r = step('draft.mjs', ['size-check', '--id', id, '--product-pct', String(sc.product_pct), ...(String(sc.object_pct ?? '').trim() ? ['--object-pct', String(sc.object_pct)] : []), ...(String(sc.wall_pct ?? '').trim() ? ['--wall-pct', String(sc.wall_pct)] : [])]); if (r.ok === false) problems.push(`${id} size-check: ${r.error}`); }
-    const caps = e.captions || {};
-    const want = Object.keys(d.draft.captions || {});
-    const empty = want.filter((l) => !String(caps[l] || '').trim());
-    if (empty.length) { problems.push(`${id}: caption missing for ${empty.join(', ')}`); continue; }
-    for (const l of want) fs.writeFileSync(path.join(d.dir, d.draft.captions[l] || `content-${l}.txt`), cleanText(String(caps[l])).text.trim() + '\n', 'utf8');
     // clean (metadata) when the image is not clean yet; watermark when the brand has it on; then the automatic check.
     if (!fs.existsSync(path.join(d.dir, 'image.png')) && fs.existsSync(path.join(d.dir, 'image-generated.png'))) step('image-clean.mjs', ['--id', id]);
     const b = loadBrand(d.draft.brand, { allowDisabled: true });
@@ -357,6 +384,19 @@ function stageD(st, file, args) {
     // Scene-swap: the agent looked at the image (no shop marks; new-scene: no person) -> draft.mjs confirm-clean.
     const cc = e.confirm_clean || {};
     if (String(cc.by || '').trim()) { const r = step('draft.mjs', ['confirm-clean', '--id', id, '--by', String(cc.by), ...(cc.no_people === true ? ['--no-people'] : [])]); if (r.ok === false) problems.push(`${id} confirm-clean: ${r.error}`); }
+    // Step 5 -> step 6: the image was LOOKED at (sign-check) before any caption is accepted.
+    if (d.draft.custom_text && d.draft.sign_text && d.draft.sign_workflow >= WORKFLOW_VERSION) {
+      const sc = e.sign_check || {};
+      if (String(sc.reads || '').trim()) { const xr = Object.entries(sc).filter(([k, v]) => /^reads_\d+$/.test(k) && String(v || '').trim()).flatMap(([k, v]) => ['--' + k.replace('_', '-'), String(v)]); const r = step('draft.mjs', ['sign-check', '--id', id, '--reads', String(sc.reads), ...xr, '--by', String(sc.by || 'agent')]); if (r.ok === false) { problems.push(`${id}: ${r.error}`); continue; } }
+      const fresh = findDraft(id);
+      if (!fresh.status.sign_check?.ok) { problems.push(`${id}: ${cause('caption-before-image-check', 'step 6 before step 5: LOOK at the image and give "sign_check": { "reads": "<words seen on the sign>", "by": "<name>" } with the captions (or draft.mjs sign-check).')}`); continue; }
+    }
+    // Step 6: the captions (written from the idea, quoting sign_text exactly).
+    const caps = e.captions || {};
+    const want = Object.keys(d.draft.captions || {});
+    const empty = want.filter((l) => !String(caps[l] || '').trim());
+    if (empty.length) { problems.push(`${id}: caption missing for ${empty.join(', ')}`); continue; }
+    for (const l of want) fs.writeFileSync(path.join(d.dir, d.draft.captions[l] || `content-${l}.txt`), cleanText(String(caps[l])).text.trim() + '\n', 'utf8');
     const c = step('draft.mjs', ['check', '--id', id]);
     results.push({ id, status: c.status || 'error', problems: c.problems || (c.error ? [c.error] : []), warnings: c.warnings || [] });
   }
@@ -387,7 +427,7 @@ function stageD(st, file, args) {
 function finish(st) {
   const q = step('queue.mjs', []);
   const notesFile = path.join(pipeDir(), 'runlog-notes.json');
-  writeJson(notesFile, { notes: ['pipeline.mjs create', ...(st.notes || [])].join(' · '), errors: st.errors || [] });
+  writeJson(notesFile, { notes: ['pipeline.mjs create', ...(st.requested ? [`requested ${st.requested}, done ${(st.drafts || []).length}${(st.drafts || []).length < st.requested ? ` (Hết stock: chỉ còn ${(st.drafts || []).length} bài khả dụng, bạn chọn ${st.requested})` : ''}`] : []), ...(st.notes || [])].join(' · '), errors: st.errors || [] });
   const log = step('runlog.mjs', ['add', '--mode', 'create', '--agent', st.agent || 'Claude Code', '--started', st.run_started, '--file', notesFile]);
   st.stage = 'done'; st.finished = stamp(); st.timing = { ...st.timing, total: Date.now() - Date.parse(st.run_started) };
   saveState(st);
@@ -437,10 +477,24 @@ function publishRun(args) {
   const scope = brandArg === 'all' ? br.usable : br.usable.filter((x) => x === brandArg);
   if (!scope.length) throw new Error(`No usable brand for "${brandArg}".`);
   const flags = [];
-  for (const k of ['limit', 'window', 'start']) if (args[k] && args[k] !== true) flags.push(`--${k}`, String(args[k]));
+  for (const k of ['window', 'start']) if (args[k] && args[k] !== true) flags.push(`--${k}`, String(args[k]));
+  // --limit N = N posts IN TOTAL across the brands in scope (the Run tab "Posts" box), oldest approved first over all brands.
+  // The stock is what can be sent now: approved, not on Metricool yet, with media. Fewer than N: send them all and say so;
+  // none: no run (nothing is opened, sent or logged).
+  const requested = args.limit && args.limit !== true ? Number(args.limit) : null;
+  if (requested !== null && !(Number.isInteger(requested) && requested > 0)) throw new Error('--limit must be a positive whole number.');
+  const stock = scope.flatMap((id) => { try { return publishStock(id); } catch { return []; } }).sort((a, b) => a.when.localeCompare(b.when) || a.id.localeCompare(b.id));
+  const available = stock.length, chosen = requested ? stock.slice(0, requested) : stock;
+  const stock_message = !available ? 'Hết stock: không còn bài đã duyệt chưa gửi' : requested && available < requested ? `Hết stock: chỉ còn ${available} bài đã duyệt (bạn chọn ${requested})` : '';
+  if (!available) return { stop: true, requested: requested ?? 'all', available, selected: 0, stock_message, next: 'Nothing approved is waiting: do NOT make Metricool calls, do NOT write a run log. Report to me in Vietnamese only this line: ' + stock_message };
+  const byBrand = {};
+  for (const c of chosen) (byBrand[c.brand] ||= []).push(c.id);
+  const scoped = scope.filter((id) => byBrand[id]);
   const notes = [], errors = [];
-  const { sync, publish } = syncAndPayload(args, scope, notes, errors, flags);
-  writeJson(publishState(), { run_started, agent, scope, notes, errors });
+  if (stock_message) notes.push(stock_message);
+  notes.push(`requested ${requested ?? 'all'}, selected ${chosen.length} of ${available} available`);
+  const { sync, publish } = syncAndPayload(args, scoped, notes, errors, (id) => [...flags, '--posts', byBrand[id].join(',')]);
+  writeJson(publishState(), { run_started, agent, scope, notes, errors, requested: requested ?? 'all', available, selected: chosen.length });
   const items = Object.values(publish.brands).reduce((n, b) => n + b.items.length, 0);
   // One line per brand of the whole discovery (the report must say which brands were processed and why one was skipped).
   const brand_lines = (br.brands || []).map((b) => {
@@ -449,7 +503,7 @@ function publishRun(args) {
     const n = (x.items || []).length, bl = (x.blocked || []).length;
     return `${b.id}: ${n ? `${n} approved post(s) to send now (${(x.items || []).map((i) => i.post).join(', ')})` : 'skipped (no approved post waiting to be sent' + (bl ? '; blocked: ' + x.blocked.join(' / ') : '') + ')'}`;
   });
-  return { brands: scope, brand_lines, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items, publish: publish.brands, notes, errors, timing_ms: Date.now() - t0,
+  return { brands: scope, requested: requested ?? 'all', available, selected: chosen.length, stock_message, report_line: `requested ${requested ?? 'all'}, done <number of createScheduledPost sent and recorded> (selected ${chosen.length} of ${available} available)${stock_message ? '; ' + stock_message : ''}`, brand_lines, sync, publish_file: path.join(pipeDir(), 'publish.json'), publish_items: items, publish: publish.brands, notes, errors, timing_ms: Date.now() - t0,
     next: [
       items ? 'Send NOW (times were just computed): for each item createScheduledPost with exactly its args, then its record command. An item already past send_before: do not send it; run metricool-mcp.mjs payload --brand <id> (same flags) again for it.' : 'Nothing approved to send.',
       'Reconcile: each status_query -> getScheduledPosts; PUBLISHED -> posts.mjs mark-published; ERROR -> report (RUNBOOK 2.2).',

@@ -4,7 +4,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { cleanProblems } from './image-clean.mjs';
 import { readStore, postKey } from './store.mjs';
-import { readJson, brandSocial, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
+import { ideaSignProblems, promptProblems, signCheckProblems, WORKFLOW_VERSION } from './signtext.mjs';
+import { loadBrand, readJson, brandSocial, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
 
 // Which caption languages of a draft are posted and which are only for the approver to read (social.json
 // language_policy.review_langs). Read from the brand's social.json now, so older drafts follow the current policy.
@@ -91,6 +92,16 @@ export function checkDraft(dir, draft, status = {}) {
     if (!draft.sign_text) problems.push('keep-scene: thiếu sign_text (chữ mới trên sản phẩm; reprompt --sign-text "..")');
     if (!draft.ref_text) problems.push('keep-scene: thiếu ref_text (chữ đang có trên sản phẩm trong ảnh tham khảo)');
     else if (sameSignText(draft.sign_text, draft.ref_text)) problems.push(`keep-scene: sign_text "${draft.sign_text}" trùng chữ của ảnh tham khảo; phải là chữ mới`);
+  }
+  // Sign wording workflow (custom-text brands), steps 1-5 once more; drafts made before it (no sign_workflow) only get warnings.
+  if (draft.custom_text && draft.sign_text) {
+    const enforce = draft.sign_workflow >= WORKFLOW_VERSION, bucket = enforce ? problems : warnings;
+    try {
+      const m = refModeOf(draft);
+      bucket.push(...ideaSignProblems(loadBrand(draft.brand, { allowDisabled: true }), { ...draft.idea, sign_text: draft.sign_text, ref_text: draft.ref_text || '', ref_mode: m === 'legacy' ? '' : m }, { exceptDraft: draft.id, exceptIdea: draft.idea?.id || '' }));
+    } catch (e) { bucket.push(String(e.message)); }
+    bucket.push(...promptProblems(dir, draft));
+    if (fs.existsSync(path.join(dir, 'image.png'))) { const sc = signCheckProblems(dir, draft, status, albumHash(dir, draft)); problems.push(...sc.problems); warnings.push(...sc.warnings); }
   }
   problems.push(...albumProblems(dir, draft, status));
   if (draft.image_mode === 'scene-swap') {

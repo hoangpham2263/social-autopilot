@@ -65,6 +65,16 @@ export function listProfiles({ browser, userDataDir = "", plat = osPlatform(), e
   return { dir: order[0], profiles: [] };
 }
 
+// Playwright extension id ("Playwright MCP Bridge"): a profile can only be driven in extension mode when this folder exists in its Extensions.
+export const PLAYWRIGHT_EXTENSION_ID = "mmlmfjhmonkocbjadbfplnigmagldckm";
+// The browser profiles installed on this machine, for the profile picker: [{ folder, name, email, playwright_extension }].
+export function localChromeProfiles({ settings = {}, plat = osPlatform(), env = process.env, home = homedir(), exists = existsSync, read } = {}) {
+  const r = settings.research || {};
+  const browser = findBrowser({ override: String(r.chrome_path || ""), plat, env, home });
+  const { dir, profiles } = listProfiles({ browser, userDataDir: String(r.chrome_user_data_dir || ""), plat, env, home, ...(read ? { read } : {}) });
+  return { dir, selected: String(r.chrome_profile || ""), profiles: profiles.map((p) => ({ ...p, playwright_extension: exists(join(dir, p.folder, "Extensions", PLAYWRIGHT_EXTENSION_ID)) })) };
+}
+
 // Pure allow-lists.
 export function validProfile(name, profiles = []) {
   const s = String(name ?? "").trim();

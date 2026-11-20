@@ -4,7 +4,7 @@
 // port from its folder (47000 + hash), SA_PORT overrides.
 import { createServer } from "node:http";
 import { spawn, execFile } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, statSync, renameSync, appendFileSync, createReadStream } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, statSync, renameSync, appendFileSync, createReadStream, rmSync } from "node:fs";
 import { join, dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -27,6 +27,7 @@ import { listLogs, showLog, addLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs"
 import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 import { findClaude } from "../core/setup/claude-cli.mjs";
+import { localChromeProfiles } from "../core/setup/chrome.mjs";
 import { createAgentRunner } from "../core/setup/agent-run.mjs";
 import { browserInfo, openLoginBrowser, cachedLoginStatus, profileLocked, profileProblem, browserSettings, PLATFORMS } from "../core/setup/own-browser.mjs";
 import { runVisitCheck, visitResults, clearVisitResults, visitActive, visitProgress, mergeLogins, buildSummary, readChecks } from "../core/setup/login-visit.mjs";
@@ -323,7 +324,8 @@ async function handle(req, res) {
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));
   // Prompt tab, Run now: POST starts headless Claude (409 when a run is active), POST /stop kills it, GET = live status (no secrets).
   if (path === "/api/agent-run" && req.method === "GET") return api(res, () => agentRun.status());
-  if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); const r = agentRun.start({ mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine, model: b.model }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started } : { error: r.error }); }
+  if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); try { if (!agentRun.status().active) rmSync(join(workspace, "pipeline", "publish.json"), { force: true }); } catch {} // a send plan of an earlier run is never reused (it caused duplicate Metricool posts)
+    const r = agentRun.start({ mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine, model: b.model }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started } : { error: r.error }); }
   if (path === "/api/run-progress" && req.method === "GET") return api(res, () => runProgress(agentRun.status(), discovered().brands.filter((b) => b.usable).map((b) => b.id)));
   if (path === "/api/agent-run/stop" && req.method === "POST") { const r = agentRun.stop(); return send(res, r.status, r.ok ? { ok: true } : { error: r.error }); }
   // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
@@ -356,6 +358,34 @@ async function handle(req, res) {
     if (!r.ok) throw new Error(r.error || "Not approved.");
     if (x && !x.ok) throw new Error(x.error || "Not approved.");
     return { id, brand_post: x?.brand_post || null, image_host: x?.image_host || null };
+  });
+  // Posts -> Approved / Scheduled -> "Gửi lại ảnh": host-image.mjs publish for one post (storage-only commit to the image repo,
+  // idempotent). A failure is kept by the script in the catalog entry (host_error) and comes back here as the error.
+  if (path === "/api/host-retry" && req.method === "POST") return api(res, async () => {
+    const id = draftId(await body(req));
+    const d = listDrafts().find((x) => x.id === id);
+    if (!d) throw new Error(`Unknown post ${id}.`);
+    const post = d.status?.brand_post?.id;
+    if (!post) throw new Error("Post chưa được ghi vào brand.");
+    const r = await runScript("host-image.mjs", ["publish", "--brand", d.draft.brand, "--post", post], 10 * 60000);
+    if (r.ok === false || r.error) throw new Error(r.error || "Gửi ảnh lỗi.");
+    return { id, post, url: r.url || "", pending: !!r.pending };
+  });
+  // "Kiểm tra ảnh": read-only check of the hosted links of a brand's approved/scheduled posts (host-image.mjs check); broken ones get host_error.
+  // Optional posts: [draft ids] limits it (the re-check after a resend). Answers per draft id.
+  if (path === "/api/host-check" && req.method === "POST") return api(res, async () => {
+    const b = await body(req);
+    const brand = String(b.brand || "");
+    if (!/^[\w.-]+$/.test(brand)) throw new Error("Thiếu brand.");
+    const ids = Array.isArray(b.posts) ? b.posts.map(String) : [];
+    const drafts = listDrafts(brand).filter((d) => d.status?.brand_post?.id);
+    const postOfDraft = Object.fromEntries(drafts.map((d) => [d.id, d.status.brand_post.id]));
+    const only = ids.map((i) => postOfDraft[i]).filter(Boolean);
+    if (ids.length && !only.length) return { brand, checked: 0, ok_count: 0, bad_count: 0, results: [] };
+    const r = await runScript("host-image.mjs", ["check", "--brand", brand, ...(only.length ? ["--posts", only.join(",")] : [])], 15 * 60000);
+    if (r.ok === false || r.error) throw new Error(r.error || "Kiểm tra ảnh lỗi.");
+    const draftOfPost = Object.fromEntries(drafts.map((d) => [d.status.brand_post.id, d.id]));
+    return { ...r, results: (r.results || []).map((x) => ({ ...x, id: draftOfPost[x.post] || "" })) };
   });
   // Posts -> Approved / Scheduled -> "Back to review" (finalize.mjs unapprove, hidden child process): the approval is undone, the
   // hosted image removed from the image repo, the post is To review again. Never for a Posted post. A post already
@@ -393,6 +423,7 @@ async function handle(req, res) {
   // POST (session token), so no other page can list folders on this machine.
   // Own browser (core/setup/own-browser.mjs): status, the visible login window (fixed site URLs only, refused while a headless run holds the profile),
   // and the login state per site from cookie METADATA (names/expiry of allow-listed cookies; never values, never logged). Same guards as every /api route.
+  if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => ({ ...localChromeProfiles({ settings: settings() }), mode: browserSettings(settings(), root).mode }));
   if (path === "/api/browser" && req.method === "GET") return api(res, () => browserInfo({ settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }));
   // Logins = cookie hint merged with the last "Check by visiting" result (in memory). p = comma list of the sites the person sees (for the summary).
   const loginRows = async (fresh) => mergeLogins(await cachedLoginStatus({ settings: settings(), toolRoot: root, fresh }), visitResults());

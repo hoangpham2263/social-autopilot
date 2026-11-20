@@ -261,7 +261,9 @@ export function parseBrandSettings(raw) {
   const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
   const list = Array.isArray(data) ? data : [data?.data, data?.brands, data?.items, data?.result, data?.data?.brands].find(Array.isArray) || (data && (data.id || data.blogId) ? [data] : []);
   return list.filter((b) => b && typeof b === 'object').map((b) => {
-    const nets = Array.isArray(b.networks) ? b.networks.map((n) => (typeof n === 'string' ? n : n?.network || n?.name)).filter(Boolean)
+    // getBrandSettings answers { networksData: { facebookData: <page id>, instagramData: <handle>, ... } }: a filled value = connected.
+    const fromData = b.networksData && typeof b.networksData === 'object' ? Object.entries(b.networksData).filter(([, v]) => v).map(([k]) => k.replace(/Data$/, '')) : [];
+    const nets = fromData.length ? fromData : Array.isArray(b.networks) ? b.networks.map((n) => (typeof n === 'string' ? n : n?.network || n?.name)).filter(Boolean)
       : NET_KEYS.filter((k) => { const v = b[k] ?? b[`${k}Connected`] ?? b[`${k}Account`]; return v && v !== 'false' && !(typeof v === 'object' && !Object.keys(v).length); });
     return {
       blog_id: String(b.blogId ?? b.blog_id ?? b.id ?? '').trim(),

@@ -107,14 +107,20 @@ export function friendlyTool(name, input = {}) {
   return "Đang xử lý…";
 }
 
-export function mcpArgs(own) {
+export function mcpArgs(own = null) {
+  // --session-name / --session-color: title and color of the Chrome tab group of this run, so the tool's tabs are easy to tell apart.
+  if (!own) return ["@playwright/mcp@latest", "--extension", "--session-name", "Social Autopilot", "--session-color", "orange"];
   return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", "1280x900", ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
 }
-export function mcpConfig({ plat = osPlatform(), own } = {}) {
+export function mcpConfig({ plat = osPlatform(), profile = "", own = null } = {}) {
   const a = mcpArgs(own);
   const server = plat === "win32" ? { command: "cmd", args: ["/c", "npx", ...a] } : { command: "npx", args: a };
+  if (profile && !own) server.env = { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile };
   return { mcpServers: { playwright: server } };
 }
+
+// Extension mode (browser.mode "extension"): the person's everyday Chrome. The person is at the screen and clicks Connect.
+export const extensionNote = "RUN-NOW NOTE: this run uses the person's everyday Chrome through the Playwright extension, so the person is at the computer and will click Connect in Chrome.\nIf browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail: the Playwright MCP has ALREADY opened that page, do NOT open a second copy; bring it to the front with browser_run_code_unsafe: async (page) => { await page.bringToFront(); } and tell the person in one line to click Connect. Then wait up to 3 minutes, calling browser_tabs about every 15 seconds, until a real page tab appears. If nothing connects, stop and report that Chrome did not connect.\nDownloads: this mode cannot use download.saveAs; click the download button, then take the newest file from the Downloads folder.\n\n";
 
 // Own-browser note put in front of the prompt of a run that uses the browser.
 export const ownNote = (headless = true) => `RUN-NOW NOTE: this run uses the tool's OWN browser (a dedicated Chrome profile the person already logged in to${headless ? ", running in the background (headless)" : ""}). There is no Connect step and no extension: ignore any instruction to click Connect, run chrome-connect.mjs or wait for the person; start with browser_tabs or browser_navigate.
@@ -230,8 +236,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const s = getSettings() || {};
     const flow = usesFlow(mode, s, imageEngine);
     if ((mode === "research" || flow) && !npxOk()) return { ok: false, status: 400, error: "npx is not available (it comes with Node.js): the Playwright MCP cannot start." };
+    const profile = String(s.research?.chrome_profile || "").trim();
     const browser = needsBrowser(mode, s, imageEngine);
-    const bs = browserSettings(s, toolRoot), own = browser;
+    const bs = browserSettings(s, toolRoot), own = browser && bs.mode === "own";
     if (own) {
       if (loginWindowOpen()) return { ok: false, status: 409, error: "The login window of the own browser is open: close it first (a run needs the profile), then press Run now." };
       const why = browserCheck(bs.profileDir); if (why) return { ok: false, status: 409, error: why };
@@ -241,13 +248,13 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
-    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, own: { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } })));
+    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null })));
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
     const modelKey = MODELS.includes(model) ? model : "default", mflag = modelFlag(modelKey, s);
     if (mflag) args.push("--model", mflag);
     if (browser) args.push("--mcp-config", cfg);
     if (mode === "research") args.push("--strict-mcp-config");
-    const env = { ...process.env };
+    const env = { ...process.env, ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
@@ -269,7 +276,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     child.on("close", (code) => finish(run, code));
     child.stdin?.on("error", () => {});
     // This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
-    const note = own ? ownNote(bs.headless) : "";
+    const note = own ? ownNote(bs.headless) : browser ? extensionNote : "";
     try { child.stdin?.end(note + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
     if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);

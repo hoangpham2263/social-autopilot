@@ -135,6 +135,22 @@ details[open] > summary { margin-bottom: 6px; }
 #prSrc label, #prPlat label, #prAlb label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
 #prSrc label:hover, #prPlat label:hover, #prAlb label:hover { background: var(--soft-hover); }
 #prSrc .meta, #prPlat .meta, #prAlb .meta { font-size: 12px; }
+/* Brand picker (tick one or more brands; none ticked = All) */
+#prBrandField { position: relative; }
+#prBrandField { min-width: 210px; }
+#prBrandSum .bs-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#prBrandSum::after { flex: none; margin-left: 8px; }
+#prBrandBox > summary { display: flex; align-items: center; height: var(--ctl-h); box-sizing: border-box; padding: var(--ctl-pad); font-size: var(--ctl-font); color: var(--ink); background: #fff; border: var(--ctl-border); border-radius: var(--r); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; list-style: none; }
+#prBrandBox > summary::-webkit-details-marker { display: none; }
+#prBrandBox > summary::after { content: ""; margin-left: auto; border: 4px solid transparent; border-top-color: var(--muted); border-bottom-width: 0; }
+#prBrandBox > summary:hover, #prBrandBox[open] > summary { border-color: var(--accent); }
+#prBrandBox[open] > summary { margin: 0; }
+#prBrandList { position: absolute; left: 0; top: calc(100% + 2px); z-index: 12; box-sizing: border-box; min-width: 100%; width: max-content; max-width: min(520px, calc(100vw - 32px)); max-height: 320px; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--accent); border-radius: var(--r); display: grid; gap: 2px; }
+#prBrandList .opt-group { padding: 6px 6px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+#prBrandList label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
+#prBrandList label:hover { background: var(--soft-hover); }
+#prBrandList .meta { font-size: 12px; }
+#prBrandField { position: relative; }
 .sug-tag { font-size: 11px; line-height: 16px; padding: 0 5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; }
 #prText { display: block; flex: 1 1 auto; height: 100%; min-height: 0; width: 100%; box-sizing: border-box; resize: none; overflow: auto; }
 #prMsg.copied { color: var(--ink); }
@@ -247,8 +263,10 @@ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 var(--fon
 .lb[hidden] { display: none; }
 .lb .lb-win { width: 95vw; height: 92vh; background: var(--control); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .lb .lb-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); background: #fff; }
-.lb .lb-title { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb .lb-title { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb .lb-extra:empty { display: none; }
+.lb .lb-extra { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.lb .lb-extra .item-nav { flex: 0 0 auto; white-space: nowrap; }
 .lb .lb-head nav.tabs { margin: 0; flex-wrap: wrap; }
 .lb .lb-close { margin-left: auto; }
 .lb .lb-body { flex: 1 1 auto; min-height: 0; display: flex; }
@@ -429,6 +447,7 @@ header + * { margin-top: 0; }
       <div class="field auto"><span class="label">Show</span><span class="seg" id="drState" role="group" aria-label="Show"></span></div>
       <div class="field auto"><span class="label">&nbsp;</span><span class="meta inline-control" id="drExtra"></span></div>
     </div>
+    <div class="meta" id="drHostBar" hidden></div>
     <div id="draftList"></div>
   </section>
 
@@ -446,13 +465,13 @@ header + * { margin-top: 0; }
          Copy prompt and the hint. Then the prompt. -->
     <div class="fields">
       <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
-      <div class="field auto"><span class="label">&nbsp;</span><span class="meta inline-control" id="prMcNote" hidden></span></div>
+      <div class="field auto" id="prMcField" hidden><span class="label">&nbsp;</span><span class="meta inline-control" id="prMcNote" hidden></span></div>
     </div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
       <div class="field" id="prModelField" hidden><label for="prModel">Model</label><select id="prModel"><option value="default">Default</option><option value="haiku">Haiku</option><option value="sonnet">Sonnet</option><option value="opus">Opus</option></select></div>
       <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
-      <div class="field"><label for="prBrand">Brand</label><select id="prBrand"></select></div>
+      <div class="field" id="prBrandField"><span class="label">Brand</span><details id="prBrandBox"><summary id="prBrandSum">All</summary><div id="prBrandList"></div></details></div>
       <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
       <div class="field" data-opt="research" id="prPlatField" hidden><span class="label" title="Which platforms this run covers: unticked platforms drop their sources and are left out of discovery (--platforms). Default: all.">Platforms</span><details id="prPlatBox"><summary id="prPlatSum">All</summary><div id="prPlat"></div></details></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = 100)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="100"></div>
@@ -487,7 +506,12 @@ header + * { margin-top: 0; }
       <summary><span>Browser</span><span id="prChromeSum" class="meta">· loading…</span></summary>
       <div id="prBrowser">
         <div class="row-actions"><button class="btn" type="button" id="prBrowserLogin" title="Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
+        <div class="row-actions"><label for="prBrowserMode">Browser for runs</label><select id="prBrowserMode" style="min-width:260px"><option value="own">Tool's own Chrome (separate profile)</option><option value="extension">My everyday Chrome (Playwright extension, click Connect)</option></select></div>
+        <div class="row-actions"><label for="prChromeProfile">Chrome profile (everyday Chrome)</label><select id="prChromeProfile" style="min-width:260px"></select></div>
+        <div class="meta" id="prChromeProfileMsg" role="status">Profiles found on this machine. Only profiles with the Playwright extension can be driven; the Chrome window of that profile must be open and you click Connect once per run.</div>
         <div class="meta" id="prBrowserStatus" role="status"></div>
+        <div class="row-actions"><label for="prFlowAccount">Tài khoản Google cho Flow (email, để trống = Flow tự chọn)</label><select id="prFlowAccount" style="min-width:260px"><option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option></select><button class="btn" type="button" id="prFlowAccountSave" hidden>Lưu</button></div>
+        <div class="meta" id="prFlowAccountMsg" role="status">Danh sách là các tài khoản Google đã đăng nhập trong Chrome riêng của tool. Flow hay mở tài khoản đầu tiên: chọn tài khoản còn credit để agent dùng đúng tài khoản đó (không đăng xuất, không xoá tài khoản nào).</div>
         <div id="prLogins"></div>
         <div class="meta">Runs use this profile in the background (headless). Facebook may show a checkpoint for automated browsers; if a site blocks headless runs, switch browser.headless off in Settings. Sites you log in to: Facebook, Instagram, Pinterest, Etsy, Houzz, Google (Flow).</div>
       </div>
@@ -1032,6 +1056,20 @@ header + * { margin-top: 0; }
   // "Make a post from this" (Library preview): one post from exactly this library item (--items), optional scene-swap.
   let prItem = null; // { brand, id }
   const SWAP_LINE = (id) => `scene-swap from ${id}: take the product/sign exactly from the reference photo and remove every foreign logo, shop name, watermark, phone number and price; LOOK at the reference: no human face -> keep-scene (keep its scene, put NEW text on the product in the same language/script as the original); a face -> new-scene (new real-life scene, every person removed, the product text kept) (ideas file: "scene_swap": true, "brand_can_produce": true, "ref_has_face", "ref_mode", keep-scene: "ref_text" + new "sign_text")`;
+  // Brand picker: the ticked brand ids; [] = All usable brands. Remembered per mode as "a,b" ("all" = none ticked).
+  let brandPick = [];
+  const brandIn = (x) => (brandPick.length ? brandPick.includes(x.id) : x.usable);
+  function drawBrandPick(brands, bc) {
+    const list = az(brands, (b) => b.name || b.id);
+    const nm = (b) => (bc(b.id) !== undefined ? withCount(b.name || b.id, bc(b.id)) : b.name || b.id) + (b.usable ? "" : " (off)");
+    $("#prBrandList").innerHTML = `<label><input type="checkbox" data-all="1"${brandPick.length ? "" : " checked"}><span>All</span></label>` + list.map((b) => `<label><input type="checkbox" value="${esc(b.id)}"${brandPick.includes(b.id) ? " checked" : ""}><span>${esc(nm(b))}</span></label>`).join("");
+    { const names = brandPick.length ? list.filter((b) => brandPick.includes(b.id)).map((b) => b.name || b.id).join(", ") : "All"; $("#prBrandSum").innerHTML = `<span class="bs-t">${esc(names)}</span>`; $("#prBrandSum").title = names; }
+    for (const c of $$("#prBrandList input")) c.onchange = () => {
+      brandPick = c.dataset.all ? [] : $$("#prBrandList input[value]").filter((x) => x.checked).map((x) => x.value);
+      store.set("prBrand_" + modeKey(prMode), brandPick.join(",") || "all");
+      drawPrompt(); regenerate();
+    };
+  }
   function makeFromItem(brand, id) {
     prItem = { brand, id };
     $("#prSwap").checked = false;
@@ -1039,9 +1077,9 @@ header + * { margin-top: 0; }
     const apply = () => {
       const create = arr(promptData.prompts).map((p) => p.mode).find((m) => modeKey(m) === "create");
       if (create) { prMode = create; store.set("prMode", prMode); }
-      $("#prBrand").value = brand;
+      brandPick = [brand];
       drawPrompt();
-      $("#prBrand").value = brand;
+      brandPick = [brand];
       $("#prCount").value = "1";
       drawPrompt();
     };
@@ -1054,7 +1092,7 @@ header + * { margin-top: 0; }
   // Research with nothing to run: no prompt is made (Copy prompt / Run now are greyed with this text).
   function researchBlock() {
     if (!isResearch(prMode)) return "";
-    const brandSel = $("#prBrand").value, scope = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable));
+    const scope = arr(promptData.brands).filter(brandIn);
     // Research always covers ALL enabled sources of the chosen brand(s); a brand can run when it has enabled sources, or its skill enables discovery.
     if (!scope.some((x) => arr(x.sources).length || arr(x.suggested).length || x.discovery_enabled)) return "No sources yet: add page links in the brand's Edit page (Overview)";
     if (!PLATS.some((p) => !platOff.has(p))) return "Tick at least one platform";
@@ -1065,7 +1103,7 @@ header + * { margin-top: 0; }
   let srcOff = new Set();
   // sugOn = ticked SUGGESTED rows "brand:id" (remembered prSugOn; default none: a suggested page is only crawled when I tick it, then it is accepted at Run now / Copy prompt).
   let sugOn = new Set();
-  function srcBrands() { const sel = $("#prBrand").value; return az(arr(promptData.brands).filter((x) => (sel ? x.id === sel : x.usable)).filter((x) => arr(x.sources).length || arr(x.suggested).length), (x) => x.name || x.id); }
+  function srcBrands() { return az(arr(promptData.brands).filter(brandIn).filter((x) => arr(x.sources).length || arr(x.suggested).length), (x) => x.name || x.id); }
   // Platforms picker: platOff = unticked platforms (remembered; default all ticked). Effective sources = ticked platforms AND ticked sources.
   const PLATS = ["instagram", "pinterest", "facebook", "etsy", "houzz"];
   let platOff = new Set();
@@ -1189,7 +1227,7 @@ header + * { margin-top: 0; }
   }
   // Fully crawled (registry complete) sources are hidden from the picker for good (Edit page > Recrawl brings one back); they stay in the run as a quick top check for new posts.
   function drawSources() {
-    const brands = srcBrands(), single = !!$("#prBrand").value;
+    const brands = srcBrands(), single = brandPick.length === 1;
     // Rows show only the name (a suggested page also a small "suggested" tag and a tooltip with platform, reason and URL); fully crawled sources are hidden for good.
     const row = (b, s) => { const info = arr(b.sources_info).find((x) => x.id === s), v = `${b.id}:${s}`, pOff = platOff.has(srcPlat(b, s)); return `<label title="${esc(info?.url || s)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" value="${esc(v)}"${srcOff.has(v) || pOff ? "" : " checked"}${pOff ? " disabled" : ""}><span>${esc(info?.name || s)}</span><span class="bl-lk" data-p="${esc(srcPlat(b, s))}"></span></label>`; };
     const sugRow = (b, x) => { const v = `${b.id}:${x.id}`, pOff = platOff.has(sugPlat(b, x.id)), tip = [sugPlat(b, x.id), x.reason, x.url].filter(Boolean).join(" · "); return `<label title="${esc(tip)}${pOff ? " (platform unticked)" : ""}"${pOff ? ` style="opacity:.5"` : ""}><input type="checkbox" data-sug="1" value="${esc(v)}"${sugOn.has(v) && !pOff ? " checked" : ""}${pOff ? " disabled" : ""}><span>${esc(x.name || x.id)}</span><span class="sug-tag">suggested</span><span class="bl-lk" data-p="${esc(sugPlat(b, x.id))}"></span></label>`; };
@@ -1216,18 +1254,19 @@ header + * { margin-top: 0; }
     const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
     if (!prRestored && prompts.length) { prRestored = true; prRestore(prompts, brands); }
-    let brand = $("#prBrand").value || "";
+    let pick = brandPick.slice();
     const mk = modeKey(prMode), bc = (id) => modeCounts[id]?.[mk];
     // The mode changed (or first draw): that mode's remembered Brand and Posts (a library item pick keeps what it set).
     if (prLastMk !== mk) {
       prLastMk = mk;
       { const sm = store.get("prModel_" + mk); $("#prModel").value = ["haiku", "sonnet", "opus"].includes(sm) ? sm : "default"; }
       if (!prItem) {
-        const sb = store.get("prBrand_" + mk); if (sb) brand = sb === "all" ? "" : brands.some((b) => b.id === sb) ? sb : brand;
+        const sb = store.get("prBrand_" + mk); if (sb) pick = sb === "all" ? [] : sb.split(",").filter((id) => brands.some((b) => b.id === id));
         const sc = store.get("prCount_" + mk), n = parseInt(sc.slice(2), 10); $("#prCount").value = sc.startsWith("c:") && n >= 1 ? String(n) : "";
       }
     }
-    $("#prBrand").innerHTML = `<option value="">All</option>` + az(brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(bc(b.id) !== undefined ? withCount(b.name || b.id, bc(b.id)) : b.name || b.id)}${b.usable ? "" : " (off)"}</option>`).join("");
+    brandPick = pick; drawBrandPick(brands, bc);
+    const brand = brandPick.length === 1 ? brandPick[0] : ""; // the single brand of the pick ("" = All or several)
     const research = isResearch(prMode);
     const publishOnly = /publish approved/i.test(prMode);
     // The options of the chosen mode, in the same row as Agent and Brand: Research = Sources, Max posts, Crawl;
@@ -1246,8 +1285,8 @@ header + * { margin-top: 0; }
     }
     // Time and Start belong to Publish approved only: Create & publish always schedules at Auto (best time), from tomorrow.
     // Posts: the brand's cadence (posts per week) as the default; empty = the tool's default.
-    $("#prCount").placeholder = publishOnly ? "all" : "auto";
-    $("#prCount").title = publishOnly ? "Empty = every approved post not sent yet; N = at most N per brand, oldest approved first" : `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
+    { const av = stockInfo().avail; $("#prCount").placeholder = publishOnly ? (av != null ? `all (${av})` : "all") : "auto"; }
+    $("#prCount").title = publishOnly ? "Empty = every approved post not sent yet; N = exactly min(N, approved not sent yet) posts in total over the chosen brand(s), oldest approved first. Fewer left than N: those are sent and the run says so" : `Empty = enough posts to fill the next ${promptData.ahead_days || 7} days at each brand's posts per day`;
     // The window's hours are in the brand's Metricool timezone (shown short, e.g. ET).
     const tzName = (tz) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" }).formatToParts(new Date()).find((x) => x.type === "timeZoneName")?.value || tz; } catch { return tz; } };
     const mcTz = arr(promptData.brands).find((x) => x.id === brand)?.metricool_timezone || promptData.default_tz || "America/New_York";
@@ -1292,7 +1331,7 @@ header + * { margin-top: 0; }
 
   // This run's options as short lines (only those set); the steps themselves are in RUNBOOK.md.
   function options() {
-    const lines = [], brand = $("#prBrand").value;
+    const lines = [], brand = brandPick.length === 1 ? brandPick[0] : "";
     if (isResearch(prMode)) {
       const max = parseInt($("#prMax").value, 10) || 100; // empty = default 100
       // No source choice: every enabled source of the brand(s), each with the smart crawl decided from its registry; per-source on/off is in the brand Edit page.
@@ -1313,7 +1352,7 @@ header + * { margin-top: 0; }
       const pub = /publish approved/i.test(prMode);
       const count = parseInt($("#prCount").value, 10), win = pub ? $("#prWindow").value : "", start = pub ? $("#prStart").value : "";
       if (prItem && !pub) lines.push(`from library item ${prItem.id} (--items ${prItem.id})`);
-      else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `at most ${count} posts per brand (--limit ${count})` : `${count} posts per brand (pipeline.mjs create --count ${count})`);
+      else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `send exactly min(${count}, approved posts not on Metricool yet) posts IN TOTAL over all brands in scope, oldest approved first (--limit ${count}); fewer available than ${count}: send those and say "Hết stock: chỉ còn X bài đã duyệt (bạn chọn ${count})"; the report says "requested ${count}, done M"` : `${count} posts per brand (pipeline.mjs create --count ${count}); the report says "requested ${count}, done M"; fewer possible than ${count}: make those and say "Hết stock: chỉ còn X bài khả dụng (bạn chọn ${count})"`);
       if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
       if (!pub) lines.push(`images by ${chosenEngine() === "flow" ? "Google Flow" : "Codex"} (pipeline.mjs create --image-engine ${chosenEngine()}; this run only)`);
       const imf = pub ? "" : imgFlag(), alf = pub ? "" : albFlag();
@@ -1323,7 +1362,7 @@ header + * { margin-top: 0; }
       if (win) lines.push(`time window ${$("#prWindow").selectedOptions[0].textContent.toLowerCase()} (--window ${win})`);
       if (start) lines.push("start today at the next best time, 15 min safety margin (--start today)");
     }
-    if ((isResearch(prMode) || (!/publish approved/i.test(prMode) && chosenEngine() === "flow"))) lines.push(`browser: the tool's OWN already logged-in browser, no Connect step, nothing to wait for: the Playwright MCP of THIS session must be started with --browser chrome --user-data-dir ${browserState?.profile_dir || "<tool>/workspace/browser-profile"}${browserState?.headless === false ? "" : " --headless"} (a login wall or checkpoint: stop and report, the person re-opens Browser > Open browser to log in)`);
+    if ((isResearch(prMode) || (!/publish approved/i.test(prMode) && chosenEngine() === "flow"))) lines.push(`browser: the tool's OWN already logged-in browser, no Connect step, nothing to wait for: the Playwright MCP of THIS session must be started with --browser chrome --user-data-dir ${browserState?.profile_dir || "<tool>/workspace/browser-profile"}${browserState?.headless === false ? "" : " --headless"} ${browserState?.flow_account ? ` For Google Flow use ONLY the already logged-in Google account ${browserState.flow_account} (docs/flow-images.md "Google account"); ` : ""}(a login wall or checkpoint: stop and report, the person re-opens Browser > Open browser to log in)`);
     return lines.length ? lines.join("; ") : "defaults";
   }
   // Everything runs in ONE background sub-agent: the Claude Code prompt always starts with this line. Codex has no
@@ -1342,13 +1381,12 @@ header + * { margin-top: 0; }
     return lead + buildTask();
   }
   function buildTask() {
-    const brandSel = $("#prBrand").value;
-    const scope = az(arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)), (x) => x.id);
+    const scope = az(arr(promptData.brands).filter(brandIn), (x) => x.id);
     // skill_line comes from the server (scripts/prompts.mjs skillLine): legacy skill folder, or brand folder (brands/<id>: project and data together) + skill root + --brand <id>.
     const skills = scope.map((x) => x.skill_line || `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
     // {{IMAGES}}: the Google Flow lines when settings image_engine is flow (text from the server, scripts/prompts.mjs); nothing for codex.
     const images = chosenEngine() === "flow" ? promptData.images_text || "" : "";
-    return prBase.replace(/\n?\{\{IMAGES\}\}/g, () => (images ? "\n" + images : "")).replace(/\n?\{\{EXTERNAL\}\}/g, () => (isResearch(prMode) && srcScope().ext.length ? "\n" + (promptData.external_text || "") : "")).replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, $("#prBrand").value || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
+    return prBase.replace(/\n?\{\{IMAGES\}\}/g, () => (images ? "\n" + images : "")).replace(/\n?\{\{EXTERNAL\}\}/g, () => (isResearch(prMode) && srcScope().ext.length ? "\n" + (promptData.external_text || "") : "")).replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, brandPick.join(", ") || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
   // Count line above the prompt box (the box itself fills the leftover page height by CSS).
   function prBoxSync() {
@@ -1357,24 +1395,38 @@ header + * { margin-top: 0; }
   }
   function fitPrompt() { const t = $("#prText"); t.style.height = ""; }
   // An option changed: the prompt is rebuilt (read-only; no hand edits).
-  function regenerate() { $("#prText").value = buildPrompt(); prBoxSync(); try { arDraw(); } catch {} }
+  function regenerate() { $("#prText").value = buildPrompt(); prBoxSync(); try { showModeCounts(); arDraw(); } catch {} }
   // Mode button counts (selected brand, or all brands), each = items in that state now: Research = available library items;
   // Create = posts to review; Publish = approved posts not sent yet. Posts still needed for Plan ahead: Overview card.
   const modeKey = (m) => (/research/i.test(m) ? "research" : /publish approved/i.test(m) ? "publish" : "create");
   const MODE_TIP = { research: "Available library items (can still be used, used before included)", create: "Posts to review now (made, waiting for Approve)", publish: "Approved posts not sent to Metricool yet" };
   let modeCounts = {};
+  // Stock of the chosen mode for the chosen brand(s), against the Posts box (N). Publish approved: approved posts not on Metricool
+  // yet; Create & publish: Library items ready now (never used or cooldown over). Research has no Posts box.
+  // msg: "Hết stock: ..." when fewer than N (or none); zero: nothing at all, so the run is not started (no empty run).
+  function stockInfo() {
+    const k = modeKey(prMode);
+    if (k === "research" || !Object.keys(modeCounts).length) return { msg: "", zero: false, avail: null };
+    const ids = Object.keys(modeCounts).filter((id) => !brandPick.length || brandPick.includes(id));
+    const avail = ids.reduce((a, id) => a + (k === "publish" ? modeCounts[id].publish || 0 : modeCounts[id].library?.ready || 0), 0);
+    const n = parseInt($("#prCount").value, 10), req = n > 0 ? n : 0;
+    if (k === "create" && prItem) return { msg: "", zero: false, avail };
+    if (!avail) return { msg: k === "publish" ? "Hết stock: không còn bài đã duyệt chưa gửi" : "Hết stock: Library không còn bài khả dụng", zero: true, avail };
+    if (req && avail < req) return { msg: k === "publish" ? `Hết stock: chỉ còn ${avail} bài đã duyệt (bạn chọn ${req})` : `Hết stock: chỉ còn ${avail} bài khả dụng trong Library (bạn chọn ${req})`, zero: false, avail };
+    return { msg: "", zero: false, avail };
+  }
   function showModeCounts() {
-    const brand = $("#prBrand").value;
-    const sum = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c[k] || 0), 0);
+    const sum = (k) => Object.entries(modeCounts).filter(([id]) => !brandPick.length || brandPick.includes(id)).reduce((a, [, c]) => a + (c[k] || 0), 0);
     for (const b of $$("#prMode button")) b.textContent = Object.keys(modeCounts).length ? withCount(b.dataset.mode, sum(modeKey(b.dataset.mode))) : b.dataset.mode;
     // Research: the count is Available items; the tooltip adds how many are ready now (cooldown over).
-    const lib = (k) => Object.entries(modeCounts).filter(([id]) => !brand || id === brand).reduce((a, [, c]) => a + (c.library?.[k] || 0), 0);
+    const lib = (k) => Object.entries(modeCounts).filter(([id]) => !brandPick.length || brandPick.includes(id)).reduce((a, [, c]) => a + (c.library?.[k] || 0), 0);
     const rb = $$("#prMode button").find((x) => modeKey(x.dataset.mode) === "research");
     if (rb && Object.keys(modeCounts).length) rb.title = `${sum("research")} available library items (${lib("used")} of them used before); ${lib("ready")} ready now (never used or cooldown over)`;
     // Under Publish approved: posts already scheduled on Metricool (payload never sends them again).
-    const note = $("#prMcNote"), pub = /publish approved/i.test(prMode) && Object.keys(modeCounts).length;
-    note.hidden = !pub;
-    if (pub) note.textContent = `Already on Metricool: ${sum("on_metricool")} (never sent again)`;
+    const note = $("#prMcNote"), pub = /publish approved/i.test(prMode) && Object.keys(modeCounts).length, st = stockInfo();
+    const text = [pub ? `Already on Metricool: ${sum("on_metricool")} (never sent again)` : "", st.msg].filter(Boolean).join(" · ");
+    note.textContent = text; note.hidden = !text; $("#prMcField").hidden = !text;
+    note.style.color = st.msg ? "#b06000" : "";
   }
   let regSig = "";
   async function loadModeCounts() {
@@ -1393,8 +1445,7 @@ header + * { margin-top: 0; }
   });
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
   $("#prModel").onchange = () => { store.set("prModel_" + modeKey(prMode), $("#prModel").value); };
-  $("#prBrand").onchange = () => { store.set("prBrand_" + modeKey(prMode), $("#prBrand").value || "all"); drawPrompt(); regenerate(); };
-  document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
+  document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"], ["#prBrandBox", "#prBrandField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
   for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
     const v = $(id).value;
     if (id === "#prImages") { $(id).dataset.touched = "1"; store.set("prEngine", v); }
@@ -1445,8 +1496,7 @@ header + * { margin-top: 0; }
     try { await navigator.clipboard.writeText($("#prText").value); } catch { $("#prText").select(); document.execCommand("copy"); }
     { const v = $("#prText").value; clearTimeout(flash.t); $("#prMsg").classList.add("copied"); $("#prMsg").textContent = `Copied · ${v.length.toLocaleString("en-US")} characters`; flash.t = setTimeout(() => { $("#prMsg").classList.remove("copied"); $("#prMsg").textContent = hint; }, 3000); }
     // A new pending run of this mode: the panel starts over and waits for the agent (brands.mjs --run, Setup).
-    const brandSel = $("#prBrand").value;
-    const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
+    const brands = arr(promptData.brands).filter(brandIn).map((x) => x.id);
     await postJson("/api/progress", { mode: modeKey(prMode), brands, agent: $("#prAgent").value || "" }).catch(() => {});
     loadProgress();
   };
@@ -1462,7 +1512,8 @@ header + * { margin-top: 0; }
     for (const b of $$("#prHow button")) b.setAttribute("aria-pressed", String(b.dataset.how === howNow()));
     for (const id of ["#prCopy", "#prMsg", "#prTextBox"]) $(id).hidden = app;
     // The Chrome connection section is for Run in the app (Run now needs the connection); with Copy prompt it is not shown.
-    $("#prChrome").hidden = !app;
+    // Only where a browser is used: Research, and Create & publish with Google Flow (Publish approved opens none).
+    { const mk = modeKey(prMode); $("#prChrome").hidden = !app || !(mk === "research" || (mk === "create" && chosenEngine() === "flow")); }
     $("#prRunNow").hidden = !app; if (!app) $("#prStop").hidden = true;
     // Model of the run: only for Run in the app, and only when the agent is Claude Code (Codex / ChatGPT have no --model here).
     { const mf = $("#prModelField"), mk = modeKey(prMode); mf.hidden = !app || !claude;
@@ -1484,9 +1535,10 @@ header + * { margin-top: 0; }
     applyHow(); try { blDraw(); } catch {}
     const busy = !!r?.active, noCli = r && r.cli && !r.cli.found;
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
-    const bsel = $("#prBrand").value, noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!bsel || x.id === bsel));
+    const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
     setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : noBrand ? "No usable brand: link a skill on Overview first" : "Run now starts Claude Code: choose the Claude Code agent");
     setDisabled($("#prCopy"), !!prBlock, prBlock);
+    { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
     box.hidden = howNow() !== "app"; prRunVis();
@@ -1680,8 +1732,7 @@ header + * { margin-top: 0; }
     let text = $("#prText").value;
     if (text.startsWith(SUB_LINE)) text = text.slice(SUB_LINE.length).replace(/^\s+/, "");
     if (!text.startsWith("TASK:")) { flash("Could not build the prompt: it does not start with TASK:."); return; }
-    const brandSel = $("#prBrand").value;
-    const brands = arr(promptData.brands).filter((x) => (brandSel ? x.id === brandSel : x.usable)).map((x) => x.id);
+    const brands = arr(promptData.brands).filter(brandIn).map((x) => x.id);
     const btn = $("#prRunNow"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "Starting…"; // instant feedback: the click is registered while the app starts Claude
     try {
@@ -1793,6 +1844,12 @@ header + * { margin-top: 0; }
     const sum = $("#prChromeSum");
     const bi = await getJson("/api/browser").catch(() => offline);
     if (!bi.error) { const first = !browserState; browserState = bi; if (first) regenerate(); }
+    { const fa = $("#prFlowAccount");
+      if (fa && !bi.error && document.activeElement !== fa && fa.dataset.dirty !== "1") {
+        const list = [...new Set([...(bi.google_accounts || []), ...(bi.flow_account ? [bi.flow_account.toLowerCase()] : [])])];
+        fa.innerHTML = '<option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option>' + list.map((e) => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join("");
+        fa.value = (bi.flow_account || "").toLowerCase();
+      } }
     const bst = $("#prBrowserStatus"), login = $("#prBrowserLogin");
     const busy = !!bi.run_active;
     const line = bi.error ? "Could not read the browser status: " + bi.error : bi.window_open ? "The login window is open: log in, then close it before a run." : busy ? "A run is using the own browser now (headless)." : bi.profile_exists ? "Profile ready" + (bi.last_opened ? ", last opened " + when(bi.last_opened) : "") + (bi.headless ? " · runs in the background" : " · runs with a visible window") : "No profile yet: press Open browser to log in, log in to the sites, then close the window.";
@@ -1801,6 +1858,40 @@ header + * { margin-top: 0; }
     sum.innerHTML = bi.error ? '<span class="status-tag c-amber">unavailable</span>' : `<span class="status-tag ${bi.window_open ? "c-amber" : bi.profile_exists ? "c-green" : "c-amber"}">own browser:${esc(bi.window_open ? "login window open" : bi.profile_exists ? "ready" : "log in once")}</span>`;
     if (!$("#page-prompt").hidden) browserTimer = setTimeout(loadBrowser, 3000);
   });
+  // Browser mode + Chrome profile picker (profiles read from this machine's Local State).
+  { const bm = $("#prBrowserMode"), cp = $("#prChromeProfile"), msg = $("#prChromeProfileMsg");
+    const loadProfiles = async () => {
+      const r = await getJson("/api/chrome-profiles").catch(() => offline);
+      if (r.error) { msg.textContent = "Could not read Chrome profiles: " + r.error; return; }
+      bm.value = r.mode || "own";
+      cp.innerHTML = (r.profiles || []).map((p) => '<option value="' + esc(p.folder) + '">' + esc((p.name || p.folder) + (p.email ? " · " + p.email : "") + " (" + p.folder + ")" + (p.playwright_extension ? "" : " · no Playwright extension")) + '</option>').join("") || '<option value="">No Chrome profile found</option>';
+      cp.value = r.selected || "";
+      cp.disabled = bm.value !== "extension";
+    };
+    const save = async () => {
+      const cur = await getJson("/api/settings").catch(() => offline);
+      if (cur.error) { msg.textContent = "Could not read settings: " + cur.error; return; }
+      const s = cur.settings || {};
+      const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), mode: bm.value }, research: { ...(s.research || {}), chrome_profile: cp.value || (s.research || {}).chrome_profile } } }).catch(() => offline);
+      msg.textContent = r.error ? "Could not save: " + r.error : "Saved.";
+      loadProfiles();
+    };
+    bm.addEventListener("change", save); cp.addEventListener("change", save);
+    loadProfiles();
+  }
+  { const fa = $("#prFlowAccount"), fs = $("#prFlowAccountSave"), fm = $("#prFlowAccountMsg");
+    fa.addEventListener("change", () => { fa.dataset.dirty = "1"; fs.click(); });
+    fs.addEventListener("click", async () => {
+      const email = fa.value.trim();
+      const cur = await getJson("/api/settings").catch(() => offline);
+      if (cur.error) { fm.textContent = "Không đọc được cài đặt: " + cur.error; return; }
+      const s = cur.settings || {};
+      const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), flow_account: email } } }).catch(() => offline);
+      if (r.error) { fm.textContent = "Không lưu được: " + r.error; return; }
+      fa.dataset.dirty = ""; browserState = null; try { loadBrowser(); } catch {}
+      fm.textContent = email ? "Đã lưu: Flow sẽ dùng " + email + "." : "Đã xoá: Flow tự chọn tài khoản.";
+    });
+  }
   $("#prBrowserLogin").onclick = async () => {
     if (runGuard()) return; 
     const b = $("#prBrowserLogin"); b.disabled = true;
@@ -1938,7 +2029,9 @@ header + * { margin-top: 0; }
   // What the user sees: To review (passed checks, waiting for Approve/Drop), Approved (waiting to send: no live Metricool
   // id; the next Publish approved sends it), Scheduled (on Metricool: a live id, never sent again), Posted (published). Failed posts stay in their state with a red dot and a short reason;
   // drafts still being made and dropped posts are not shown (only "N in progress").
-  const failedOf = (d) => (["check_failed", "image_failed"].includes(d.status) ? (arr(d.problems)[0] || d.error || "Failed checks") : MC(d) === "error" ? "Metricool error" : d.brand_post?.host_error ? "Image not hosted" : "");
+  const failedOf = (d) => (["check_failed", "image_failed"].includes(d.status) ? (arr(d.problems)[0] || d.error || "Failed checks") : MC(d) === "error" ? "Metricool error" : unhosted(d) ? "Ảnh chưa lên repo" + (d.brand_post.host_error ? ": " + d.brand_post.host_error : "") : "");
+  // Approved / Scheduled post whose image is not at the image repo (no media_url): the red dot means exactly this. Hosting still running (pending) is not an error.
+  const unhosted = (d) => !!d.brand_post && !!d.brand_post.host_error;
   const stateOf = (d) => {
     if (d.status === "rejected") return "";
     if (d.brand_post) return MC(d) === "published" ? "posted" : liveIds(d.brand_post).length ? "scheduled" : "approved";
@@ -1951,6 +2044,42 @@ header + * { margin-top: 0; }
     if (d.brand_post?.post) return d.brand_post.post;
     const t = String(arr(arr(d.preview?.posts)[0]?.texts)[0]?.text || d.idea || d.brand || "").split(/\r?\n/).find((l) => l.trim()) || d.id;
     return t.length > 40 ? t.slice(0, 39).trimEnd() + "…" : t;
+  };
+  // "Kiểm tra ảnh" (read-only check of every hosted link, POST /api/host-check) then, when some are broken or missing, the bar offers
+  // "Gửi lại n ảnh lỗi": resend exactly those posts (/api/host-retry), re-check them and show the final result.
+  const hostBar = (html) => { const el = $("#drHostBar"); el.hidden = !html; el.innerHTML = html || ""; };
+  const hostBrands = (all, brand) => brand ? [brand] : [...new Set(all.filter((d) => ["approved", "scheduled"].includes(stateOf(d))).map((d) => d.brand))];
+  async function checkImages(all, brand, only) {
+    let okN = 0; const bad = [];
+    const names = hostBrands(all, brand);
+    for (let i = 0; i < names.length; i++) {
+      hostBar(`Đang kiểm tra ảnh${names.length > 1 ? ` (${names[i]})` : ""}…`);
+      const r = await postJson("/api/host-check", { brand: names[i], ...(only ? { posts: only.filter((id) => all.some((d) => d.id === id && d.brand === names[i])) } : {}) }).catch(() => offline);
+      if (r.error) { bad.push({ id: "", title: names[i], why: r.error }); continue; }
+      okN += r.ok_count || 0;
+      for (const x of arr(r.results)) if (!x.ok) bad.push({ id: x.id, title: x.post, why: arr(x.problems).join("; ") });
+    }
+    return { okN, bad };
+  }
+  const hostResult = (all, brand, { okN, bad }) => {
+    const fixable = bad.filter((b) => b.id);
+    toast(`${okN} ảnh OK, ${bad.length} lỗi`, bad.length ? "error" : "ok");
+    hostBar(`<span class="${bad.length ? "count-bad" : "ok-text"}">${okN} ảnh OK, ${bad.length} lỗi</span>` + bad.map((b) => `<div class="bad-text">${esc(b.title)}: ${esc(b.why)}</div>`).join("") + (fixable.length ? `<button class="btn primary" type="button" id="drFixBad">Gửi lại ${fixable.length} ảnh lỗi</button>` : ""));
+    if ($("#drFixBad")) $("#drFixBad").onclick = async (e) => {
+      if (runGuard()) return;
+      const btn = e.currentTarget, ids = fixable.map((b) => b.id), failedNow = [];
+      let last = "";
+      for (let i = 0; i < ids.length; i++) {
+        btn.disabled = true; btn.textContent = `Đang gửi ${i + 1}/${ids.length}…`;
+        const r = await postJson("/api/host-retry", { id: ids[i] }).catch(() => offline);
+        if (r.error) { failedNow.push(fixable[i].title + ": " + r.error); if (r.error === last) break; last = r.error; } else last = "";
+      }
+      hostBar("Đang kiểm tra lại…");
+      const again = await checkImages(all, brand, ids);
+      for (const m of failedNow) again.bad.push({ id: "", title: "Gửi lại", why: m });
+      hostResult(all, brand, { okN: again.okN, bad: again.bad });
+      loadDrafts();
+    };
   };
   let drState = store.get("drState");
   const loadDrafts = safely("#draftList", async () => {
@@ -1967,19 +2096,44 @@ header + * { margin-top: 0; }
     $("#drState").innerHTML = STATES.map(([k, t]) => `<button class="btn" type="button" data-state="${k}" aria-pressed="${k === drState}">${esc(withCount(t, count(k)))}</button>`).join("");
     for (const b of $$("#drState button")) b.onclick = () => { drState = b.dataset.state; store.set("drState", drState); loadDrafts(); };
     const making = drafts.filter((d) => !stateOf(d) && d.status !== "rejected").length, failed = drafts.filter((d) => stateOf(d) && failedOf(d)).length;
-    $("#drExtra").innerHTML = [failed ? `<span class="count-bad">${failed} failed</span>` : "", making ? `${making} in progress` : ""].filter(Boolean).join(" · ");
+    const lacking = drafts.filter((d) => ["approved", "scheduled"].includes(stateOf(d)) && unhosted(d));
+    $("#drExtra").innerHTML = [failed ? `<span class="count-bad">${failed} failed</span>` : "", making ? `${making} in progress` : "", lacking.length ? `<button class="btn" type="button" id="drRehostAll">Gửi lại tất cả (${lacking.length})</button>` : "", drafts.some((d) => ["approved", "scheduled"].includes(stateOf(d))) ? `<button class="btn" type="button" id="drCheckImg">Kiểm tra ảnh</button>` : ""].filter(Boolean).join(" · ");
+    if ($("#drCheckImg")) $("#drCheckImg").onclick = async (e) => {
+      if (runGuard()) return;
+      const btn = e.currentTarget; btn.disabled = true;
+      const res = await checkImages(everyDraft, brand);
+      hostResult(everyDraft, brand, res);
+      loadDrafts();
+    };
+    if ($("#drRehostAll")) $("#drRehostAll").onclick = async (e) => {
+      if (runGuard()) return;
+      const btn = e.currentTarget, failedList = [];
+      let last = "", stopped = false;
+      for (let i = 0; i < lacking.length; i++) {
+        btn.disabled = true; btn.textContent = `Đang gửi ${i + 1}/${lacking.length}…`;
+        const r = await postJson("/api/host-retry", { id: lacking[i].id }).catch(() => offline);
+        if (r.error) {
+          failedList.push(`${titleOf(lacking[i])}: ${r.error}`);
+          if (r.error === last) { stopped = true; break; } // the same failure twice in a row: stop, the cause is not the post
+          last = r.error;
+        } else last = "";
+      }
+      toast(failedList.length ? `Gửi lại ảnh: ${failedList.length} lỗi${stopped ? " (dừng vì lỗi lặp lại)" : ""}. ` + failedList.join(" | ") : `Đã gửi lại ảnh cho ${lacking.length} bài.`, failedList.length ? "error" : "ok");
+      loadDrafts();
+    };
     const list = drafts.filter((d) => stateOf(d) === drState);
     drList = list.slice(); // the preview overlay edits its own copy; the tiles below keep the list they were drawn from
     $("#draftList").innerHTML = list.length ? `<div class="tiles">${list.map((d) => {
       const fail = failedOf(d), review = drState === "review" && !fail, live = liveIds(d.brand_post)[0];
       // Scheduled: "On Metricool" + its time (VN first, ET in brackets); Approved: "Waiting to send".
-      const badge = drState === "scheduled" ? `<span class="status-tag c-green" title="Scheduled on Metricool (id ${esc(live?.id || "-")}); never sent again">On Metricool</span>` : drState === "approved" ? `<span class="status-tag c-amber" title="Approved, not on Metricool yet: the next Publish approved sends it">Waiting to send</span>` : "";
+      const bad = unhosted(d), hostTag = bad ? `<span class="status-tag c-red" title="${esc(d.brand_post.host_error)}">Ảnh chưa lên repo</span>` : "";
+      const badge = hostTag + (drState === "scheduled" ? `<span class="status-tag c-green" title="Scheduled on Metricool (id ${esc(live?.id || "-")}); never sent again">On Metricool</span>` : drState === "approved" ? `<span class="status-tag c-amber" title="Approved, not on Metricool yet: the next Publish approved sends it">Waiting to send</span>` : "");
       const posted = drState === "posted" && liveIds(d.brand_post)[0];
       const when = live && drState === "scheduled" ? vnEt(live.publication, live.timezone) : posted ? `Posted ${vnEt(posted.publication, posted.timezone)}` : drState === "approved" ? "Not on Metricool yet" : "";
       return tile({ id: d.id, img: draftThumb(d), title: titleOf(d),
-        status: (fail ? `<span class="dot dot-red" title="${esc(fail)}"></span>` : "") + badge,
-        sub: when, subRight: String(d.created || "").slice(0, 10), subRightTip: d.created ? `Created ${String(d.created).slice(0, 16).replace("T", " ")}` : "", who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (drState === "approved" ? "the next Publish approved sends it" : "")].filter(Boolean).join(" · "),
-        actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ["approved", "scheduled"].includes(drState) && d.brand_post && MC(d) !== "published" ? `<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
+        status: (fail ? `<span class="dot ${["approved", "scheduled"].includes(drState) && !bad ? "dot-amber" : "dot-red"}" title="${esc(fail)}"></span>` : "") + badge,
+        sub: bad ? d.brand_post.host_error : when, subRight: String(d.created || "").slice(0, 10), subRightTip: d.created ? `Created ${String(d.created).slice(0, 16).replace("T", " ")}` : "", who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (drState === "approved" ? "the next Publish approved sends it" : "")].filter(Boolean).join(" · "),
+        actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ["approved", "scheduled"].includes(drState) && d.brand_post && MC(d) !== "published" ? `${bad ? '<button class="btn" type="button" data-act="rehost">Gửi lại ảnh</button>' : ""}<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
     // A tile is tied to its post by id (never by its position): tiles can be removed from the page at once and the list can change.
     wireTiles($("#draftList"), (i, card) => { const j = list.findIndex((x) => x.id === card?.dataset.id); if (j >= 0) openPreview(list[j], { list, i: j }); });
@@ -1989,6 +2143,12 @@ header + * { margin-top: 0; }
         if (!d) { loadDrafts(); return; }
         if (runGuard()) return; 
         if (btn.dataset.act === "drop" && !confirm("Drop this post? It will not be used.")) return;
+        if (btn.dataset.act === "rehost") {
+          btn.disabled = true; btn.textContent = "Đang gửi…"; msg.textContent = "";
+          const r = await postJson("/api/host-retry", { id: d.id }).catch(() => offline);
+          if (r.error) { toast("Gửi lại ảnh lỗi: " + r.error); } else toast("Ảnh đã lên repo: " + titleOf(d), "ok");
+          loadDrafts(); return;
+        }
         if (btn.dataset.act === "unreview") {
           const sure = confirmBack(d); if (!sure.ok) return;
           card.remove(); bg(postJson("/api/unapprove", { id: d.id, metricool_deleted: sure.sched }), { onFail: loadDrafts, onDone: loadDrafts }); return;

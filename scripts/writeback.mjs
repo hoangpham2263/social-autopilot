@@ -118,6 +118,8 @@ function writeBackInner(id) {
       ? { ai_disclosure: true }
       : { ai_disclosure: { ai_scene: true, tool: 'codex' } }),
     ...(draft.sign_text ? { sign_text: draft.sign_text } : {}),
+    // Audit trail of the sign wording (sign workflow): what the reference said, how it was used, and why the new wording.
+    ...(draft.custom_text ? { sign_audit: { sign_text: draft.sign_text || '', ref_mode: draft.ref_mode || '', ref_text: draft.ref_text || '', reference: { store_item: draft.inspiration.store_item || draft.inspiration.ref || '', post_url: draft.inspiration.post_url || '', source: draft.inspiration.source || '', source_shop: draft.inspiration.source_shop || '' }, audience: draft.idea?.audience || '', scene_type: draft.idea?.scene_type || '', scene: draft.idea?.scene || '', text_reason: draft.idea?.text_reason || '', sign_workflow: draft.sign_workflow || 0, image_reads: readJson(path.join(dir, 'status.json'), {}).sign_check?.reads || '' } } : {}),
     ...(draft.product_size ? { product_size: draft.product_size } : {}),
     media_alt: altTexts(draft),
     approval: { by, date, note },

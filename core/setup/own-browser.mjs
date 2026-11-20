@@ -8,6 +8,7 @@ import { join, resolve, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { findBrowser } from "./chrome.mjs";
 
+export const BROWSER_MODES = ["own", "extension"]; // extension = the person's everyday Chrome through the Playwright MCP Bridge extension (needs a Connect click)
 export const DEFAULT_PROFILE_DIR = "workspace/browser-profile";
 
 // Sites the person logs in to by hand. The launcher only ever opens these fixed URLs (never an arbitrary one).
@@ -20,12 +21,14 @@ export const PLATFORMS = [
   { id: "google", name: "Google (Flow)", url: "https://flow.google.com/", required: true },
 ];
 export const LOGIN_URLS = PLATFORMS.map((p) => p.url);
+// With a chosen Google account the Flow tab opens Google's account chooser pre-selecting that signed-in account, then Flow.
+export const flowOpenUrl = (email = "") => (/^[^\s@"<>]+@[^\s@"<>]+\.[^\s@"<>]+$/.test(email) ? `https://accounts.google.com/AccountChooser?Email=${encodeURIComponent(email)}&continue=${encodeURIComponent("https://flow.google.com/")}` : "https://flow.google.com/");
 
 export function browserSettings(settings = {}, toolRoot = process.cwd()) {
   const b = settings?.browser || {};
   const dir = typeof b.profile_dir === "string" && b.profile_dir.trim() ? b.profile_dir.trim() : DEFAULT_PROFILE_DIR;
   return {
-    mode: "own",
+    mode: b.mode === "extension" ? "extension" : "own",
     headless: b.headless === false || b.headless === "false" ? false : true,
     profileDir: isAbsolute(dir) ? resolve(dir) : resolve(toolRoot, dir),
   };
@@ -72,18 +75,33 @@ export function openLoginBrowser({ platform = "", settings = {}, toolRoot, works
   const browser = findBrowser({ override: String(r.chrome_path || ""), plat, env, exists, ...(which ? { which } : {}) });
   if (!browser.found) throw new Error("No Chrome (or Edge/Brave) was found. Install Google Chrome, or set research.chrome_path in workspace/settings.json.");
   mkdirSync(bs.profileDir, { recursive: true });
-  const { cmd, args } = loginCommand({ browser, profileDir: bs.profileDir, urls: target ? [target.url] : LOGIN_URLS, plat });
+  const acct = String(settings?.browser?.flow_account || "");
+  const swap = (u) => (u === "https://flow.google.com/" ? flowOpenUrl(acct) : u);
+  const urls = (target ? [target.url] : LOGIN_URLS).map(swap);
+  const { cmd, args } = loginCommand({ browser, profileDir: bs.profileDir, urls, plat });
   const go = start || ((c, a) => { const p = spawn(c, a, { detached: true, stdio: "ignore" }); p.on("error", () => {}); p.unref(); });
   go(cmd, args);
   const at = new Date(now()).toISOString();
   try { mkdirSync(join(workspace, "runs"), { recursive: true }); writeFileSync(stampFile(workspace), JSON.stringify({ at })); } catch {}
-  return { ok: true, browser: browser.kind, platform: target?.id || "", opened: (target ? [target.url] : LOGIN_URLS).length, at };
+  return { ok: true, browser: browser.kind, platform: target?.id || "", opened: urls.length, at };
+}
+
+
+// Google accounts signed in inside a Chrome profile: the emails Chrome keeps in <profile>/Default/Preferences (account_info and
+// last username). Emails only, never cookies or tokens. [] when the profile or file is missing / unreadable.
+export function profileGoogleAccounts(profileDir, { read = (f) => readFileSync(f, "utf8") } = {}) {
+  try {
+    const txt = read(join(profileDir, "Default", "Preferences")).replace(/^\uFEFF/, "");
+    const found = new Set();
+    for (const m of txt.matchAll(/"(?:email|last_username|last_gaia_id_username)"\s*:\s*"([^"\s@]+@[^"\s@]+\.[^"\s@]+)"/g)) found.add(m[1].toLowerCase());
+    return [...found].sort();
+  } catch { return []; }
 }
 
 export function browserInfo({ settings = {}, toolRoot, workspace, runActive = false, exists = existsSync, locked = profileLocked } = {}) {
   const bs = browserSettings(settings, toolRoot);
   const has = exists(bs.profileDir);
-  return { mode: bs.mode, headless: bs.headless, profile_dir: bs.profileDir, profile_exists: has, last_opened: lastOpened(workspace), window_open: has && locked(bs.profileDir), run_active: !!runActive };
+  return { mode: bs.mode, headless: bs.headless, flow_account: String(settings?.browser?.flow_account || ""), google_accounts: profileGoogleAccounts(bs.profileDir), profile_dir: bs.profileDir, profile_exists: has, last_opened: lastOpened(workspace), window_open: has && locked(bs.profileDir), run_active: !!runActive };
 }
 
 // ----- login status from the cookie database METADATA (names, hosts, expiry; never values) -----
@@ -168,8 +186,14 @@ cachedLoginStatus.cache = null;
 export function validateBrowserSettings(input, cur = {}) {
   if (input === undefined) return undefined;
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("browser phải là object.");
-  const out = { mode: "own", headless: cur.headless ?? true, profile_dir: cur.profile_dir || DEFAULT_PROFILE_DIR };
-  // browser.mode: only "own" exists; any other value (an old "extension") is ignored and stored as "own".
+  const out = { mode: cur.mode === "extension" ? "extension" : "own", headless: cur.headless ?? true, profile_dir: cur.profile_dir || DEFAULT_PROFILE_DIR, ...(cur.flow_account ? { flow_account: cur.flow_account } : {}) };
+  // browser.flow_account: the email of the already logged-in Google account Flow must use ("" = whichever Flow opens with).
+  if (input.flow_account !== undefined) {
+    const v = typeof input.flow_account === "string" ? input.flow_account.trim() : "";
+    if (v && (v.length > 120 || !/^[^\s@"<>]+@[^\s@"<>]+\.[^\s@"<>]+$/.test(v))) throw new Error("browser.flow_account phải là một email.");
+    if (v) out.flow_account = v; else delete out.flow_account;
+  }
+  if (input.mode !== undefined) { if (!BROWSER_MODES.includes(input.mode)) throw new Error("browser.mode phải là own hoặc extension."); out.mode = input.mode; }
   if (input.headless !== undefined) { if (input.headless === true || input.headless === "true") out.headless = true; else if (input.headless === false || input.headless === "false") out.headless = false; else throw new Error("browser.headless phải là true hoặc false."); }
   if (input.profile_dir !== undefined) {
     const v = typeof input.profile_dir === "string" ? input.profile_dir.trim() : "";
