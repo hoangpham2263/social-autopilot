@@ -52,7 +52,11 @@ export function loadPageResult(args, readStdin = () => fs.readFileSync(0, 'utf8'
   if (args.json && args.json !== true) objs.push(parsePageResult(String(args.json)));
   if (args.b64 && args.b64 !== true) { const u = unpackB64(String(args.b64)); objs.push(u.obj); tag = u.tag; }
   if (!objs.length && autoFile && fs.existsSync(autoFile)) { const o = JSON.parse(fs.readFileSync(autoFile, 'utf8')); objs.push(o); tag = String(o.tag || ''); }
-  if (!objs.length) throw new Error("Thiếu kết quả: --b64 <chuỗi b64 một dòng> | --file <result.json> | --stdin | --json '<compact>'.");
+  // The app writes the extract's result to exactly <task dir>/page-result.json: when it is not there, the post did not arrive. Say where it was
+  // expected and what to do, so the agent never searches the disk for it (a run lost 8 minutes on a whole-drive find, 2026-11-21).
+  if (!objs.length) throw new Error(autoFile
+    ? `Chưa có kết quả ở ${autoFile} (app chưa nhận bài gửi về). KHÔNG tìm file trên ổ đĩa: chạy lại collect.mjs script cho đúng task này rồi chạy lại đoạn trích trên trang (kết quả script trả saved:true là đã gửi), hoặc dùng --b64 <dòng b64 script trả về>.`
+    : "Thiếu kết quả: --b64 <chuỗi b64 một dòng> | --file <result.json> | --stdin | --json '<compact>'.");
   if (objs.length > 1) throw new Error('Mỗi lần from-page chỉ nhận MỘT kết quả trích xuất (một lần chạy script).');
   return { ...verifyPageResult(objs[0]), ...(tag ? { tag } : {}) };
 }
@@ -123,7 +127,11 @@ export function script(args) {
   // returns only { saved:true, total, tag, bytes }; when that is not possible it returns the b64 as before.
   const base = args.stdout || task.kind === 'standalone' ? '' : serverBase();
   // the file carries no secret: the Node side of the script fetches a one-time token from token_url when it runs
-  const post = base ? { url: `${base}/api/collect-result?task=${encodeURIComponent(task.id)}`, token_url: `${base}/api/collect-token?task=${encodeURIComponent(task.id)}` } : null;
+  // The task key carries the brand ("<brand>:<task id>"): discovery query ids (e.g. instagram-k-custom-neon-sign) repeat across brands, and a bare id
+  // made the app write the result into ANOTHER brand's run folder (Signlurex results landed in a Dream Vows run, 2026-11-21).
+  const bid = typeof brand === 'string' ? brand : String(brand?.id || '');
+  const key = bid ? `${bid}:${task.id}` : String(task.id);
+  const post = base ? { url: `${base}/api/collect-result?task=${encodeURIComponent(key)}`, token_url: `${base}/api/collect-token?task=${encodeURIComponent(key)}` } : null;
   // The page-side crawl (collect-install.mjs crawlFactory): for every task of an open run the file scrolls the page by itself and returns ONE result per round.
   // stop_known: only a source the registry says is complete (top check: 3 known posts in a row); a new or partial source goes to the end of the page.
   const known = task.known_file ? readJson(task.known_file, { count: 0 }) : brand ? knownPosts(brand.id) : { count: 0 };

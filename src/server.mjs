@@ -27,7 +27,7 @@ import { listLogs, showLog, addLog, DRIED_UP_RUNS } from "../scripts/runlog.mjs"
 import { progressView, newRun } from "../scripts/progress.mjs";
 import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 import { findClaude } from "../core/setup/claude-cli.mjs";
-import { localChromeProfiles } from "../core/setup/chrome.mjs";
+import { localChromeProfiles, openExtensionStore, tokenProfiles, saveExtensionToken } from "../core/setup/chrome.mjs";
 import { createAgentRunner } from "../core/setup/agent-run.mjs";
 import { browserInfo, openLoginBrowser, cachedLoginStatus, profileLocked, profileProblem, browserSettings, PLATFORMS } from "../core/setup/own-browser.mjs";
 import { runVisitCheck, visitResults, clearVisitResults, visitActive, visitProgress, mergeLogins, buildSummary, readChecks } from "../core/setup/login-visit.mjs";
@@ -44,6 +44,7 @@ const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () 
   loginWindowOpen: () => { const d = browserSettings(settings(), root).profileDir; return visitActive() || (existsSync(d) && profileLocked(d)); },
   browserCheck: (dir) => profileProblem({ dir, exists: existsSync(dir), locked: false }),
   onEnd: (st) => {
+  if (st.mode === "sync") return; // a brand-list refresh is not a Create/Publish run: no entry in the Log tab
   const lastLog = listLogs({ mode: st.mode, limit: 1 })[0];
   if (lastLog && Date.parse(lastLog.ended) >= Date.parse(st.started)) return;
   const why = { failed: "run failed", stopped: "stopped by the user", timeout: "time limit reached" }[st.status] || "";
@@ -91,12 +92,14 @@ function storeData(brand, status, source, platform = "") {
   const ideas = readJson(storeIdeasFile(brand), { ideas: [] }).ideas;
   // Each reference page's avatar (captured by research ingest), served through /file (workspace images only).
   const avatars = Object.fromEntries(r.sources.map((s) => [s, sourceAvatar(brand, s)]).filter(([, a]) => a));
-  // Items per source in the current Show filter (Library Source dropdown).
+  // Items per source under the current Show + Platform filters (Library Source dropdown; source_all = its "All").
   const inStatus = listItems(brand, { status }).items;
-  const source_counts = Object.fromEntries(r.sources.map((s) => [s, inStatus.filter((i) => i.source_id === s).length]));
-  // Items per platform in the current Show filter (Library Platform dropdown).
-  const platform_counts = Object.fromEntries(r.platforms.map((p) => [p, inStatus.filter((i) => i.platform === p).length]));
-  return { brand, dir, counts: r.counts, sources: r.sources, source_counts, platforms: r.platforms, platform_counts, progress: readProgress(brand).sources || {}, items, ideas, avatars };
+  const forSource = inStatus.filter((i) => !platform || i.platform === platform);
+  const source_counts = Object.fromEntries(r.sources.map((s) => [s, forSource.filter((i) => i.source_id === s).length]));
+  // Items per platform under the current Show + Source filters (Library Platform dropdown; platform_all = its "All").
+  const forPlatform = inStatus.filter((i) => !source || i.source_id === source);
+  const platform_counts = Object.fromEntries(r.platforms.map((p) => [p, forPlatform.filter((i) => i.platform === p).length]));
+  return { brand, dir, counts: r.counts, sources: r.sources, source_counts, source_all: forSource.length, platforms: r.platforms, platform_counts, platform_all: forPlatform.length, progress: readProgress(brand).sources || {}, items, ideas, avatars };
 }
 
 // ----- HTTP -----
@@ -323,6 +326,23 @@ async function handle(req, res) {
   if (path === "/api/runlogs" && req.method === "GET") return api(res, () => ({ dried_up_runs: DRIED_UP_RUNS, logs: listLogs({ brand: get("brand"), mode: get("mode"), limit: Number(get("limit")) || 200 }) }));
   if (path === "/api/runlog" && req.method === "GET") return api(res, () => showLog(get("id")));
   // Prompt tab, Run now: POST starts headless Claude (409 when a run is active), POST /stop kills it, GET = live status (no secrets).
+  // Sync Metricool: a short Claude run (no browser) that reads the brand list through the Metricool connector and runs metricool-mcp.mjs sync-brands.
+  if (path === "/api/metricool-sync" && req.method === "POST") return api(res, async () => {
+    const prompt = [
+      "TASK: Metricool sync - refresh this tool's list of Metricool brands (names, time zones, connected networks) - agent: Claude Code",
+      "TOOL: " + root,
+      "STEPS (do them in order; read only):",
+      "1. Call the Metricool tool getBrandSettings ONCE and keep its JSON answer.",
+      "2. Write that JSON, unchanged, to workspace/tmp/brand-settings-sync.json (Write tool).",
+      "3. Run in the TOOL folder: node scripts/metricool-mcp.mjs sync-brands --from workspace/tmp/brand-settings-sync.json and read its JSON line.",
+      "4. Answer in Vietnamese in ONE short line: how many brands, which were added or removed, and any brand whose time zone is not America/New_York.",
+      "STOP IF: the Metricool tool is missing or asks to sign in again: say so in one line and stop.",
+      "NEVER: create, update or delete anything on Metricool, open a browser, touch posts, drafts or skill folders, or run other scripts.",
+    ].join("\n");
+    const r = agentRun.start({ mode: "sync", prompt, brands: [], model: "haiku" });
+    if (!r.ok) throw new Error(r.error);
+    return { ok: true, run_id: r.run_id, started: r.started };
+  });
   if (path === "/api/agent-run" && req.method === "GET") return api(res, () => agentRun.status());
   if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); try { if (!agentRun.status().active) rmSync(join(workspace, "pipeline", "publish.json"), { force: true }); } catch {} // a send plan of an earlier run is never reused (it caused duplicate Metricool posts)
     const r = agentRun.start({ mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine, model: b.model }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started } : { error: r.error }); }
@@ -423,7 +443,9 @@ async function handle(req, res) {
   // POST (session token), so no other page can list folders on this machine.
   // Own browser (core/setup/own-browser.mjs): status, the visible login window (fixed site URLs only, refused while a headless run holds the profile),
   // and the login state per site from cookie METADATA (names/expiry of allow-listed cookies; never values, never logged). Same guards as every /api route.
-  if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => ({ ...localChromeProfiles({ settings: settings() }), mode: browserSettings(settings(), root).mode }));
+  if (path === "/api/chrome-profiles" && req.method === "GET") return api(res, () => { const r = localChromeProfiles({ settings: settings() }), withTok = new Set(tokenProfiles(workspace)); return { ...r, profiles: r.profiles.map((p) => ({ ...p, token_saved: withTok.has(p.folder) })), mode: browserSettings(settings(), root).mode }; });
+  if (path === "/api/chrome-extension-token" && req.method === "POST") return api(res, async () => { const b = await body(req); return saveExtensionToken(workspace, String(b.profile || ""), String(b.token || "")); });
+  if (path === "/api/chrome-extension-install" && req.method === "POST") return api(res, async () => { const b = await body(req); return openExtensionStore({ profile: String(b.profile || ""), settings: settings() }); });
   if (path === "/api/browser" && req.method === "GET") return api(res, () => browserInfo({ settings: settings(), toolRoot: root, workspace, runActive: agentRun.browserActive() }));
   // Logins = cookie hint merged with the last "Check by visiting" result (in memory). p = comma list of the sites the person sees (for the summary).
   const loginRows = async (fresh) => mergeLogins(await cachedLoginStatus({ settings: settings(), toolRoot: root, fresh }), visitResults());

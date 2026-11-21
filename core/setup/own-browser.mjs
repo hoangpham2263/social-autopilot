@@ -6,7 +6,9 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, lstatSync, readlinkSync, copyFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
-import { findBrowser } from "./chrome.mjs";
+import { findBrowser, localChromeProfiles } from "./chrome.mjs";
+// Google accounts signed in to the chosen everyday-Chrome profile (extension mode).
+function extensionAccounts(settings = {}) { try { const { profiles, selected } = localChromeProfiles({ settings }); return profiles.find((p) => p.folder === selected)?.accounts || []; } catch { return []; } }
 
 export const BROWSER_MODES = ["own", "extension"]; // extension = the person's everyday Chrome through the Playwright MCP Bridge extension (needs a Connect click)
 export const DEFAULT_PROFILE_DIR = "workspace/browser-profile";
@@ -67,6 +69,25 @@ export const lastOpened = (workspace, read = (f) => readFileSync(f, "utf8")) => 
 // Opens the login window. Refuses when a headless run holds the profile or the window is already open. Returns { ok, ... }.
 export function openLoginBrowser({ platform = "", settings = {}, toolRoot, workspace, runActive = false, plat = process.platform, env = process.env, exists = existsSync, which, start, locked = profileLocked, now = () => Date.now() } = {}) {
   const bs = browserSettings(settings, toolRoot);
+  // Everyday-Chrome mode: the login button opens the CHOSEN profile of the person's own Chrome (never the tool's separate profile), with the
+  // login sites as tabs; Flow goes through Google's account chooser pre-selecting the Flow account. Nothing is typed for the person.
+  if (bs.mode === "extension") {
+    const prof = String(settings.research?.chrome_profile || "").trim();
+    const { profiles } = localChromeProfiles({ settings, plat, env, exists });
+    if (!prof || !profiles.some((p) => p.folder === prof)) throw new Error("Chưa chọn profile Chrome hợp lệ: chọn ở Run > Browser > Chrome profile.");
+    const tgt = platform ? PLATFORMS.find((p) => p.id === platform) : null;
+    if (platform && !tgt) throw new Error("Unknown platform.");
+    const rr = settings.research || {};
+    const br = findBrowser({ override: String(rr.chrome_path || ""), plat, env, exists, ...(which ? { which } : {}) });
+    if (!br.found) throw new Error("No Chrome (or Edge/Brave) was found. Install Google Chrome, or set research.chrome_path in workspace/settings.json.");
+    const acc = String(settings?.browser?.flow_account || "");
+    const list = (tgt ? [tgt.url] : LOGIN_URLS).map((u) => (u === "https://flow.google.com/" ? flowOpenUrl(acc) : u));
+    const tail = ["--profile-directory=" + prof, ...list];
+    const run = plat === "darwin" ? { cmd: "open", args: ["-na", br.kind === "edge" ? "Microsoft Edge" : br.kind === "brave" ? "Brave Browser" : "Google Chrome", "--args", ...tail] } : { cmd: br.path, args: tail };
+    const go2 = start || ((c, a) => { const p = spawn(c, a, { detached: true, stdio: "ignore" }); p.on("error", () => {}); p.unref(); });
+    go2(run.cmd, run.args);
+    return { ok: true, browser: br.kind, profile: prof, platform: tgt?.id || "", opened: list.length, at: new Date(now()).toISOString() };
+  }
   if (runActive) throw new Error("A run is using the own browser right now (headless): wait for it to finish or press Stop, then open the login window.");
   const target = platform ? PLATFORMS.find((p) => p.id === platform) : null;
   if (platform && !target) throw new Error("Unknown platform.");
@@ -101,7 +122,7 @@ export function profileGoogleAccounts(profileDir, { read = (f) => readFileSync(f
 export function browserInfo({ settings = {}, toolRoot, workspace, runActive = false, exists = existsSync, locked = profileLocked } = {}) {
   const bs = browserSettings(settings, toolRoot);
   const has = exists(bs.profileDir);
-  return { mode: bs.mode, headless: bs.headless, flow_account: String(settings?.browser?.flow_account || ""), google_accounts: profileGoogleAccounts(bs.profileDir), profile_dir: bs.profileDir, profile_exists: has, last_opened: lastOpened(workspace), window_open: has && locked(bs.profileDir), run_active: !!runActive };
+  return { mode: bs.mode, headless: bs.headless, flow_account: String(settings?.browser?.flow_account || ""), google_accounts: profileGoogleAccounts(bs.profileDir), profile_accounts: extensionAccounts(settings), profile_dir: bs.profileDir, profile_exists: has, last_opened: lastOpened(workspace), window_open: has && locked(bs.profileDir), run_active: !!runActive };
 }
 
 // ----- login status from the cookie database METADATA (names, hosts, expiry; never values) -----

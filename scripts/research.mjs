@@ -129,7 +129,14 @@ export function discoveryQueries(platforms, keywords, hashtags) {
 }
 const listArg = (v) => (v === undefined || v === true ? null : String(v).split(',').map((x) => x.trim()).filter(Boolean));
 // New posts of the run so far: reference pages + discovery.
-export const brandTotal = (run) => (run.sources || []).reduce((a, x) => a + (x.new || 0), 0) + (run.discovery?.queries || []).reduce((a, q) => a + (q.kept || 0), 0);
+// Posts this run added, MINUS the ones the filter step (store.mjs verdict) rejected afterwards: the run target is about posts KEPT in the
+// Library, so after a filter pass `next` hands out more sources/queries until the kept count reaches the target (user rule 2026-11-21).
+export const brandTotal = (run) => {
+  const added = (run.sources || []).reduce((a, x) => a + (x.new || 0), 0) + (run.discovery?.queries || []).reduce((a, q) => a + (q.kept || 0), 0);
+  let filtered = 0;
+  try { filtered = readStore(run.brand).items.filter((i) => i.run === run.date && i.rejected_by === 'filter').length; } catch { /* no store yet */ }
+  return Math.max(0, added - filtered);
+};
 // Per platform: kept, queries done/pending, blocked, capped (kept >= max_per_platform).
 export function platformStats(d) {
   const per = {};
@@ -558,7 +565,17 @@ const sidList = (xs) => xs.map((x) => x.id).join(',');
 export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0}${r.unjudged_total ? ` · unjudged ${r.unjudged_total}` : ''} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.new ?? 0} (ready now ${r.store?.ready ?? 0}, cooling ${r.store?.cooling ?? 0})${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
 export function researchReport(brandId, date) {
   const r = researchReportBase(brandId, date);
-  return { ...r, summary_line: reportLine(r) };
+  // Not finished while the kept count is under the target and work is left: the agent must go back to 1.2, never stop for low yield.
+  let cont = null;
+  try {
+    const day = date || latestRun(brandId);
+    const run = day ? readJson(path.join(runDir(brandId, day), 'run.json'), null) : null;
+    if (run && run.mode?.max_posts) {
+      const nx = nextTask(run), kept = brandTotal(run);
+      if (nx.step !== 'done') cont = { kept, target: run.mode.max_posts, next: nx.step, do: `NOT DONE: kept ${kept}/${run.mode.max_posts} and sources/queries are left. Go back to step 1.2 (node scripts/research.mjs next --brand ${brandId}) and keep collecting, then filter again; stop only when next says done (target reached, everything done, or blocked).` };
+    }
+  } catch { /* report stays as it was */ }
+  return { ...r, ...(cont ? { continue: cont } : {}), summary_line: reportLine(r) + (cont ? ` · NOT DONE (${cont.kept}/${cont.target} kept, work left)` : '') };
 }
 function researchReportBase(brandId, date) {
   const day = date || latestRun(brandId);

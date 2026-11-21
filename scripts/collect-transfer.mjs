@@ -52,10 +52,12 @@ export function issueToken(taskDir, taskId, now = Date.now(), dir = tokenDir(), 
 
 // The task dir of an open run (the latest run of each brand) for a task id (a reference page or a discovery query), or ''.
 export function findTaskDir(task, runsRoot = path.join(workspace, 'runs')) {
-  const id = String(task || '');
-  if (!id) return '';
+  // "<brand>:<id>" (current scripts) looks ONLY in that brand's runs; a bare id (older scripts) keeps the old search over every brand.
+  const raw = String(task || ''), cut = raw.indexOf(':');
+  const brandOnly = cut > 0 ? raw.slice(0, cut) : '', id = cut > 0 ? raw.slice(cut + 1) : raw;
+  if (!id || (brandOnly && !/^[a-z0-9][a-z0-9-]*$/.test(brandOnly))) return '';
   try {
-    for (const b of fs.readdirSync(runsRoot)) {
+    for (const b of (brandOnly ? [brandOnly] : fs.readdirSync(runsRoot))) {
       const bd = path.join(runsRoot, b);
       try {
       const date = fs.readdirSync(bd).filter((d) => fs.existsSync(path.join(bd, d, 'run.json'))).sort().pop();

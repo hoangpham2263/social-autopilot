@@ -104,6 +104,7 @@ node scripts/sources.mjs list-suggested|accept|dismiss --brand <id> [--id <sug-i
 
    - **Ngân sách thời gian:** Ngân sách thời gian mỗi nguồn là của PHIÊN và tiếp tục được (`research.source_minutes`, mặc định 0 = KHÔNG giới hạn thời gian; lượt chạy không bao giờ dừng vì thời gian, chỉ dừng khi hết trang / bài đã có / bị chặn / đủ mục tiêu; 429 thì chờ rồi thử lại trong cùng lượt): `next` / `script` / `from-page` / `fit` in thời gian đã dùng; hết giờ thì dừng `time`: `research.mjs result --state partial --note 'time limit'` (sổ đăng ký lưu mốc tiếp tục `resume`, không mất gì, lần sau đi tiếp tới hết trang), giữ bài đã có, sang nguồn kế.
    - **Dự phòng khi script không chạy:** Facebook: open the page, scroll once with the scrollBy snippet BEFORE the first extract (the feed only renders after a real scroll); an empty first extract on a page that was NOT scrolled is expected, not a script failure, and does not count toward the two empty extracts of the fallback. If the extract script errors, or still returns 0 posts / total_on_page 0 after two EXTRA extracts (scroll once more between them) on a page that visibly has posts, STOP using the script for that source: read the page yourself (Playwright MCP snapshot, a small browser_evaluate, or a screenshot), write the posts you see in the same small JSON the script returns ({platform, url, tiles:[{id, url, image_urls, caption, author, date_text}]}, no checksum) and pass it to collect.mjs from-page --json '<that>' (the tool downloads the images, skips known posts, writes raw.json; verified:false is expected); then the same loop (look at images, fit, counters, stop rules, time cap).
+   - **Không thấy kết quả:** `from-page` báo đúng đường dẫn `<task dir>/page-result.json` nó chờ. KHÔNG tìm file trên ổ đĩa (find, dir /s): chạy lại `collect.mjs script` cho đúng task rồi trích lại trên trang, hoặc dùng `--b64`. Mã gửi về app có kèm brand (`<brand>:<task>`), nên kết quả luôn vào đúng brand.
 ```
 node scripts/collect.mjs fit --brand <id> --for-query <qid> --file <decisions.json>   # agent NHÌN ảnh review[].image: [{id, fit:true, type, reason}|{id, fit:false, reason}]
 node scripts/collect.mjs status                                       # trạng thái từng adapter
@@ -127,7 +128,7 @@ node scripts/research.mjs result --brand <id> --query <qid> --state done|limit|e
 - `next` trả `skip: true` (mục tiêu đã đủ khi còn trang tham khảo): chạy đúng lệnh `do` (`result --state skipped`).
 - Trang tham khảo **Facebook**: cùng một đường (mở trang, cuộn, trích xuất); mã bài = permalink thật, fbid ảnh là alias (docs/research.md "Facebook: script trích xuất"); rồi tiếp `research.mjs next` cho discovery.
 
-1.3. Lọc một lượt (agent tự quyết, không mở trình duyệt):
+1.3. Lọc một lượt (agent tự quyết, không mở trình duyệt). **Mục tiêu tính theo bài GIỮ LẠI sau lọc:** lọc xong chạy lại `research.mjs next`; chưa `done` thì quay lại 1.2 rồi lọc tiếp. Không tự dừng vì ít bài hợp hay trang ít bài; chỉ dừng khi `next` báo done (đủ mục tiêu, hết nguồn/truy vấn, hoặc bị chặn) hoặc gặp STOP IF. `research.mjs report` có `continue` / NOT DONE nghĩa là chưa xong:
 ```
 node scripts/store.mjs classify --brand <id> [--limit 40]
 node scripts/store.mjs verdict  --brand <id> --file <verdicts.json>

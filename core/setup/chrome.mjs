@@ -1,7 +1,7 @@
 // Portable Chrome helpers: find the browser, list its profiles (Local State only), open a window in one profile.
 // Nothing here reads cookies, passwords or any other profile data. No shell strings: argument arrays only.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, platform as osPlatform } from "node:os";
 
@@ -72,7 +72,57 @@ export function localChromeProfiles({ settings = {}, plat = osPlatform(), env = 
   const r = settings.research || {};
   const browser = findBrowser({ override: String(r.chrome_path || ""), plat, env, home });
   const { dir, profiles } = listProfiles({ browser, userDataDir: String(r.chrome_user_data_dir || ""), plat, env, home, ...(read ? { read } : {}) });
-  return { dir, selected: String(r.chrome_profile || ""), profiles: profiles.map((p) => ({ ...p, playwright_extension: exists(join(dir, p.folder, "Extensions", PLAYWRIGHT_EXTENSION_ID)) })) };
+  const accountsOf = (folder) => { try { const j = JSON.parse((read || ((f) => readFileSync(f, "utf8")))(join(dir, folder, "Preferences"))); return [...new Set((j.account_info || []).map((a) => String(a.email || "").toLowerCase()).filter(Boolean))]; } catch { return []; } };
+  return { dir, selected: String(r.chrome_profile || ""), profiles: profiles.map((p) => { const accounts = accountsOf(p.folder), primary = String(p.email || "").toLowerCase(); return { ...p, playwright_extension: exists(join(dir, p.folder, "Extensions", PLAYWRIGHT_EXTENSION_ID)), accounts: primary && !accounts.includes(primary) ? [primary, ...accounts] : accounts }; }) };
+}
+
+export const EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/playwright-mcp-bridge/" + PLAYWRIGHT_EXTENSION_ID;
+// Why a run in extension mode cannot use the chosen profile ("" = fine). Playwright MCP silently falls back to the last used profile that has
+// the extension when the chosen one has none, so the tool refuses to start instead of driving a Chrome the person did not choose.
+export function extensionProfileProblem(settings = {}, opts = {}) {
+  const { profiles, selected } = localChromeProfiles({ settings, ...opts });
+  if (!selected) return "Chưa chọn profile Chrome: vào Run > Browser > Chrome profile.";
+  const p = profiles.find((x) => x.folder === selected);
+  if (!p) return "Profile Chrome " + selected + " không còn trên máy: chọn profile khác ở Run > Browser > Chrome profile.";
+  if (!p.playwright_extension) return selected + (p.email ? " (" + p.email + ")" : "") + " chưa có extension Playwright MCP Bridge: bấm Cài extension vào profile này (Run > Browser) hoặc chọn profile khác. Tool không tự dùng profile khác.";
+  const want = String(settings.browser?.flow_account || "").trim().toLowerCase();
+  if (want && p.accounts?.length && !p.accounts.includes(want)) return "Tài khoản Flow " + want + " không đăng nhập trong profile " + selected + " (có: " + p.accounts.join(", ") + "). Chọn lại tài khoản Flow hoặc profile ở Run > Browser.";
+  return "";
+}
+// Opens the Chrome Web Store page of the Playwright extension IN the chosen profile (the person installs it; nothing is installed for them).
+export function openExtensionStore({ profile = "", settings = {}, plat = osPlatform(), env = process.env, home = homedir(), exists = existsSync, which = defaultWhich, read, start } = {}) {
+  const r = settings.research || {};
+  const browser = findBrowser({ override: String(r.chrome_path || ""), plat, env, home, exists, which });
+  if (!browser.found) throw new Error("No Chrome was found.");
+  const { profiles } = listProfiles({ browser, userDataDir: String(r.chrome_user_data_dir || ""), plat, env, home, ...(read ? { read } : {}) });
+  const chosen = String(profile || r.chrome_profile || "").trim();
+  if (!validProfile(chosen, profiles)) throw new Error("Unknown Chrome profile folder.");
+  const { cmd, args } = openCommand({ browser, profile: chosen, url: EXTENSION_STORE_URL, plat });
+  const go = start || ((c, a) => { const p = spawn(c, a, { detached: true, stdio: "ignore" }); p.on("error", () => {}); p.unref(); });
+  go(cmd, args);
+  return { ok: true, profile: chosen, url: EXTENSION_STORE_URL };
+}
+
+// Optional Playwright extension token per Chrome profile (the token the Playwright MCP Bridge page shows in THAT profile). With it a run
+// connects without the Connect click; without it nothing changes. File: workspace/playwright-tokens.json { "<profile folder>": "<token>" }.
+// The token is never sent back to the page, never logged; the UI only learns whether one is saved.
+const TOKEN_RE = /^[A-Za-z0-9_\-.]{8,200}$/;
+const tokenFile = (workspaceDir) => join(workspaceDir, "playwright-tokens.json");
+function readTokens(workspaceDir) { try { const j = JSON.parse(readFileSync(tokenFile(workspaceDir), "utf8")); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch { return {}; } }
+export function extensionToken(workspaceDir, profile) { const t = readTokens(workspaceDir)[String(profile || "")]; return typeof t === "string" && TOKEN_RE.test(t) ? t : ""; }
+export function tokenProfiles(workspaceDir) { return Object.keys(readTokens(workspaceDir)).filter((k) => extensionToken(workspaceDir, k)); }
+export function saveExtensionToken(workspaceDir, profile, token) {
+  const p = String(profile || "").trim();
+  if (!/^(Default|Profile \d{1,3})$/.test(p)) throw new Error("Profile không hợp lệ.");
+  const t = String(token || "").trim();
+  if (t && !TOKEN_RE.test(t)) throw new Error("Token không hợp lệ (chép đúng chuỗi token trên trang Playwright MCP Bridge của profile đó).");
+  const all = readTokens(workspaceDir);
+  if (t) all[p] = t; else delete all[p];
+  mkdirSync(workspaceDir, { recursive: true });
+  const tmp = tokenFile(workspaceDir) + "." + process.pid + ".tmp";
+  writeFileSync(tmp, JSON.stringify(all, null, 2));
+  renameSync(tmp, tokenFile(workspaceDir));
+  return { profile: p, token_saved: !!t };
 }
 
 // Pure allow-lists.

@@ -21,7 +21,7 @@ export function classifyProblem(text, { mode = "", needsBrowser = false, own = f
   const t = String(text ?? "");
   if (!t) return null;
   for (const kind of kinds) {
-    if (kind === "metricool" && mode !== "publish" && mode !== "create") continue;
+    if (kind === "metricool" && mode !== "publish" && mode !== "create" && mode !== "sync") continue;
     if (kind === "browser" && (!needsBrowser || own)) continue;
     if ((kind === "login" || kind === "profile") && !(needsBrowser && own)) continue;
     if (RX[kind].test(t)) return { kind, message: MESSAGES[kind] };

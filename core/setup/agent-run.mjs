@@ -8,13 +8,14 @@ import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir } from "node:os";
 import { classifyProblem } from "./agent-problems.mjs";
 import { browserSettings } from "./own-browser.mjs";
+import { extensionProfileProblem, extensionToken } from "./chrome.mjs";
 
-export const MODES = ["research", "create", "publish"];
+export const MODES = ["research", "create", "publish", "sync"]; // sync = refresh the Metricool brand list (short, read only, no browser)
 // Hard time limits (minutes) and --max-turns per mode. "create_flow" = Create with image engine Flow (images take 20-30 s each, 3-image albums
 // need many turns). Both are settings: agent_run.timeout_minutes.<mode|create_flow>, agent_run.max_turns (a number for all, or an object per mode).
 // 0 = no limit (default): a run goes on until it is done or the user presses Stop; set the settings above to bring a limit back.
-export const DEFAULT_MINUTES = { research: 0, create: 0, create_flow: 0, publish: 0 };
-export const DEFAULT_TURNS = { research: 0, create: 0, create_flow: 0, publish: 0 };
+export const DEFAULT_MINUTES = { research: 0, create: 0, create_flow: 0, publish: 0, sync: 5 };
+export const DEFAULT_TURNS = { research: 0, create: 0, create_flow: 0, publish: 0, sync: 25 };
 export const MAX_LINE = 300, LOG_LINES = 2000, TAIL_LINES = 30;
 const MC = "mcp__claude_ai_Metricool_Social_Media_Management__";
 const BASE = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"];
@@ -22,6 +23,7 @@ const METRICOOL_READ = ["getBrandSettings", "getBestTimeToPostByNetwork", "getSc
 export const ALLOWED_TOOLS = {
   research: ["mcp__playwright__*", "Bash", "Read", "Glob", "Grep"],
   create: [...BASE, ...METRICOOL_READ],
+  sync: ["Bash", "Read", "Write", MC + "getBrandSettings"], // only reads the brand list; never a Metricool write tool
   publish: [...BASE, ...METRICOOL_READ, MC + "createScheduledPost"], // getBrandSettings, getBestTimeToPostByNetwork, getScheduledPosts + createScheduledPost; Create never gets a Metricool write tool
 };
 
@@ -81,7 +83,7 @@ export function sanitizeReport(text, max = REPORT_MAX) {
 // Flags (checked with `npx @playwright/mcp@latest --help`): --browser chrome, --user-data-dir <path>, --headless, --viewport-size WxH, --output-dir <path>.
 // ----- friendly live lines (Vietnamese, for the person): built from tool NAMES and a few safe words of the input; never a path, id, token or JSON -----
 export const FRIENDLY_LINES = 40;
-const MODE_VI = { research: "Research", create: "Create", publish: "Publish" };
+const MODE_VI = { research: "Research", create: "Create", publish: "Publish", sync: "Đồng bộ Metricool" };
 const baseName = (f) => String(f || "").split(/[\\/]/).pop().toLowerCase();
 export function friendlyTool(name, input = {}) {
   const n = String(name || ""), i = input && typeof input === "object" ? input : {};
@@ -107,13 +109,13 @@ export function friendlyTool(name, input = {}) {
   return "Đang xử lý…";
 }
 
-export function mcpArgs(own = null) {
+export function mcpArgs(own = null, profile = "") {
   // --session-name / --session-color: title and color of the Chrome tab group of this run, so the tool's tabs are easy to tell apart.
-  if (!own) return ["@playwright/mcp@latest", "--extension", "--session-name", "Social Autopilot", "--session-color", "orange"];
+  if (!own) return ["@playwright/mcp@latest", "--extension", ...(profile ? ["--profile-dir-name", profile] : []), "--session-name", "Social Autopilot", "--session-color", "orange"];
   return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", "1280x900", ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
 }
 export function mcpConfig({ plat = osPlatform(), profile = "", own = null } = {}) {
-  const a = mcpArgs(own);
+  const a = mcpArgs(own, profile);
   const server = plat === "win32" ? { command: "cmd", args: ["/c", "npx", ...a] } : { command: "npx", args: a };
   if (profile && !own) server.env = { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile };
   return { mcpServers: { playwright: server } };
@@ -130,7 +132,7 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 `;
 
 export function validate({ mode, prompt, model }) {
-  if (!MODES.includes(mode)) return "mode must be research, create or publish.";
+  if (!MODES.includes(mode)) return "mode must be research, create, publish or sync.";
   if (model !== undefined && model !== null && model !== "" && !MODELS.includes(model)) return "model must be default, haiku, sonnet or opus.";
   if (typeof prompt !== "string") return "prompt must be a string.";
   if (prompt.length < 200 || prompt.length > 60000) return "prompt must be 200 to 60000 characters.";
@@ -243,6 +245,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (loginWindowOpen()) return { ok: false, status: 409, error: "The login window of the own browser is open: close it first (a run needs the profile), then press Run now." };
       const why = browserCheck(bs.profileDir); if (why) return { ok: false, status: 409, error: why };
     }
+    if (browser && !own) {
+      const why = extensionProfileProblem(s); if (why) return { ok: false, status: 409, error: why };
+    }
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
@@ -254,7 +259,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (mflag) args.push("--model", mflag);
     if (browser) args.push("--mcp-config", cfg);
     if (mode === "research") args.push("--strict-mcp-config");
-    const env = { ...process.env, ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}) };
+    const extTok = browser && !own && profile ? extensionToken(workspace, profile) : "";
+    const env = { ...process.env, ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }

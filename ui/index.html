@@ -75,6 +75,11 @@ nav.tabs button[aria-pressed="true"] { background: #fff; border-color: var(--acc
 .picker .found label { display: flex; gap: 6px; align-items: center; margin: 0; padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; flex: 0 0 auto; } .dot-green { background: #006400; } .dot-red { background: rgb(176, 0, 0); } .dot-grey { background: var(--line); }
 .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+/* Browser card: fields in two equal columns (labels above), one column on narrow windows. */
+.bgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-top: 12px; align-items: end; }
+.bgrid .f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bgrid select, .bgrid .btn { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 700px) { .bgrid { grid-template-columns: 1fr; } }
 .row-actions + :not(.msg):not([hidden]) { margin-top: 16px; }
 /* Page header row (brand edit): back button and title. */
 .page-head { display: flex; gap: 12px; align-items: center; margin: 0 0 24px; }
@@ -428,6 +433,7 @@ header + * { margin-top: 0; }
 
   <section class="page" id="page-overview" hidden>
     <fieldset class="plats"><legend>Research</legend><div class="plat-row" id="ovPlat"></div></fieldset>
+    <div class="row-actions"><button class="btn" type="button" id="ovSync" title="Reads the brand list from Metricool (names, time zones, connected networks) with a short Claude run; read only. A Create run also does this at its start.">Sync Metricool</button><span class="meta" id="ovSyncMsg" role="status"></span></div>
     <div class="cards" id="ovList"><div class="meta">Loading…</div></div>
   </section>
 
@@ -505,12 +511,16 @@ header + * { margin-top: 0; }
     <details class="sec" id="prChrome">
       <summary><span>Browser</span><span id="prChromeSum" class="meta">· loading…</span></summary>
       <div id="prBrowser">
-        <div class="row-actions"><button class="btn" type="button" id="prBrowserLogin" title="Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
-        <div class="row-actions"><label for="prBrowserMode">Browser for runs</label><select id="prBrowserMode" style="min-width:260px"><option value="own">Tool's own Chrome (separate profile)</option><option value="extension">My everyday Chrome (Playwright extension, click Connect)</option></select></div>
-        <div class="row-actions"><label for="prChromeProfile">Chrome profile (everyday Chrome)</label><select id="prChromeProfile" style="min-width:260px"></select></div>
+        <div class="bgrid">
+          <div class="f"><label for="prBrowserMode">Browser for runs</label><select id="prBrowserMode"><option value="own">Tool's own Chrome (separate profile)</option><option value="extension">My everyday Chrome (Playwright extension, click Connect)</option></select></div>
+          <div class="f"><label for="prChromeProfile">Chrome profile (everyday Chrome)</label><select id="prChromeProfile"></select></div>
+          <div class="f"><label for="prFlowAccount">Tài khoản Google cho Flow (để trống = Flow tự chọn)</label><select id="prFlowAccount"><option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option></select><button class="btn" type="button" id="prFlowAccountSave" hidden>Lưu</button></div>
+          <div class="f"><button class="btn" type="button" id="prBrowserLogin" title="Own Chrome mode: opens the tool's separate profile. Everyday Chrome mode: opens the Chrome profile chosen above (with the login sites as tabs). Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
+        </div>
+        <div class="row-actions" id="prTokenRow" hidden><label for="prChromeToken">Token Playwright (tùy chọn)</label><input id="prChromeToken" type="password" autocomplete="off" placeholder="Dán token của extension trong profile này" style="min-width:260px"><button class="btn" type="button" id="prTokenSave">Lưu</button><button class="btn" type="button" id="prTokenClear" hidden>Xoá token</button><span class="meta" id="prTokenMsg" role="status"></span></div>
+        <div class="row-actions"><button class="btn" type="button" id="prChromeInstall" hidden>Cài extension vào profile này</button></div>
         <div class="meta" id="prChromeProfileMsg" role="status">Profiles found on this machine. Only profiles with the Playwright extension can be driven; the Chrome window of that profile must be open and you click Connect once per run.</div>
         <div class="meta" id="prBrowserStatus" role="status"></div>
-        <div class="row-actions"><label for="prFlowAccount">Tài khoản Google cho Flow (email, để trống = Flow tự chọn)</label><select id="prFlowAccount" style="min-width:260px"><option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option></select><button class="btn" type="button" id="prFlowAccountSave" hidden>Lưu</button></div>
         <div class="meta" id="prFlowAccountMsg" role="status">Danh sách là các tài khoản Google đã đăng nhập trong Chrome riêng của tool. Flow hay mở tài khoản đầu tiên: chọn tài khoản còn credit để agent dùng đúng tài khoản đó (không đăng xuất, không xoá tài khoản nào).</div>
         <div id="prLogins"></div>
         <div class="meta">Runs use this profile in the background (headless). Facebook may show a checkpoint for automated browsers; if a site blocks headless runs, switch browser.headless off in Settings. Sites you log in to: Facebook, Instagram, Pinterest, Etsy, Houzz, Google (Flow).</div>
@@ -668,6 +678,23 @@ header + * { margin-top: 0; }
   // A publication time (wall clock in the brand timezone) still ahead; compared as text, close enough for "next post".
   // A Metricool publication time (wall clock in the brand's timezone) still ahead of now in that timezone.
   const w_future = (pub, tz) => { let now = new Date().toISOString().slice(0, 16); try { now = new Date().toLocaleString("sv-SE", { timeZone: tz }).replace(" ", "T").slice(0, 16); } catch {} return String(pub).slice(0, 16) >= now; };
+  // Sync Metricool: starts a short read-only run, polls it, then reloads the cards.
+  { const sb = $("#ovSync"), sm = $("#ovSyncMsg");
+    if (sb) sb.addEventListener("click", async () => {
+      sb.disabled = true; sm.textContent = "Syncing…";
+      const r = await postJson("/api/metricool-sync", {}).catch(() => offline);
+      if (r.error) { sb.disabled = false; sm.textContent = r.error; return; }
+      const t0 = Date.now();
+      const poll = async () => {
+        const st = await getJson("/api/agent-run").catch(() => null);
+        if (st && st.mode === "sync" && st.active && Date.now() - t0 < 300000) { sm.textContent = "Syncing… " + Math.round((Date.now() - t0) / 1000) + " s"; setTimeout(poll, 2000); return; }
+        sb.disabled = false;
+        sm.textContent = st && st.mode === "sync" && st.status === "done" && !st.problem ? (String(st.report || "Synced.").replace(/\s+/g, " ").slice(0, 200)) : "Sync failed: " + ((st && (st.error || st.problem?.message)) || "see the Run tab");
+        try { loadOverview(); } catch {}
+      };
+      setTimeout(poll, 2000);
+    });
+  }
   const loadOverview = safely("#ovList", async () => {
     const [q, b, lg] = await Promise.all([getJson("/api/queue"), getJson("/api/brands"), getJson("/api/runlogs?limit=50").catch(() => ({}))]).catch(() => [offline, {}, {}]);
     const lastRun = (id) => arr(lg?.logs).find((l) => arr(l.brands).some((x) => x.brand === id));
@@ -688,13 +715,22 @@ header + * { margin-top: 0; }
       if (!s) out.push(m.skill_id && m.skill_path_missing ? "Skill folder not found (renamed or moved?)" : "No skill");
       if (s) {
         if (!s.enabled) out.push("Paused (Edit, untick Paused)");
-        if (!arr(s.sources).length) out.push("No reference sources (Edit, Sources)");
+        // Create takes reference posts from the Library, which Research fills from sources or from keyword discovery: with neither, the Library stays empty and nothing can be made.
+        if (!arr(s.sources).length && !s.discovery_enabled) out.push("No reference sources and keyword discovery is off: the Library stays empty, Create has nothing to use (Edit, Sources)");
         for (const c of arr(s.channels)) if (!arr(m.networks).includes(c)) out.push(`${net(c)} not connected in Metricool`);
         // The Metricool brand's timezone (synced) should be the audience timezone the skill plans in (cadence.timezone).
-        if (m.timezone && s.timezone && m.timezone !== s.timezone) out.push(`Metricool timezone differs (${m.timezone} vs ${s.timezone}): change it in Metricool`);
         for (const p of arr(s.problems)) out.push(p);
       }
       return [...new Set(out)];
+    };
+    // Tips: things worth doing that never stop the tool (a brand with only tips is usable): shown under "Notes", amber dot.
+    const tipsOf = (m) => {
+      const s = skills[m.skill_id || ""], out = [];
+      if (!s) return out;
+      if (!arr(s.sources).length && s.discovery_enabled) out.push("No fixed sources: Research finds posts by keywords and hashtags (discovery). Run Research first, Create uses the posts it keeps in the Library");
+      // The Metricool brand's timezone (synced) should be the audience timezone the skill plans in (cadence.timezone). The tool plans in the skill's timezone, so it is only how Metricool shows the time.
+      if (m.timezone && s.timezone && m.timezone !== s.timezone) out.push(`Metricool shows times in ${m.timezone} (the tool plans in ${s.timezone}): change the brand timezone in Metricool, posts are not blocked`);
+      return out;
     };
     // Card actions, one group: linked Edit · Change skill · Unlink; unlinked Link skill.
     const btn = (attr, v, text, tip = "", cls = "") => `<button class="btn${cls}" type="button" ${attr}="${esc(v)}"${tip ? ` title="${esc(tip)}"` : ""}>${text}</button>`;
@@ -705,7 +741,7 @@ header + * { margin-top: 0; }
       return `<div class="acts">${btn("data-pick", m.name, "Link skill", "Link this brand to a skill folder")}</div>`;
     };
     const card = (m) => {
-      const id = m.skill_id || "", s = skills[id], x = s ? queue[id] : null, miss = missingOf(m);
+      const id = m.skill_id || "", s = skills[id], x = s ? queue[id] : null, miss = missingOf(m), tips = tipsOf(m);
       const msg = pendingMsg?.key === m.name ? pendingMsg.html : "";
       const st = x?.store, d = x?.drafts || {}, mc = x?.metricool || {};
       const working = num(d, "needs_prompt") + num(d, "generating") + num(d, "needs_caption"), failed = num(d, "check_failed") + num(d, "image_failed");
@@ -727,8 +763,8 @@ header + * { margin-top: 0; }
       const go = (k, n, t) => `<a href="#" data-go="posts" data-state="${k}" data-brand="${esc(id)}">${esc(withCount(t, n))}</a>`;
       const posts = waiting || onMc || review || posted ? [go("review", review, "To review"), go("approved", waiting, "Approved"), go("scheduled", onMc, "Scheduled"), go("posted", posted, "Posted")].join(" · ") + (failed ? ` · <span class="bad-text">${failed} failed</span>` : "") + (working ? ` · <span class="muted">${working} in progress</span>` : "") : working ? `<span class="muted">${working} in progress</span>` : none;
       const sug = !s && m.suggested_skill ? `<dt>Skill found</dt><dd>${esc(m.suggested_skill.id)} ${btn("data-suggest", m.suggested_skill.dir, "Link", "Link this skill folder to the brand", " primary")}</dd>` : "";
-      return `<div class="card ${miss.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
-        <div class="head-row"><h3>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}<span class="dot after ${miss.length ? "dot-red" : "dot-green"}" title="${miss.length ? "Missing" : "Ready"}" aria-label="${miss.length ? "Missing" : "Ready"}"></span></h3>${actions(m)}</div>
+      return `<div class="card ${miss.length || tips.length ? "todo" : "ok"}" data-card="${esc(m.name)}">
+        <div class="head-row"><h3>${s?.avatar ? `<img class="brand-av" src="/avatar?brand=${encodeURIComponent(s.id)}" alt="">` : ""}${esc(m.name)}<span class="dot after ${miss.length ? "dot-red" : tips.length ? "dot-amber" : "dot-green"}" title="${miss.length ? "Missing" : tips.length ? "Ready (with notes)" : "Ready"}" aria-label="${miss.length ? "Missing" : tips.length ? "Ready (with notes)" : "Ready"}"></span></h3>${actions(m)}</div>
         <dl class="kv">
           <dt>Channels</dt><dd title="Enabled in the skill; Metricool has connected: ${esc(arr(m.networks).map(net).join(", ") || "none")}">${(arr(s?.channels).length ? arr(s.channels) : arr(m.networks)).map((n) => `<span class="chan" title="${esc(net(n))}">${brandIcon(n)} ${esc(net(n))}</span>`).join(" ") || "no channels"} · ${esc(m.timezone || "-")}</dd>
           ${s ? `<dt>Skill</dt><dd>${esc(s.id)}</dd>` : ""}${sug}
@@ -739,6 +775,7 @@ header + * { margin-top: 0; }
           ${(() => { const next = arr(x?.written).flatMap((w) => arr(w.metricool_sent)).filter((m) => !m.draft && m.publication && w_future(m.publication, m.timezone)).map((m) => m.publication).sort()[0]; return next ? `<dt>Next post</dt><dd>${esc(String(next).replace("T", " ").slice(0, 16))} <span class="meta">${esc(m.timezone || "")}</span></dd>` : ""; })()}
           ${s && lastRun(s.id) ? (() => { const l = lastRun(s.id), x = arr(l.brands).find((y) => y.brand === s.id); return `<dt>Last run</dt><dd><a href="#" data-log="${esc(l.id)}">${esc(when(l.ended))} · ${esc(MODE_TEXT[l.mode] || l.mode)} · ${esc(x?.headline || l.headline)}</a></dd>`; })() : ""}
           ${miss.length ? `<dt>Missing</dt><dd><ul class="missing flush">${miss.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
+          ${tips.length ? `<dt>Notes</dt><dd><ul class="missing flush">${tips.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></dd>` : ""}
         </dl>
         <div class="msg card-msg">${msg}</div>
         <div class="picker" data-panel hidden></div>
@@ -935,13 +972,16 @@ header + * { margin-top: 0; }
     if (!resFilterInit) { resFilterInit = true; const ss = store.get("resSource"), sp = store.get("resPlatform"); source = source || (ss === "all" ? "" : ss); platform = platform || (sp === "all" ? "" : sp); } // Source/Platform filters of this tab are remembered too (an unknown value just shows All)
     const r = await getJson(`/api/store?brand=${encodeURIComponent(brand || "")}&status=${encodeURIComponent(status)}&source=${encodeURIComponent(source || "")}&platform=${encodeURIComponent(platform || "")}`).catch(() => offline);
     if (r.error) { $("#resBody").innerHTML = errLine(r.error); return; }
-    $("#resBrand").innerHTML = az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(b.name || b.id)}</option>`).join("");
+    // Each brand: its items under the current Show filter (Source/Platform reset when the brand changes).
+    const inShow = (k = {}) => (status === "new" ? k.new : status === "rejected" ? k.removed ?? k.rejected : k.total);
+    $("#resBrand").innerHTML = az(r.brands, (b) => b.name || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(withCount(b.name || b.id, inShow(b.counts)))}</option>`).join("");
     const c = r.current;
     if (!c && !brand && r.brands?.length) { const first = az(r.brands, (x) => x.name || x.id)[0]; $("#resBrand").value = first.id; store.set("resBrand", first.id); return loadResearch(); } // no brand chosen yet: open the first (A–Z)
     if (!c) { $("#resSource").innerHTML = ""; $("#resPlatform").innerHTML = ""; $("#resBody").innerHTML = `<div class="meta">Pick a brand.</div>`; return; }
-    $("#resPlatform").innerHTML = `<option value="">All</option>` + arr(c.platforms).map((p) => `<option value="${esc(p)}"${p === platform ? " selected" : ""}>${esc(withCount(platformName(p), c.platform_counts?.[p]))}</option>`).join("");
+    const sumOf = (o) => Object.values(o || {}).reduce((a, n) => a + (Number(n) || 0), 0);
+    $("#resPlatform").innerHTML = `<option value="">${esc(withCount("All", c.platform_all ?? sumOf(c.platform_counts)))}</option>` + arr(c.platforms).map((p) => `<option value="${esc(p)}"${p === platform ? " selected" : ""}>${esc(withCount(platformName(p), c.platform_counts?.[p]))}</option>`).join("");
     setDisabled($("#resPlatform"), arr(c.platforms).length < 2 && !platform, "Items from one platform only");
-    $("#resSource").innerHTML = `<option value="">All</option>` + arr(c.sources).map((s) => `<option value="${esc(s)}"${s === source ? " selected" : ""}>${esc(withCount(s, c.source_counts?.[s]))}</option>`).join("");
+    $("#resSource").innerHTML = `<option value="">${esc(withCount("All", c.source_all ?? sumOf(c.source_counts)))}</option>` + arr(c.sources).map((s) => `<option value="${esc(s)}"${s === source ? " selected" : ""}>${esc(withCount(s, c.source_counts?.[s]))}</option>`).join("");
     setDisabled($("#resSource"), arr(c.sources).length < 2, "This brand has only one source");
     const k = c.counts || {};
     resRemoveSuggest = arr(k.remove_suggested);
@@ -1846,7 +1886,7 @@ header + * { margin-top: 0; }
     if (!bi.error) { const first = !browserState; browserState = bi; if (first) regenerate(); }
     { const fa = $("#prFlowAccount");
       if (fa && !bi.error && document.activeElement !== fa && fa.dataset.dirty !== "1") {
-        const list = [...new Set([...(bi.google_accounts || []), ...(bi.flow_account ? [bi.flow_account.toLowerCase()] : [])])];
+        const list = [...new Set([...((bi.mode === "extension" && Array.isArray(bi.profile_accounts) && bi.profile_accounts.length) ? bi.profile_accounts : (bi.google_accounts || [])), ...(bi.flow_account ? [bi.flow_account.toLowerCase()] : [])])];
         fa.innerHTML = '<option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option>' + list.map((e) => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join("");
         fa.value = (bi.flow_account || "").toLowerCase();
       } }
@@ -1859,24 +1899,45 @@ header + * { margin-top: 0; }
     if (!$("#page-prompt").hidden) browserTimer = setTimeout(loadBrowser, 3000);
   });
   // Browser mode + Chrome profile picker (profiles read from this machine's Local State).
-  { const bm = $("#prBrowserMode"), cp = $("#prChromeProfile"), msg = $("#prChromeProfileMsg");
+  { const bm = $("#prBrowserMode"), cp = $("#prChromeProfile"), msg = $("#prChromeProfileMsg"), inst = $("#prChromeInstall"); let savedProfile = "", savedMode = "", noExt = new Set(), profileList = [];
     const loadProfiles = async () => {
       const r = await getJson("/api/chrome-profiles").catch(() => offline);
       if (r.error) { msg.textContent = "Could not read Chrome profiles: " + r.error; return; }
       bm.value = r.mode || "own";
       cp.innerHTML = (r.profiles || []).map((p) => '<option value="' + esc(p.folder) + '">' + esc((p.name || p.folder) + (p.email ? " · " + p.email : "") + " (" + p.folder + ")" + (p.playwright_extension ? "" : " · no Playwright extension")) + '</option>').join("") || '<option value="">No Chrome profile found</option>';
-      cp.value = r.selected || "";
+      profileList = r.profiles || []; savedProfile = r.selected || ""; savedMode = r.mode || "own"; noExt = new Set((r.profiles || []).filter((p) => !p.playwright_extension).map((p) => p.folder));
+      cp.value = savedProfile;
       cp.disabled = bm.value !== "extension";
+      inst.hidden = !(bm.value === "extension" && noExt.has(cp.value));
+      { const row = $("#prTokenRow"), tm = $("#prTokenMsg"), clr = $("#prTokenClear"), prof = profileList.find((x) => x.folder === cp.value);
+        row.hidden = bm.value !== "extension" || !prof || !prof.playwright_extension;
+        clr.hidden = !prof?.token_saved;
+        tm.textContent = prof?.token_saved ? "Đã gắn token cho " + cp.value + ": chạy không cần bấm Connect." : "Chưa gắn token: mỗi lượt bấm Connect (như bình thường)."; }
+      if (!inst.hidden) msg.textContent = "Profile này chưa có extension Playwright: tool sẽ không chạy cho tới khi bạn cài (nút bên trên) hoặc chọn profile khác.";
     };
     const save = async () => {
+      if (cp.value === savedProfile && bm.value === savedMode) return;
       const cur = await getJson("/api/settings").catch(() => offline);
       if (cur.error) { msg.textContent = "Could not read settings: " + cur.error; return; }
       const s = cur.settings || {};
-      const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), mode: bm.value }, research: { ...(s.research || {}), chrome_profile: cp.value || (s.research || {}).chrome_profile } } }).catch(() => offline);
+      const prof = profileList.find((x) => x.folder === cp.value), curAcc = String((s.browser || {}).flow_account || "").toLowerCase();
+      const flowAcc = bm.value === "extension" && prof && prof.accounts && prof.accounts.length && !prof.accounts.includes(curAcc) ? (String(prof.email || "").toLowerCase() || prof.accounts[0]) : (s.browser || {}).flow_account;
+      const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), mode: bm.value, flow_account: flowAcc }, research: { ...(s.research || {}), chrome_profile: cp.value || (s.research || {}).chrome_profile } } }).catch(() => offline);
+      browserState = null; try { loadBrowser(); } catch {}
       msg.textContent = r.error ? "Could not save: " + r.error : "Saved.";
       loadProfiles();
     };
     bm.addEventListener("change", save); cp.addEventListener("change", save);
+    // Optional token of the chosen profile: saved only on this machine; the page never reads it back.
+    const tokSave = async (token) => {
+      const r = await postJson("/api/chrome-extension-token", { profile: cp.value, token }).catch(() => offline);
+      $("#prChromeToken").value = "";
+      if (r.error) { $("#prTokenMsg").textContent = r.error; return; }
+      loadProfiles();
+    };
+    $("#prTokenSave").addEventListener("click", () => { const t = $("#prChromeToken").value.trim(); if (t) tokSave(t); });
+    $("#prTokenClear").addEventListener("click", () => { if (confirm("Xoá token của " + cp.value + "? Các lượt sau sẽ cần bấm Connect.")) tokSave(""); });
+    inst.addEventListener("click", async () => { const r = await postJson("/api/chrome-extension-install", { profile: cp.value }).catch(() => offline); msg.textContent = r.error ? "Không mở được: " + r.error : "Đã mở trang cài extension trong profile " + cp.value + ": bấm Thêm vào Chrome, rồi quay lại đây."; });
     loadProfiles();
   }
   { const fa = $("#prFlowAccount"), fs = $("#prFlowAccountSave"), fm = $("#prFlowAccountMsg");
@@ -1970,7 +2031,7 @@ header + * { margin-top: 0; }
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
     const allLogs = arr(r.logs), hasBrand = (l, id) => arr(l.brands).some((x) => x.brand === id);
     const runs = (id) => allLogs.filter((l) => (!lgMode || l.mode === lgMode) && hasBrand(l, id)).length;
-    $("#lgBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(withCount(b.brand || b.id, `${runs(b.id)} run${runs(b.id) === 1 ? "" : "s"}`))}</option>`).join("");
+    $("#lgBrand").innerHTML = `<option value="">${esc(withCount("All", allLogs.filter((l) => !lgMode || l.mode === lgMode).length))}</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(withCount(b.brand || b.id, runs(b.id)))}</option>`).join("");
     setDisabled($("#lgBrand"), arr(brandData.brands).length < 2, "Only one brand");
     $("#lgMode").innerHTML = [["", "All"], ["research", "Research"], ["create", "Create & publish"], ["publish", "Publish"]].map(([v, t]) => `<button class="btn" type="button" data-mode="${v}" aria-pressed="${v === lgMode}">${esc(withCount(t, allLogs.filter((l) => (!brand || hasBrand(l, brand)) && (!v || l.mode === v)).length))}</button>`).join("");
     for (const b of $$("#lgMode button")) b.onclick = () => { lgMode = b.dataset.mode; store.set("lgMode", lgMode); loadLogs(); };
@@ -2088,11 +2149,13 @@ header + * { margin-top: 0; }
     if (r.error) { $("#draftList").innerHTML = errLine(r.error); return; }
     if (!arr(brandData.brands).length) { const b = await getJson("/api/brands").catch(() => ({})); if (b.brands) brandData = b; }
     const everyDraft = arr(r.drafts);
-    $("#drBrand").innerHTML = `<option value="">All</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(withCount(b.brand || b.id, everyDraft.filter((d) => d.brand === b.id && stateOf(d) === (drState || "review")).length))}</option>`).join("");
-    setDisabled($("#drBrand"), arr(brandData.brands).length < 2, "Only one brand");
     const drafts = everyDraft.filter((d) => !brand || d.brand === brand);
     const count = (k) => drafts.filter((d) => stateOf(d) === k).length;
     if (!STATES.some(([k]) => k === drState)) drState = count("review") ? "review" : count("approved") ? "approved" : "scheduled";
+    // Each brand (and All): its posts in the current Show state.
+    const inState = (id) => everyDraft.filter((d) => (!id || d.brand === id) && stateOf(d) === drState).length;
+    $("#drBrand").innerHTML = `<option value="">${esc(withCount("All", inState("")))}</option>` + az(brandData.brands, (b) => b.brand || b.id).map((b) => `<option value="${esc(b.id)}"${b.id === brand ? " selected" : ""}>${esc(withCount(b.brand || b.id, inState(b.id)))}</option>`).join("");
+    setDisabled($("#drBrand"), arr(brandData.brands).length < 2, "Only one brand");
     $("#drState").innerHTML = STATES.map(([k, t]) => `<button class="btn" type="button" data-state="${k}" aria-pressed="${k === drState}">${esc(withCount(t, count(k)))}</button>`).join("");
     for (const b of $$("#drState button")) b.onclick = () => { drState = b.dataset.state; store.set("drState", drState); loadDrafts(); };
     const making = drafts.filter((d) => !stateOf(d) && d.status !== "rejected").length, failed = drafts.filter((d) => stateOf(d) && failedOf(d)).length;
