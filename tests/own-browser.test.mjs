@@ -25,7 +25,8 @@ test('launcher command: user-data-dir, no-first-run, only allow-listed URLs', ()
   const c = loginCommand({ browser: b, profileDir: '/p', plat: 'linux' });
   assert.equal(c.cmd, '/x/chrome');
   assert.deepEqual(c.args.slice(0, 3), ['--user-data-dir=/p', '--no-first-run', '--no-default-browser-check']);
-  assert.deepEqual(c.args.slice(3), LOGIN_URLS);
+  assert.deepEqual(c.args.slice(3, 5), ['--window-size=1280,800', '--window-position=80,60']);
+  assert.deepEqual(c.args.slice(5), LOGIN_URLS);
   assert.deepEqual(LOGIN_URLS, ['https://www.facebook.com/', 'https://www.instagram.com/', 'https://www.pinterest.com/', 'https://www.etsy.com/', 'https://www.houzz.com/', 'https://flow.google.com/']);
   assert.equal(loginCommand({ browser: b, profileDir: '/p', plat: 'darwin' }).cmd, 'open');
 });

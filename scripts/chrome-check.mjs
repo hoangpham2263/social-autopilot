@@ -53,8 +53,7 @@ export function checkScript(platforms) {
   ${classifyPage.toString()}
   const res = { ok: false, hidden: null, focus: null, tabs: 0, platforms: {}, seconds: 0 };
   try {
-    await page.bringToFront();
-    await page.waitForTimeout(300);
+    // no bringToFront: the person keeps working in other apps; a background (hidden) tab is normal and the scripts work in it.
     const v = await page.evaluate(() => ({ s: document.visibilityState, f: document.hasFocus() }));
     res.hidden = v.s !== 'visible'; res.focus = !!v.f; res.ok = true;
     res.tabs = page.context().pages().length;
@@ -90,7 +89,7 @@ export function checkChrome(args) {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, 'chrome-check.js');
   fs.writeFileSync(file, checkScript(platforms) + '\n');
-  process.stdout.write(JSON.stringify({ file, platforms, brands: brands.map((b) => b.id), run: 'browser_run_code_unsafe with filename = file (do not paste it); it returns ONE compact JSON. Save it to a file and record it: node scripts/research.mjs chrome-record --state ok --result-file <that file> (hidden:true -> bringToFront again and re-run; ok:false -> --state fail --note). Read only: never sign in for the user.' }) + '\n');
+  process.stdout.write(JSON.stringify({ file, platforms, brands: brands.map((b) => b.id), run: 'browser_run_code_unsafe with filename = file (do not paste it); it returns ONE compact JSON. Save it to a file and record it: node scripts/research.mjs chrome-record --state ok --result-file <that file> (hidden:true is normal: the tab runs in the background, never bring Chrome to the front; ok:false -> --state fail --note). Read only: never sign in for the user.' }) + '\n');
 }
 
 // ---- recording (research.mjs chrome-record) ----
@@ -103,7 +102,7 @@ export function parseResult(text) {
   return o;
 }
 export function recordCheck({ state, note = '', result = null, now = new Date() }) {
-  if (state === 'ok' && result && result.hidden === true) throw new Error('--state ok refused: hidden:true (the tab is in the background). Call browser_run_code_unsafe with page.bringToFront() again and re-run the check.');
+  // hidden:true (the tab is in the background) is accepted: runs never focus Chrome (Playwright MCP background mode, PLAYWRIGHT_MCP_BACKGROUND=1), the scripts work hidden.
   if (state === 'ok' && result && result.ok === false) throw new Error('--state ok refused: the check says ok:false. Use --state fail --note "<reason>".');
   const platforms = {};
   for (const [id, p] of Object.entries(result?.platforms || {})) platforms[id] = { signed_in: p.signed_in === false ? false : p.signed_in === true ? true : 'unknown', wall: p.wall || null, ...(p.error ? { error: String(p.error).slice(0, 80) } : {}) };
@@ -127,7 +126,7 @@ export function checkStatus(rec, minutes = chromeCheckMinutes(), now = Date.now(
   if (!rec) return { ...base, ok: false, reason: 'not run', unavailable: {} };
   const age = Math.max(0, Math.round((now - Date.parse(rec.at)) / 60000));
   if (rec.state !== 'ok') return { ...base, ok: false, reason: 'last check failed' + (rec.note ? `: ${rec.note}` : ''), age_minutes: age, unavailable: {} };
-  if (rec.hidden) return { ...base, ok: false, reason: 'tab hidden', age_minutes: age, unavailable: {} };
+  // rec.hidden (the tab was in the background) is not a failure: runs never bring Chrome to the front.
   if (minutes > 0 && age > minutes) return { ...base, ok: false, reason: 'expired', age_minutes: age, unavailable: unavailableOf(rec) };
   return { ...base, ok: true, reason: '', age_minutes: age, unavailable: unavailableOf(rec) };
 }

@@ -8,7 +8,7 @@ test('check script: valid async function, only the given platforms, bounded wait
   const code = checkScript(['facebook', 'pinterest']);
   assert.doesNotThrow(() => new Function(`return (${code})`));
   assert.ok(code.includes(HOMES.facebook) && code.includes(HOMES.pinterest) && !code.includes(HOMES.houzz));
-  assert.ok(code.includes('page.bringToFront()') && code.includes('visibilityState') && code.includes('hasFocus'));
+  assert.ok(!code.includes('page.bringToFront()') && code.includes('visibilityState') && code.includes('hasFocus'));
   assert.ok(!/waitForFunction|\.click\(|\.fill\(|\.type\(|token/.test(code));
   assert.ok(/timeout: 6000/.test(code) && /34000/.test(code));
 });
@@ -22,8 +22,8 @@ test('classifyPage: login walls, captcha, no-login platforms', () => {
   assert.deepEqual(classifyPage('etsy', { url: 'https://www.etsy.com/', text: 'Welcome' }), { signed_in: 'unknown', wall: null });
 });
 
-test('recordCheck: refuses ok with hidden, keeps old flags (no result)', () => {
-  assert.throws(() => recordCheck({ state: 'ok', result: { ok: true, hidden: true } }), /bringToFront/);
+test('recordCheck: accepts ok with hidden (background tab), keeps old flags (no result)', () => {
+  assert.equal(recordCheck({ state: 'ok', result: { ok: true, hidden: true } }).hidden, true);
   assert.throws(() => recordCheck({ state: 'ok', result: { ok: false } }), /ok:false/);
   const r = recordCheck({ state: 'ok', result: { ok: true, hidden: false, tabs: 2, platforms: { facebook: { signed_in: false, wall: 'login', ms: 5 }, etsy: { signed_in: 'unknown', wall: null } } }, now: new Date('2026-11-11T10:00:00Z') });
   assert.equal(r.hidden, false); assert.equal(r.tabs, 2); assert.equal(r.platforms.facebook.signed_in, false);

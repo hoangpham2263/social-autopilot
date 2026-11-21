@@ -1,5 +1,5 @@
 // Generic collector (Mode 1 step 1.2), the ONE research path: the agent opens the page or search URL with Playwright MCP,
-// scrolls it with normal Playwright MCP actions (scrollBy from next.scroll, mouse.wheel only as the fallback, 1-2 times, research.scroll_wait_seconds) and decides when
+// scrolls it with normal Playwright MCP actions (scrollBy from next.scroll, never mouse.wheel: it hangs in a background tab, 1-2 times, research.scroll_wait_seconds) and decides when
 // to stop; to read the data it runs ONE extract script that reads what is on the page now and returns at once. The AI writes
 // / fixes the platform adapters (scripts/platforms/<platform>.mjs, SELECTORS) and judges the images.
 //   node scripts/collect.mjs script (--platform <id> (--query <q> | --url <u>) | --brand <id> --for-query <qid> | --for-source <sid>) [--seen <file>] [--max N] [--once]

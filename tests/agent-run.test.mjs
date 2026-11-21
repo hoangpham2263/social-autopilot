@@ -377,7 +377,7 @@ test('friendly live lines: Vietnamese mapping, repeat counter, no tool names or 
 test('mcpConfig: own browser flags, headless on/off, no extension, no profile env', () => {
   const own = { userDataDir: '/p/browser-profile', headless: true, outputDir: '/p/out' };
   const a = mcpConfig({ plat: 'linux', own }).mcpServers.playwright;
-  assert.deepEqual(a.args, ['@playwright/mcp@latest', '--browser', 'chrome', '--user-data-dir', '/p/browser-profile', '--headless', '--viewport-size', '1280x900', '--output-dir', '/p/out']);
+  assert.deepEqual(a.args, ['@playwright/mcp@latest', '--browser', 'chrome', '--user-data-dir', '/p/browser-profile', '--headless', '--viewport-size', '1280x800', '--output-dir', '/p/out']);
   assert.equal(a.command, 'npx'); assert.equal(a.env, undefined); assert.ok(!a.args.includes('--extension'));
   const w = mcpConfig({ plat: 'win32', own: { ...own, headless: false } }).mcpServers.playwright;
   assert.deepEqual(w.args.slice(0, 3), ['/c', 'npx', '@playwright/mcp@latest']); assert.ok(!w.args.includes('--headless'));

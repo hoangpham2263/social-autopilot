@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir } from "node:os";
 import { classifyProblem } from "./agent-problems.mjs";
-import { browserSettings } from "./own-browser.mjs";
+import { browserSettings, WINDOW_SIZE } from "./own-browser.mjs";
 import { extensionProfileProblem, extensionToken } from "./chrome.mjs";
 
 export const MODES = ["research", "create", "publish", "sync"]; // sync = refresh the Metricool brand list (short, read only, no browser)
@@ -111,18 +111,24 @@ export function friendlyTool(name, input = {}) {
 
 export function mcpArgs(own = null, profile = "") {
   // --session-name / --session-color: title and color of the Chrome tab group of this run, so the tool's tabs are easy to tell apart.
+  // Background mode (PLAYWRIGHT_MCP_BACKGROUND=1 in mcpConfig, = the --background flag of Playwright MCP 0.0.86+, checked in its
+  // cdpRelay/browserModel source; the env var is used because an older cached version would refuse an unknown flag): the relay turns Page.bringToFront and
+  // Target.activateTarget into no-ops (so page.bringToFront() and browser_tabs select never raise Chrome), new tabs open with
+  // active:false, the extension skips its chrome.windows.update({ focused: true }) after Connect, and with a token the Connect page opens
+  // with --open-in-background. Without it every run pulled Chrome to the front while the person worked in other apps.
   if (!own) return ["@playwright/mcp@latest", "--extension", ...(profile ? ["--profile-dir-name", profile] : []), "--session-name", "Social Autopilot", "--session-color", "orange"];
-  return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", "1280x900", ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
+  // Own browser: the page size of the tool's window (WINDOW_SIZE of own-browser.mjs: compact, never below ~1024x700 or sites go mobile).
+  return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", `${WINDOW_SIZE.width}x${WINDOW_SIZE.height}`, ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
 }
 export function mcpConfig({ plat = osPlatform(), profile = "", own = null } = {}) {
   const a = mcpArgs(own, profile);
   const server = plat === "win32" ? { command: "cmd", args: ["/c", "npx", ...a] } : { command: "npx", args: a };
-  if (profile && !own) server.env = { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile };
+  if (!own) server.env = { ...(profile ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), PLAYWRIGHT_MCP_BACKGROUND: "1" };
   return { mcpServers: { playwright: server } };
 }
 
 // Extension mode (browser.mode "extension"): the person's everyday Chrome. The person is at the screen and clicks Connect.
-export const extensionNote = "RUN-NOW NOTE: this run uses the person's everyday Chrome through the Playwright extension, so the person is at the computer and will click Connect in Chrome.\nIf browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail: the Playwright MCP has ALREADY opened that page, do NOT open a second copy; bring it to the front with browser_run_code_unsafe: async (page) => { await page.bringToFront(); } and tell the person in one line to click Connect. Then wait up to 3 minutes, calling browser_tabs about every 15 seconds, until a real page tab appears. If nothing connects, stop and report that Chrome did not connect.\nDownloads: this mode cannot use download.saveAs; click the download button, then take the newest file from the Downloads folder.\n\n";
+export const extensionNote = "RUN-NOW NOTE: this run uses the person's everyday Chrome through the Playwright extension, so the person is at the computer and will click Connect in Chrome.\nThe person keeps working in other apps while you run: NEVER bring Chrome to the front, focus or activate a tab or window (no page.bringToFront, no browser_tabs select just to show a tab, no new windows); your tabs run in the background (their own tab group) and a hidden tab is normal: wait with page.waitForTimeout, scroll with window.scrollBy, never page.mouse.wheel; if a click times out on 'not stable', use locator.click({ force: true }) in browser_run_code_unsafe.\nIf browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail: the Playwright MCP has ALREADY opened that page, do NOT open a second copy and do not bring it to the front; tell the person in one line to click Connect in Chrome. Then wait up to 3 minutes, calling browser_tabs about every 15 seconds, until a real page tab appears. If nothing connects, stop and report that Chrome did not connect.\nDownloads: this mode cannot use download.saveAs; click the download button, then take the newest file from the Downloads folder.\n\n";
 
 // Own-browser note put in front of the prompt of a run that uses the browser.
 export const ownNote = (headless = true) => `RUN-NOW NOTE: this run uses the tool's OWN browser (a dedicated Chrome profile the person already logged in to${headless ? ", running in the background (headless)" : ""}). There is no Connect step and no extension: ignore any instruction to click Connect, run chrome-connect.mjs or wait for the person; start with browser_tabs or browser_navigate.

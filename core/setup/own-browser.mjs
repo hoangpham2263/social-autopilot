@@ -53,9 +53,16 @@ export function profileProblem({ dir, locked, exists, windowOpen = false }) {
   return "";
 }
 
+// The size and place of every Chrome window the tool opens: compact, not covering the whole screen, and never narrower than ~1024x700
+// (narrower windows switch Facebook / Instagram / Flow to their mobile layouts, which breaks the extract selectors and cramps Flow).
+// Chrome reads these switches when it STARTS a window of a new instance (the own profile); a window added to an already running everyday
+// Chrome may keep that Chrome's last size.
+export const WINDOW_SIZE = { width: 1280, height: 800 };
+export const WINDOW_ARGS = [`--window-size=${WINDOW_SIZE.width},${WINDOW_SIZE.height}`, "--window-position=80,60"];
+
 // The command that opens the visible login window. Pure. One tab per site, or just the chosen one.
 export function loginCommand({ browser, profileDir, urls = LOGIN_URLS, plat = process.platform }) {
-  const tail = [`--user-data-dir=${profileDir}`, "--no-first-run", "--no-default-browser-check", ...urls];
+  const tail = [`--user-data-dir=${profileDir}`, "--no-first-run", "--no-default-browser-check", ...WINDOW_ARGS, ...urls];
   if (plat === "darwin") {
     const app = { chrome: "Google Chrome", edge: "Microsoft Edge", brave: "Brave Browser" }[browser.kind] || "Google Chrome";
     return { cmd: "open", args: ["-n", "-W", "-a", app, "--args", ...tail] };
@@ -82,7 +89,7 @@ export function openLoginBrowser({ platform = "", settings = {}, toolRoot, works
     if (!br.found) throw new Error("No Chrome (or Edge/Brave) was found. Install Google Chrome, or set research.chrome_path in workspace/settings.json.");
     const acc = String(settings?.browser?.flow_account || "");
     const list = (tgt ? [tgt.url] : LOGIN_URLS).map((u) => (u === "https://flow.google.com/" ? flowOpenUrl(acc) : u));
-    const tail = ["--profile-directory=" + prof, ...list];
+    const tail = ["--profile-directory=" + prof, ...WINDOW_ARGS, ...list];
     const run = plat === "darwin" ? { cmd: "open", args: ["-na", br.kind === "edge" ? "Microsoft Edge" : br.kind === "brave" ? "Brave Browser" : "Google Chrome", "--args", ...tail] } : { cmd: br.path, args: tail };
     const go2 = start || ((c, a) => { const p = spawn(c, a, { detached: true, stdio: "ignore" }); p.on("error", () => {}); p.unref(); });
     go2(run.cmd, run.args);
