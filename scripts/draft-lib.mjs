@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { cleanProblems } from './image-clean.mjs';
 import { readStore, postKey } from './store.mjs';
-import { ideaSignProblems, promptProblems, signCheckProblems, WORKFLOW_VERSION } from './signtext.mjs';
+import { ideaSignProblems, promptProblems, signCheckProblems, WORKFLOW_VERSION, draftSignMode } from './signtext.mjs';
 import { loadBrand, readJson, brandSocial, projectField, hasHidden, sharedWords, aiLabelHits, brandLanguages, reviewLanguages } from './lib.mjs';
 
 // Which caption languages of a draft are posted and which are only for the approver to read (social.json
@@ -78,8 +78,8 @@ export function checkDraft(dir, draft, status = {}) {
     if (tag && !text.trim().split(/\r?\n/).at(-1)?.split(/\s+/).includes(tag)) problems.push(`${f} thiếu hashtag ${tag} ở dòng cuối`);
     const hits = sharedWords(text, refCaption);
     if (hits.length) problems.push(`${f} chép chữ bài tham khảo: "${hits[0]}"`);
-    // Custom-text products: every caption (posted and reviewer-only) quotes the sign's real text; never a template placeholder ("Your Names").
-    if (draft.sign_text && !text.toLowerCase().includes(String(draft.sign_text).toLowerCase())) problems.push(`${f} không nhắc đúng chữ trên bảng "${draft.sign_text}"`);
+    // Sign text: every caption (posted and reviewer-only) quotes it (sign mode placeholder: not quoted as a name); scene mode: never a template placeholder.
+    if (draft.sign_text && draftSignMode(draft) !== 'placeholder' && !text.toLowerCase().includes(String(draft.sign_text).toLowerCase())) problems.push(`${f} không nhắc đúng chữ trên bảng "${draft.sign_text}"`);
     if (draft.custom_text && PLACEHOLDER_IN_CAPTION.test(text)) problems.push(`${f} còn chữ mẫu kiểu "Your Names"/"Your Logo": dùng đúng chữ trên bảng`);
     const shop = String(draft.inspiration.source_shop || '').trim();
     if (draft.image_mode === 'scene-swap' && shop.length > 2 && text.toLowerCase().includes(shop.toLowerCase())) problems.push(`${f} nhắc tên shop nguồn "${shop}"`);
@@ -93,8 +93,8 @@ export function checkDraft(dir, draft, status = {}) {
     if (!draft.ref_text) problems.push('keep-scene: thiếu ref_text (chữ đang có trên sản phẩm trong ảnh tham khảo)');
     else if (sameSignText(draft.sign_text, draft.ref_text)) problems.push(`keep-scene: sign_text "${draft.sign_text}" trùng chữ của ảnh tham khảo; phải là chữ mới`);
   }
-  // Sign wording workflow (custom-text brands), steps 1-5 once more; drafts made before it (no sign_workflow) only get warnings.
-  if (draft.custom_text && draft.sign_text) {
+  // Sign wording workflow (brands with a sign mode: scene or placeholder), steps 1-5 once more; drafts made before it (no sign_workflow) only get warnings.
+  if (draftSignMode(draft) && draft.sign_text) {
     const enforce = draft.sign_workflow >= WORKFLOW_VERSION, bucket = enforce ? problems : warnings;
     try {
       const m = refModeOf(draft);

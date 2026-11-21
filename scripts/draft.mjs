@@ -14,8 +14,9 @@
 //        --size "<real size, e.g. 91 cm (36 in) wide>" (required; from the skill: social.json product_images.size_source)
 //        --compare "<comparison object + its real size, e.g. the 4-seat table below, 120 cm (47 in) wide>" (named in the
 //        prompt with the proportion limits; tool defaults or social.json product_images.size_limits) [--frame-max N] [--close-up]
-//        --sign-text "<text on the product>" (required when product_images.custom_text: a context text, never the template
-//        placeholder; rules in the skill's references/image-guide.md and project.md section 10)
+//        --sign-text "<text on the product>" (sign mode from the skill's "Sign wording rules" table, signtext.mjs signMode: scene =
+//        required, NEW wording that fits the scene, never a template placeholder; placeholder = the idea's row placeholder exactly,
+//        filled by the tool when omitted; rules in the skill's references/image-guide.md and project.md section 10)
 //   node scripts/draft.mjs image-batch --brand <id|all> [--concurrency 3] [--force]
 //        the image step for every draft waiting for an image, several Codex processes at once (settings
 //        codex.concurrency, default 3; each draft keeps its own codex.log), each cleaned right after; captions can be
@@ -56,7 +57,7 @@ import { unsparkleFile } from './image/unsparkle.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords, readBrandOverride } from './lib.mjs';
 import { readStore, storeDir, storeIdeasFile, markUsed, reuseProblems } from './store.mjs';
 import { track } from './progress.mjs';
-import { ideaSignProblems, promptProblems, signRules, requireSignRules, cause, WORKFLOW_VERSION, perImageSigns, albumSignOf, albumSignProblems } from './signtext.mjs';
+import { ideaSignProblems, promptProblems, signRules, requireSignRules, cause, WORKFLOW_VERSION, perImageSigns, albumSignOf, albumSignProblems, signMode, draftSignMode, placeholderOf, signLines } from './signtext.mjs';
 import { contactSheet } from './contact-sheet.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
@@ -133,7 +134,7 @@ export function newDraft(args) {
   const refInfo = { mode: refMode, text: String(args['ref-text'] && args['ref-text'] !== true ? args['ref-text'] : idea.ref_text || '').trim() };
   let sized;
   try { requireSignRules(brand); sized = sizeAndText(brand, args, idea, refInfo, { idea, enforce: true }); } catch (e) { fs.rmSync(dir, { recursive: true, force: true }); throw e; }
-  const { size: productSize, signText, customText } = sized;
+  const { size: productSize, signText, customText, mode: signModeOf } = sized;
   const so = sizeOpts(args, idea);
   // The same library item again only from a new angle: a different scene OR a different sign_text (same scene + text + product = repeat).
   for (const it of new Set([idea.item, refUsed.id].filter(Boolean))) {
@@ -142,7 +143,7 @@ export function newDraft(args) {
     if (rp.length) { fs.rmSync(dir, { recursive: true, force: true }); throw new Error(`Repeat of an earlier post from the same library item: ${rp.join('; ')}`); }
   }
   const draft = {
-    id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(), product_size: productSize, ...(so.compare ? { size_compare: so.compare } : {}), ...(so.frameMax ? { frame_pct_max: so.frameMax } : {}), ...(so.closeUp ? { close_up: true } : {}), ...(signText ? { sign_text: signText } : {}), custom_text: customText, ...(customText ? { sign_workflow: WORKFLOW_VERSION } : {}),
+    id, brand: brand.id, brand_name: brand.brand, brand_dir: brand.dir, created: stamp(), product_size: productSize, ...(so.compare ? { size_compare: so.compare } : {}), ...(so.frameMax ? { frame_pct_max: so.frameMax } : {}), ...(so.closeUp ? { close_up: true } : {}), ...(signText ? { sign_text: signText } : {}), custom_text: customText, ...(signModeOf !== 'none' ? { sign_mode: signModeOf, sign_workflow: WORKFLOW_VERSION } : {}),
     idea: { run: 'store', id: idea.id, ...Object.fromEntries(['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why', 'audience', 'scene_type', 'text_reason'].map((f) => [f, idea[f] || ''])) },
     inspiration: { run: refUsed.run || 'store', ref: refUsed.id || idea.item, store_item: refUsed.id || idea.item, source: refUsed.source_id || '', source_shop: refUsed.store || '', source_url: refUsed.source_url || '', post_url: refUsed.post_url || '' },
     image_mode: imageMode, ...(imageMode === 'scene-swap' ? { reference_image: product, require_logo_removal: brand.social.product_images.reference_redraw.require_logo_removal !== false, ref_mode: refMode, ref_has_face: refHasFace, ...(refInfo.text ? { ref_text: refInfo.text } : {}) } : {}),
@@ -180,8 +181,8 @@ export function newDraft(args) {
   fs.writeFileSync(path.join(dir, 'brief.md'), fill(fs.readFileSync(path.join(toolRoot, 'prompts', 'caption-brief.md'), 'utf8'), {
     BRAND: brand.brand, SKILL: path.join(brand.skillRoot || brand.dir, 'SKILL.md'), PROJECT: path.join(brand.dir, 'project', 'project.md'),
     SIGN_TEXT_NOTE: [refNote(refMode, refInfo.text, signText),
-      signText ? 'Chữ trên bảng là "' + signText + '": caption (mọi ngôn ngữ) nhắc đúng chữ này, không viết chữ mẫu kiểu "Your Names".' : '',
-      customText ? 'Viết caption TỪ Ý + người xem (audience, hook, why trong IDEA bên dưới), không viết theo những gì thấy trong ảnh; ảnh chỉ để xác nhận chữ trên bảng đúng.' : ''].filter(Boolean).join(' '),
+      signText && signModeOf === 'placeholder' ? 'Bảng hiện chữ giữ chỗ "' + signText + '" (khách tự điền chữ): caption không trích chữ này như tên khách, có thể nói kiểu "your name here"; không bịa tên khách.' : signText ? 'Chữ trên bảng là "' + signText + '": caption (mọi ngôn ngữ) nhắc đúng chữ này, không viết chữ mẫu kiểu "Your Names".' : '',
+      signModeOf !== 'none' ? 'Viết caption TỪ Ý + người xem (audience, hook, why trong IDEA bên dưới), không viết theo những gì thấy trong ảnh; ảnh chỉ để xác nhận chữ trên bảng đúng.' : ''].filter(Boolean).join(' '),
     IDEA: JSON.stringify(draft.idea, null, 2), NETWORKS: networks.map((x) => `- ${x.network} (${x.account || 'chưa có account'}): ${x.lang.join(', ')}`).join('\n') + `\nlanguage_policy.mode: ${mode}${brand.social.language_policy?.note ? ` (${brand.social.language_policy.note})` : ''}`,
     SECTIONS: [].concat(brand.social.caption_rules?.project_md_sections || []).join('; ') || '1, 3, 7, 8, 10, 11',
     FILES: [...brand.languages.map((l) => `- content-${l}.txt`), ...(brand.review_languages || []).map((l) => `- content-${l}.txt (chỉ để người dùng đọc, KHÔNG đăng; cùng giọng thương hiệu, cùng quy tắc)`)].join('\n'),
@@ -206,8 +207,8 @@ function refNote(mode, refText, signText) {
   return '';
 }
 
-// The real size (required) and, for custom-text products (social.json product_images.custom_text), the context text
-// shown on the product. The rules live in the brand's skill (references/image-guide.md, project.md section 10).
+// The real size (required) and, for brands with a sign mode (signtext.mjs signMode: scene = NEW wording, placeholder = the row's
+// placeholder), the text shown on the product. The rules live in the brand's skill (references/image-guide.md, project.md section 10).
 // Reference-based (user 10/11/2026): new-scene keeps the product's text, so --sign-text only records what the reference
 // already reads (for the caption check; --clear-sign-text drops it when not readable for sure). keep-scene puts NEW text
 // on the product: --sign-text is required and must differ from --ref-text (what the reference reads).
@@ -215,22 +216,24 @@ function sizeAndText(brand, args, from = {}, ref = {}, ctx = null) {
   const str = (k) => (args[k] && args[k] !== true ? String(args[k]).trim() : '');
   const size = str('size') || String(from.product_size || '').trim();
   if (!size) throw new Error(`Missing --size: the product's real size (where: ${brand.social.product_images?.size_source || 'project.md mục 5/10'}).`);
-  const customText = brand.social.product_images?.custom_text === true;
-  const signText = args['clear-sign-text'] ? '' : str('sign-text') || String(from.sign_text || '').trim();
-  if (customText && !signText) throw new Error(cause('missing-sign-text', 'This brand has custom-text products (product_images.custom_text): give --sign-text, NEW English wording that fits the scene and audience (never the reference wording or a template placeholder).'));
-  if (signText && PLACEHOLDER.test(signText)) throw new Error(`--sign-text "${signText}" is a template placeholder: choose a text that fits the scene.`);
+  const mode = signMode(brand), customText = mode === 'scene', placeholder = mode === 'placeholder';
+  let signText = args['clear-sign-text'] ? '' : str('sign-text') || String(from.sign_text || '').trim();
+  // Placeholder mode: the wording is the idea's row placeholder (scene_type = product handle); the tool fills it when omitted.
+  if (placeholder && !signText && !args['clear-sign-text']) signText = placeholderOf(brand, ctx?.idea?.scene_type || from.scene_type) || '';
+  if (customText && !signText) throw new Error(cause('missing-sign-text', 'This brand writes NEW sign wording per post (sign mode scene): give --sign-text, NEW English wording that fits the scene and audience (never the reference wording or a template placeholder).'));
+  if (signText && !placeholder && PLACEHOLDER.test(signText)) throw new Error(`--sign-text "${signText}" is a template placeholder: choose a text that fits the scene.`);
   // Custom-text brands change the words in BOTH reference modes (keep-scene and new-scene): the reference wording is never reused.
   if (ref.mode === 'keep-scene' || (customText && ref.mode && ref.mode !== 'legacy')) {
     if (!ref.text) throw new Error(cause('missing-ref-text', `${ref.mode}: give --ref-text, the text the product reads in the reference photo (exactly as seen; "unreadable" when it cannot be read).`));
     if (!signText) throw new Error(cause('missing-sign-text', `${ref.mode}: give --sign-text, the NEW text for the product (fits the scene and audience; no placeholder, no third-party brand, no real customer name).`));
-    if (sameSignText(signText, ref.text)) throw new Error(cause('sign-copied-from-reference', `${ref.mode}: --sign-text "${signText}" is the reference's own text; write a new one.`));
+    if (!placeholder && sameSignText(signText, ref.text)) throw new Error(cause('sign-copied-from-reference', `${ref.mode}: --sign-text "${signText}" is the reference's own text; write a new one.`));
   }
   // Steps 1-3 again at the draft (audience, scene_type fits the scene, English, not copied, not one of the last 10): a draft cannot skip them.
-  if (customText && ctx?.enforce) {
+  if (mode !== 'none' && ctx?.enforce) {
     const p = ideaSignProblems(brand, { ...ctx.idea, sign_text: signText, ref_text: ref.text || ctx.idea?.ref_text || '', ref_mode: ref.mode || '' }, { exceptDraft: ctx.draftId || '', exceptIdea: ctx.idea?.id || '' });
     if (p.length) throw new Error(p.join(' | '));
   }
-  return { size, signText, customText };
+  return { size, signText, customText, mode };
 }
 export const PLACEHOLDER = /\byour\s+(names?|logo|bar(\s+name)?|business(\s+name)?|name\s+here|text|brand|shop(\s+name)?|company)\b/i;
 
@@ -275,11 +278,17 @@ function proportionFill(brand, o = {}, ref = {}) {
     SMALLER: o.smaller ? `\n- The previous image drew it too big: make the product about ${o.smaller}% smaller than in that attempt (it was drawn bigger than its real size), well inside the limits above; the room stays the same.` : '',
   };
 }
+// Placeholder mode: " / " in sign_text marks a line break (never drawn).
+const lineNote = (t) => signLines(t).length > 1 ? ` (${signLines(t).length} lines: ${signLines(t).map((l, i) => `line ${i + 1} "${l}"`).join(', ')}; " / " only marks the line break and is never drawn)` : '';
 function sizeTextFill(brand, size, signText, o = {}, ref = {}) {
+  const mode = signMode(brand);
+  if (mode === 'placeholder' && signText) return { SIZE: size, ...proportionFill(brand, o, ref), IMAGE_GUIDE: path.join(brand.skillRoot || brand.dir, 'references', 'image-guide.md'),
+    SIGN_TEXT_RULE: (ref.mode && ref.mode !== 'legacy' ? `The product in the reference reads "${ref.text || 'its own wording'}". Replace that text ENTIRELY with the brand's placeholder text, exactly: ` : 'The sign shows the brand\'s placeholder text (the customer fills in their own), exactly: ')
+      + `"${signText}"${lineNote(signText)}, character for character. Use the product's own lettering style/font, colours, glow, layout and number of lines; fixed parts of the design stay as they are. No other words, no real or customer names, no brand or shop name.` };
   return {
     SIZE: size,
     ...proportionFill(brand, o, ref),
-    SIGN_TEXT_RULE: ref.mode === 'keep-scene' || (brand.social.product_images?.custom_text === true && ref.mode && ref.mode !== 'legacy')
+    SIGN_TEXT_RULE: ref.mode === 'keep-scene' || (mode === 'scene' && ref.mode && ref.mode !== 'legacy')
       ? `The product in the reference reads "${ref.text}". Replace that text ENTIRELY with exactly: "${signText}" (character for character, do not translate or correct it). Use the same lettering style/font, colours, glow, layout, size and number of lines as the original, on the same place of the product. No trace of the old text may remain; no other words, no placeholder, no brand or shop name.`
       : ref.mode
       ? `Keep the product's text EXACTLY as in the reference photo: the same characters/letters, script, orientation, layout, font, colours and number of lines${signText ? ` (it reads: "${signText}")` : ''}. Do not change, translate, correct (not even a character that looks mirrored) or add any text on the product.`
@@ -292,7 +301,7 @@ function reprompt(args) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const brand = loadBrand(draft.brand, { allowDisabled: true });
   const refInfo = { mode: refModeOf(draft), text: String(args['ref-text'] && args['ref-text'] !== true ? args['ref-text'] : draft.ref_text || '').trim() };
-  const { size, signText, customText } = sizeAndText(brand, args, { product_size: draft.product_size, sign_text: draft.sign_text }, refInfo, { idea: draft.idea, draftId: draft.id, enforce: draft.sign_workflow >= WORKFLOW_VERSION || !!args['sign-text'] });
+  const { size, signText, customText, mode: smode } = sizeAndText(brand, args, { product_size: draft.product_size, sign_text: draft.sign_text, scene_type: draft.idea?.scene_type }, refInfo, { idea: draft.idea, draftId: draft.id, enforce: draft.sign_workflow >= WORKFLOW_VERSION || !!args['sign-text'] });
   const so = sizeOpts(args, draft);
   const old = fs.existsSync(path.join(dir, 'prompt.txt')) ? fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8') : '';
   const kept = (old.match(/THE PRODUCT[^\n]*\n([\s\S]*?)\n(?:Keep |Real size)/) || [])[1] || '';
@@ -306,7 +315,7 @@ function reprompt(args) {
     ...sizeTextFill(brand, size, signText, so, refInfo),
   }), 'utf8');
   writeExtraPrompts(dir, draft, brand, { ...sizeTextFill(brand, size, signText, so, refInfo), ...(description ? { PRODUCT_DESCRIPTION: description } : {}) });
-  const next = { ...draft, product_size: size, custom_text: customText, ...(refInfo.text ? { ref_text: refInfo.text } : {}) };
+  const next = { ...draft, product_size: size, custom_text: customText, ...(smode !== 'none' ? { sign_mode: smode } : {}), ...(refInfo.text ? { ref_text: refInfo.text } : {}) };
   for (const [k, v] of [['size_compare', so.compare], ['frame_pct_max', so.frameMax], ['close_up', so.closeUp || undefined], ['size_smaller', so.smaller || undefined]]) if (v) next[k] = v; else delete next[k];
   if (signText) next.sign_text = signText; else delete next.sign_text;
   if (args['album-signs'] && args['album-signs'] !== true) {
@@ -555,22 +564,23 @@ export function flowBrief(args, s = settings()) {
   // tags [image] go into every condensed prompt below (keep-scene, new-scene, brand-image, album extras). Step 4 checkpoint: the
   // prompt dir must carry the exact wording, else this fails with [CAUSE:prompt-missing-sign-text].
   let signBlock = null, signTail = '';
-  if (draft.custom_text && sign) {
+  if (draftSignMode(draft)) { // context on: the [image] lines go into every prompt, also for a product with no lettering
     const brandObj = loadBrand(draft.brand, { allowDisabled: true });
     signBlock = signRules(brandObj);
-    if (draft.sign_workflow >= WORKFLOW_VERSION) {
+    if (draft.sign_workflow >= WORKFLOW_VERSION && sign) {
       if (!signBlock) throw new Error(cause('skill-missing-sign-rules', draft.brand + ': project.md section 10 has no "### Sign wording rules" block.'));
       const pp = promptProblems(dir, draft);
       if (pp.length) throw new Error(pp.join(' | '));
     }
     if (signBlock?.image.length) signTail = ' SIGN WORDING RULES: ' + signBlock.image.map((x) => q(x)).join(' ');
+    if (sign && draftSignMode(draft) === 'placeholder') signTail += ` The sign reads exactly "${q(sign)}"${lineNote(sign)}.`;
   }
   const common = 'Square 1:1 frame. No people, no other text, no logos.' + signTail;
   let prompt, ref = '', album_scene = '';
   if (n === 1) {
     ref = (draft.image_mode === 'scene-swap' ? draft.reference_image : draft.product_image) || '';
     if (mode === 'keep-scene' && sign && draft.ref_text) prompt = `Edit the attached photo. Keep the exact same scene: ${q(idea.scene)}. Change only the words of the sign: replace "${q(draft.ref_text)}" with exactly "${q(sign)}", in the same lettering style, colours, layout and number of lines as the original, same position and size. Extend the scene naturally to a square 1:1 frame without stretching. No people, no other text, no logos.${signTail}`;
-    else if (mode === 'new-scene' && draft.custom_text && sign) prompt = `Edit the attached photo. Remove every person. Put the same product in a new real-life scene: ${q(idea.scene)}${idea.angle ? ', ' + q(idea.angle) : ''}. Keep the product's shape, colours and proportions exactly, with the same lettering style, layout and number of lines as the original, but its words must read exactly "${q(sign)}"${draft.ref_text ? ' instead of "' + q(draft.ref_text) + '"' : ''}; real size ${q(draft.product_size)}. ${common}`;
+    else if (mode === 'new-scene' && draftSignMode(draft) && sign) prompt = `Edit the attached photo. Remove every person. Put the same product in a new real-life scene: ${q(idea.scene)}${idea.angle ? ', ' + q(idea.angle) : ''}. Keep the product's shape, colours and proportions exactly, with the same lettering style, layout and number of lines as the original, but its words must read exactly "${q(sign)}"${draft.ref_text ? ' instead of "' + q(draft.ref_text) + '"' : ''}; real size ${q(draft.product_size)}. ${common}`;
     else if (mode === 'new-scene') prompt = `Edit the attached photo. Remove every person. Put the same product in a new real-life scene: ${q(idea.scene)}${idea.angle ? ', ' + q(idea.angle) : ''}. Keep the product's shape, text${sign ? ' ("' + q(sign) + '")' : ''}, colours and proportions exactly; real size ${q(draft.product_size)}. ${common}`;
     else prompt = `Edit the attached product photo. Place exactly this product (same shape, text${sign ? ' "' + q(sign) + '"' : ''}, colours, materials, proportions) in a real-life scene: ${q(idea.scene)}${idea.angle ? ', ' + q(idea.angle) : ''}${idea.props ? '; props: ' + q(idea.props) : ''}. Real size ${q(draft.product_size)}, do not enlarge it. Natural light, candid photo look. ${common}`;
   } else {
@@ -594,7 +604,7 @@ export function flowBrief(args, s = settings()) {
   return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),
     reference: n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
     ...(n > 1 && !fs.existsSync(ref) ? { warning: 'image 1 is not registered yet (extras follow the cover).' } : {}),
-    ...(signBlock ? { sign_wording: sign, sign_rules: signBlock.text, read_first: 'Read sign_rules (the brand skill). The prompt already carries the exact wording and the image-facing rules; after the image, run draft.mjs sign-check.' } : {}),
+    ...(signBlock ? { sign_mode: draftSignMode(draft), sign_wording: sign, sign_rules: signBlock.text, read_first: 'Read sign_rules (the brand skill). The prompt already carries the exact wording and the image-facing rules; after the image, run draft.mjs sign-check.' } : {}),
     register: `node scripts/draft.mjs register-image --id ${draft.id} --n ${n} --from <downloaded file>` };
 }
 
@@ -750,7 +760,7 @@ export function checkPrompt(args) {
 // Stored per image set (albumHash); a new image clears it (checkDraft: [CAUSE:image-not-checked]).
 export function signCheck(args) {
   const { dir, draft, status } = findDraft(need(args, 'id'));
-  if (!draft.custom_text || !draft.sign_text) return { id: draft.id, skipped: true, note: 'no sign wording on this draft.' };
+  if (!draftSignMode(draft) || !draft.sign_text) return { id: draft.id, skipped: true, note: 'no sign wording on this draft.' };
   const missing = draftImages(draft).filter((x) => !fs.existsSync(path.join(dir, x)));
   if (missing.length) throw new Error(cause('image-not-checked', 'step 5: image(s) not there yet: ' + missing.join(', ')));
   const reads = String(args.reads && args.reads !== true ? args.reads : '').trim();

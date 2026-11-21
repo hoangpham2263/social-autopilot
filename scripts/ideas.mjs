@@ -14,7 +14,7 @@
 //                                 note; a removed item is an error)
 //   node scripts/ideas.mjs clean  --brand <id> [--all]               drop unfilled ideas (--all: every open idea without a draft); releases their library items
 //   node scripts/ideas.mjs set    --brand <id> --id I001 --json '{...}' | --file f   fill an idea; checked for copying
-//   node scripts/ideas.mjs check  --brand <id> --id I001              checkpoint of steps 1-3 for custom-text brands (fails with [CAUSE:..])
+//   node scripts/ideas.mjs check  --brand <id> --id I001              checkpoint of steps 1-3 for brands with a sign mode (fails with [CAUSE:..])
 //   node scripts/ideas.mjs pick   --brand <id> --id I001              mark for drafting
 //   node scripts/ideas.mjs reject --brand <id> --id I001 [--note ..] [--item rejected]   idea dropped; the store item
 //                                 stays available (or "rejected" with --item rejected)
@@ -22,7 +22,7 @@
 import path from 'node:path';
 import { main, out, isMain, parseArgs, need, loadBrand, readJson, writeJson, withLock, stamp, sharedWords, cleanText, settings, listDrafts } from './lib.mjs';
 import { postsPerDay } from './metricool-csv.mjs';
-import { ideaSignProblems } from './signtext.mjs';
+import { ideaSignProblems, placeholderOf } from './signtext.mjs';
 
 // How many new posts the brand still needs to cover the next planning.ahead_days days (default 7) at posts_per_day:
 // posts approved but not published, and drafts still being made or waiting for review, already count.
@@ -41,8 +41,9 @@ const OPEN = ['todo', 'ready', 'picked'];
 // product_size (real size, from the skill's size_source), size_compare (the object it is measured against, with its real
 // size) and sign_text (custom-text products) are optional here and
 // can be given to draft.mjs new as --size / --compare / --sign-text.
-// Custom-text brands (the sign workflow, signtext.mjs): audience (step 1), scene_type (step 2, a key of the skill's sign type x scene
-// table), sign_text + text_reason (step 3) are required and checked by `ideas.mjs check`, set, pick and pipeline Stage B.
+// Brands with a sign mode (the sign workflow, signtext.mjs; on whenever the skill has the "Sign wording rules" table): audience (step 1), scene_type (step 2, a key of the skill's sign type x scene
+// table; placeholder mode: the product handle), step 3 (scene mode: NEW sign_text + text_reason; placeholder mode: sign_text = the row
+// placeholder, filled when empty) are required and checked by `ideas.mjs check`, set, pick and pipeline Stage B.
 const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why', 'audience', 'scene_type', 'product_size', 'size_compare', 'sign_text', 'text_reason'];
 const CORE = ['product_type', 'scene', 'angle', 'caption_structure'];
 // Reference-based posts (scene-swap): what the agent saw in the reference photo. ref_has_face true -> ref_mode new-scene
@@ -142,6 +143,8 @@ function run(args, cmd, brand, file) {
     const patch = args.file ? readJson(path.resolve(String(args.file))) : JSON.parse(need(args, 'json'));
     for (const f of IDEA_FIELDS) if (patch[f] !== undefined) idea[f] = cleanText(patch[f]).text;
     for (const f of REF_FIELDS) if (patch[f] !== undefined && patch[f] !== null && patch[f] !== '') idea[f] = f === 'ref_has_face' ? patch[f] === true || patch[f] === 'true' : cleanText(patch[f]).text;
+    // Sign mode placeholder: the wording is the row placeholder of the product (scene_type); filled when empty or not given in this patch.
+    try { const ph = placeholderOf(brand, idea.scene_type); if (ph !== null && (!idea.sign_text || patch.sign_text === undefined)) idea.sign_text = ph; } catch {}
     const problems = [...refProblems(idea), ...copyProblems(idea, itemOf(idea)), ...reuseProblems(itemOf(idea), { scene: idea.scene, idea: idea.id }), ...ideaSignProblems(brand, idea, { exceptIdea: idea.id })];
     const missing = CORE.filter((f) => !idea[f]);
     idea.problems = problems;

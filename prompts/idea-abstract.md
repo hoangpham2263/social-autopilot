@@ -15,15 +15,15 @@ Dùng cho từng ý trong `workspace/store/<brand>/ideas.json` (Mode 2 "Create &
 | why | vì sao ý này hợp khách của thương hiệu | khách cưới/kỷ niệm ở Mỹ |
 | product_size | cỡ thật theo bối cảnh (social.json product_images.size_source; image-guide của skill) | 60 cm (24 in) ngang |
 | size_compare | vật so sánh trong cảnh + cỡ thật của nó (sản phẩm ≤ 60% vật đó, ≤ 40% tường, chiếm 20-35% ngang ảnh trừ bài cận cảnh) | tủ gỗ bên dưới, 120 cm (47 in) ngang |
-| audience | chỉ khi custom_text, bước 1: ai xem bài | cặp đôi sắp cưới ở Mỹ |
-| scene_type | chỉ khi custom_text, bước 2: một khoá của bảng loại bảng x cảnh trong project.md mục 10 (khối Sign wording rules) | wedding |
-| sign_text | chỉ khi custom_text, bước 3: chữ MỚI tiếng Anh, hư cấu, hợp cảnh + audience; không chép chữ/tên/chữ ngoại ngữ của ảnh tham khảo, khác 10 bài gần nhất; cả keep-scene lẫn new-scene | Mia & Jonah |
-| text_reason | chỉ khi custom_text, bước 3: vì sao khách này muốn đúng chữ này ở cảnh này | cặp mới đính hôn thích tên riêng ở bàn sweetheart |
+| audience | khi skill có khối Sign wording rules (sign mode scene hoặc placeholder), bước 1: ai xem bài | cặp đôi sắp cưới ở Mỹ |
+| scene_type | khi có sign mode, bước 2: một khoá của bảng trong project.md mục 10 (khối Sign wording rules): scene mode = loại cảnh, placeholder mode = handle sản phẩm | wedding / neon-open-sign |
+| sign_text | sign mode placeholder: đúng chữ giữ chỗ của dòng đó (để trống thì tool tự điền; " / " = xuống dòng). Sign mode scene, bước 3: chữ MỚI tiếng Anh, hư cấu, hợp cảnh + audience; không chép chữ/tên/chữ ngoại ngữ của ảnh tham khảo, khác 10 bài gần nhất; cả keep-scene lẫn new-scene | Mia & Jonah |
+| text_reason | chỉ sign mode scene, bước 3: vì sao khách này muốn đúng chữ này ở cảnh này | cặp mới đính hôn thích tên riêng ở bàn sweetheart |
 | ref_has_face | chỉ scene-swap: ảnh tham khảo có mặt người (ai nhận ra được) không | false |
 | ref_mode | chỉ scene-swap: không mặt người → keep-scene (giữ cảnh, chữ mới); có mặt người → new-scene (cảnh mới, xoá người, giữ chữ) | keep-scene |
-| ref_text | scene-swap (bắt buộc khi custom_text, cả hai mode): chữ đang có trên sản phẩm trong ảnh tham khảo, đúng từng ký tự ("unreadable" nếu không đọc được) | Love |
+| ref_text | scene-swap (bắt buộc keep-scene; sign mode scene: cả hai mode): chữ đang có trên sản phẩm trong ảnh tham khảo, đúng từng ký tự ("unreadable" nếu không đọc được) | Love |
 
-Thương hiệu custom_text: làm theo thứ tự RUNBOOK 2.3a (ý + audience, scene_type, rồi mới chữ); kiểm bằng `node scripts/ideas.mjs check --brand <id> --id I001`.
+Thương hiệu có sign mode (skill có khối "### Sign wording rules" có bảng; mặc định bật, không cần cờ): làm theo thứ tự RUNBOOK 2.3a (ý + audience, scene_type, rồi mới chữ); kiểm bằng `node scripts/ideas.mjs check --brand <id> --id I001`.
 
 Trước khi chọn ý: **kiểm sản phẩm hợp bối cảnh** theo image-guide của skill (mục "Sản phẩm hợp bối cảnh") và bảng trong project.md mục 10 (vd biển quán bar/logo cửa hàng chỉ ở địa điểm kinh doanh thật, nhà ở chỉ bảng cá nhân). Sai cặp thì đổi scene cho đúng hoặc reject.
 
