@@ -183,9 +183,14 @@ export const REFERENCE_RULE = `Every reference source gets its turn before disco
 export function nextTask(run) {
   const target = run.mode?.max_posts || 0, total = brandTotal(run), left = target ? Math.max(0, target - total) : 0;
   const waiting = (run.sources || []).filter((x) => !x.result);
+  // Platforms already behind a login wall / checkpoint in THIS run (a source or a query of it came back blocked): their other
+  // sources and queries are skipped at once (no page opened again) and the run goes on with the other platforms until the target.
+  const platOf = (x) => x.platform || platformOf({ source_url: x.url }) || '';
+  const walled = new Set([...(run.sources || []).filter((x) => x.result?.state === 'blocked').map(platOf), ...((run.discovery?.queries || []).filter((q) => q.state === 'blocked').map((q) => q.platform))].filter(Boolean));
   if (waiting.length) {
     const src = waiting[0];
     if (target && !left) return { step: 'reference', source: src.id, share: 0, skip: true, total, target, do: `target reached: node scripts/research.mjs result --brand ${run.brand} --source ${src.id} --state skipped` };
+    if (walled.has(platOf(src))) return { step: 'reference', source: src.id, share: 0, skip: true, total, target, do: `${platOf(src)} is behind a login wall in this run: do NOT open it again; run node scripts/research.mjs result --brand ${run.brand} --source ${src.id} --state blocked --note "login wall (${platOf(src)}, same run)" and then next (the other sources and platforms go on until the target).` };
     return { step: 'reference', source: src.id, name: src.name, platform: src.platform || platformOf({ source_url: src.url }) || '', url: src.url, what_to_take: src.what_to_take || '', dir: src.dir, raw_file: src.raw_file, downloads: src.downloads, known_file: src.known_file, crawl: src.crawl || '', registry: src.registry_before || null, stop_rule: src.stop_rule, share: target ? Math.ceil(left / waiting.length) : 0, total, target,
       found_by: 'reference page', ...collectInfo(run.brand, 'source', src.id, src.platform || platformOf({ source_url: src.url }) || '', target ? Math.ceil(left / waiting.length) : 0, src.url),
       ...timeInfo(src.issued_at, undefined, undefined), rule: REFERENCE_RULE, do: doText(run.brand, 'source', src.id, '', 'end|known|since|limit|blocked|partial') };
@@ -194,7 +199,7 @@ export function nextTask(run) {
   const d = run.discovery;
   if (!d?.queries?.length) return { step: 'done', reason: 'reference pages done; no discovery in this run', total, target };
   const per = platformStats(d);
-  const cands = (d.platforms || []).map((p) => per[p.id]).filter((s) => s && s.pending && !s.blocked && !s.capped);
+  const cands = (d.platforms || []).map((p) => per[p.id]).filter((s) => s && s.pending && !s.blocked && !s.capped && !walled.has(s.id));
   if (!cands.length) return { step: 'done', reason: d.queries.some((q) => q.state === 'pending') ? 'every platform with queries left is blocked' : 'every discovery query is done', total, target };
   const pick = cands.reduce((a, b) => (b.done < a.done ? b : a));
   const q = d.queries.find((x) => x.platform === pick.id && x.state === 'pending');

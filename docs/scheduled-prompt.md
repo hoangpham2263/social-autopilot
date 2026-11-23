@@ -23,7 +23,8 @@ STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one b
 {{EXTERNAL}}
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Claude Code" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint (collect says blocked) → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
+LOGIN WALL / CAPTCHA / CHECKPOINT on a page (collect says blocked, or you see a sign-in page): NEVER end the run for it. Record result --state blocked --note "login wall" for that source or query, then run next: the tool skips the other sources and queries of that platform for this run and gives you the next platform (Google, Pinterest, Etsy, Houzz, other sources...). Keep going until next says done (target reached or every option tried).
+STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it). Then still do the run log (with the reason) and the report.
 NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; make ideas or posts; send anything to Metricool.
 ```
 
@@ -46,7 +47,8 @@ STEPS (follow RUNBOOK.md Mode 1 + docs/research.md; in order, do not skip; one b
 {{EXTERNAL}}
 7. 1.5 Write the run log: node scripts/runlog.mjs add --mode research --agent "Codex" (always, also after a stop).
 8. 1.6 Report to me in Vietnamese with the fixed headings of RUNBOOK 1.6.
-STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it); a login wall, captcha or checkpoint (collect says blocked) → result --state blocked for that platform and go on with the others. Then still do the run log (with the reason) and the report.
+LOGIN WALL / CAPTCHA / CHECKPOINT on a page (collect says blocked, or you see a sign-in page): NEVER end the run for it. Record result --state blocked --note "login wall" for that source or query, then run next: the tool skips the other sources and queries of that platform for this run and gives you the next platform (Google, Pinterest, Etsy, Houzz, other sources...). Keep going until next says done (target reached or every option tried).
+STOP IF: no Playwright MCP or my Chrome is not connected (tell me how to connect it). Then still do the run log (with the reason) and the report.
 NEVER: like, save, follow, comment, message, join groups or post anywhere; sign in for me; store cookies; make ideas or posts; send anything to Metricool.
 ```
 
