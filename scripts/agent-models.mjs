@@ -1,6 +1,6 @@
 // Models and effort levels the tool offers for Claude Code and Codex (Settings > Claude / Codex). Pure data and helpers, no side effects.
 // Claude ids were checked with `claude --model <id>` (CLI 2.1.323). Not offered: claude-opus-4-1, claude-opus-4-0, claude-sonnet-4-0, claude-haiku-3-5 (the CLI remaps or rejects them).
-export const CLAUDE_DEFAULT = "claude-haiku-5-5";
+export const CLAUDE_DEFAULT = "claude-sonnet-4-5";
 export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 export const CLAUDE_OTHER_RE = /^[A-Za-z0-9._\-\[\]]{1,60}$/;
 const fam = (family, versions) => versions.map(([id, v]) => ({ id, family, name: `${family} ${v}` }));

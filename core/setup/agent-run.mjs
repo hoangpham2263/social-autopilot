@@ -57,7 +57,7 @@ export const modelLine = (id, effort = "") => { const n = claudeName(id); return
 // A setting that is an alias (haiku, sonnet...) matches any running id of that family.
 export const modelMatches = (setting, running) => !setting || !running || running === setting || running.startsWith(setting) || (/^[a-z]+$/.test(setting) && running.includes(setting));
 export const modelWarning = (setting, running) => `⚠ Actual model differs from the setting: setting = ${setting}, running = ${running}`;
-// Settings > Claude: agent.claude_model (an alias or a model id; default claude-haiku-5-5) and agent.claude_effort ('' = no flag). Passed as --model as stored.
+// Settings > Claude: agent.claude_model (an alias or a model id; default claude-sonnet-4-5) and agent.claude_effort ('' = no flag). Passed as --model as stored.
 export const EFFORTS = CLAUDE_EFFORTS;
 // The stored setting wins for every run; a model sent with the request (old Run-tab value) is only the fallback when unset.
 export const claudeChoice = (settings = {}, requested = "") => {

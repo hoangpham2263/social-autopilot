@@ -1515,7 +1515,7 @@ header + * { margin-top: 0; }
     const el = $("#prModelLine"); if (!el) return;
     if (runningModel) { el.textContent = `running: ${runningModel}`; return; }
     const ag = $("#prAgent").value || "";
-    if (/claude/i.test(ag)) { const m = agentCfg?.claude_model || "claude-haiku-5-5", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
+    if (/claude/i.test(ag)) { const m = agentCfg?.claude_model || "claude-sonnet-4-5", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
     else if (/codex/i.test(ag)) { const m = agentCfg?.codex_model || "", e = agentCfg?.codex_effort || ""; el.textContent = `Codex ${m ? cxName(m) : "default model"} · effort: ${e || "default"}`; }
     else el.textContent = "Set in the agent you paste into";
   };
@@ -2670,14 +2670,14 @@ function draftTags(d) {
     // Everything else (pauses, Codex, ffmpeg, folders, image repo) is standard: edited only in workspace/settings.json (README "Settings file").
     agentCfg = s.agent || {}; showRunModel();
     await loadAgentModels();
-    const clM = s.agent?.claude_model || "claude-haiku-5-5", clE = s.agent?.claude_effort || "", cxM = s.agent?.codex_model || "";
+    const clM = s.agent?.claude_model || "claude-sonnet-4-5", clE = s.agent?.claude_effort || "", cxM = s.agent?.codex_model || "";
     const clKnown = clFlat().some((m) => m.id === clM);
     const clOpts = (agentModels?.claude || []).map((g) => `<optgroup label="${esc(g.family)} · ${esc(g.note)}">${g.models.map((m) => `<option value="${esc(m.id)}"${m.id === clM ? " selected" : ""}>${esc(m.name)} · ${esc(m.id)}</option>`).join("")}</optgroup>`).join("") + `<option value="__other"${clKnown ? "" : " selected"}>Other (type a model id)</option>`;
     const cxList = agentModels?.codex || [];
     const cxOpts = `<option value="">Codex default</option>` + cxList.map((m) => `<option value="${esc(m.slug)}"${m.slug === cxM ? " selected" : ""}>${esc(m.name)}${m.hidden ? " (hidden)" : ""} · ${esc(m.slug)}</option>`).join("") + (cxM && !cxList.some((m) => m.slug === cxM) ? `<option value="${esc(cxM)}" selected>${esc(cxM)}</option>` : "");
     const cxFrom = agentModels?.source === "fallback" ? "; the Codex CLI was not found, so this is the saved list" : "";
     $("#settingsForm").innerHTML = `<div class="fields">
-      <div class="field"><label for="setClModel" title="Model of every Claude Code run in the app (Research, Create, Publish, Sync), passed as --model. Haiku is the cheapest.">Claude model</label><select id="setClModel">${clOpts}</select></div>
+      <div class="field"><label for="setClModel" title="Model of every Claude Code run in the app (Research, Create, Publish, Sync), passed as --model. Default Sonnet 4.5 handles long multi-step browser work reliably; Haiku is the lightest but may stop midway.">Claude model</label><select id="setClModel">${clOpts}</select></div>
       <div class="field"><label for="setClOther" title="Any model id the Claude CLI accepts: letters, digits, . _ - [ ] (up to 60). Used when Other is chosen above.">Claude model id (Other)</label><input type="text" id="setClOther" maxlength="60" placeholder="e.g. claude-opus-5-5[1m]" value="${clKnown ? "" : esc(clM)}"${clKnown ? " disabled" : ""}></div>
       <div class="field"><label for="setClEffort" title="Effort level passed as --effort. Default = no flag (Claude Code's own default). Lower effort uses fewer tokens.">Claude effort</label><select id="setClEffort" data-s="agent.claude_effort">${[["", "Default (no flag)"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]].map(([k, t]) => `<option value="${k}"${k === clE ? " selected" : ""}>${t}</option>`).join("")}</select></div>
       <div class="field"><label for="setCxModel" title="Model of every codex exec the tool starts (image generation), passed as -m. The list is read from the Codex CLI (codex debug models)${cxFrom}. Codex default = no flag.">Codex model</label><select id="setCxModel">${cxOpts}</select></div>
