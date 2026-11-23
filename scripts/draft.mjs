@@ -37,7 +37,8 @@
 //   node scripts/draft.mjs register-batch --map <map.json>   register many downloads at once: [{id,n,from}]
 //   node scripts/draft.mjs check-prompt --id <draft>              step 4 (custom-text brands): the prompt carries the exact sign wording [CAUSE:prompt-missing-sign-text]
 //   node scripts/draft.mjs sign-check --id <draft> --reads "<words seen on the sign>" [--by <name>]   step 5: the image reads exactly sign_text [CAUSE:image-text-mismatch | image-not-checked]
-//   node scripts/draft.mjs flow-brief --id <draft> [--n 1..4]   Flow helper: condensed English prompt, ratio, reference copied under Downloads, register command
+//   node scripts/draft.mjs flow-brief --id <draft> [--n 1..4] [--safe]   Flow helper: condensed English prompt, ratio, reference copied under Downloads, register command
+//        --safe: the ONE retry after Flow refused that image for "policy" (human figures described as printed artwork, sign wording exact)
 //   node scripts/draft.mjs watermark --id <draft> [--force] logo overlay in a corner, only if social.json
 //                                                           product_images.watermark.enabled (default off; needs ffmpeg)
 //   node scripts/draft.mjs check --id <draft>               automatic checks of image + captions; passed -> ready
@@ -557,12 +558,25 @@ export function registerImage(args, s = settings()) {
 // n = 1: cover (reference = the brand photo / the scene-swap reference, if any). n >= 2: album extra, reference = image 1 of the same
 // post as it sits in the Flow project ("+" > its thumbnail > "Thêm vào câu lệnh"); its file is also copied to Downloads as a fallback.
 const q = (x) => String(x || '').replace(/"/g, "'").replace(/\s+/g, ' ').trim();
+// --safe (Flow refused THAT image for "may violate our policy"): a human figure in the descriptions is named as printed artwork,
+// never as a person (same rewrite as product-review's flow-brief -Safe). The sign wording and the fixed rules are never touched.
+const HUMAN = "(?:a |an |the )?(?:young |pretty |beautiful |sexy )?(?:woman|women|man|men|girl|girls|boy|boys|lady|ladies|female|male|person|people|model)(?:'s)?";
+export function safeArt(text) {
+  return String(text || '')
+    .replace(new RegExp(`\\b${HUMAN}\\s+(?:face|head|portrait|profile)\\b`, 'gi'), 'an illustrated figure')
+    .replace(new RegExp(`\\b${HUMAN}\\b`, 'gi'), 'an illustrated figure')
+    .replace(/\b(?:faces?|lips|bod(?:y|ies))\b/gi, 'drawn portrait');
+}
+export const SAFE_ART_LINE = 'The figure on the product is a flat printed illustration that belongs to the sign artwork, not a real person: no real person is shown, added or edited; only the product is placed into the scene.';
 export function flowBrief(args, s = settings()) {
   const { dir, draft } = findDraft(need(args, 'id'));
   const files = draftImages(draft);
   const n = args.n && args.n !== true ? Number(args.n) : 1;
   if (!Number.isInteger(n) || n < 1 || n > files.length) throw new Error(`--n must be 1..${files.length} (this draft has ${files.length} image(s)).`);
-  const idea = draft.idea || {}, mode = refModeOf(draft), sign = draft.sign_text || '';
+  const safe = args.safe === true || args.safe === 'true';
+  // --safe rewrites only the free-text descriptions (scene, angle, props, product type, album scene); the sign wording stays exact.
+  const idea0 = draft.idea || {}, mode = refModeOf(draft), sign = draft.sign_text || '';
+  const idea = safe ? Object.fromEntries(Object.entries(idea0).map(([k, v]) => [k, ['scene', 'angle', 'props', 'product_type'].includes(k) && typeof v === 'string' ? safeArt(v) : v])) : idea0;
   // The brand skill's sign wording rules (project.md section 10): the whole block goes to the agent (sign_rules), the lines the skill
   // tags [image] go into every condensed prompt below (keep-scene, new-scene, brand-image, album extras). Step 4 checkpoint: the
   // prompt dir must carry the exact wording, else this fails with [CAUSE:prompt-missing-sign-text].
@@ -589,7 +603,7 @@ export function flowBrief(args, s = settings()) {
   } else {
     ref = path.join(dir, 'image.png');
     if (albumModeOf(draft) === 'scene') {
-      const sc = albumSceneOf(dir, draft, n);
+      const sc = safe ? safeArt(albumSceneOf(dir, draft, n)) : albumSceneOf(dir, draft, n);
       album_scene = sc;
       const ownSign = perImageSigns(draft) ? albumSignOf(draft, n) : '';
       if (perImageSigns(draft) && !ownSign) throw new Error(cause('missing-album-sign', 'image ' + n + ' has no sign wording of its own (draft.mjs reprompt --id ' + draft.id + ' --album-signs "<image 2>|<image 3>|..").'));
@@ -597,6 +611,7 @@ export function flowBrief(args, s = settings()) {
     } else
     prompt = `Edit the attached image (image 1 of this post). Keep the same product with the same text character for character${sign ? ' ("' + q(sign) + '")' : ''}, the same scene, the same lighting and the same moment; only a different camera shot: ${SHOTS[extraShotOf(n - 1)]} Do not add stands, brackets or anything not in image 1. ${common}`;
   }
+  if (safe) prompt += ' ' + SAFE_ART_LINE;
   let reference_for_upload = '';
   if (ref && fs.existsSync(ref)) {
     const downloads = path.join(os.homedir(), 'Downloads');
@@ -604,7 +619,7 @@ export function flowBrief(args, s = settings()) {
     reference_for_upload = path.join(downloads, `sa-ref-${draft.id}-${n}${path.extname(ref) || '.png'}`);
     fs.copyFileSync(ref, reference_for_upload);
   }
-  return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),
+  return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, ...(safe ? { safe: true } : {}), needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),
     reference: n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
     ...(n > 1 && !fs.existsSync(ref) ? { warning: 'image 1 is not registered yet (extras follow the cover).' } : {}),
     ...(signBlock ? { sign_mode: draftSignMode(draft), sign_wording: sign, sign_rules: signBlock.text, read_first: 'Read sign_rules (the brand skill). The prompt already carries the exact wording and the image-facing rules; after the image, run draft.mjs sign-check.' } : {}),

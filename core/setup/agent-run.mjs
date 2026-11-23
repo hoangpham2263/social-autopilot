@@ -81,7 +81,7 @@ export function sanitizeReport(text, max = REPORT_MAX) {
 
 // Playwright MCP of a run (own = { userDataDir, headless, outputDir }): the tool's own Chrome profile, already logged in by the person; headless unless own.headless is false.
 // Flags (checked with `npx @playwright/mcp@latest --help`): --browser chrome, --user-data-dir <path>, --headless, --viewport-size WxH, --output-dir <path>.
-// ----- friendly live lines (Vietnamese, for the person): built from tool NAMES and a few safe words of the input; never a path, id, token or JSON -----
+// ----- friendly live lines (Vietnamese, for the person): built from tool NAMES and a few safe words of the input (a draft id and image number for per-image steps); never a path, token or JSON -----
 export const FRIENDLY_LINES = 40;
 const MODE_VI = { research: "Research", create: "Create", publish: "Publish", sync: "Đồng bộ Metricool" };
 const baseName = (f) => String(f || "").split(/[\\/]/).pop().toLowerCase();
@@ -91,8 +91,15 @@ export function friendlyTool(name, input = {}) {
     const c = String(i.command || "");
     if (/pipeline\.mjs\s+create/.test(c)) return "Đang tạo bài (pipeline create)";
     if (/pipeline\.mjs/.test(c)) return "Đang chạy quy trình bài đăng";
-    if (/draft\.mjs\s+register-image/.test(c)) return "Đang đăng ký ảnh vào bài nháp";
-    if (/draft\.mjs\s+flow-brief/.test(c)) return "Đang chuẩn bị mô tả ảnh";
+    // Per-image steps name the draft and image ("Bài <draft> · ảnh 2 · ..."): a draft id is a plain name, never a secret.
+    const did = (/--id[= ]+["']?([a-z0-9][a-z0-9-]{2,60})/i.exec(c) || /--tag[= ]+["']?([a-z0-9][a-z0-9-]{2,60})#/i.exec(c) || [])[1];
+    const num = (/--n[= ]+["']?(\d)/i.exec(c) || /--tag[= ]+["']?[a-z0-9-]+#(\d)/i.exec(c) || [])[1];
+    const m = (t) => (did ? `Bài ${did}${num ? ` · ảnh ${num}` : ""} · ${t}` : t);
+    if (/draft\.mjs\s+register-image/.test(c)) return m("Lưu ảnh Flow");
+    if (/draft\.mjs\s+flow-brief/.test(c)) return m(/--safe\b/.test(c) ? "Flow từ chối → thử lại 1 lần bằng mô tả an toàn" : "Chuẩn bị nội dung gửi Flow");
+    if (/draft\.mjs\s+sign-check/.test(c)) return m("Kiểm chữ trên biển");
+    if (/flow-pace\.mjs\s+gate/.test(c)) return m("Chờ nhịp rồi gửi prompt Flow");
+    if (/flow-pace\.mjs/.test(c)) return "Đang điều nhịp Flow";
     if (/draft\.mjs/.test(c)) return "Đang xử lý bài nháp";
     if (/(?:research|collect)\.mjs/.test(c)) { const m = /--source[= ]+([a-z0-9][a-z0-9,-]{0,60})/i.exec(c); return m ? `Đang đọc nguồn ${m[1]}` : "Đang đọc nguồn"; }
     if (/host-image|finalize\.mjs\s+approve/.test(c)) return "Đang đưa ảnh lên host";
