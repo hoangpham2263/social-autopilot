@@ -120,15 +120,20 @@ export function mcpArgs(own = null, profile = "") {
   // Own browser: the page size of the tool's window (WINDOW_SIZE of own-browser.mjs: compact, never below ~1024x700 or sites go mobile).
   return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", `${WINDOW_SIZE.width}x${WINDOW_SIZE.height}`, ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
 }
-export function mcpConfig({ plat = osPlatform(), profile = "", own = null } = {}) {
+// background (default true): false for a Create run with Flow images. Google Flow flagged prompts submitted in a hidden tab as
+// "unusual activity" (2026-11-23), so Flow keeps the visible-tab behaviour; research and the rest stay in the background.
+export function mcpConfig({ plat = osPlatform(), profile = "", own = null, background = true } = {}) {
   const a = mcpArgs(own, profile);
   const server = plat === "win32" ? { command: "cmd", args: ["/c", "npx", ...a] } : { command: "npx", args: a };
-  if (!own) server.env = { ...(profile ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), PLAYWRIGHT_MCP_BACKGROUND: "1" };
+  if (!own) server.env = { ...(profile ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(background ? { PLAYWRIGHT_MCP_BACKGROUND: "1" } : {}) };
   return { mcpServers: { playwright: server } };
 }
 
 // Extension mode (browser.mode "extension"): the person's everyday Chrome. The person is at the screen and clicks Connect.
 export const extensionNote = "RUN-NOW NOTE: this run uses the person's everyday Chrome through the Playwright extension, so the person is at the computer and will click Connect in Chrome.\nThe person keeps working in other apps while you run: NEVER bring Chrome to the front, focus or activate a tab or window (no page.bringToFront, no browser_tabs select just to show a tab, no new windows); your tabs run in the background (their own tab group) and a hidden tab is normal: wait with page.waitForTimeout, scroll with window.scrollBy, never page.mouse.wheel; if a click times out on 'not stable', use locator.click({ force: true }) in browser_run_code_unsafe.\nIf browser_tabs shows only a Welcome / connect.html tab, or the browser tools fail: the Playwright MCP has ALREADY opened that page, do NOT open a second copy and do not bring it to the front; tell the person in one line to click Connect in Chrome. Then wait up to 3 minutes, calling browser_tabs about every 15 seconds, until a real page tab appears. If nothing connects, stop and report that Chrome did not connect.\nDownloads: this mode cannot use download.saveAs; click the download button, then take the newest file from the Downloads folder.\n\n";
+
+// Flow image runs: the Flow tab must be VISIBLE while working in it (Google flags actions in a hidden tab); every other run never takes focus.
+export const flowExtensionNote = extensionNote.replace(/The person keeps working in other apps while you run: NEVER bring Chrome to the front.*/, "FLOW TAB VISIBLE (Google Flow flags work done in a hidden tab as unusual activity): this run is NOT in background mode. Before you upload, type, submit or download in Google Flow, make the Flow tab the visible tab with page.bringToFront() (in browser_run_code_unsafe) and keep it visible until that action is done. Use ONE Flow tab; open no new windows; outside Flow do not focus anything else.");
 
 // Own-browser note put in front of the prompt of a run that uses the browser.
 export const ownNote = (headless = true) => `RUN-NOW NOTE: this run uses the tool's OWN browser (a dedicated Chrome profile the person already logged in to${headless ? ", running in the background (headless)" : ""}). There is no Connect step and no extension: ignore any instruction to click Connect, run chrome-connect.mjs or wait for the person; start with browser_tabs or browser_navigate.
@@ -259,7 +264,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
-    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null })));
+    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null, background: !flow })));
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
     const modelKey = MODELS.includes(model) ? model : "default", mflag = modelFlag(modelKey, s);
     if (mflag) args.push("--model", mflag);
@@ -288,7 +293,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     child.on("close", (code) => finish(run, code));
     child.stdin?.on("error", () => {});
     // This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
-    const note = own ? ownNote(bs.headless) : browser ? extensionNote : "";
+    const note = own ? ownNote(bs.headless) : browser ? (flow ? flowExtensionNote : extensionNote) : "";
     try { child.stdin?.end(note + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
     if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
