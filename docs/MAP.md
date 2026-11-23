@@ -25,6 +25,7 @@ Read this first when working ON the tool (code, tests, UI). Running the tool (re
 
 User-visible states (Posts tab, in order): **To review** (draft `ready`) · **Approved** (in the register, no live Metricool id: waiting to send) · **Scheduled** (live Metricool id, not published) · **Posted** (published). `queue.mjs` `catalogPosts` gives `state` approved/scheduled/posted, `unsent_approved` (= Publish approved count) and `on_metricool`.
 6. Every run: `brands.mjs --run <mode>` opens the Run progress (`progress.mjs`, `workspace/runs/current-<mode>.json`); `runlog.mjs add` closes it (`workspace/logs/runs/`).
+7. Continue a stopped run (Run tab "Chạy tiếp lượt trước"): `agent-run.mjs` keeps the inputs of each app run in `workspace/runs/agent-run-input.json`; when the last run ended stopped / failed / timeout, `GET /api/agent-run` `resume.available` is true and `POST /api/agent-run {resume: true}` starts the same prompt with one `continueLine` in front (only the missing work).
 
 ## Main commands per mode
 - Mode 1 Research: `research.mjs browser --state ok` → `research.mjs start` → loop `research.mjs next` (prints `open`, `scroll`, `script`, `from_page`, `target`, `stop_rules`, `adapter.status`) → open the page, loop `collect.mjs script` → `browser_run_code_unsafe` → `collect.mjs from-page` → scroll → `collect.mjs fit` → `research.mjs ingest --source|--query` → `result` → `store.mjs classify|verdict` → `research.mjs report` → `runlog.mjs add --mode research`.

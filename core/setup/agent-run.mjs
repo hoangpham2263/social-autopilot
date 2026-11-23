@@ -151,6 +151,18 @@ export function validate({ mode, prompt, model }) {
   return "";
 }
 
+// "Chạy tiếp lượt trước": a run that stopped midway (stopped / failed / timeout) can be started again with the SAME inputs
+// (prompt, brands, model, image engine: kept in runs/agent-run-input.json) plus this one line in front of the prompt.
+export const RESUMABLE = ["stopped", "failed", "timeout"];
+const CONTINUE_HINT = {
+  research: "a brand whose research run of today already exists: go on with node scripts/research.mjs next instead of research.mjs start",
+  create: "node scripts/pipeline.mjs create --resume",
+  publish: "posts the stopped run already sent are on Metricool and count toward its Posts limit: send only the rest, then node scripts/pipeline.mjs publish --resume",
+};
+export const continueLine = (mode, prev = {}) => `CONTINUE: this run continues the previous ${mode} run that ${prev.status === "timeout" ? "hit its time limit" : prev.status === "stopped" ? "was stopped" : "failed"} midway, same task: check what already exists and only do what is missing, never redo finished work (${CONTINUE_HINT[mode] || "check the state first"}).
+
+`;
+
 const defaultKill = (child, plat) => {
   if (!child?.pid) return;
   if (plat === "win32") { try { spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, timeout: 10000, stdio: "ignore" }); } catch {} return; }
@@ -167,7 +179,7 @@ const defaultNpx = (plat) => {
 
 export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}), findCli, plat = osPlatform(), spawnFn = spawn, killTree = (c) => defaultKill(c, plat), npxOk = () => defaultNpx(plat), now = () => Date.now(), graceMs = 4000, onEnd = null, home = homedir(), browserCheck = () => "", loginWindowOpen = () => false }) {
   const runsDir = join(workspace, "runs"), tmpDir = join(workspace, "tmp");
-  const stateFile = join(runsDir, "agent-run.json"), logFile = join(runsDir, "agent-run.log");
+  const stateFile = join(runsDir, "agent-run.json"), logFile = join(runsDir, "agent-run.log"), inputFile = join(runsDir, "agent-run-input.json");
   let cur = null; // the active run
   let last = null; // the finished run's state (this process)
 
@@ -240,7 +252,26 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     try { onEnd?.({ ...run.state }); } catch {}
   };
 
-  function start({ mode, prompt, brands, imageEngine, model } = {}) {
+  const readInput = () => { try { return JSON.parse(readFileSync(inputFile, "utf8")); } catch { return null; } };
+  // Whether the last run can be continued: it ended midway (or the app closed while it ran) and its inputs were kept. Never the prompt itself.
+  function resumeInfo() {
+    if (cur) return { available: false };
+    const st = last || readState(); if (!st) return { available: false };
+    const status = st.status === "running" ? "failed" : st.status, inp = readInput();
+    const available = RESUMABLE.includes(status) && st.mode !== "sync" && !!inp && inp.run_id === st.run_id && inp.mode === st.mode && typeof inp.prompt === "string";
+    return available ? { available, run_id: st.run_id, mode: st.mode, status, brands: Array.isArray(inp.brands) ? inp.brands : [], model: inp.model || "default", image_engine: inp.image_engine || "", started: st.started || "", ended: st.updated || "" } : { available: false };
+  }
+
+  function start({ mode, prompt, brands, imageEngine, model, resume = false } = {}) {
+    let prefix = "", from = "";
+    if (resume) {
+      if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
+      const ri = resumeInfo();
+      if (!ri.available) return { ok: false, status: 409, error: "There is no stopped run to continue." };
+      const inp = readInput();
+      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || "";
+      prefix = continueLine(mode, ri); from = ri.run_id;
+    }
     const bad = validate({ mode, prompt, model });
     if (bad) return { ok: false, status: 400, error: bad };
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
@@ -279,8 +310,10 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const started = new Date(now()).toISOString();
     const run = {
       child, cfg, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [] },
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
     };
+    // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
+    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: imageEngine === "codex" || imageEngine === "flow" ? imageEngine : "" })); } catch {}
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
     run.friendly = [];
@@ -294,11 +327,11 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     child.stdin?.on("error", () => {});
     // This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
     const note = own ? ownNote(bs.headless) : browser ? (flow ? flowExtensionNote : extensionNote) : "";
-    try { child.stdin?.end(note + prompt); } catch {}
+    try { child.stdin?.end(note + prefix + prompt); } catch {}
     // Hard time limit: the whole process tree is killed.
     if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
     run.timer?.unref?.();
-    return { ok: true, status: 200, run_id: runId, mode, started };
+    return { ok: true, status: 200, run_id: runId, mode, started, brands: run.state.brands, resumed: !!from };
   }
 
   function stop() {
@@ -323,7 +356,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: MODELS.includes(shown?.model) ? shown.model : "default", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [],
+      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: MODELS.includes(shown?.model) ? shown.model : "default", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),
       cli: { found: !!cli?.found, path: cli?.path || "" },

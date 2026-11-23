@@ -492,6 +492,7 @@ header + * { margin-top: 0; }
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
       <button class="btn primary" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
+      <button class="btn" type="button" id="prResume" disabled>Chạy tiếp lượt trước</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
       <span class="meta" id="prExtHint" hidden></span>
@@ -1562,7 +1563,7 @@ header + * { margin-top: 0; }
     // The Chrome connection section is for Run in the app (Run now needs the connection); with Copy prompt it is not shown.
     // Only where a browser is used: Research, and Create & publish with Google Flow (Publish approved opens none).
     { const mk = modeKey(prMode); $("#prChrome").hidden = !app || !(mk === "research" || (mk === "create" && chosenEngine() === "flow")); }
-    $("#prRunNow").hidden = !app; if (!app) $("#prStop").hidden = true;
+    $("#prRunNow").hidden = !app; $("#prResume").hidden = !app; if (!app) $("#prStop").hidden = true;
     // Model of the run: only for Run in the app, and only when the agent is Claude Code (Codex / ChatGPT have no --model here).
     { const mf = $("#prModelField"), mk = modeKey(prMode); mf.hidden = !app || !claude;
       $("#prModel").title = mk === "create" ? "Model for this run (remembered per mode). Writing + images: Sonnet or Opus. Default = Claude Code's own default." : "Model for this run (remembered per mode). Routine work: Haiku or Sonnet saves quota. Default = Claude Code's own default."; }
@@ -1586,6 +1587,11 @@ header + * { margin-top: 0; }
     const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
     setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : noBrand ? "No usable brand: link a skill on Overview first" : "Run now starts Claude Code: choose the Claude Code agent");
     setDisabled($("#prCopy"), !!prBlock, prBlock);
+    // Continue the previous run (GET /api/agent-run resume): enabled only when the last run stopped / failed midway; same inputs, only the missing work.
+    { const rs = r?.resume, ok = !!rs?.available && !busy && !noCli && claude, btn = $("#prResume");
+      const what = rs?.available ? `${{ research: "Research", create: "Create & publish", publish: "Publish approved" }[rs.mode] || rs.mode}${rs.brands?.length ? " · " + rs.brands.join(", ") : ""} · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : "";
+      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : "Run now starts Claude Code: choose the Claude Code agent") : "No stopped run to continue: the last run finished or none was started from the app");
+      if (ok) btn.title = `Continues the previous run with the same options, without redoing finished work: ${what}`; }
     { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
@@ -1789,6 +1795,17 @@ header + * { margin-top: 0; }
       await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
       await loadAgentRun(); loadProgress();
     } finally { btn.disabled = false; btn.textContent = label; }
+  };
+  $("#prResume").onclick = async () => {
+    if (runGuard()) return;
+    const btn = $("#prResume"), label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Starting…";
+    try {
+      const r = await postJson("/api/agent-run", { resume: true }).catch(() => ({ error: "The app did not answer." }));
+      if (r.error) { flash(r.error); toast(r.error); await loadAgentRun(); return; }
+      await postJson("/api/progress", { mode: r.mode, brands: r.brands || [], agent: $("#prAgent").value || "" }).catch(() => {});
+      await loadAgentRun(); loadProgress();
+    } finally { btn.textContent = label; arDraw(); }
   };
   $("#prStop").onclick = async () => { const r = await postJson("/api/agent-run/stop", {}).catch(() => ({ error: "The app did not answer." })); if (r.error) flash(r.error); setTimeout(loadAgentRun, 800); };
   // ----- Own-browser logins (#prLogins): cookie presence/expiry per site from GET /api/browser-logins (names/expiry only, never values) -----
