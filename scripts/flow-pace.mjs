@@ -8,13 +8,25 @@
 //   - 5-12 s random gap between two prompts;
 //   - a group is 2-3 prompts (random, user 2026-11-23), gaps stay random; after a group a further 20-45 s pause (the agent should download/register that group meanwhile);
 //   - never more than 8 prompts inside 2 minutes.
-// State: workspace/tmp/flow-pace.json (this machine only).
+// State: PER CHROME PROFILE (user 2026-11-23: one account per profile, Google limits per account), machine-wide in the OS temp folder
+// <tmp>/flow-pace/<profile>.json, the same file product-review uses for that profile, so both tools on one profile share one pace and
+// runs on different profiles never wait for each other. The profile: PLAYWRIGHT_MCP_PROFILE_DIR_NAME (set on the run by agent-run.mjs),
+// else settings research.chrome_profile; unknown = the old workspace/tmp/flow-pace.json.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FILE = path.join(ROOT, 'workspace', 'tmp', 'flow-pace.json');
+function flowProfile() {
+  if (process.env.PLAYWRIGHT_MCP_PROFILE_DIR_NAME) return process.env.PLAYWRIGHT_MCP_PROFILE_DIR_NAME;
+  for (const f of ['workspace/settings.json', 'config/settings.json']) {
+    try { const s = JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8')); if (s.browser?.mode === 'own') return 'own-chrome'; const p = String(s.research?.chrome_profile || '').trim(); if (p) return p; } catch {}
+  }
+  return '';
+}
+const PROFILE = flowProfile();
+const FILE = PROFILE ? path.join(os.tmpdir(), 'flow-pace', PROFILE.replace(/[^\w.-]+/g, '_') + '.json') : path.join(ROOT, 'workspace', 'tmp', 'flow-pace.json');
 const rnd = (a, b) => Math.round(a + Math.random() * (b - a));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,7 +70,7 @@ const args = {};
 for (let i = 0; i < rest.length; i++) if (rest[i].startsWith('--')) { args[rest[i].slice(2)] = rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[++i] : true; }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (cmd === 'gate') await gate(args);
-  else if (cmd === 'status') { const st = load(); out({ ok: true, in_group: st.in_group, group_size: st.group_size, last_2min: st.times.filter((t) => Date.now() - t < 120000).length, total_recorded: st.times.length }); }
+  else if (cmd === 'status') { const st = load(); out({ ok: true, profile: PROFILE || 'shared', file: FILE, in_group: st.in_group, group_size: st.group_size, last_2min: st.times.filter((t) => Date.now() - t < 120000).length, total_recorded: st.times.length }); }
   else if (cmd === 'reset') { save({ times: [], in_group: 0, group_size: rnd(2, 3), tags: [] }); out({ ok: true, reset: true }); }
   else { out({ ok: false, error: 'Lệnh: gate --tag <draft>#<n> | status | reset' }); process.exit(1); }
 }
