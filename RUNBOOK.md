@@ -179,7 +179,7 @@ node scripts/pipeline.mjs create --resume --ideas workspace/pipeline/ideas-todo.
 node scripts/pipeline.mjs create --resume
    # C: chờ ảnh, contact sheet workspace/pipeline/contact-sheet-<n>.png (draft.mjs contact-sheet) + captions-todo.json
    # agent: XEM từng contact sheet (sản phẩm hợp bối cảnh, cỡ thật, chữ đúng từng ký tự, không logo trên sản phẩm, không chữ mẫu; nghi ngờ thì mở ảnh riêng)
-   # STOP (ii): viết mọi caption trong captions-todo.json (theo brief.md) hoặc "redo" (mô tả/cỡ/chữ mới; tối đa 2 lần)
+   # STOP (ii): viết mọi caption trong captions-todo.json (theo brief.md) hoặc "redo" (mô tả/cỡ/chữ mới; tối đa 2 lần; riêng ảnh sai chữ: làm lại 1 lần, vẫn sai thì vẫn giữ ảnh và đánh dấu cho người duyệt)
 node scripts/pipeline.mjs create --resume --captions workspace/pipeline/captions-todo.json
    # D: ghi caption, làm sạch metadata, watermark nếu bật, draft.mjs check; chưa đạt → sửa và gửi lại file; đạt hết → queue + runlog (kết thúc)
 node scripts/pipeline.mjs status                            # lượt đang ở đâu, việc tiếp theo

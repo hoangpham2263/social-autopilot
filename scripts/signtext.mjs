@@ -206,6 +206,8 @@ export function signCheckProblems(dir, draft, status, imageHash) {
   const sc = status.sign_check;
   const miss = !sc || sc.image_sha1 !== imageHash || (perImageSigns(draft) && !sc.reads_extra) ? cause('image-not-checked', `step 5: look at the image(s) and record what the sign reads: draft.mjs sign-check --id ${draft.id} --reads "<cover wording>"${perImageSigns(draft) ? ' --reads-02 "<image 2 wording>" --reads-03 ... (every album image has its own wording)' : ''} --by <name>`) : '';
   const bad = sc && sc.image_sha1 === imageHash && !sc.ok ? cause('image-text-mismatch', `step 5: the image(s) do not read the wording they should (cover read "${sc.reads}", sign_text "${draft.sign_text}"${sc.reads_extra ? '; extras read ' + JSON.stringify(sc.reads_extra) : ''}): redo the image(s) (reprompt + image).`) : '';
+  // A wrong sign kept after its one redo (draft.mjs sign-check, kept_anyway) is a warning for the reviewer, never a blocking problem.
+  if (!miss && bad && sc.kept_anyway) return { problems: [], warnings: [bad.replace('redo the image(s)', 'kept anyway after one redo; the reviewer decides')] };
   const list = [miss, bad].filter(Boolean);
   return draft.sign_workflow >= WORKFLOW_VERSION ? { problems: list, warnings: [] } : { problems: [], warnings: list };
 }

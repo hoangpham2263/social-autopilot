@@ -389,7 +389,7 @@ function stageD(st, file, args) {
     // Step 5 -> step 6: the image was LOOKED at (sign-check) before any caption is accepted.
     if (draftSignMode(d.draft) && d.draft.sign_text && d.draft.sign_workflow >= WORKFLOW_VERSION) {
       const sc = e.sign_check || {};
-      if (String(sc.reads || '').trim()) { const xr = Object.entries(sc).filter(([k, v]) => /^reads_\d+$/.test(k) && String(v || '').trim()).flatMap(([k, v]) => ['--' + k.replace('_', '-'), String(v)]); const r = step('draft.mjs', ['sign-check', '--id', id, '--reads', String(sc.reads), ...xr, '--by', String(sc.by || 'agent')]); if (r.ok === false) { problems.push(`${id}: ${r.error}`); continue; } }
+      if (String(sc.reads || '').trim()) { const xr = Object.entries(sc).filter(([k, v]) => /^reads_\d+$/.test(k) && String(v || '').trim()).flatMap(([k, v]) => ['--' + k.replace('_', '-'), String(v)]); const r = step('draft.mjs', ['sign-check', '--id', id, '--reads', String(sc.reads), ...xr, '--by', String(sc.by || 'agent')]); if (r.ok === false && !r.kept_anyway) { problems.push(`${id}: ${r.error}`); continue; } }
       const fresh = findDraft(id);
       if (!fresh.status.sign_check?.ok) { problems.push(`${id}: ${cause('caption-before-image-check', 'step 6 before step 5: LOOK at the image and give "sign_check": { "reads": "<words seen on the sign>", "by": "<name>" } with the captions (or draft.mjs sign-check).')}`); continue; }
     }

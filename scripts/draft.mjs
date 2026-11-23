@@ -773,9 +773,16 @@ export function signCheck(args) {
     }
   }
   const ok = sameSignText(reads, draft.sign_text) && okExtra;
-  const entry = { at: stamp(), by: args.by && args.by !== true ? String(args.by) : 'agent', reads, ...(Object.keys(extra).length ? { reads_extra: extra } : {}), ok, image_sha1: albumHash(dir, draft) };
+  // User 2026-11-23 (same as Product Review): ONE redo on a wrong sign; if the redo still reads wrong, keep the image anyway
+  // (sign_check.kept_anyway, a warning the reviewer sees) instead of blocking the draft. The count lives in sign-misses.json.
+  const missFile = path.join(dir, 'sign-misses.json');
+  let misses = 0; try { misses = Number(JSON.parse(fs.readFileSync(missFile, 'utf8')).misses) || 0; } catch {}
+  if (!ok) { misses++; fs.writeFileSync(missFile, JSON.stringify({ misses, last: reads, at: stamp() })); }
+  const keptAnyway = !ok && misses >= 2;
+  const entry = { at: stamp(), by: args.by && args.by !== true ? String(args.by) : 'agent', reads, ...(Object.keys(extra).length ? { reads_extra: extra } : {}), ok, ...(keptAnyway ? { kept_anyway: true, misses } : {}), image_sha1: albumHash(dir, draft) };
   setStatus(dir, status.status, { sign_check: entry });
-  if (!ok) throw new Error(cause('image-text-mismatch', 'step 5: the cover reads "' + reads + '" (sign_text "' + draft.sign_text + '")' + Object.entries(extra).map(([n, r]) => ', image ' + n + ' reads "' + r + '" (should be "' + albumSignOf(draft, Number(n)) + '")').join('') + ': redo the image(s) that do not match (reprompt --id ' + draft.id + ', then image --force or Flow again).'));
+  if (keptAnyway) return { id: draft.id, ok: false, kept_anyway: true, sign_check: entry, note: 'The redo still reads "' + reads + '" instead of "' + draft.sign_text + '": the image is kept anyway (flagged for review). Go on: write the caption from the idea (step 6).' };
+  if (!ok) throw new Error(cause('image-text-mismatch', 'step 5: the cover reads "' + reads + '" (sign_text "' + draft.sign_text + '")' + Object.entries(extra).map(([n, r]) => ', image ' + n + ' reads "' + r + '" (should be "' + albumSignOf(draft, Number(n)) + '")').join('') + ': redo the image(s) that do not match ONCE (reprompt --id ' + draft.id + ', then image --force or Flow again), then sign-check again; if it is still wrong then, the image is kept anyway.'));
   return { id: draft.id, ok: true, sign_check: entry, next: 'write the caption from the idea (step 6), then node scripts/draft.mjs check --id ' + draft.id };
 }
 
