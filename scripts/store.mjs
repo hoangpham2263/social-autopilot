@@ -261,11 +261,72 @@ export function fitProblem(post, rules = {}, { required = false } = {}) {
   if (types.length && !types.includes(type.toLowerCase())) return `off-brand: "${type}" is not one of the brand's product types (${(rules.types || []).join(', ')})`;
   return '';
 }
-// Off-brand posts are never stored; they are logged (rejected.json) with the reason.
+// A rejection is a JUDGEMENT of this brand: the agent looked at the image and compared it with THIS brand's products.
+// notLookedAt: reasons that say the post was not looked at (budget, "unreviewed", "not inspected"...): never a rejection, the
+// post stays pending (pending_fit). borrowedFit: reasons that reuse another brand's / run's decision ("same image inspected in
+// dreamyvows run"): fit is per brand, never copied. Both -> the decision is refused and the post stays pending.
+const NOT_LOOKED = /\b(un-?reviewed|un-?checked|un-?judged|un-?inspected|undecided|not (yet )?(reviewed|inspected|checked|looked|seen|opened|judged|viewed)|did ?n[o']?t (look|check|open|see|inspect|review)|no time|out of (time|budget)|budget)\b|chưa (xem|kiểm|nhìn|duyệt)|không kịp/i;
+export const notLookedAt = (reason) => NOT_LOOKED.test(String(reason || ''));
+const BORROWED = /(same (image|images|picture|photo|post|decision|decisions|results?)\b[^.;]*\b(inspected|judged|decided|reviewed|checked|as|in|from)\b[^.;]*\b(run|brand)\b)|((decision|verdict|fit)s? (copied|reused|re-used|borrowed|taken) from)|((inspected|judged|decided|reviewed|checked) (in|for) (the |an? )?\S+ (run|brand)\b)/i;
+export function borrowedFit(reason, brand, otherBrands = []) {
+  const r = String(reason || '');
+  if (BORROWED.test(r)) return true;
+  return otherBrands.filter((b) => b && b !== brand).some((b) => new RegExp(`\\b${String(b).replace(/[^\w-]/g, '')}\\b`, 'i').test(r));
+}
+// Every other brand id the tool knows (store folders + linked brands): a fit reason naming one of them is a copied decision.
+export function knownBrandIds() {
+  const ids = new Set();
+  try { for (const d of fs.readdirSync(path.join(workspace, 'store'), { withFileTypes: true })) if (d.isDirectory()) ids.add(d.name); } catch { /* no store yet */ }
+  try { for (const d of fs.readdirSync(path.join(workspace, 'runs'), { withFileTypes: true })) if (d.isDirectory()) ids.add(d.name); } catch { /* no runs yet */ }
+  return [...ids].filter((x) => /^[a-z0-9][\w-]{2,}$/i.test(x));
+}
+
+// Off-brand posts are never stored; they are logged (rejected.json) with the reason. An entry whose reason says the post was
+// not looked at (notLookedAt) or reuses another brand's decision (borrowedFit) is NOT logged: it goes to pending.json instead.
 export function logRejected(brand, list, extra = {}) {
-  if (!list.length) return;
+  if (!list.length) return { logged: 0, parked: 0 };
+  const others = knownBrandIds();
+  const bad = (x) => notLookedAt(String(x.reason || '').replace(/^off-brand:\s*/, '')) || borrowedFit(String(x.reason || ''), brand, others);
+  const keep = list.filter((x) => !bad(x)), park = list.filter(bad);
+  if (park.length) addPending(brand, park.map((x) => ({ ...extra, ...x, why: `refused rejection: ${String(x.reason || '').slice(0, 160)}` })));
+  if (!keep.length) return { logged: 0, parked: park.length };
   const file = rejectedFile(brand);
-  withLock(file, () => { const log = readJson(file, { rejected: [] }); log.rejected.push(...list.map((x) => ({ at: stamp(), ...extra, ...x }))); writeJson(file, log); });
+  withLock(file, () => { const log = readJson(file, { rejected: [] }); log.rejected.push(...keep.map((x) => ({ at: stamp(), ...extra, ...x }))); writeJson(file, log); });
+  return { logged: keep.length, parked: park.length };
+}
+
+// ----- pending_fit: posts read but NOT judged yet (no look, no decision) -----
+// workspace/store/<brand>/pending.json { pending: [{ post_url, alt_urls, collector_id, platform, found_by, source, query, run,
+// author, caption, posted_date, images: [absolute paths in the run folder], at, why }] }. Written by ingest (posts without a
+// fit decision), by logRejected (refused rejections) and by the data repair; judged later with collect.mjs pending + fit --pending.
+// Never a rejection, never in the Library; one entry per post_url (the newest data wins). Brand-local: never shared.
+export const pendingFile = (brand) => path.join(storeDir(brand), 'pending.json');
+export const readPending = (brand) => (readJson(pendingFile(brand), { pending: [] }).pending || []);
+export function addPending(brand, list) {
+  const items = (list || []).filter((x) => x && x.post_url);
+  if (!items.length) return 0;
+  const file = pendingFile(brand);
+  return withLock(file, () => {
+    const log = readJson(file, { pending: [] });
+    const by = new Map((log.pending || []).map((x) => [String(x.post_url), x]));
+    for (const x of items) by.set(String(x.post_url), { ...(by.get(String(x.post_url)) || {}), ...x, at: stamp() });
+    log.pending = [...by.values()];
+    writeJson(file, log);
+    return items.length;
+  });
+}
+// Drop decided posts (stored, rejected after a real look, or duplicates) from pending.json; returns how many left it.
+export function removePending(brand, urls) {
+  const set = new Set([].concat(urls || []).filter(Boolean).map(String));
+  const file = pendingFile(brand);
+  if (!set.size || !fs.existsSync(file)) return 0;
+  return withLock(file, () => {
+    const log = readJson(file, { pending: [] });
+    const before = (log.pending || []).length;
+    log.pending = (log.pending || []).filter((x) => !set.has(String(x.post_url)));
+    if (log.pending.length !== before) writeJson(file, log);
+    return before - log.pending.length;
+  });
 }
 
 // Adds crawled posts of one source to the brand's store. posts: [{ post_url, alt_urls?, caption, images: [abs path],
@@ -612,7 +673,7 @@ export function migrateRuns(brand) {
 
 const brandsInWorkspace = () => { const d = path.join(workspace, 'runs'); return fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(e.name)).map((e) => e.name) : []; };
 
-if (isMain(import.meta.url)) main(() => {
+if (isMain(import.meta.url)) main(async () => {
   const args = parseArgs();
   const cmd = args._[0];
   if (cmd === 'migrate-uses') return out({ brands: (args.brand ? [String(args.brand)] : (fs.existsSync(path.join(workspace, 'store')) ? fs.readdirSync(path.join(workspace, 'store')).filter((d) => /^[a-z0-9][a-z0-9-]*$/.test(d) && fs.existsSync(itemsFile(d))) : [])).map(migrateUses) });
@@ -627,7 +688,16 @@ if (isMain(import.meta.url)) main(() => {
   if (cmd === 'show') { const it = findItem(brand, need(args, 'id')); return out({ item: { ...it, image_paths: it.images.map((f) => path.join(storeDir(brand), f)) } }); }
   if (cmd === 'reject' || cmd === 'remove') return out({ item: setItemStatus(brand, need(args, 'id'), 'rejected', { note: args.note === true ? '' : args.note, by: args.by === true ? '' : args.by }) });
   if (cmd === 'restore') return out({ item: setItemStatus(brand, need(args, 'id'), 'new') });
-  if (cmd === 'classify') return out(classifyBatch(brand, { limit: args.limit === undefined ? 40 : Number(args.limit) || 0, source: args.source && args.source !== true ? String(args.source) : '' }));
+  if (cmd === 'classify') {
+    const b = classifyBatch(brand, { limit: args.limit === undefined ? 40 : Number(args.limit) || 0, source: args.source && args.source !== true ? String(args.source) : '' });
+    // ONE contact sheet per 16 items (numbered tiles = items[].tile): judge from the sheet, open a single thumb only when unsure
+    const { writeSheets } = await import('./contact-sheet.mjs');
+    const withThumb = b.items.filter((i) => i.thumb);
+    const sheets = withThumb.length && !args['no-sheet'] ? writeSheets(withThumb.map((i) => ({ file: i.thumb, label: i.id })), path.join(storeDir(brand), 'classify-sheets'), { prefix: 'classify', per: 16, ffmpeg: settings().ffmpeg?.command || '' }) : [];
+    const tile = new Map(withThumb.map((i, n) => [i.id, n + 1]));
+    return out({ ...b, contact_sheet: sheets.map((x) => x.file), items: b.items.map((i) => ({ ...(tile.has(i.id) ? { sheet: Math.floor((tile.get(i.id) - 1) / 16) + 1, tile: ((tile.get(i.id) - 1) % 16) + 1 } : {}), ...i })),
+      ...(b.items.length ? { next: 'Read each contact sheet ONCE (tile label = item id), judge every item against THIS brand\'s product scope, open a single thumb only when a tile is unclear; ' + b.next } : {}) });
+  }
   if (cmd === 'verdict') { const r = applyVerdicts(brand, readJson(path.resolve(need(args, 'file')))); return out({ ...r, left: classifyBatch(brand, { limit: 0 }).total_unjudged }); }
   if (cmd === 'known') { const k = knownPosts(brand, args.source ? String(args.source) : ''); return out(k); }
   if (cmd === 'registry') return out({ brand, sources: args.source && args.source !== true ? { [String(args.source)]: registryOf(brand, String(args.source)) } : registryAll(brand) });

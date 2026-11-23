@@ -53,7 +53,8 @@ import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, run
 import { assertGate, unavailableLines, recordCheck, saveCheck, parseResult } from './chrome-check.mjs';
 import { adapterStatus } from './platforms/index.mjs';
 import { scrollWait, scrollHint, BROWSER_RULES } from './collect-pagemode.mjs';
-import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf, registryOf } from './store.mjs';
+import { addPosts, knownPosts, recordProgress, readProgress, readStore, counts, storeDir, logRejected, platformOf, registryOf, addPending, removePending, readPending } from './store.mjs';
+
 
 const logFile = () => path.join(workspace, 'research-log.json');
 const readLog = () => { const l = readJson(logFile(), {}); return { runs: l.runs || [], collected: l.collected || {} }; };
@@ -164,7 +165,7 @@ export function collectInfo(brand, kind, id, platform, share = 0, url = '') {
     stop_rules: 'stop when: the script says crawl.stop end | known | blocked; NEVER stop for time (no per-source time budget by default; only an explicit research.source_minutes > 0 does, then result --state partial, resumable); a 429 / rate-limit page is NOT the end of a source: wait (back off 30-120 s, doubling) and retry the same page in this run, record blocked only after repeated failures; the target is reached; every post is already known (top check). A new or partial source is NOT stopped at known posts: it goes to the end of the page. crawl.stop time = only this round is over: run the same file again. Fallback: ' + FALLBACK,
     adapter: { platform, ...a } };
 }
-const doText = (brand, kind, id, extra, states) => `ONE path: once per session run install.js (node scripts/collect.mjs install); open the "open" URL with Playwright MCP (browser_navigate, after install); run the script command (it writes the file under research.script_dir and prints its path; the app must be running); run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste or copy it. The script SCROLLS BY ITSELF (polite waits on the Node side, scrollBy, no bringToFront, no waitForFunction: it works in a background tab; crawl.stop "hidden" = Chrome loaded nothing more while the tab was in the background: result --state partial --note 'hidden tab', resumable) until it meets 3 known posts in a row (top check, only for a complete source), reaches the end of the page, uses its round time (about 24 s) or detects a block (login wall / captcha), then returns ONE result (its Node side posts it to the app and returns {saved:true,total,tag,bytes,crawl:{stop,...}}). Then run from_page with no --b64 (only if the script returned saved:false with a b64, pass it AS IS, never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json, says stop or run again). crawl.stop "time" means only the ROUND is over: run the SAME file again (the page keeps its state; no new script command) and from_page again; stop on crawl.stop end | known | blocked or when from_page says stop${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and run again. The per-source time budget is per SESSION and resumable: over it, record --state partial (the tool saves the resume cursor; the next run continues). ${FALLBACK} ${BROWSER_RULES}`;
+const doText = (brand, kind, id, extra, states) => `ONE path: once per session run install.js (node scripts/collect.mjs install); open the "open" URL with Playwright MCP (browser_navigate, after install); run the script command (it writes the file under research.script_dir and prints its path; the app must be running); run that file with ONE browser_run_code_unsafe call using the filename parameter, never paste or copy it. The script SCROLLS BY ITSELF (polite waits on the Node side, scrollBy, no bringToFront, no waitForFunction: it works in a background tab; crawl.stop "hidden" = Chrome loaded nothing more while the tab was in the background: result --state partial --note 'hidden tab', resumable) until it meets 3 known posts in a row (top check, only for a complete source), reaches the end of the page, uses its round time (about 24 s) or detects a block (login wall / captcha), then returns ONE result (its Node side posts it to the app and returns {saved:true,total,tag,bytes,crawl:{stop,...}}). Then run from_page with no --b64 (only if the script returned saved:false with a b64, pass it AS IS, never retype; it checks total + checksum + tag, skips known posts, downloads images, adds to raw.json, says stop or run again). crawl.stop "time" means only the ROUND is over: run the SAME file again (the page keeps its state; no new script command) and from_page again; stop on crawl.stop end | known | blocked or when from_page says stop${extra}; then node scripts/research.mjs ingest --brand ${brand} --${kind} ${id} and result --${kind} ${id} --state <${states}>. When the extract misses posts that are on the page, inspect the DOM, fix the adapter's SELECTORS (docs/research.md "Adapter") and run again. The per-source time budget is per SESSION and resumable: over it, record --state partial (the tool saves the resume cursor; the next run continues). ${BATCH_RULE} ${FALLBACK} ${BROWSER_RULES}`;
 // Per-source time cap: next stamps issued_at the first time it issues a source/query; every later call prints elapsed and, over the limit, stop "time".
 // 0 / unset = NO per-source time budget (a run never stops for time); a positive value is an explicit user opt-in.
 export const sourceMinutes = (cfg = settings().research?.source_minutes) => (Number(cfg) > 0 ? Number(cfg) : 0);
@@ -176,6 +177,8 @@ export function timeInfo(issuedAt, now = Date.now(), limit = sourceMinutes()) {
   return { ...(limit > 0 ? { time_limit_minutes: limit } : {}), started: issuedAt, elapsed: `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`, ...(over ? { stop: 'time', time_over: true, next: TIME_NEXT } : {}) };
 }
 const FALLBACK = "If the extract script errors, or still returns 0 posts / total_on_page 0 after two EXTRA extracts (scroll once more between them) on a page that visibly has posts, STOP using the script for that source: read the page yourself (Playwright MCP snapshot, a small browser_evaluate, or a screenshot), write the posts you see in the same small JSON the script returns ({platform, url, tiles:[{id, url, image_urls, caption, author, date_text}]}, no checksum) and pass it to collect.mjs from-page --json '<that>' (the tool downloads the images, skips known posts, writes raw.json; verified:false is expected); then the same loop (look at images, fit, counters, stop rules, time cap)." + " Facebook: open the page, scroll once with the scrollBy snippet BEFORE the first extract (the feed only renders after a real scroll); an empty first extract on a page that was NOT scrolled is expected, not a script failure, and does not count toward the two empty extracts of the fallback.";
+// One rule text for every place that tells the agent how to judge (next, collect.mjs from-page / fit / pending, RUNBOOK, docs/research.md).
+export const BATCH_RULE = "Judge in SMALL batches from ONE contact sheet: from-page downloads at most research.batch_size (default 16) new posts per call and writes ONE contact sheet (numbered tiles, about 256 px; review[].tile = the tile number); Read that sheet ONCE and decide product_fit for the whole batch; open a single review[].image only when one tile is unclear. Never Read every full-size image. A post you did not look at gets NO decision (leave it out of decisions.json): it stays pending and is never written as fit:false (fit refuses reasons like 'unreviewed' / 'not inspected' / 'budget'). Fit is per brand: judge against THIS brand's product_fit.types and project.md only; never copy another brand's decisions, even for the same query and the same images (fit refuses reasons that cite another brand or run). Then fit, then from-page --next for the next batch (the rest waits in backlog.json, nothing is lost). Budget tight: finish the current batch (fit) -> ingest -> result -> store.mjs classify/verdict of the kept posts BEFORE starting a new query, and say in the report what is left (queued, pending_fit, unclassified).";
 export const REFERENCE_RULE = `Every reference source gets its turn before discovery (${'`next`'} will not move to discovery while one has no result). Never skip a source to save output: skipping is allowed only with result --state blocked|partial|known|end and a reason. Login wall (Facebook or any site): result --state blocked --note "login wall", go on, and re-check that source ONCE at the end of this brand's run (Chrome may have been signed in meanwhile).`;
 export function nextTask(run) {
   const target = run.mode?.max_posts || 0, total = brandTotal(run), left = target ? Math.max(0, target - total) : 0;
@@ -197,7 +200,7 @@ export function nextTask(run) {
   const q = d.queries.find((x) => x.platform === pick.id && x.state === 'pending');
   const share = target ? left : 0; // no per-platform cap: only what is left of the run target (0 = open)
   return { step: 'discovery', query: q.id, platform: q.platform, kind: q.kind, term: q.term, found_by: q.found_by, url: q.url, dir: q.dir, raw_file: q.raw_file, downloads: q.downloads, share, platform_notes: pick.notes, product_fit: d.product_fit, total, target, ...collectInfo(run.brand, 'query', q.id, q.platform, share, q.url),
-    ...timeInfo(q.issued_at), do: doText(run.brand, 'query', q.id, `; LOOK at the images and keep only posts whose product is one of product_fit.types (collect.mjs fit; from-page downloads at most ${share} posts)`, 'done|limit|empty|blocked|partial') };
+    ...timeInfo(q.issued_at), do: doText(run.brand, 'query', q.id, `; LOOK at the batch's contact sheet and keep only posts whose product is one of THIS brand's product_fit.types (collect.mjs fit; from-page downloads one batch of research.batch_size posts per call, the rest waits for from-page --next${share ? `; target ${share} kept posts` : ''})`, 'done|limit|empty|blocked|partial') };
 }
 
 function start(args, s) {
@@ -372,7 +375,23 @@ export function pendingFitOf(dir, rawFile = '') {
   // pending = downloaded posts (in raw.posts) with no fit decision; tiles dropped by from-page never count
   return (raw.posts || []).filter((p) => !(p.product_fit && String(p.product_fit.type || '').trim())).length;
 }
-const FIT_FIRST = 'run collect.mjs fit on review[] first (posts are read but not judged yet)';
+const FIT_FIRST = 'run collect.mjs fit on review[] first (posts are read but not judged yet), or ingest: it keeps the posts without a decision PENDING for the next run (never rejected)';
+const hasFit = (p) => !!(p.product_fit && String(p.product_fit.type || '').trim());
+const hasNoDecision = (p) => !hasFit(p) && !(p.product_fit && p.product_fit.fit === false);
+// Posts the agent did not decide (no look, no fit): never rejected, never stored. They move from raw.posts to raw.parked and to
+// the brand's pending.json (store/<brand>/pending.json, absolute image paths in this run folder) so a later run judges them
+// (collect.mjs pending / fit --pending, or the same query/source crawled again). Returns how many were parked.
+function parkUndecided(brandId, rawPath, base, extra) {
+  const raw = readJson(rawPath, null);
+  if (!raw || Array.isArray(raw)) return 0;
+  const und = (raw.posts || []).filter(hasNoDecision);
+  if (!und.length) return 0;
+  addPending(brandId, und.map((p) => ({ post_url: String(p.post_url || ''), alt_urls: p.alt_urls || [], collector_id: p.collector_id || '', platform: p.platform || extra.platform || '', found_by: p.found_by || extra.found_by || '',
+    source: extra.source, ...(extra.query ? { query: extra.query } : {}), source_url: extra.source_url || '', run: extra.run, author: p.author || '', caption: p.caption || '', posted_date: p.posted_date || '',
+    images: [].concat(p.images || p.image || []).filter(Boolean).map((f) => path.resolve(base, String(f))), why: 'no fit decision (not looked at)' })));
+  writeJson(rawPath, { ...raw, posts: (raw.posts || []).filter((p) => !hasNoDecision(p)), parked: [...(raw.parked || []), ...und.map((p) => ({ post_url: p.post_url, collector_id: p.collector_id || '', images: p.images || [] }))] });
+  return und.length;
+}
 // raw.json rejected[]: posts the agent SAW but did not take because the product is off-brand (never downloaded).
 const seenRejected = (raw, extra = {}) => (raw && !Array.isArray(raw) && Array.isArray(raw.rejected) ? raw.rejected : []).filter((x) => x && typeof x === 'object')
   .map((x) => ({ post_url: String(x.post_url || ''), author: cleanText(x.author || '').text, reason: `off-brand: ${cleanText(String(x.reason || 'not a product the brand sells')).text.replace(/^off-brand:\s*/, '').slice(0, 200)}`, ...extra }));
@@ -385,7 +404,7 @@ function ingestQuery(args, brand, { dir, runFile, run }) {
   if (!q) throw new Error(`Truy vấn "${qid}" không có trong lượt này (research.mjs next cho biết truy vấn tiếp theo).`);
   const rawPath = path.join(q.dir, 'raw.json');
   if (!fs.existsSync(rawPath)) return out({ dir, query: qid, added: 0, note: 'chưa có raw.json' });
-  if (pendingFitOf(q.dir) > 0) throw new Error(FIT_FIRST);
+  const parked = parkUndecided(brand.id, rawPath, q.dir, { source: `discovery-${q.platform}`, query: q.id, platform: q.platform, found_by: q.found_by, source_url: q.url, run: run.date });
   const raw = readJson(rawPath);
   const list = (Array.isArray(raw) ? raw : raw.posts || []).map((p) => ({ ...p, platform: q.platform, found_by: q.found_by }));
   const logPath = path.join(q.dir, 'ingest.json');
@@ -400,12 +419,14 @@ function ingestQuery(args, brand, { dir, runFile, run }) {
   const r = addPosts(brand.id, src, posts, { run: run.date, limit: cap, productFit: d.product_fit, requireFit: true });
   const seen = before.size ? [] : seenRejected(raw, { platform: q.platform, found_by: q.found_by });
   logRejected(brand.id, seen, { source: src.id, run: run.date, query: q.id });
+  removePending(brand.id, [...posts.map((p) => p.post_url), ...seen.map((x) => x.post_url)].filter((u) => !(r.unjudged || []).some((x) => x.post_url === u)));
+  q.parked = (q.parked || 0) + parked; q.queued = (readJson(path.join(q.dir, 'backlog.json'), { posts: [] }).posts || []).length;
   q.kept = (q.kept || 0) + r.added.length; q.rejected_off_brand = (q.rejected_off_brand || 0) + r.rejected.length + seen.length; q.duplicates = (q.duplicates || 0) + r.duplicates.length; q.unjudged = (q.unjudged || 0) + (r.unjudged || []).length; q.ingested = stamp();
   const unj = new Set((r.unjudged || []).map((x) => x.post_url));
   const entry = { at: stamp(), raw_posts: list.length, already_ingested: list.length - fresh.length, post_urls: fresh.map((p) => String(p.post_url || '')).filter((u) => u && !unj.has(u)), added: r.added, duplicates: r.duplicates, unjudged: (r.unjudged || []).length, rejected_off_brand: [...r.rejected, ...seen], dropped: [...dropped, ...r.dropped] };
   writeJson(logPath, { query: q.id, ingests: [...(readJson(logPath, { ingests: [] }).ingests || []), entry] });
   writeJson(runFile, run);
-  out({ dir, query: q.id, platform: q.platform, found_by: q.found_by, added: r.added.length, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, rejected_off_brand: entry.rejected_off_brand.length, rejected_list: entry.rejected_off_brand, unjudged: (r.unjudged || []).length, ...((r.unjudged || []).length ? { unjudged_list: r.unjudged } : {}), dropped: entry.dropped,
+  out({ dir, query: q.id, platform: q.platform, found_by: q.found_by, added: r.added.length, ids: r.added, duplicates: r.duplicates.length, duplicate_list: r.duplicates, rejected_off_brand: entry.rejected_off_brand.length, rejected_list: entry.rejected_off_brand, unjudged: (r.unjudged || []).length, ...((r.unjudged || []).length ? { unjudged_list: r.unjudged } : {}), dropped: entry.dropped, pending_fit_parked: parked, queued_not_read: q.queued,
     platform_kept: per.kept + r.added.length, max_per_platform: d.max_per_platform, brand_total: brandTotal(run), target, next: `node scripts/research.mjs result --brand ${brand.id} --query ${q.id} --state <done|limit|empty|blocked|partial>, then research.mjs next` });
 }
 
@@ -418,7 +439,9 @@ function ingest(args) {
   if (args.source && !run.sources.some((x) => x.id === args.source)) throw new Error(`Source "${args.source}" không có trong lượt này (chỉ source bật trong social.json của ${brand.id}).`);
   if (args.csv && !args.source) throw new Error('--csv cần --source.');
   const mode = run.mode || {};
-  if (mode.max_posts) for (const src of run.sources.filter((x) => !args.source || x.id === args.source)) if (pendingFitOf(src.dir, src.raw_file) > 0) throw new Error(`${src.id}: ${FIT_FIRST}`);
+  // with a target the posts need a fit decision: the ones without one are parked (pending for the next run), never stored or rejected
+  const parkedBy = {};
+  if (mode.max_posts && !args.csv) for (const src of run.sources.filter((x) => !args.source || x.id === args.source)) parkedBy[src.id] = parkUndecided(brand.id, src.raw_file || path.join(src.dir, 'raw.json'), src.dir, { source: src.id, platform: src.platform || '', found_by: 'reference page', source_url: src.url, run: run.date });
   const log = readLog();
   log.collected[run.date] ||= {};
   const day = log.collected[run.date];
@@ -453,6 +476,8 @@ function ingest(args) {
     // Posts that PASSED fit are good posts: all of them are ingested (beyond the share too) and count toward the brand target, so the next shares shrink.
     const keptFit = posts.filter((p) => p.product_fit && String(p.product_fit.type || '').trim()).length;
     const r = addPosts(brand.id, { ...src, found_by: 'reference page' }, posts, { run: run.date, since: mode.since || '', limit: left > 0 ? Math.max(left, keptFit) : 0, crawlMode: itemMode, productFit });
+    removePending(brand.id, [...posts.map((p) => p.post_url), ...seen.map((x) => x.post_url)]);
+    src.parked = (src.parked || 0) + (parkedBy[src.id] || 0);
     // truthful counts: kept = fit posts that really passed the store checks (type must be a valid brand type); a repeat ingest keeps the first ingest's numbers
     const prevIngests = readJson(logPath, { ingests: [] }).ingests || [];
     const keptNow = Math.max(0, keptFit - r.rejected.length - (r.unjudged || []).length);
@@ -529,7 +554,13 @@ function next(args) {
   if (item && !item.issued_at) { item.issued_at = new Date().toISOString(); writeJson(runFile, run); task = nextTask(run); }
   if (task.step === 'discovery') fs.mkdirSync(task.downloads, { recursive: true });
   if (task.step === 'done' && runDone(run)) { run.status = runStatus(run); writeJson(runFile, run); }
-  out({ brand: brand.id, ...task, ...(task.step === 'done' ? { do: `node scripts/store.mjs classify --brand ${brand.id} (1.3), then research.mjs report` } : {}) });
+  const pend = readPending(brand.id).length;
+  const unclassified = readStore(brand.id).items.filter((i) => i.run === run.date && i.status === 'new' && !i.filter).length;
+  const before = [
+    ...(pend ? [`${pend} posts of earlier runs wait for a fit decision (store/${brand.id}/pending.json): judge them batch by batch with node scripts/collect.mjs pending --brand ${brand.id} (ONE contact sheet) + collect.mjs fit --brand ${brand.id} --pending --file <decisions.json>; they are this brand's own posts, judge them against THIS brand's products`] : []),
+    ...(unclassified && task.step !== 'done' ? [`${unclassified} kept posts of this run are not classified yet: when your output/context budget is tight, run node scripts/store.mjs classify --brand ${brand.id} + verdict FIRST (one contact sheet), then this step`] : []),
+  ];
+  out({ brand: brand.id, ...task, pending_fit_earlier: pend, unclassified_this_run: unclassified, ...(before.length ? { before } : {}), batch_rule: BATCH_RULE, ...(task.step === 'done' ? { do: `node scripts/store.mjs classify --brand ${brand.id} (1.3), then research.mjs report` } : {}) });
 }
 // Step 1.0 (the agent's own check: Playwright MCP connected to the user's Chrome) shown in Run progress.
 function chromeRecord(args) {
@@ -563,7 +594,7 @@ export function filterCounts(items) {
 // One summary line per brand for the final message: target N · kept Y · rejected Z · duplicates D · Library available A
 // Library available = store counts().new, the same figure as the app Library / Overview (never used + used, cooling included); ready now = cooldown over.
 const sidList = (xs) => xs.map((x) => x.id).join(',');
-export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0}${r.unjudged_total ? ` · unjudged ${r.unjudged_total}` : ''} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.new ?? 0} (ready now ${r.store?.ready ?? 0}, cooling ${r.store?.cooling ?? 0})${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
+export const reportLine = (r) => `target ${r.target || 0} · kept ${r.new_total ?? r.kept_total ?? 0} · rejected ${r.rejected_off_brand_total ?? 0}${r.unjudged_total ? ` · unjudged ${r.unjudged_total}` : ''}${r.left?.pending_fit ? ` · pending fit ${r.left.pending_fit}` : ''}${r.left?.queued ? ` · queued (read, not downloaded) ${r.left.queued}` : ''}${r.left?.unclassified ? ` · not classified ${r.left.unclassified}` : ''} · duplicates ${r.duplicates_total ?? 0} · Library available ${r.store?.new ?? 0} (ready now ${r.store?.ready ?? 0}, cooling ${r.store?.cooling ?? 0})${(r.time_limited || []).length ? ` · time-limited ${sidList(r.time_limited)}` : ''}${(r.skipped_sources || []).length ? ` · skipped ${sidList(r.skipped_sources)}` : ''}`;
 export function researchReport(brandId, date) {
   const r = researchReportBase(brandId, date);
   // Not finished while the kept count is under the target and work is left: the agent must go back to 1.2, never stop for low yield.
@@ -575,6 +606,16 @@ export function researchReport(brandId, date) {
       const nx = nextTask(run), kept = brandTotal(run);
       if (nx.step !== 'done') cont = { kept, target: run.mode.max_posts, next: nx.step, do: `NOT DONE: kept ${kept}/${run.mode.max_posts} and sources/queries are left. Go back to step 1.2 (node scripts/research.mjs next --brand ${brandId}) and keep collecting, then filter again; stop only when next says done (target reached, everything done, or blocked).` };
     }
+  } catch { /* report stays as it was */ }
+  // what is left (always in the report): pending fit (brand pending.json), queued backlog of this run, kept posts not classified
+  try {
+    const day = date || latestRun(brandId);
+    const run = day ? readJson(path.join(runDir(brandId, day), 'run.json'), null) : null;
+    const dirs = run ? [...(run.sources || []).map((x) => x.dir), ...(run.discovery?.queries || []).map((q) => q.dir)].filter(Boolean) : [];
+    const queued = dirs.reduce((a, d) => a + ((readJson(path.join(d, 'backlog.json'), { posts: [] }).posts || []).length), 0);
+    const unclassified = run ? readStore(brandId).items.filter((i) => i.run === run.date && i.status === 'new' && !i.filter).length : 0;
+    r.left = { pending_fit: readPending(brandId).length, queued, unclassified,
+      text: 'pending_fit = read but not judged (kept for the next run, never rejected; collect.mjs pending); queued = read from the page, not downloaded (the next crawl of that query/source reads them again); unclassified = kept posts the filter step (store.mjs classify/verdict) has not seen' };
   } catch { /* report stays as it was */ }
   return { ...r, ...(cont ? { continue: cont } : {}), summary_line: reportLine(r) + (cont ? ` · NOT DONE (${cont.kept}/${cont.target} kept, work left)` : '') };
 }

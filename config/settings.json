@@ -4,6 +4,7 @@
   "image_engine": "codex",
   "research": {
     "source_minutes": 0,
+    "batch_size": 16,
     "token_minutes": 5,
     "delay_seconds": [
       5,

@@ -4,12 +4,16 @@
 // the store already has BEFORE downloading, downloads the images with the platform's referer and ADDS them to raw.json.
 // Scroll, extract, scroll, extract: every from-page of the same task accumulates (seen.json in the task folder holds the
 // ids and aliases already returned; the next `script` leaves them out). Read only. No cookies or tokens are written.
+// Small batches (every platform): from-page downloads at most research.batch_size (default 16) new posts per call, writes ONE
+// contact sheet of them (<task dir>/sheets/, numbered tiles) and keeps the rest in <task dir>/backlog.json (resumable cursor:
+// `from-page --next` takes the next batch, only once the current batch has its fit decisions).
 import fs from 'node:fs';
 import path from 'node:path';
 import { out, fail, need, settings, loadBrand, readJson, writeJson } from './lib.mjs';
 import { track } from './progress.mjs';
-import { openRun, timeInfo, brandTotal, TIME_NEXT, sourceMinutes } from './research.mjs';
-import { counters, counterLine, fitStop, progressFile } from './collect.mjs';
+import { openRun, timeInfo, brandTotal, TIME_NEXT, sourceMinutes, BATCH_RULE } from './research.mjs';
+import { counters, counterLine, fitStop, progressFile, readBacklog, backlogFile } from './collect.mjs';
+import { writeSheets } from './contact-sheet.mjs';
 import { knownPosts } from './store.mjs';
 import { makeCursor } from './cursor.mjs';
 import { getAdapter, adapterStatus, isTrusted } from './platforms/index.mjs';
@@ -162,9 +166,11 @@ export async function fromPage(args) {
   const adapter = getAdapter(task.platform);
   if (!adapter) return fail(`Chưa có adapter cho nền tảng "${task.platform}".`, { platform: task.platform });
   let loaded;
-  try { loaded = loadPageResult(args, undefined, resultFile(task.dir)); } catch (e) { return fail(String(e.message || e), { verified: false }); }
+  // --next: no new page result, only the next batch of the backlog (posts read earlier, not downloaded yet)
+  if (args.next) loaded = { result: null, verified: true };
+  else try { loaded = loadPageResult(args, undefined, resultFile(task.dir)); } catch (e) { return fail(String(e.message || e), { verified: false }); }
   const result = loaded.result;
-  fs.rmSync(resultFile(task.dir), { force: true }); // spent: the next extract sends a new one
+  if (!args.next) fs.rmSync(resultFile(task.dir), { force: true }); // spent: the next extract sends a new one
   // Accumulate across extracts of the same task: earlier posts stay in raw.json, earlier ids are skipped.
   const prevRaw = readJson(task.raw_file, null);
   const prevSeen = readSeen(seenFile(task));
@@ -175,14 +181,22 @@ export async function fromPage(args) {
   const factor = Math.max(1, Number(settings().research?.max_read_factor) || 3);
   // download cap = what may still be READ (factor x need), not the need: rejected posts must not use up the share
   const left = task.max ? Math.max(0, factor * task.max - prog0.read) : 0;
-  const r = pageResultPosts(result, adapter, { cursor: makeCursor({ mode: task.mode, known }), max: task.max ? left : 0, found_by: task.found_by, skip: [...prevSeen, ...prevPosts.map((p) => p.collector_id)] });
+  const backlog0 = readBacklog(task);
+  // every new post of the page goes to the backlog first (nothing read is lost); the download takes one batch from its front
+  const r = pageResultPosts(result, adapter, { cursor: makeCursor({ mode: task.mode, known }), max: 0, found_by: task.found_by, skip: [...prevSeen, ...prevPosts.map((p) => p.collector_id), ...backlog0.map((p) => p.id)] });
+  const backlog = [...backlog0, ...r.posts];
+  const batchSize = Math.max(1, Number(args.batch) || Number(settings().research?.batch_size) || 16);
+  const undecidedNow = prevPosts.filter((p) => !(p.product_fit && String(p.product_fit.type || '').trim())).length;
+  // the current batch must have its decisions first (fit), then the next batch is downloaded
+  const room = undecidedNow > 0 ? 0 : Math.min(batchSize, task.max ? left : Infinity);
   const rawDir = path.join(task.dir, 'raw');
   fs.mkdirSync(rawDir, { recursive: true });
   const perPost = Math.max(1, Number(args.images) || 4);
   const posts = [];
   let noImage = 0;
-  if (!task.max || left > 0) {
-    for (const p of r.posts) {
+  {
+    while (backlog.length && posts.length < room) {
+      const p = backlog.shift();
       const images = [];
       for (const [k, u] of (p.image_urls || []).slice(0, perPost).entries()) {
         const f = await downloadPlain(u, path.join(rawDir, `${fileId(p.id)}-${k + 1}`), p.url);
@@ -194,6 +208,8 @@ export async function fromPage(args) {
     }
   }
   const all = [...prevPosts, ...posts];
+  writeJson(backlogFile(task), { posts: backlog });
+  const sheets = posts.length ? writeSheets(posts.map((p) => ({ file: path.join(task.dir, p.images[0]), label: String(p.collector_id || '').slice(0, 10) })), path.join(task.dir, 'sheets'), { prefix: `batch-${state0.extracts + 1}`, per: batchSize, ffmpeg: settings().ffmpeg?.command || '' }) : [];
   const seen = [...new Set([...prevSeen, ...tileKeys(result?.tiles)])];
   writeJson(seenFile(task), seen);
   const crawlInfo = result?.crawl || null, crawlStop = String(crawlInfo?.stop || '');
@@ -205,15 +221,17 @@ export async function fromPage(args) {
   const reason = String(result?.reason || '');
   const skipKnown = !!(task.mode.full || task.mode.backfill); // a new / partial source skips known posts on its way to the end: all-known is not a stop
   const allKnown = !blocked && !skipKnown && r.read > 0 && r.skippedKnown === r.read && !posts.length;
-  const note = blocked ? `${reason || 'login wall / block page'}: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : !all.length && !r.read && !(result?.total_on_page) ? 'error: 0 posts on the page (page empty or selectors no longer fit)' : noImage && !posts.length && r.read ? 'error: posts read but no image could be downloaded' : (allKnown || (!posts.length && !r.read && result?.total_on_page > 0)) ? `all ${r.read || result.total_on_page} posts on the page are already known (stop: known)` : '';
-  writeJson(task.raw_file, { ...rawShape(task, all, { rejected: prevRaw?.rejected || [] }) });
-  const cnt = counters({ posts: all, rejected: prevRaw?.rejected || [] }, prog0.read + posts.length, task.max);
+  const note = blocked ? `${reason || 'login wall / block page'}: ${String(result?.signals?.url || result?.url || '').slice(0, 80)}` : args.next ? '' : !all.length && !r.read && !(result?.total_on_page) ? 'error: 0 posts on the page (page empty or selectors no longer fit)' : noImage && !posts.length && r.read ? 'error: posts read but no image could be downloaded' : (allKnown || (!posts.length && !r.read && result?.total_on_page > 0)) ? `all ${r.read || result.total_on_page} posts on the page are already known (stop: known)` : '';
+  writeJson(task.raw_file, { ...rawShape(task, all, { rejected: prevRaw?.rejected || [] }), ...(prevRaw?.parked?.length ? { parked: prevRaw.parked } : {}) });
+  const cnt = counters({ posts: all, rejected: prevRaw?.rejected || [], parked: prevRaw?.parked || [] }, prog0.read + posts.length, task.max, backlog.length);
   writeJson(progressFile(task), { read: cnt.read, need: cnt.need });
   const fs0 = task.max ? fitStop(cnt, factor) : '';
   const target = fs0 === 'target';
   const poor = fs0 === 'poor_source';
   const summary = counterLine(cnt, { target: run?.mode?.max_posts || 0, kept: (run ? brandTotal(run) : 0) + cnt.kept });
-  const stop = blocked ? 'blocked' : target ? 'target' : poor ? 'poor_source' : crawlStop === 'end' ? 'end' : crawlStop === 'known' ? 'known' : allKnown ? 'known' : idle >= 3 ? 'no_new' : result?.closed && !r.read ? 'end' : '';
+  const stop0 = blocked ? 'blocked' : target ? 'target' : poor ? 'poor_source' : crawlStop === 'end' ? 'end' : crawlStop === 'known' ? 'known' : allKnown ? 'known' : idle >= 3 && !args.next ? 'no_new' : result?.closed && !r.read ? 'end' : '';
+  // the page may be done, the batches are not: end / known / no_new wait until the backlog is empty
+  const stop = backlog.length && ['end', 'known', 'no_new'].includes(stop0) ? '' : stop0;
   const tm = timeInfo(task.started);
   const state = blocked ? 'blocked' : suggestedState(task.kind, { blocked, error: /^error/.test(note), limit: target, read: all.length, stop: task.kind === 'source' ? (allKnown ? 'known' : stop === 'no_new' ? 'end' : '') : '' });
   const idArg = task.kind === 'query' ? `--query ${task.id}` : task.kind === 'source' ? `--source ${task.id}` : '';
@@ -224,7 +242,8 @@ export async function fromPage(args) {
   const [lo, hi] = scrollWait(task.platform);
   const next = blocked ? `Bị chặn (${reason || 'login wall'}): node scripts/research.mjs result --brand ${b} ${idArg} --state blocked --note "${note.replace(/"/g, "'")}" (dừng nền tảng này).`
     : tm.time_over && !stop ? (cnt.pending_fit > 0 && task.max ? 'Nhìn ảnh review[] và chạy collect.mjs fit ngay, rồi: ' : '') + TIME_NEXT
-    : !blocked && cnt.pending_fit > 0 && task.max ? `Nhìn ảnh review[] rồi chạy ngay: node scripts/collect.mjs fit --brand ${b} ${task.kind === 'query' ? '--for-query' : '--for-source'} ${task.id} --file <decisions.json>, rồi đọc need_more (run collect.mjs fit on review[], then check need_more).`
+    : !blocked && cnt.pending_fit > 0 ? `${posts.length ? `Read the contact sheet ONCE (${sheets.map((x) => x.file).join(', ')}; review[].tile = tile number), ` : `The current batch still has ${cnt.pending_fit} posts without a decision (new posts went to the backlog): `}decide product_fit for the tiles you LOOKED at, then: node scripts/collect.mjs fit --brand ${b} ${task.kind === 'query' ? '--for-query' : '--for-source'} ${task.id} --file <decisions.json>, then read need_more.${backlog.length ? ` ${backlog.length} more wait in the backlog: from-page --next after fit.` : ''} ${BATCH_RULE}`
+      : backlog.length && !stop ? `${backlog.length} posts read but not downloaded yet: node scripts/collect.mjs from-page ${forArgOf(task, brand)} --next (next batch, one contact sheet).`
       : crawlStop === 'hidden' && !stop ? `Chrome kept this tab in the background and the page loaded nothing more while hidden (Chrome pauses lazy loading in background tabs), so this is NOT the end of the source: node scripts/research.mjs ingest --brand ${b} ${idArg}; node scripts/research.mjs result --brand ${b} ${idArg} --state partial --note 'hidden tab' (resumable: the next run continues from here), then go on with the next source. Never bring Chrome to the front or focus a tab for this.`
       : stop ? `Stop (${stop}): ${done}`
       : crawlInfo ? `Round over (crawl.stop ${crawlStop || 'time'}, ${crawlInfo.rounds} extracts, ${crawlInfo.scrolls} scrolls): run the SAME file again with browser_run_code_unsafe (the page keeps its state), then from-page again.${trust ? '' : ` Adapter ${st.status}: compare the result with the real page before trusting it.`}`
@@ -233,7 +252,8 @@ export async function fromPage(args) {
   out({ brand: brand?.id || '', platform: task.platform, kind: task.kind, [task.kind === 'source' ? 'source' : 'query']: task.id, url: task.url, adapter: st, trusted: trust,
     verified: loaded.verified, ...(loaded.tag ? { tag: loaded.tag } : {}), extract: extracts, extracts_without_new: idle, total_on_page: result?.total_on_page ?? null, read: r.read, added: posts.length, collected: all.length, target: task.max || 0, counters: cnt, summary,
     ...(loaded.verified ? {} : { warning: 'hand-made result (no total/checksum): not verified, check the posts against the page' }), ...(tm.started ? { time_limit_minutes: tm.time_limit_minutes, started: tm.started, elapsed: tm.elapsed } : {}), skipped_known: r.skippedKnown, dropped_no_image: noImage, seconds: Math.round((Date.now() - t0) / 1000), stop: stop || (tm.time_over ? 'time' : ''), suggested_state: state, ...(crawlInfo ? { crawl: crawlInfo } : {}), ...(note ? { note } : {}), raw_file: task.raw_file,
-    review: posts.map((p, i) => ({ n: prevPosts.length + i + 1, id: p.collector_id, url: p.post_url, author: p.author, date: p.posted_date, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
+    ...(sheets.length ? { contact_sheet: sheets.map((x) => x.file) } : {}), queued: backlog.length,
+    review: posts.map((p, i) => ({ n: prevPosts.length + i + 1, tile: i + 1, id: p.collector_id, url: p.post_url, author: p.author, date: p.posted_date, caption: p.caption.slice(0, 140), image: path.join(task.dir, p.images[0]) })), next });
 }
 
 // `collect.mjs install`: ONE file with the extractors of every platform; run it once per Research session (browser_run_code_unsafe + filename).

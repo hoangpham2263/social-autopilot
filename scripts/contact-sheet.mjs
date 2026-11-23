@@ -1,10 +1,14 @@
 // One contact sheet of draft images, so the agent LOOKS at every new image in one read (pipeline.mjs, draft.mjs
 // contact-sheet). Pure Node (zlib): PNG decode (8-bit, non-interlaced; what Codex saves) and PNG encode; other formats
-// (JPEG/WebP) go through ffmpeg when it is there (settings ffmpeg.command), else they show as a grey tile with a note.
+// (JPEG/WebP) go through ffmpeg when it is there (settings ffmpeg.command), else JPEG through the vendored decoder
+// (scripts/image/jpeg.mjs) and other formats show as a grey tile with a note.
 // Each tile carries a label (draft number + short id) in a tiny bitmap font, so no font file is needed.
+// Also the research batches (writeSheets): one small sheet per batch so the agent judges product_fit in ONE read.
 import fs from 'node:fs';
+import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
+import { isJpeg, decodeJpeg } from './image/jpeg.mjs';
 
 const SIG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -109,9 +113,33 @@ function text(canvas, cw, x, y, str, scale, color) {
 export function loadThumb(file, tw, th, ffmpeg = 'ffmpeg') {
   const buf = fs.readFileSync(file);
   if (buf.subarray(0, 8).equals(SIG)) { try { return fit(decodePng(buf), tw, th); } catch { /* fall through to ffmpeg */ } }
-  const probe = spawnSync(ffmpeg, ['-v', 'error', '-i', file, '-vf', `scale=${tw}:${th}:force_original_aspect_ratio=decrease`, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', '-'], { maxBuffer: 256 * 1024 * 1024, windowsHide: true });
-  if (probe.status === 0 && probe.stdout?.length) return decodePng(probe.stdout);
+  const probe = ffmpeg ? spawnSync(ffmpeg, ['-v', 'error', '-i', file, '-vf', `scale=${tw}:${th}:force_original_aspect_ratio=decrease`, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', '-'], { maxBuffer: 256 * 1024 * 1024, windowsHide: true }) : null;
+  if (probe?.status === 0 && probe.stdout?.length) return decodePng(probe.stdout);
+  // no ffmpeg (or it failed): JPEG through the vendored decoder, RGBA -> RGB; WebP/AVIF stay without a preview (NO PREVIEW tile)
+  if (isJpeg(buf)) {
+    const j = decodeJpeg(buf), rgb = Buffer.alloc(j.width * j.height * 3);
+    for (let i = 0, o = 0; o < rgb.length; i += 4, o += 3) { rgb[o] = j.data[i]; rgb[o + 1] = j.data[i + 1]; rgb[o + 2] = j.data[i + 2]; }
+    return fit({ w: j.width, h: j.height, rgb }, tw, th);
+  }
   return null;
+}
+
+// Research batches (collect.mjs from-page / pending, store.mjs classify): the agent judges a WHOLE batch from ONE small sheet
+// instead of opening every full-size image. items [{ file, label }] -> sheets of `per` tiles (cols columns, `tile` px) in
+// outDir, named <prefix>-<n>.png (older sheets with that prefix are removed). Tile number on a sheet = order in `part` (#1..#per).
+export function writeSheets(items, outDir, { prefix = 'sheet', per = 16, cols = 4, tile = 256, ffmpeg = '' } = {}) {
+  const pre = String(prefix).replace(/[^\w-]/g, '') || 'sheet';
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const f of fs.readdirSync(outDir)) if (f.startsWith(`${pre}-`) && /-\d+\.png$/.test(f)) fs.rmSync(path.join(outDir, f), { force: true });
+  const sheets = [];
+  for (let i = 0; i < items.length; i += per) {
+    const part = items.slice(i, i + per);
+    const r = contactSheet(part, { cols: Math.min(cols, part.length), tw: tile, th: tile, ffmpeg });
+    const file = path.join(outDir, `${pre}-${sheets.length + 1}.png`);
+    fs.writeFileSync(file, r.png);
+    sheets.push({ file, tiles: part.length, first: i + 1, missing: r.missing });
+  }
+  return sheets;
 }
 
 // items: [{ file, label }] -> PNG Buffer. cols columns of tw x th tiles, label bar under each.
