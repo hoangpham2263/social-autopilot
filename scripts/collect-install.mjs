@@ -114,7 +114,7 @@ export function initScriptCode(ids = platformIds()) {
 }
 export function installScript(ids = platformIds()) {
   const code = initScriptCode(ids);
-  return `async (page) => {\n  const code = ${JSON.stringify(code)};\n  await page.context().addInitScript(code);\n  await page.evaluate(code).catch(() => {});\n  return { installed: true, platforms: ${JSON.stringify(ids)} };\n}`;
+  return `async (page) => {\n  await page.bringToFront();\n  const code = ${JSON.stringify(code)};\n  await page.context().addInitScript(code);\n  await page.evaluate(code).catch(() => {});\n  return { installed: true, platforms: ${JSON.stringify(ids)} };\n}`;
 }
 // The tiny per-task file: args = { found_by, max, seen, post?, crawl? }. With crawl (the options of crawlFactory) one run of the file is a
 // whole ROUND of the page-side crawl (scrolls by itself); without it one plain extract of what is on the page now.
@@ -137,6 +137,7 @@ export function callScript(platform, args) {
   })()`
     : `page.evaluate((a) => (window.__sa && window.__sa[${P}] ? window.__sa[${P}](a) : null), ${JSON.stringify(a)})`;
   return `async (page) => {
+  await page.bringToFront();
   const o = ${JSON.stringify({ post: post || undefined })};
   ${wait}
   const x = await ${call};

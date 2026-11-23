@@ -49,11 +49,12 @@ export function classifyPage(id, f) {
 export function checkScript(platforms) {
   const homes = Object.fromEntries(platforms.map((p) => [p, HOMES[p]]));
   return `async (page) => {
+  await page.bringToFront();
   const t0 = Date.now(), HOMES = ${JSON.stringify(homes)};
   ${classifyPage.toString()}
   const res = { ok: false, hidden: null, focus: null, tabs: 0, platforms: {}, seconds: 0 };
   try {
-    // no bringToFront: the person keeps working in other apps; a background (hidden) tab is normal and the scripts work in it.
+    // bringToFront above (2026-11-23, background mode removed): a hidden tab renders nothing; keep the tab in front.
     const v = await page.evaluate(() => ({ s: document.visibilityState, f: document.hasFocus() }));
     res.hidden = v.s !== 'visible'; res.focus = !!v.f; res.ok = true;
     res.tabs = page.context().pages().length;
