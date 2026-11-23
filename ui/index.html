@@ -344,6 +344,16 @@ details.sec[open] > summary { margin-bottom: 12px; }
 .bl-lk { display: inline-flex; vertical-align: middle; margin-left: 4px; color: #b45309; cursor: help; }
 .bl-lk:empty { display: none; }
 #prLoginHint { min-height: 0; margin: 8px 0; color: #b45309; }
+/* Flow profile/account check: one line by the pickers (#prFlowCheck) and the same line above Run now (#prFlowRunHint). Warn = amber, block = red. */
+#prFlowRunHint { margin: 8px 0; }
+.flow-check { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.flow-check.is-warn { color: #b45309; } .flow-check.is-block { color: rgb(176, 0, 0); }
+.flow-check .status-tag { flex: 0 0 auto; color: inherit; }
+/* Playwright token: label above, input + Save + Clear in one row, status below; always usable (also when a token is saved). */
+#prTokenRow:not([hidden]) { display: flex; flex-direction: column; gap: 4px; }
+.flow-check[hidden] { display: none; }
+#prTokenRow .tok-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#prTokenRow .tok-row input { flex: 1 1 260px; min-width: 0; }
 .sec .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; } .sec .chips:empty { display: none; }
 /* Quiet action: text link in a row of secondary actions. */
 .row-actions .linkbtn { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--accent); text-decoration: underline; cursor: default; }
@@ -489,6 +499,7 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="publish" hidden><label for="prWindow" id="prWindowLabel">Time</label><select id="prWindow"><option value="">Auto (best time)</option><option value="morning">Morning 8–11</option><option value="midday">Midday 11–14</option><option value="afternoon">Afternoon 14–17</option><option value="evening">Evening 18–21</option></select></div>
       <div class="field" data-opt="publish" hidden><label for="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow.">Start</label><select id="prStart" title="Posts can start today at the next best time; times are computed right before sending, with a 15-minute safety margin so a slot is not already past. Otherwise from tomorrow."><option value="today" selected>From today (next best time)</option><option value="">From tomorrow</option></select></div>
     </div>
+    <div class="meta flow-check" id="prFlowRunHint" role="status" hidden></div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
       <button class="btn primary" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
@@ -518,7 +529,8 @@ header + * { margin-top: 0; }
           <div class="f"><label for="prFlowAccount">Tài khoản Google cho Flow (để trống = Flow tự chọn)</label><select id="prFlowAccount"><option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option></select><button class="btn" type="button" id="prFlowAccountSave" hidden>Lưu</button></div>
           <div class="f"><button class="btn" type="button" id="prBrowserLogin" title="Own Chrome mode: opens the tool's separate profile. Everyday Chrome mode: opens the Chrome profile chosen above (with the login sites as tabs). Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
         </div>
-        <div class="row-actions" id="prTokenRow" hidden><label for="prChromeToken">Token Playwright (tùy chọn)</label><input id="prChromeToken" type="password" autocomplete="off" placeholder="Dán token của extension trong profile này" style="min-width:260px"><button class="btn" type="button" id="prTokenSave">Lưu</button><button class="btn" type="button" id="prTokenClear" hidden>Xoá token</button><span class="meta" id="prTokenMsg" role="status"></span></div>
+        <div class="meta flow-check" id="prFlowCheck" role="status" hidden></div>
+        <div class="f" id="prTokenRow" hidden><label for="prChromeToken">Token Playwright (tùy chọn)</label><div class="tok-row"><input id="prChromeToken" type="password" autocomplete="off" placeholder="Dán token của extension trong profile này"><button class="btn" type="button" id="prTokenSave">Lưu token</button><button class="btn" type="button" id="prTokenClear">Xoá token</button></div><span class="meta" id="prTokenMsg" role="status"></span></div>
         <div class="row-actions"><button class="btn" type="button" id="prChromeInstall" hidden>Cài extension vào profile này</button></div>
         <div class="meta" id="prChromeProfileMsg" role="status">Profiles found on this machine. Only profiles with the Playwright extension can be driven; the Chrome window of that profile must be open and you click Connect once per run.</div>
         <div class="meta" id="prBrowserStatus" role="status"></div>
@@ -1553,6 +1565,28 @@ header + * { margin-top: 0; }
   // ----- Run now: starts headless Claude with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
   const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
   let browserState = null;
+  // Flow profile/account check (everyday-Chrome mode). Google flags a whole Chrome PROFILE, so: WARN when the chosen profile holds several
+  // Google accounts, BLOCK a Flow run when browser.flow_account is not signed in to that profile. null = nothing to check (own browser).
+  // Research / Publish never use it; the server applies the same block (extensionProfileProblem with flow).
+  function flowCheck(bi = browserState) {
+    if (!bi || bi.error || bi.mode !== "extension") return null;
+    const acc = arr(bi.profile_accounts).map((x) => String(x).toLowerCase()), want = String(bi.flow_account || "").toLowerCase(), prof = bi.chrome_profile || "Profile";
+    if (!acc.length) return { level: "warn", text: `Không đọc được tài khoản Google trong ${prof}: không kiểm tra được tài khoản Flow.` };
+    const parts = []; let level = "ok";
+    if (want && !acc.includes(want)) { level = "block"; parts.push(`Tài khoản Flow ${want} không đăng nhập trong ${prof} (có: ${acc.join(", ")}). Sửa: chọn tài khoản có trong profile ở ô Tài khoản Google cho Flow, đăng nhập ${want} vào profile này, hoặc chọn profile khác.`); }
+    if (acc.length > 1) { if (level === "ok") level = "warn"; parts.push(`Profile này có ${acc.length} tài khoản: Google có thể khoá cả profile; nên dùng profile chỉ 1 tài khoản cho Flow.` + (want ? "" : " Chưa chọn tài khoản Flow: Flow tự mở tài khoản đầu tiên.")); }
+    if (level === "ok") parts.push(`${prof} có 1 tài khoản: Flow dùng ${want || acc[0]}.`);
+    return { level, text: parts.join(" ") };
+  }
+  // This Run now / the stopped run to continue makes images in Google Flow.
+  const flowRunNow = () => modeKey(prMode) === "create" && chosenEngine() === "flow";
+  const flowResume = (rs) => !!rs?.available && rs.mode === "create" && (rs.image_engine === "flow" || (!rs.image_engine && promptData?.image_engine === "flow"));
+  const FC_TAG = { ok: ["c-green", "OK"], warn: ["c-amber", "Cảnh báo"], block: ["c-red", "Chặn chạy Flow"] };
+  function flowCheckDraw() {
+    const c = flowCheck(), put = (el, show) => { if (!el) return; const sig = show ? c.level + "|" + c.text : ""; if (el.dataset.sig === sig) return; el.dataset.sig = sig; el.hidden = !show; el.classList.toggle("is-warn", !!show && c.level === "warn"); el.classList.toggle("is-block", !!show && c.level === "block"); el.innerHTML = show ? `<span class="status-tag ${FC_TAG[c.level][0]}">${FC_TAG[c.level][1]}</span><span>${esc(c.text)}</span>` : ""; };
+    put($("#prFlowCheck"), !!c);
+    put($("#prFlowRunHint"), !!c && c.level !== "ok" && (flowRunNow() || (howNow() === "app" && flowResume(arState?.resume))));
+  }
   let arTimer = 0, arState = null; const arToldProblem = new Set();
   // How to run: "Run in the app" (Run now + live panel) or "Copy prompt" (prompt box). Default Copy prompt until the user picks the app once. Only hides; #prText keeps being regenerated.
   const howNow = () => (store.get("prHow") === "app" ? "app" : "copy");
@@ -1593,6 +1627,9 @@ header + * { margin-top: 0; }
       setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : "Run now starts Claude Code: choose the Claude Code agent") : "No stopped run to continue: the last run finished or none was started from the app");
       if (ok) btn.title = `Continues the previous run with the same options, without redoing finished work: ${what}`; }
     { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
+    // Flow run whose Flow account is not signed in to the chosen profile: blocked (a warning alone never blocks).
+    { const c = flowCheck(); if (c?.level === "block") { if (flowRunNow()) setDisabled($("#prRunNow"), true, c.text); if (flowResume(r?.resume)) setDisabled($("#prResume"), true, c.text); } }
+    try { flowCheckDraw(); } catch {}
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
     box.hidden = howNow() !== "app"; prRunVis();
@@ -1781,6 +1818,7 @@ header + * { margin-top: 0; }
     if (!(await acceptTicked())) return;
     if (prBlock) { flash(prBlock); return; }
     { const n = blNeed(); if (n.length) toast(`Not logged in: ${n.join(", ")}. The run starts anyway; those sources will likely fail. Run > Browser > Log in.`); }
+    if (flowRunNow()) { const c = flowCheck(); if (c?.level === "block") { flash(c.text); toast(c.text); return; } if (c?.level === "warn") toast(c.text); }
     const key = modeKey(prMode);
     // The same text Copy prompt copies, minus the sub-agent lead line (a headless run is its own agent, so that line means nothing to it).
     let text = $("#prText").value;
@@ -1798,6 +1836,7 @@ header + * { margin-top: 0; }
   };
   $("#prResume").onclick = async () => {
     if (runGuard()) return;
+    if (flowResume(arState?.resume)) { const c = flowCheck(); if (c?.level === "block") { flash(c.text); toast(c.text); return; } if (c?.level === "warn") toast(c.text); }
     const btn = $("#prResume"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "Starting…";
     try {
@@ -1912,9 +1951,10 @@ header + * { margin-top: 0; }
     { const fa = $("#prFlowAccount");
       if (fa && !bi.error && document.activeElement !== fa && fa.dataset.dirty !== "1") {
         const list = [...new Set([...((bi.mode === "extension" && Array.isArray(bi.profile_accounts) && bi.profile_accounts.length) ? bi.profile_accounts : (bi.google_accounts || [])), ...(bi.flow_account ? [bi.flow_account.toLowerCase()] : [])])];
-        fa.innerHTML = '<option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option>' + list.map((e) => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join("");
+        fa.innerHTML = '<option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option>' + list.map((e) => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join("") + '<option value="__other">Khác (nhập email)…</option>';
         fa.value = (bi.flow_account || "").toLowerCase();
       } }
+    try { flowCheckDraw(); } catch {}
     const bst = $("#prBrowserStatus"), login = $("#prBrowserLogin");
     const busy = !!bi.run_active;
     const line = bi.error ? "Could not read the browser status: " + bi.error : bi.window_open ? "The login window is open: log in, then close it before a run." : busy ? "A run is using the own browser now (headless)." : bi.profile_exists ? "Profile ready" + (bi.last_opened ? ", last opened " + when(bi.last_opened) : "") + (bi.headless ? " · runs in the background" : " · runs with a visible window") : "No profile yet: press Open browser to log in, log in to the sites, then close the window.";
@@ -1924,21 +1964,49 @@ header + * { margin-top: 0; }
     if (!$("#page-prompt").hidden) browserTimer = setTimeout(loadBrowser, 3000);
   });
   // Browser mode + Chrome profile picker (profiles read from this machine's Local State).
-  { const bm = $("#prBrowserMode"), cp = $("#prChromeProfile"), msg = $("#prChromeProfileMsg"), inst = $("#prChromeInstall"); let savedProfile = "", savedMode = "", noExt = new Set(), profileList = [];
+  // The Flow account follows the profile: exactly one signed-in Google account = that account; several = keep the current one when it is
+  // signed in there, else none (+ warning). The person can still pick another account by hand afterwards (also a custom email).
+  const flowAccountFor = (prof, cur = "") => {
+    const a = arr(prof?.accounts).map((x) => String(x).toLowerCase()), c = String(cur || "").toLowerCase();
+    if (!a.length) return { acc: c, note: "" };
+    if (a.length === 1) return { acc: a[0], note: a[0] === c ? "" : `Tài khoản Flow theo profile ${prof.folder}: ${a[0]} (tài khoản duy nhất của profile).` };
+    if (a.includes(c)) return { acc: c, note: `${prof.folder} có ${a.length} tài khoản: giữ ${c} cho Flow (nên dùng profile chỉ 1 tài khoản cho Flow).` };
+    return { acc: "", note: `${prof.folder} có ${a.length} tài khoản: chưa chọn tài khoản Flow, chọn ở ô Tài khoản Google cho Flow (nên dùng profile chỉ 1 tài khoản cho Flow).` };
+  };
+  // Saves browser.flow_account only (the rest of the settings unchanged). Returns the error text or "".
+  const saveFlowAccount = async (email) => {
+    const cur = await getJson("/api/settings").catch(() => offline);
+    if (cur.error) return "Không đọc được cài đặt: " + cur.error;
+    const s = cur.settings || {};
+    const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), flow_account: email } } }).catch(() => offline);
+    return r.error ? "Không lưu được: " + r.error : "";
+  };
+  { const bm = $("#prBrowserMode"), cp = $("#prChromeProfile"), msg = $("#prChromeProfileMsg"), inst = $("#prChromeInstall"), fa = $("#prFlowAccount"), fm = $("#prFlowAccountMsg"); let savedProfile = "", savedMode = "", noExt = new Set(), profileList = [];
+    const autoFixed = new Set();
     const loadProfiles = async () => {
       const r = await getJson("/api/chrome-profiles").catch(() => offline);
       if (r.error) { msg.textContent = "Could not read Chrome profiles: " + r.error; return; }
       bm.value = r.mode || "own";
-      cp.innerHTML = (r.profiles || []).map((p) => '<option value="' + esc(p.folder) + '">' + esc((p.name || p.folder) + (p.email ? " · " + p.email : "") + " (" + p.folder + ")" + (p.playwright_extension ? "" : " · no Playwright extension")) + '</option>').join("") || '<option value="">No Chrome profile found</option>';
+      cp.innerHTML = (r.profiles || []).map((p) => '<option value="' + esc(p.folder) + '">' + esc((p.name || p.folder) + (p.email ? " · " + p.email : "") + " (" + p.folder + ")" + (p.playwright_extension ? "" : " · no Playwright extension") + (arr(p.accounts).length > 1 ? " · " + p.accounts.length + " tài khoản" : "")) + '</option>').join("") || '<option value="">No Chrome profile found</option>';
       profileList = r.profiles || []; savedProfile = r.selected || ""; savedMode = r.mode || "own"; noExt = new Set((r.profiles || []).filter((p) => !p.playwright_extension).map((p) => p.folder));
       cp.value = savedProfile;
       cp.disabled = bm.value !== "extension";
       inst.hidden = !(bm.value === "extension" && noExt.has(cp.value));
-      { const row = $("#prTokenRow"), tm = $("#prTokenMsg"), clr = $("#prTokenClear"), prof = profileList.find((x) => x.folder === cp.value);
-        row.hidden = bm.value !== "extension" || !prof || !prof.playwright_extension;
-        clr.hidden = !prof?.token_saved;
-        tm.textContent = prof?.token_saved ? "Đã gắn token cho " + cp.value + ": chạy không cần bấm Connect." : "Chưa gắn token: mỗi lượt bấm Connect (như bình thường)."; }
+      // Token: always usable (Save / Clear / overwrite) for the chosen profile, also when one is saved: the extension can reset its token.
+      { const row = $("#prTokenRow"), tm = $("#prTokenMsg"), inp = $("#prChromeToken"), prof = profileList.find((x) => x.folder === cp.value);
+        row.hidden = bm.value !== "extension" || !cp.value;
+        inp.placeholder = prof?.token_saved ? "Đã lưu token: dán token mới để ghi đè" : "Dán token của extension trong profile này";
+        tm.textContent = prof?.token_saved ? "Đã lưu token cho " + cp.value + ": chạy không cần bấm Connect. Extension đổi token thì dán token mới rồi Lưu token, hoặc Xoá token." : "Chưa có token cho " + cp.value + ": mỗi lượt bấm Connect (như bình thường)."; }
       if (!inst.hidden) msg.textContent = "Profile này chưa có extension Playwright: tool sẽ không chạy cho tới khi bạn cài (nút bên trên) hoặc chọn profile khác.";
+      // On load: the saved Flow account is not signed in to the saved profile -> follow the profile (once per profile/account pair).
+      { const prof = profileList.find((x) => x.folder === savedProfile), want = String(r.flow_account || "").toLowerCase(), key = savedProfile + "|" + want;
+        if (bm.value === "extension" && prof && arr(prof.accounts).length && want && !prof.accounts.includes(want) && !autoFixed.has(key)) {
+          autoFixed.add(key);
+          const { acc, note } = flowAccountFor(prof, want);
+          const err = await saveFlowAccount(acc);
+          fa.dataset.dirty = ""; browserState = null; try { loadBrowser(); } catch {}
+          fm.textContent = err || `${want} không đăng nhập trong ${prof.folder}. ` + (note || (acc ? "Flow dùng " + acc + "." : "Đã bỏ chọn tài khoản Flow."));
+        } }
     };
     const save = async () => {
       if (cp.value === savedProfile && bm.value === savedMode) return;
@@ -1946,34 +2014,45 @@ header + * { margin-top: 0; }
       if (cur.error) { msg.textContent = "Could not read settings: " + cur.error; return; }
       const s = cur.settings || {};
       const prof = profileList.find((x) => x.folder === cp.value), curAcc = String((s.browser || {}).flow_account || "").toLowerCase();
-      const flowAcc = bm.value === "extension" && prof && prof.accounts && prof.accounts.length && !prof.accounts.includes(curAcc) ? (String(prof.email || "").toLowerCase() || prof.accounts[0]) : (s.browser || {}).flow_account;
-      const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), mode: bm.value, flow_account: flowAcc }, research: { ...(s.research || {}), chrome_profile: cp.value || (s.research || {}).chrome_profile } } }).catch(() => offline);
-      browserState = null; try { loadBrowser(); } catch {}
+      const follow = bm.value === "extension" && prof ? flowAccountFor(prof, curAcc) : null;
+      const flowAcc = follow ? follow.acc : (s.browser || {}).flow_account;
+      const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), mode: bm.value, flow_account: flowAcc || "" }, research: { ...(s.research || {}), chrome_profile: cp.value || (s.research || {}).chrome_profile } } }).catch(() => offline);
+      fa.dataset.dirty = ""; browserState = null; try { loadBrowser(); } catch {}
       msg.textContent = r.error ? "Could not save: " + r.error : "Saved.";
+      if (!r.error && follow?.note) fm.textContent = follow.note;
       loadProfiles();
     };
     bm.addEventListener("change", save); cp.addEventListener("change", save);
-    // Optional token of the chosen profile: saved only on this machine; the page never reads it back.
+    // Optional token of the chosen profile: saved only on this machine; the page never reads it back. Overwrite or clear at any time.
     const tokSave = async (token) => {
       const r = await postJson("/api/chrome-extension-token", { profile: cp.value, token }).catch(() => offline);
       $("#prChromeToken").value = "";
       if (r.error) { $("#prTokenMsg").textContent = r.error; return; }
-      loadProfiles();
+      await loadProfiles();
+      $("#prTokenMsg").textContent = (r.token_saved ? "Đã lưu token cho " + cp.value + ": chạy không cần bấm Connect." : "Đã xoá token của " + cp.value + ": mỗi lượt bấm Connect.") + " Có thể ghi đè hoặc xoá bất cứ lúc nào.";
     };
-    $("#prTokenSave").addEventListener("click", () => { const t = $("#prChromeToken").value.trim(); if (t) tokSave(t); });
+    const tokSubmit = () => { const t = $("#prChromeToken").value.trim(); if (t) tokSave(t); else { $("#prTokenMsg").textContent = "Dán token (trang Playwright MCP Bridge của profile này) rồi bấm Lưu token."; $("#prChromeToken").focus(); } };
+    $("#prTokenSave").addEventListener("click", tokSubmit);
+    $("#prChromeToken").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tokSubmit(); } });
     $("#prTokenClear").addEventListener("click", () => { if (confirm("Xoá token của " + cp.value + "? Các lượt sau sẽ cần bấm Connect.")) tokSave(""); });
     inst.addEventListener("click", async () => { const r = await postJson("/api/chrome-extension-install", { profile: cp.value }).catch(() => offline); msg.textContent = r.error ? "Không mở được: " + r.error : "Đã mở trang cài extension trong profile " + cp.value + ": bấm Thêm vào Chrome, rồi quay lại đây."; });
     loadProfiles();
   }
+  // Flow account picked by hand (any time after the automatic pick): one of the profile's accounts, none, or a custom email.
   { const fa = $("#prFlowAccount"), fs = $("#prFlowAccountSave"), fm = $("#prFlowAccountMsg");
-    fa.addEventListener("change", () => { fa.dataset.dirty = "1"; fs.click(); });
+    fa.addEventListener("change", () => {
+      if (fa.value === "__other") {
+        const e = (prompt("Email tài khoản Google cho Flow (phải đã đăng nhập trong profile Chrome đã chọn):", "") || "").trim().toLowerCase();
+        if (!e) { fa.value = String(browserState?.flow_account || "").toLowerCase(); fa.dataset.dirty = ""; return; }
+        if (![...fa.options].some((o) => o.value === e)) fa.add(new Option(e, e), fa.options.length - 1);
+        fa.value = e;
+      }
+      fa.dataset.dirty = "1"; fs.click();
+    });
     fs.addEventListener("click", async () => {
-      const email = fa.value.trim();
-      const cur = await getJson("/api/settings").catch(() => offline);
-      if (cur.error) { fm.textContent = "Không đọc được cài đặt: " + cur.error; return; }
-      const s = cur.settings || {};
-      const r = await postJson("/api/settings", { settings: { ...s, browser: { ...(s.browser || {}), flow_account: email } } }).catch(() => offline);
-      if (r.error) { fm.textContent = "Không lưu được: " + r.error; return; }
+      const email = fa.value === "__other" ? "" : fa.value.trim();
+      const err = await saveFlowAccount(email);
+      if (err) { fm.textContent = err; return; }
       fa.dataset.dirty = ""; browserState = null; try { loadBrowser(); } catch {}
       fm.textContent = email ? "Đã lưu: Flow sẽ dùng " + email + "." : "Đã xoá: Flow tự chọn tài khoản.";
     });

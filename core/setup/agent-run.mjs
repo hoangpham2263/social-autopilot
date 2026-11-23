@@ -289,7 +289,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       const why = browserCheck(bs.profileDir); if (why) return { ok: false, status: 409, error: why };
     }
     if (browser && !own) {
-      const why = extensionProfileProblem(s); if (why) return { ok: false, status: 409, error: why };
+      const why = extensionProfileProblem(s, { flow }); if (why) return { ok: false, status: 409, error: why };
     }
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;

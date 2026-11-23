@@ -129,7 +129,7 @@ export function profileGoogleAccounts(profileDir, { read = (f) => readFileSync(f
 export function browserInfo({ settings = {}, toolRoot, workspace, runActive = false, exists = existsSync, locked = profileLocked } = {}) {
   const bs = browserSettings(settings, toolRoot);
   const has = exists(bs.profileDir);
-  return { mode: bs.mode, headless: bs.headless, flow_account: String(settings?.browser?.flow_account || ""), google_accounts: profileGoogleAccounts(bs.profileDir), profile_accounts: extensionAccounts(settings), profile_dir: bs.profileDir, profile_exists: has, last_opened: lastOpened(workspace), window_open: has && locked(bs.profileDir), run_active: !!runActive };
+  return { mode: bs.mode, headless: bs.headless, flow_account: String(settings?.browser?.flow_account || ""), google_accounts: profileGoogleAccounts(bs.profileDir), profile_accounts: extensionAccounts(settings), chrome_profile: String(settings?.research?.chrome_profile || ""), profile_dir: bs.profileDir, profile_exists: has, last_opened: lastOpened(workspace), window_open: has && locked(bs.profileDir), run_active: !!runActive };
 }
 
 // ----- login status from the cookie database METADATA (names, hosts, expiry; never values) -----

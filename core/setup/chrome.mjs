@@ -79,14 +79,16 @@ export function localChromeProfiles({ settings = {}, plat = osPlatform(), env = 
 export const EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/playwright-mcp-bridge/" + PLAYWRIGHT_EXTENSION_ID;
 // Why a run in extension mode cannot use the chosen profile ("" = fine). Playwright MCP silently falls back to the last used profile that has
 // the extension when the chosen one has none, so the tool refuses to start instead of driving a Chrome the person did not choose.
-export function extensionProfileProblem(settings = {}, opts = {}) {
+// `flow` = this run makes images in Google Flow: only then must browser.flow_account be signed in to the profile (Research / Publish are never
+// blocked by the Flow account).
+export function extensionProfileProblem(settings = {}, { flow = false, ...opts } = {}) {
   const { profiles, selected } = localChromeProfiles({ settings, ...opts });
   if (!selected) return "Chưa chọn profile Chrome: vào Run > Browser > Chrome profile.";
   const p = profiles.find((x) => x.folder === selected);
   if (!p) return "Profile Chrome " + selected + " không còn trên máy: chọn profile khác ở Run > Browser > Chrome profile.";
   if (!p.playwright_extension) return selected + (p.email ? " (" + p.email + ")" : "") + " chưa có extension Playwright MCP Bridge: bấm Cài extension vào profile này (Run > Browser) hoặc chọn profile khác. Tool không tự dùng profile khác.";
   const want = String(settings.browser?.flow_account || "").trim().toLowerCase();
-  if (want && p.accounts?.length && !p.accounts.includes(want)) return "Tài khoản Flow " + want + " không đăng nhập trong profile " + selected + " (có: " + p.accounts.join(", ") + "). Chọn lại tài khoản Flow hoặc profile ở Run > Browser.";
+  if (flow && want && p.accounts?.length && !p.accounts.includes(want)) return "Tài khoản Flow " + want + " không đăng nhập trong profile " + selected + " (có: " + p.accounts.join(", ") + "). Sửa: chọn tài khoản có trong profile ở Run > Browser > Tài khoản Google cho Flow, đăng nhập " + want + " vào profile này, hoặc chọn profile khác.";
   return "";
 }
 // Opens the Chrome Web Store page of the Playwright extension IN the chosen profile (the person installs it; nothing is installed for them).
