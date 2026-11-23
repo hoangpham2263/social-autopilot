@@ -258,6 +258,10 @@ function stageB(st, file) {
     const tag = `${e.brand} ${e.id}`;
     if (e.reject) { const r = step('ideas.mjs', ['reject', '--brand', e.brand, '--id', e.id, '--note', String(e.reject)]); r.ok === false ? problems.push(`${tag}: ${r.error}`) : rejected.push(tag); continue; }
     const swap = e.scene_swap === true;
+    // The idea fields belong in e.idea; an agent that wrote audience / scene_type / scene / text_reason at the top level of the entry
+    // is accepted too (copied into e.idea when e.idea has no value for them). album_scenes / album_signs stay top level as documented.
+    e.idea ||= {};
+    for (const k of ['audience', 'scene_type', 'scene', 'text_reason', 'angle', 'props']) if (e[k] !== undefined && (e.idea[k] === undefined || e.idea[k] === '')) e.idea[k] = e[k];
     // Steps 1-3 (audience, scene_type fits the scene, the wording per sign mode): an idea of a brand with a sign mode cannot skip them.
     const bObj = loadBrand(e.brand, { allowDisabled: true }), rulesB = requireSignRules(bObj), custom = rulesB?.mode === 'scene';
     if (rulesB?.mode === 'placeholder' && !String(e.sign_text || e.idea?.sign_text || '').trim()) e.sign_text = placeholderOf(bObj, e.idea?.scene_type) || '';

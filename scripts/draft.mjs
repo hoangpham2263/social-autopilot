@@ -220,7 +220,10 @@ function sizeAndText(brand, args, from = {}, ref = {}, ctx = null) {
   let signText = args['clear-sign-text'] ? '' : str('sign-text') || String(from.sign_text || '').trim();
   // Placeholder mode: the wording is the idea's row placeholder (scene_type = product handle); the tool fills it when omitted.
   if (placeholder && !signText && !args['clear-sign-text']) signText = placeholderOf(brand, ctx?.idea?.scene_type || from.scene_type) || '';
-  if (customText && !signText) throw new Error(cause('missing-sign-text', 'This brand writes NEW sign wording per post (sign mode scene): give --sign-text, NEW English wording that fits the scene and audience (never the reference wording or a template placeholder).'));
+  // A product the skill table marks without lettering (wording "none ...", e.g. neon artwork) needs no sign text in scene mode.
+  const rowKey = String(ctx?.idea?.scene_type || from.scene_type || '').toLowerCase();
+  const unlettered = customText && !!rowKey && !!signRules(brand)?.rows?.find((r) => r.key === rowKey)?.no_lettering;
+  if (customText && !signText && !unlettered) throw new Error(cause('missing-sign-text', 'This brand writes NEW sign wording per post (sign mode scene): give --sign-text, NEW English wording that fits the scene and audience (never the reference wording or a template placeholder).'));
   if (signText && !placeholder && PLACEHOLDER.test(signText)) throw new Error(`--sign-text "${signText}" is a template placeholder: choose a text that fits the scene.`);
   // Custom-text brands change the words in BOTH reference modes (keep-scene and new-scene): the reference wording is never reused.
   if (ref.mode === 'keep-scene' || (customText && ref.mode && ref.mode !== 'legacy')) {
@@ -829,7 +832,8 @@ const SHOTS = {
 // a different scene per extra; the scene comes from draft.album_scenes, else the agent writes it on the "NEW SCENE FOR THIS IMAGE:"
 // line of prompt-0N.txt per the brand's project.md table; an old line is kept when the prompts are rewritten).
 function albumSignRule(draft, n) {
-  if (!perImageSigns(draft)) return "Keep the product's text exactly as in the main image, character for character.";
+  // Angle albums (and any album without per-image wording) repeat the cover wording; written out so check-prompt finds sign_text.
+  if (!perImageSigns(draft)) return draft.sign_text ? `the sign reads exactly "${draft.sign_text}" (character for character), the same wording as the main image, in the same lettering style, colours, glow and layout. No other words, no placeholder.` : "Keep the product's text exactly as in the main image, character for character.";
   const s = albumSignOf(draft, n);
   return s ? `the sign in THIS image reads exactly "${s}" (character for character). It is NOT the wording of the main image: replace the main image's wording ENTIRELY with this one, in the same lettering style, colours, glow and size, and the same number of lines or fewer. This line overrides every other mention of the sign's text in this prompt. No other words, no placeholder, no brand or shop name.` : '{{ALBUM_SIGN}}';
 }
@@ -837,7 +841,7 @@ function writeExtraPrompts(dir, draft, brand, sizeFill) {
   const files = draftImages(draft), scene = albumModeOf(draft) === 'scene';
   for (let k = 1; k < files.length; k++) {
     fs.writeFileSync(path.join(dir, `prompt-${String(k + 1).padStart(2, '0')}.txt`), fill(fs.readFileSync(path.join(toolRoot, 'prompts', scene ? 'album-extra-scene.txt' : 'album-extra.txt'), 'utf8'), {
-      INDEX: String(k + 1), COUNT: String(files.length), MAIN_IMAGE: 'image.png', ...(scene ? { ALBUM_SCENE: albumSceneOf(dir, draft, k + 1) || '{{ALBUM_SCENE}}', ALBUM_SIGN_RULE: albumSignRule(draft, k + 1) } : { SHOT: SHOTS[extraShotOf(k)] }),
+      INDEX: String(k + 1), COUNT: String(files.length), MAIN_IMAGE: 'image.png', ...(scene ? { ALBUM_SCENE: albumSceneOf(dir, draft, k + 1) || '{{ALBUM_SCENE}}', ALBUM_SIGN_RULE: albumSignRule(draft, k + 1) } : { SHOT: SHOTS[extraShotOf(k)], ALBUM_SIGN_RULE: albumSignRule(draft, k + 1) }),
       PRODUCT_RULES: projectSection(brand.project, 10) || '(project.md mục 10 trống)', OUTPUT: files[k], ...sizeFill,
     }), 'utf8');
   }
