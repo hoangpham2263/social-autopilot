@@ -43,6 +43,8 @@ WORK LIKE A PERSON (user 2026-11-23): one agent, one browser, one Flow project p
 
 One image takes about 20-30 s; Flow renders several at once. Do not submit one image and wait for it, and do not fire everything at once either: submit small groups of 3-4 with random human pauses (see "Human pacing" below), one wait per group.
 
+**Concrete click-by-click steps, selectors and pitfalls: `docs/flow-ui-notes.md`; short run-learned lines: `workspace/flow-ui-lessons.md` (gitignored). A Create run reads both BEFORE opening Flow and APPENDS one short line to the lessons file when it finds a faster or more reliable way, or a pitfall that cost more than 3 steps (UI element as shown + what to do; no personal data; no duplicates).**
+
 ## Procedure (Vietnamese Flow interface, plan PLUS; adapt if the language or layout differs; use text/role locators, never fixed coordinates unless unavoidable)
 Setup (once per run, one Flow project per run or per brand):
 0. Google account (only when `browser.flow_account` is set, shown in the run line as "use ONLY the already logged-in Google account <email>"): the profile may hold several Google accounts and Flow opens with the first one. Open `https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fflow.google.com%2F` and click THAT email in the list (a signed-in account needs no password); on Flow check the avatar menu shows the same email. If the email is not in the list, or Flow says the credits are used up on it, stop and report: never log out, never remove an account, never add one, never use another account.
