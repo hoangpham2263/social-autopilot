@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir } from "node:os";
-import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel } from "../../scripts/agent-models.mjs";
+import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel, claudeName } from "../../scripts/agent-models.mjs";
 import { classifyProblem } from "./agent-problems.mjs";
 import { browserSettings, WINDOW_SIZE } from "./own-browser.mjs";
 import { extensionProfileProblem, extensionToken } from "./chrome.mjs";
@@ -52,6 +52,11 @@ export const modelFlag = (model, settings = {}) => {
   const custom = settings?.agent_run?.model_map?.[model];
   return typeof custom === "string" && /^[A-Za-z0-9._:\[\]-]{1,80}$/.test(custom.trim()) ? custom.trim() : model;
 };
+// First line of every run: the model the CLI reports (init event); provisional from the settings until then.
+export const modelLine = (id, effort = "") => { const n = claudeName(id); return `Model in use: ${id}${n.name === "Custom" ? "" : /^[a-z]+$/.test(id) ? ` (${n.name})` : ` (Claude ${n.name})`} · effort: ${effort || "default"}`; };
+// A setting that is an alias (haiku, sonnet...) matches any running id of that family.
+export const modelMatches = (setting, running) => !setting || !running || running === setting || running.startsWith(setting) || (/^[a-z]+$/.test(setting) && running.includes(setting));
+export const modelWarning = (setting, running) => `⚠ Actual model differs from the setting: setting = ${setting}, running = ${running}`;
 // Settings > Claude: agent.claude_model (an alias or a model id; default claude-haiku-5-5) and agent.claude_effort ('' = no flag). Passed as --model as stored.
 export const EFFORTS = CLAUDE_EFFORTS;
 // The stored setting wins for every run; a model sent with the request (old Run-tab value) is only the fallback when unset.
@@ -222,7 +227,16 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   const scan = (run, text, kinds = run.own ? ["metricool"] : ["auth", "metricool"]) => { if (run.state.problem) return; const p = classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, own: run.own, kinds }); if (p) touch(run, { problem: p }); };
   const handleLine = (run, raw) => {
     let ev; try { ev = JSON.parse(raw); } catch { addLine(run, raw); return; }
-    if (ev.type === "assistant" && Array.isArray(ev.message?.content)) {
+    if (ev.type === "system" && ev.subtype === "init" && typeof ev.model === "string" && ev.model) {
+      const id = sanitize(ev.model, 80), line = modelLine(id, run.effort), ok = modelMatches(run.settingModel, id), t = new Date(now()).toISOString();
+      run.state.model_in_use = id;
+      if (run.lines[0]?.startsWith("Model in use:")) run.lines[0] = line; else run.lines.unshift(line);
+      if (!ok) run.lines.splice(1, 0, modelWarning(run.settingModel, id));
+      try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {}
+      if (run.friendly[0]?.text?.startsWith("Model in use:")) run.friendly[0].text = line; else run.friendly.unshift({ t, text: line, n: 1 });
+      if (!ok) run.friendly.splice(1, 0, { t, text: modelWarning(run.settingModel, id), n: 1 });
+      saveFriendly(run); touch(run);
+    } else if (ev.type === "assistant" && Array.isArray(ev.message?.content)) {
       run.state.turns = (run.state.turns || 0) + 1;
       if (typeof ev.error === "string") scan(run, ev.error);
       for (const c of ev.message.content) {
@@ -327,7 +341,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     catch (e) { try { rmSync(cfg, { force: true }); } catch {} return { ok: false, status: 500, error: sanitize(e.message) }; }
     const started = new Date(now()).toISOString();
     const run = {
-      child, cfg, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
+      child, cfg, settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
       state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
     };
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
@@ -335,6 +349,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
     run.friendly = [];
+    addLine(run, modelLine(choice.id, choice.effort)); say(run, modelLine(choice.id, choice.effort));
     say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
     addLine(run, `start: ${mode} run ${runId}`);
     saveState(run.state);
@@ -374,7 +389,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),

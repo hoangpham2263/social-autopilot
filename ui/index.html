@@ -1510,9 +1510,10 @@ header + * { margin-top: 0; }
   const clFlat = () => (agentModels?.claude || []).flatMap((g) => g.models);
   const clName = (id) => { const m = clFlat().find((x) => x.id === id); return m ? `${m.name} (${m.id})` : id; };
   const cxName = (slug) => { const m = (agentModels?.codex || []).find((x) => x.slug === slug); return m ? `${m.name}${m.hidden ? " (hidden)" : ""} (${m.slug})` : slug; };
-  let agentCfg = null;
+  let agentCfg = null, runningModel = "";
   const showRunModel = () => {
     const el = $("#prModelLine"); if (!el) return;
+    if (runningModel) { el.textContent = `running: ${runningModel}`; return; }
     const ag = $("#prAgent").value || "";
     if (/claude/i.test(ag)) { const m = agentCfg?.claude_model || "claude-haiku-5-5", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
     else if (/codex/i.test(ag)) { const m = agentCfg?.codex_model || "", e = agentCfg?.codex_effort || ""; el.textContent = `Codex ${m ? cxName(m) : "default model"} · effort: ${e || "default"}`; }
@@ -1630,6 +1631,7 @@ header + * { margin-top: 0; }
     const r = arState, claude = subAllowed();
     applyHow(); try { blDraw(); } catch {}
     const busy = !!r?.active, noCli = r && r.cli && !r.cli.found;
+    { const m = r?.active ? r.model_in_use || "" : ""; if (m !== runningModel) { runningModel = m; showRunModel(); } }
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
     const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
     setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : noBrand ? "No usable brand: link a skill on Overview first" : "Run now starts Claude Code: choose the Claude Code agent");
