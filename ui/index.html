@@ -1148,7 +1148,8 @@ header + * { margin-top: 0; }
   let sugOn = new Set();
   function srcBrands() { return az(arr(promptData.brands).filter(brandIn).filter((x) => arr(x.sources).length || arr(x.suggested).length), (x) => x.name || x.id); }
   // Platforms picker: platOff = unticked platforms (remembered; default all ticked). Effective sources = ticked platforms AND ticked sources.
-  const PLATS = ["instagram", "pinterest", "facebook", "etsy", "houzz"];
+  // google = keyword research only (Google Images, no source pages): ticked by default, it is the automatic research when no source is ticked.
+  const PLATS = ["google", "instagram", "pinterest", "facebook", "etsy", "houzz"];
   let platOff = new Set();
   // Run tab choices are remembered in this browser (localStorage via store; nothing secret). Keys: prAgent, prHow, prMode (as before),
   // prBrand_<mode> + prCount_<mode> (mode = research|create|publish), prMax, prSrcOff (unticked "brand:source" ids), prSugOn (ticked suggested "brand:id"), prPlatOff (unticked platforms),
@@ -1251,7 +1252,7 @@ header + * { margin-top: 0; }
   function drawPlatforms() {
     const cnt = Object.fromEntries(PLATS.map((p) => [p, 0]));
     for (const b of srcBrands()) for (const s of arr(b.sources)) { const p = srcPlat(b, s); if (p in cnt) cnt[p]++; }
-    $("#prPlat").innerHTML = PLATS.map((p) => `<label><input type="checkbox" value="${p}"${platOff.has(p) ? "" : " checked"}>${logo(p)}<span>${p[0].toUpperCase() + p.slice(1)}</span><span class="meta">${cnt[p]} source${cnt[p] === 1 ? "" : "s"}</span></label>`).join("");
+    $("#prPlat").innerHTML = PLATS.map((p) => `<label><input type="checkbox" value="${p}"${platOff.has(p) ? "" : " checked"}>${logo(p)}<span>${p[0].toUpperCase() + p.slice(1)}</span><span class="meta">${p === "google" ? "keywords" : `${cnt[p]} source${cnt[p] === 1 ? "" : "s"}`}</span></label>`).join("");
     for (const c of $$("#prPlat input")) c.onchange = () => { if (c.checked) platOff.delete(c.value); else platOff.add(c.value); store.set("prPlatOff", JSON.stringify([...platOff])); platLabel(); drawSources(); regenerate(); };
     platLabel();
   }
@@ -1264,8 +1265,10 @@ header + * { margin-top: 0; }
   function extHint() {
     const el = $("#prExtHint"); if (!el) return;
     const sc = isResearch(prMode) && !prBlock ? srcScope() : null, names = sc ? sc.ext.map((b) => b.name || b.id) : [];
-    el.hidden = !names.length;
-    el.textContent = !names.length ? "" : sc.total === 0 ? "All sources are done: this run looks for new sources" : `All sources are done for ${names.join(", ")}: this run looks for new sources there`;
+    // No ticked source (or a brand with no sources) and the skill enables discovery: the run is an automatic keyword research.
+    const auto = sc && discoveryOnly(sc).length ? `No source ticked: auto research by keywords (${platOff.has("google") ? "ticked platforms" : "Google + ticked platforms"})` : "";
+    el.hidden = !names.length && !auto;
+    el.textContent = auto || (!names.length ? "" : sc.total === 0 ? "All sources are done: this run looks for new sources" : `All sources are done for ${names.join(", ")}: this run looks for new sources there`);
     try { applyHow(); } catch {} // in the app mode both hints are folded into one line
   }
   // Fully crawled (registry complete) sources are hidden from the picker for good (Edit page > Recrawl brings one back); they stay in the run as a quick top check for new posts.
@@ -1355,6 +1358,7 @@ header + * { margin-top: 0; }
     facebook: ["#0866FF", "M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z"],
     etsy: ["#F16521", "M8.559 2.445c0-.325.033-.52.59-.52h7.465c1.3 0 2.02 1.11 2.54 3.193l.42 1.666h1.27c.23-4.728.43-6.784.43-6.784s-3.196.36-5.09.36H6.635L1.521.196v1.37l1.725.326c1.21.24 1.5.496 1.6 1.606 0 0 .11 3.27.11 8.64 0 5.385-.09 8.61-.09 8.61 0 .973-.39 1.333-1.59 1.573l-1.722.33V24l5.13-.165h8.55c1.935 0 6.39.165 6.39.165.105-1.17.75-6.48.855-7.064h-1.2l-1.284 2.91c-1.005 2.28-2.476 2.445-4.11 2.445h-4.906c-1.63 0-2.415-.64-2.415-2.05V12.8s3.62 0 4.79.096c.912.064 1.463.325 1.76 1.598l.39 1.695h1.41l-.09-4.278.192-4.305h-1.391l-.45 1.89c-.283 1.244-.48 1.47-1.754 1.6-1.666.17-4.815.14-4.815.14V2.45h-.05z"],
     houzz: ["#4DBC15", "M1.27 0V24H9.32V16.44H14.68V24H22.73V10.37L6.61 5.75V0H1.27Z"],
+    google: ["#4285F4", "M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"],
   };
   const platLogo = (id, name) => { const l = PLAT_LOGO[id]; return '<svg class="plat-logo" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">' + (l ? '<path fill="' + l[0] + '" d="' + l[1] + '"/>' : '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="12" y="16" text-anchor="middle" font-size="11" fill="currentColor">' + esc(String(name || id || "?").charAt(0).toUpperCase()) + '</text>') + '</svg>'; };
   const PLAT_ORDER = { ok: 0, untested: 1, broken: 2 };
@@ -1384,7 +1388,7 @@ header + * { margin-top: 0; }
       else {
         // A subset is ticked: --source per brand; brands with nothing ticked are skipped.
         for (const [bid, list] of Object.entries(sc.per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
-        for (const b of discoveryOnly(sc)) lines.push(`${brand ? "" : `${b.id}: `}no source this run, discovery (keyword search) only (--source none)`);
+        for (const b of discoveryOnly(sc)) lines.push(`${brand ? "" : `${b.id}: `}no source this run: automatic keyword research (discovery) on Google + the ticked platforms the skill enables (--source none)`);
         if (!brand) lines.push("only the brands listed above (brands with no source ticked and discovery off are skipped)");
         lines.push("each ticked source is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
       }

@@ -106,6 +106,7 @@ export function searchUrl(platform, kind, term) {
     facebook: kind === 'hashtag' ? `https://www.facebook.com/hashtag/${enc(tag.toLowerCase())}` : `https://www.facebook.com/search/posts/?q=${enc(t)}`,
     etsy: `https://www.etsy.com/search?q=${enc(t)}`,
     houzz: `https://www.houzz.com/photos/query/${enc(t.toLowerCase().replace(/\s+/g, '-'))}`,
+    google: `https://www.google.com/search?q=${enc(tag)}&udm=2&hl=en&gl=us`, // Google Images, US market; keywords only (no hashtag pages)
   };
   return U[platform] || '';
 }

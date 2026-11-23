@@ -40,7 +40,7 @@ const wall = (id, name) => {
 };
 
 test('registry: every platform has an adapter with the full contract; status is untested until checked on a live page', () => {
-  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'houzz', 'instagram', 'pinterest']);
+  assert.deepEqual(platformIds().sort(), ['etsy', 'facebook', 'google', 'houzz', 'instagram', 'pinterest']);
   for (const id of platformIds()) {
     const e = REGISTRY[id], a = getAdapter(id);
     assert.ok(STATUSES.includes(e.status), id);
@@ -293,4 +293,21 @@ test('pendingFitOf: unjudged collect posts count; judged or non-collect raw do n
   assert.equal(pendingFitOf(dir), 0);
   fs.writeFileSync(path.join(dir, 'raw.json'), JSON.stringify({ posts: [{ x: 1 }] }));
   assert.equal(pendingFitOf(dir), 0);
+});
+
+test('google: tiles + script data of a (synthetic) Google Images page, block pages (real unusual-traffic page), pure', async () => {
+  const google = await import('../scripts/platforms/google.mjs');
+  const doc = fixture('google-images');
+  const text = [...doc.querySelectorAll('script')].map((s) => s.textContent).join(' ');
+  const r = google.googleExtract(doc, text, 'https://www.google.com/search?q=live+edge&udm=2', google.SELECTORS);
+  assert.deepEqual(r.tiles.map((t) => t.id), ['AbCdEf123456', 'GhIjKl789012', 'OldLay345678', 'MnOpQr345678']);
+  assert.deepEqual(r.tiles[0].image_urls, ['https://cdn.example-woodshop.com/img/walnut-table.jpg', 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTfirst&s=10']);
+  assert.equal(r.tiles[1].author, 'etsy.com');
+  assert.match(r.next, /start=20/);
+  assert.equal(google.toPost(r.tiles[0], { found_by: 'keyword:x' }).url, 'https://www.example-woodshop.com/tables/walnut-live-edge');
+  assert.equal(google.IMAGE_ALTERNATES, true);
+  assert.equal(google.googleBlock(doc, 'https://www.google.com/search?q=x', google.SELECTORS), '');
+  assert.equal(google.googleBlock(fixture('google-sorry'), 'https://www.google.com/search?q=x', google.SELECTORS), 'captcha');
+  assert.equal(google.googleBlock(parseHTML('<html><body>x</body></html>').document, 'https://www.google.com/sorry/index', google.SELECTORS), 'captcha');
+  assert.equal(google.googleBlock(parseHTML('<html><body>Before you continue to Google</body></html>').document, 'https://consent.google.com/m', google.SELECTORS), 'consent');
 });

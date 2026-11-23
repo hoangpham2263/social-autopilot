@@ -11,8 +11,8 @@ import { workspace, readJson, writeJson, settings, discoverBrands, loadBrand, br
 import { platformOf } from './store.mjs';
 import { scriptDir } from './collect-transfer.mjs';
 
-export const HOMES = { facebook: 'https://www.facebook.com/', instagram: 'https://www.instagram.com/', pinterest: 'https://www.pinterest.com/', etsy: 'https://www.etsy.com/', houzz: 'https://www.houzz.com/' };
-export const PLATFORM_NAMES = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest', etsy: 'Etsy', houzz: 'Houzz' };
+export const HOMES = { facebook: 'https://www.facebook.com/', instagram: 'https://www.instagram.com/', pinterest: 'https://www.pinterest.com/', etsy: 'https://www.etsy.com/', houzz: 'https://www.houzz.com/', google: 'https://www.google.com/' };
+export const PLATFORM_NAMES = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest', etsy: 'Etsy', houzz: 'Houzz', google: 'Google' };
 export const chromeCheckFile = () => path.join(workspace, 'runs', 'chrome-check.json');
 export const chromeCheckMinutes = (cfg = settings().research?.chrome_check_minutes) => (cfg !== undefined && cfg !== null && Number.isFinite(Number(cfg)) && Number(cfg) >= 0 ? Number(cfg) : 30);
 export const gateRequired = (cfg = settings().research?.chrome_check_required) => cfg === true;

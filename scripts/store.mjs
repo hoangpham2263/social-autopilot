@@ -19,7 +19,7 @@
 //         caption, caption_norm, caption_hash, main_product, price_seen, images: ["images/S0001-1-ab12cd34.jpg"],
 //         image_sha1: [..], image_phash: [..], status: new|rejected (Removed), uses: [{ draft, idea, scene, product, sign_text, at }],
 //         last_used, used_by: [draft ids] (history), note, run,
-//         platform (facebook|instagram|pinterest|etsy|houzz), author, found_by ("reference page" |
+//         platform (facebook|instagram|pinterest|etsy|houzz|google), author, found_by ("reference page" |
 //         "keyword:<kw>" | "hashtag:<tag>"), product_fit: { type, reason }, query (discovery query id) }
 //         (old status "used" is read as new + uses: migrateUses; old items without platform: from the post link)
 //   workspace/store/<brand>/rejected.json    posts seen but NOT stored because their product is off-brand (product_fit)

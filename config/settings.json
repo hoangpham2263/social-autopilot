@@ -33,6 +33,10 @@
       "facebook": [
         5,
         10
+      ],
+      "google": [
+        5,
+        10
       ]
     },
     "chrome_check_required": false,

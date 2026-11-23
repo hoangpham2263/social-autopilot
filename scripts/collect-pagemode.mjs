@@ -87,7 +87,7 @@ export function pageResultPosts(result, adapter, { cursor = null, max = 0, found
 // research.scroll_wait_seconds[platform] -> [lo, hi] seconds the agent waits between scrolls.
 export function scrollWait(platform, cfg = settings().research?.scroll_wait_seconds) {
   const v = cfg?.[String(platform || '').toLowerCase()];
-  return Array.isArray(v) && v.length === 2 ? v.map(Number) : ['instagram', 'facebook'].includes(platform) ? [5, 10] : [2, 4];
+  return Array.isArray(v) && v.length === 2 ? v.map(Number) : ['instagram', 'facebook', 'google'].includes(platform) ? [5, 10] : [2, 4];
 }
 
 // ---------- commands ----------
@@ -187,6 +187,7 @@ export async function fromPage(args) {
       for (const [k, u] of (p.image_urls || []).slice(0, perPost).entries()) {
         const f = await downloadPlain(u, path.join(rawDir, `${fileId(p.id)}-${k + 1}`), p.url);
         if (f) images.push(`raw/${path.basename(f)}`);
+        if (f && adapter.IMAGE_ALTERNATES) break; // Google: [original, thumbnail] are alternatives of ONE image: keep the first that downloads
       }
       if (!images.length) { noImage++; continue; }
       posts.push(toRawPost(p, images, task.platform));

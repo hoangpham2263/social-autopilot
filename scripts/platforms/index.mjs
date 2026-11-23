@@ -7,6 +7,7 @@ import * as pinterest from './pinterest.mjs';
 import * as facebook from './facebook.mjs';
 import * as etsy from './etsy.mjs';
 import * as houzz from './houzz.mjs';
+import * as google from './google.mjs';
 
 export const STATUSES = ['untested', 'ok', 'broken'];
 
@@ -16,6 +17,7 @@ export const REGISTRY = {
   facebook: { adapter: facebook, status: 'ok', checked: '2026-11-11', note: 'live run 2026-11-11: page feed, date_text read from the aria-labelledby target of the scrambled timestamp link (all posts), ids typed (kind post / photo), stable across extracts; search/hashtag pages and sponsored posts without any link not covered' },
   etsy: { adapter: etsy, status: 'ok', checked: '2026-11-11', note: 'live run 2026-11-11: listing ids, shop author, caption (May include prefix stripped) and image verified against the listing page' },
   houzz: { adapter: houzz, status: 'ok', checked: '2026-11-11', note: 'live run 2026-11-11: photo ids, pro author, caption and image verified against the photo page; results only loosely on topic' },
+  google: { adapter: google, status: 'untested', checked: '', note: 'written 2026-11-23 without a live results page (a headless check only got Google\'s unusual-traffic page, saved as tests/fixtures/collect-google-sorry.html): Google Images udm=2, tiles from data-lpage/data-docid + inline script data, paging by fetch of the next result page; compare review[] with the real page on the first run' },
 };
 
 export const platformIds = () => Object.keys(REGISTRY);

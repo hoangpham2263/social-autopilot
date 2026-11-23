@@ -82,7 +82,7 @@ test('dismiss: removed and never suggested again, not even with another spelling
 const html = fs.readFileSync(path.join(root, 'ui', 'index.html'), 'utf8');
 const block = html.slice(html.indexOf('// SRC-SCOPE-BEGIN'), html.indexOf('// SRC-SCOPE-END'));
 function picker({ brands, registry = {}, platOff = [], srcOff = [], sugOn = [] }) {
-  const ctx = { arr: (v) => (Array.isArray(v) ? v : []), PLATS: ['instagram', 'pinterest', 'facebook', 'etsy', 'houzz'], platOff: new Set(platOff), srcOff: new Set(srcOff), sugOn: new Set(sugOn), modeCounts: Object.fromEntries(Object.entries(registry).map(([id, r]) => [id, { registry: r }])), srcBrands: () => brands };
+  const ctx = { arr: (v) => (Array.isArray(v) ? v : []), PLATS: ['google', 'instagram', 'pinterest', 'facebook', 'etsy', 'houzz'], platOff: new Set(platOff), srcOff: new Set(srcOff), sugOn: new Set(sugOn), modeCounts: Object.fromEntries(Object.entries(registry).map(([id, r]) => [id, { registry: r }])), srcBrands: () => brands };
   return new Function('ctx', `const { arr, PLATS, platOff, srcOff, sugOn, modeCounts, srcBrands } = ctx; ${block}; return { srcScope, srcSumText };`)(ctx);
 }
 const brand = (id, sources, suggested = []) => ({ id, name: id, sources: sources.map((s) => s[0]), sources_info: sources.map(([i, platform]) => ({ id: i, name: i, platform, url: `https://www.${platform}.com/${i}` })), suggested });
