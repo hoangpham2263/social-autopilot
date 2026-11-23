@@ -3,6 +3,7 @@
 Read BEFORE opening Flow. Newer one-liners: `workspace/flow-ui-lessons.md`. Labels as shown; the same buttons appear in English in some profiles (in brackets). Pace gate, stop rules and status lines stay in `docs/flow-images.md`.
 
 ## Steps (typical time)
+0. Reuse the Flow project: `node scripts/flow-pace.mjs project get` (one per Chrome profile). A url = open it directly (settings are kept; check the chip). None / fails to open: create one, then `project set --url <url>`. Work the posts grouped by ratio.
 1. `node scripts/draft.mjs flow-brief --id <draft> --n 1` first (prompt + reference copied to Downloads). Then `pw_tabs list`, and EVERY `run_code_unsafe` starts with `await page.bringToFront()`.
 2. Account (only when `browser.flow_account` is set): navigate `https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fflow.google.com%2F`, `pw_snapshot`, click the account. The plain click is often blocked by an overlay: use `page.locator('[data-identifier="<email>"]').click({force:true})`, wait 4 s, then navigate `https://flow.google.com` (~15 s).
 3. Viewport can come out huge/odd (screenshots unreadable, buttons far away): `page.setViewportSize({width:1400,height:900})` right after opening Flow.
