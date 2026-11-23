@@ -120,10 +120,11 @@ export function mcpArgs(own = null, profile = "") {
   // Own browser: the page size of the tool's window (WINDOW_SIZE of own-browser.mjs: compact, never below ~1024x700 or sites go mobile).
   return ["@playwright/mcp@latest", "--browser", "chrome", "--user-data-dir", own.userDataDir, ...(own.headless === false ? [] : ["--headless"]), "--viewport-size", `${WINDOW_SIZE.width}x${WINDOW_SIZE.height}`, ...(own.outputDir ? ["--output-dir", own.outputDir] : [])];
 }
-// background (default true): false for a Create run with Flow images. Google Flow flagged prompts submitted in a hidden tab as
-// "unusual activity" (2026-11-23), so Flow keeps the visible-tab behaviour; research and the rest stay in the background.
-export function mcpConfig({ plat = osPlatform(), profile = "", own = null, background = true } = {}) {
-  const a = mcpArgs(own, profile);
+// background: kept only for callers; no run uses Playwright MCP background mode since 2026-11-23 (hidden tabs broke Flow and FB/IG).
+// snapshot "none" (Research): Playwright MCP 0.0.86+ stops appending the whole page tree to every tool answer. On a Facebook feed that
+// tree was ~15k tokens per extract call and research runs stopped after a few minutes for budget (2026-11-23); browser_snapshot still works when asked.
+export function mcpConfig({ plat = osPlatform(), profile = "", own = null, background = true, snapshot = "" } = {}) {
+  const a = [...mcpArgs(own, profile), ...(snapshot ? ["--snapshot-mode", snapshot] : [])];
   const server = plat === "win32" ? { command: "cmd", args: ["/c", "npx", ...a] } : { command: "npx", args: a };
   if (!own) server.env = { ...(profile ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), };  // background mode removed 2026-11-23 (user request): hidden tabs broke Flow and FB/IG
   return { mcpServers: { playwright: server } };
@@ -295,7 +296,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
-    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null, background: !flow })));
+    if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null, background: !flow, snapshot: mode === "research" ? "none" : "" })));
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
     const modelKey = MODELS.includes(model) ? model : "default", mflag = modelFlag(modelKey, s);
     if (mflag) args.push("--model", mflag);

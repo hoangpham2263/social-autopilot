@@ -302,8 +302,23 @@ export function logRejected(brand, list, extra = {}) {
 // Never a rejection, never in the Library; one entry per post_url (the newest data wins). Brand-local: never shared.
 export const pendingFile = (brand) => path.join(storeDir(brand), 'pending.json');
 export const readPending = (brand) => (readJson(pendingFile(brand), { pending: [] }).pending || []);
+// The images of a pending post are COPIED into store/<brand>/pending-images/: research.mjs start moves the run folder's files to
+// archive/, which left pending.json pointing at missing files (2026-11-23). removePending deletes the copies again.
+const pendingImagesDir = (brand) => path.join(storeDir(brand), 'pending-images');
+function keepPendingImages(brand, x) {
+  const dir = pendingImagesDir(brand), key = sha1(String(x.post_url)).slice(0, 16);
+  return (x.images || []).map((p, i) => {
+    try {
+      if (!p || path.resolve(p).startsWith(path.resolve(dir) + path.sep) || !fs.existsSync(p)) return p;
+      fs.mkdirSync(dir, { recursive: true });
+      const to = path.join(dir, `${key}-${i + 1}${path.extname(p) || '.jpg'}`);
+      fs.copyFileSync(p, to);
+      return to;
+    } catch { return p; }
+  });
+}
 export function addPending(brand, list) {
-  const items = (list || []).filter((x) => x && x.post_url);
+  const items = (list || []).filter((x) => x && x.post_url).map((x) => ({ ...x, images: keepPendingImages(brand, x) }));
   if (!items.length) return 0;
   const file = pendingFile(brand);
   return withLock(file, () => {
@@ -323,6 +338,8 @@ export function removePending(brand, urls) {
   return withLock(file, () => {
     const log = readJson(file, { pending: [] });
     const before = (log.pending || []).length;
+    const dir = path.resolve(pendingImagesDir(brand)) + path.sep;
+    for (const x of (log.pending || []).filter((y) => set.has(String(y.post_url)))) for (const p of x.images || []) if (p && path.resolve(p).startsWith(dir)) fs.rmSync(p, { force: true });
     log.pending = (log.pending || []).filter((x) => !set.has(String(x.post_url)));
     if (log.pending.length !== before) writeJson(file, log);
     return before - log.pending.length;
