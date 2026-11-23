@@ -617,15 +617,12 @@ export function flowQueue(args, s = settings()) {
   const drafts = ids ? ids.map((id) => findDraft(id)) : listDrafts(args.brand && args.brand !== true ? String(args.brand) : undefined).filter((d) => !['approved', 'rejected'].includes(d.status.status));
   const items = [];
   for (const d of drafts) for (const [i, f] of draftImages(d.draft).entries()) if (!fs.existsSync(path.join(d.dir, f))) items.push({ id: d.draft.id, n: i + 1 });
-  items.sort((a, b) => (a.n === 1 ? 0 : 1) - (b.n === 1 ? 0 : 1)); // stable: covers first, then extras, drafts keep their order
+  // Order like a person working post by post (user 2026-11-23): each post's cover, then its own extras (they use that cover as
+  // reference), then the next post. Drafts keep their order.
+  items.sort((a, b) => (drafts.findIndex((d) => d.draft.id === a.id) - drafts.findIndex((d) => d.draft.id === b.id)) || (a.n - b.n));
   const queue = items.map((it, k) => { const b = flowBrief({ id: it.id, n: String(it.n) }, s); return { order: k + 1, wave: it.n === 1 ? 1 : 2, tag: `${it.id}#${it.n}`, id: it.id, n: it.n, file: b.file, album_mode: b.album_mode, prompt: b.prompt, reference: b.reference, ...(b.warning_scene ? { warning_scene: b.warning_scene } : {}), register: b.register }; });
-  // HUMAN PACING (Flow flags bursts as "unusual activity"): the queue is cut into groups of 3-4, with a random pause between two prompts
-  // (5-12 s) and after each group (20-45 s). The agent submits ONE group, waits for it, downloads and registers it, then the next group.
-  const rnd = (a, b) => Math.round(a + Math.random() * (b - a));
-  const groups = [];
-  for (let i = 0; i < queue.length;) { const size = Math.min(rnd(3, 4), queue.length - i), part = queue.slice(i, i + size); groups.push({ group: groups.length + 1, tags: part.map((q) => q.tag), pause_between_prompts_s: part.slice(1).map(() => rnd(5, 12)), pause_after_group_s: rnd(20, 45) }); i += size; }
-  return { count: queue.length, wave1: queue.filter((q) => q.wave === 1).length, wave2: queue.filter((q) => q.wave === 2).length, queue, groups,
-    next: 'PACE LIKE A HUMAN, never submit everything at once. BEFORE EVERY prompt you submit run: node scripts/flow-pace.mjs gate --tag <draft>#<n> (it WAITS the human-like time by itself and records the submission; submit right after it returns; never skip it, never batch several prompts behind one gate). The tool then keeps groups of 3-4 prompts with 5-12 s gaps and a 20-45 s pause after each group. Follow `groups` one by one. Submit the prompts of one group in order, pausing pause_between_prompts_s seconds between two prompts (browser_wait_for with time); wait for that group to render (about 30 s); download its tiles and register them (write map.json [{"id","n","from"}] and run: node scripts/draft.mjs register-batch --map <map.json>); then pause pause_after_group_s seconds and start the next group. Wave 1 (covers) before wave 2 (extras, which need image 1 of their post). Never more than about 8 prompts in 2 minutes. A "unusual activity" error means STOP (do not retry in a loop).' };
+  return { count: queue.length, queue,
+    next: 'WORK LIKE A PERSON, post by post, by hand with the browser tools: NEVER write or run a script, loop or batch file that drives Google Flow for several images (Google locks the profile for automated bursts). For each post: run node scripts/flow-pace.mjs gate --tag <draft>#1 right BEFORE you submit the cover (it waits a random human-like time; never skip it), submit, wait for it, then the extras of THAT post (each with its own gate right before its submit; the gate itself makes groups of 2-3 with random pauses), wait, download each image, LOOK at it, register it (draft.mjs register-image), then the next post. A "unusual activity" error means STOP (do not retry in a loop).' };
 }
 // register-batch: register many downloaded files in one call. --map <json file>: [{ "id": "<draft>", "n": 1..4, "from": "<file>" }, ...].
 // Covers (n=1) first; one failing item does not stop the others (its error is listed, re-submit only that prompt in Flow).
