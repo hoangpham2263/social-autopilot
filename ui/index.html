@@ -485,7 +485,7 @@ header + * { margin-top: 0; }
     </div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div class="field" id="prModelField" hidden><label for="prModel">Model</label><select id="prModel"><option value="default">Default</option><option value="haiku">Haiku</option><option value="sonnet">Sonnet</option><option value="opus">Opus</option></select></div>
+      <div class="field" id="prModelField"><span class="label">In use</span><span class="meta" id="prModelLine">…</span></div>
       <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
       <div class="field" id="prBrandField"><span class="label">Brand</span><details id="prBrandBox"><summary id="prBrandSum">All</summary><div id="prBrandList"></div></details></div>
       <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
@@ -1318,7 +1318,6 @@ header + * { margin-top: 0; }
     // The mode changed (or first draw): that mode's remembered Brand and Posts (a library item pick keeps what it set).
     if (prLastMk !== mk) {
       prLastMk = mk;
-      { const sm = store.get("prModel_" + mk); $("#prModel").value = ["haiku", "sonnet", "opus"].includes(sm) ? sm : "default"; }
       if (!prItem) {
         const sb = store.get("prBrand_" + mk); if (sb) pick = sb === "all" ? [] : sb.split(",").filter((id) => brands.some((b) => b.id === id));
         const sc = store.get("prCount_" + mk), n = parseInt(sc.slice(2), 10); $("#prCount").value = sc.startsWith("c:") && n >= 1 ? String(n) : "";
@@ -1504,8 +1503,18 @@ header + * { margin-top: 0; }
     hint = baseHint.replace("the tool folder", r.tool_root || "the tool folder"); $("#prMsg").textContent = hint;
     drawPrompt(); applyHow();
   });
-  $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); drawPrompt(); applyHow(); };
-  $("#prModel").onchange = () => { store.set("prModel_" + modeKey(prMode), $("#prModel").value); };
+  // Run tab: read-only line with what the next run uses (chosen in Settings > Claude).
+  const CL_NAMES = { haiku: ["Haiku 5.5", "claude-haiku-5-5"], sonnet: ["Sonnet 5.5", "claude-sonnet-5-5"], opus: ["Opus 5.5", "claude-opus-5-5"] };
+  let agentCfg = null;
+  const showRunModel = () => {
+    const el = $("#prModelLine"); if (!el) return;
+    const ag = $("#prAgent").value || "";
+    if (/claude/i.test(ag)) { const m = CL_NAMES[agentCfg?.claude_model] ? agentCfg.claude_model : "haiku", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${CL_NAMES[m][0]} (${CL_NAMES[m][1]}) · effort: ${e || "default"}`; }
+    else el.textContent = /codex/i.test(ag) ? "Codex: model and effort are set in Codex itself" : "Set in the agent you paste into";
+  };
+  const loadAgentCfg = async () => { const r = await getJson("/api/settings").catch(() => null); if (r?.settings) agentCfg = r.settings.agent || {}; showRunModel(); };
+  loadAgentCfg();
+  $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); showRunModel(); drawPrompt(); applyHow(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"], ["#prBrandBox", "#prBrandField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
   for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImages", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
     const v = $(id).value;
@@ -1598,9 +1607,7 @@ header + * { margin-top: 0; }
     // Only where a browser is used: Research, and Create & publish with Google Flow (Publish approved opens none).
     { const mk = modeKey(prMode); $("#prChrome").hidden = !app || !(mk === "research" || (mk === "create" && chosenEngine() === "flow")); }
     $("#prRunNow").hidden = !app; $("#prResume").hidden = !app; if (!app) $("#prStop").hidden = true;
-    // Model of the run: only for Run in the app, and only when the agent is Claude Code (Codex / ChatGPT have no --model here).
-    { const mf = $("#prModelField"), mk = modeKey(prMode); mf.hidden = !app || !claude;
-      $("#prModel").title = mk === "create" ? "Model for this run (remembered per mode). Writing + images: Sonnet or Opus. Default = Claude Code's own default." : "Model for this run (remembered per mode). Routine work: Haiku or Sonnet saves quota. Default = Claude Code's own default."; }
+    showRunModel();
     $("#prAppHint").hidden = !app;
     { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
       $("#prAppHint").textContent = claude ? "Starts Claude Code for you; the live panel below shows progress." + (extTxt ? " " + extTxt + "." : "") : "Run in the app needs Claude Code"; }
@@ -1828,7 +1835,7 @@ header + * { margin-top: 0; }
     const btn = $("#prRunNow"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "Starting…"; // instant feedback: the click is registered while the app starts Claude
     try {
-      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, model: $("#prModel").value || "default", ...(key === "create" ? { image_engine: chosenEngine() } : {}) }).catch(() => ({ error: "The app did not answer." }));
+      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, ...(key === "create" ? { image_engine: chosenEngine() } : {}) }).catch(() => ({ error: "The app did not answer." }));
       if (r.error) { flash(r.error); toast(r.error); await loadAgentRun(); return; }
       await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
       await loadAgentRun(); loadProgress();
@@ -2653,7 +2660,12 @@ function draftTags(d) {
       ${arr(r.times?.table).length ? row("Posting times", `<details><summary>Ranked hours per day (best first)</summary><div class="table-wrap"><table class="edit times"><thead><tr><th>Day</th><th>Primary</th><th>Backup</th><th>Acceptable</th></tr></thead><tbody>${r.times.table.map((t) => `<tr><td>${esc(DAY_NAME[t.day] || t.day)}</td>${["primary", "backup", "acceptable"].map((k) => `<td>${t[k].map((h, i) => `<span class="meta">${i + 1}.</span>${esc(h)}`).join(" ")}</td>`).join("")}</tr>`).join("")}</tbody></table></div><div class="meta">Primary: the studies' best hours; Backup: their next-best hours for that day (Sprout Social, Buffer, Hootsuite); Acceptable: the rest of 07:00–22:00 by the overall Facebook engagement curve. Research table (America/New_York); Metricool's best times replace Primary and lead Backup once synced. Edit in config/best-times.json.</div></details>`) : ""}
       ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
     // Everything else (pauses, Codex, ffmpeg, folders, image repo) is standard: edited only in workspace/settings.json (README "Settings file").
+    agentCfg = s.agent || {}; showRunModel();
+    const clM = CL_NAMES[s.agent?.claude_model] ? s.agent.claude_model : "haiku", clE = s.agent?.claude_effort || "";
     $("#settingsForm").innerHTML = `<div class="fields">
+      <div class="field"><label for="setClModel" title="Model of every Claude Code run in the app (Research, Create, Publish, Sync). Haiku is the cheapest.">Claude model</label><select id="setClModel" data-s="agent.claude_model">${Object.entries(CL_NAMES).map(([k, v]) => `<option value="${k}"${k === clM ? " selected" : ""}>${v[0]} (${v[1]})</option>`).join("")}</select></div>
+      <div class="field"><label for="setClEffort" title="Effort level passed as --effort. Default = no flag (Claude Code's own default). Lower effort uses fewer tokens.">Claude effort</label><select id="setClEffort" data-s="agent.claude_effort">${[["", "Default (no flag)"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]].map(([k, t]) => `<option value="${k}"${k === clE ? " selected" : ""}>${t}</option>`).join("")}</select></div>
+      <div class="field"><span class="label" title="Codex has no model or effort setting here">Codex</span><span class="meta">Model and effort are set in Codex itself (its own config); nothing to set here.</span></div>
       <div class="field"><label title="Create &amp; publish makes enough posts to fill this many days ahead">Plan ahead (days)</label><input type="number" min="1" step="1" data-s="planning.ahead_days" value="${esc(s.planning?.ahead_days ?? 7)}"></div>
       <div class="field"><label for="setImageEngine" title="Codex: Codex CLI makes the images (default). Google Flow: Create &amp; publish tells the agent to make each image in Google Flow in your signed-in Chrome (Playwright MCP), then register it; Google's sparkle is removed locally. Brand rules stay in the skill.">Image engine</label><select id="setImageEngine" data-s="image_engine"><option value="codex"${s.image_engine === "flow" ? "" : " selected"}>Codex</option><option value="flow"${s.image_engine === "flow" ? " selected" : ""}>Google Flow (agent + Chrome)</option></select></div>
       <div class="field"><span class="label" title="Every post gets a random number of images (an album of the same scene) between min and max, 1 to 4. Default 1 to 4. A brand can override it in workspace/brands/&lt;id&gt;.json posts.images_per_post; one run can fix it in the Run tab.">Images per post</span><div class="inline-control"><input type="number" min="1" max="4" step="1" id="setIppMin" aria-label="Minimum images per post" value="${esc(s.posts?.images_per_post?.[0] ?? 1)}"> <span class="meta">to</span> <input type="number" min="1" max="4" step="1" id="setIppMax" aria-label="Maximum images per post" value="${esc(s.posts?.images_per_post?.[1] ?? 4)}"></div></div>
@@ -2664,7 +2676,7 @@ function draftTags(d) {
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Edit" : "Close"; };
   $("#settingsSave").onclick = async () => {
     if (runGuard()) return; 
-    const out = { planning: {}, imageHost: {} }; // only what the form edits; the rest stays as saved
+    const out = { planning: {}, imageHost: {}, agent: {} }; // only what the form edits; the rest stays as saved
     for (const el of $$("#settingsForm [data-s]")) {
       const parts = el.dataset.s.split(".");
       const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;

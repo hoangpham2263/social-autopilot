@@ -51,6 +51,17 @@ export const modelFlag = (model, settings = {}) => {
   const custom = settings?.agent_run?.model_map?.[model];
   return typeof custom === "string" && /^[A-Za-z0-9._:\[\]-]{1,80}$/.test(custom.trim()) ? custom.trim() : model;
 };
+// Settings > Claude: agent.claude_model (haiku default) and agent.claude_effort ('' = no flag). The CLI accepts the exact ids.
+export const CLAUDE_MODEL_IDS = { haiku: "claude-haiku-5-5", sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5" };
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+// The stored setting wins for every run; a model sent with the request (old Run-tab value) is only the fallback when unset.
+export const claudeChoice = (settings = {}, requested = "") => {
+  const a = settings?.agent || {}, ok = (k) => k === "haiku" || k === "sonnet" || k === "opus";
+  const key = ok(a.claude_model) ? a.claude_model : ok(requested) ? requested : "haiku";
+  const custom = settings?.agent_run?.model_map?.[key];
+  const id = typeof custom === "string" && /^[A-Za-z0-9._:[]-]{1,80}$/.test(custom.trim()) ? custom.trim() : CLAUDE_MODEL_IDS[key];
+  return { key, id, effort: EFFORTS.includes(a.claude_effort) ? a.claude_effort : "" };
+};
 export const allowedTools = (mode, settings = {}, engine = "") => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : [])];
 
 // Anything that looks like a secret is replaced before a line is kept.
@@ -305,8 +316,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
     if (browser) writeFileSync(cfg, JSON.stringify(mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null, background: !flow, snapshot: mode === "research" ? "none" : "" })));
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
-    const modelKey = MODELS.includes(model) ? model : "default", mflag = modelFlag(modelKey, s);
-    if (mflag) args.push("--model", mflag);
+    const choice = claudeChoice(s, model), modelKey = choice.key;
+    args.push("--model", choice.id);
+    if (choice.effort) args.push("--effort", choice.effort);
     if (browser) args.push("--mcp-config", cfg);
     if (mode === "research") args.push("--strict-mcp-config");
     const extTok = browser && !own && profile ? extensionToken(workspace, profile) : "";
