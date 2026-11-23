@@ -1130,13 +1130,16 @@ header + * { margin-top: 0; }
   const REG = { none: ["never", "dot-grey"], partial: ["partial", "dot-amber"], complete: ["complete", "dot-green"] };
   const regLine = (r) => (!r || (r.status === "none" && !r.posts_total) ? "never crawled" : `${(REG[r.status] || REG.none)[0]} · ${r.posts_total || 0} posts${r.last_run ? ` · +${r.new_last_run || 0} last run (${r.last_run})` : ""}${r.status === "partial" && r.resume ? ` · resumes after ${typeof r.resume === "object" ? r.resume.date || String(r.resume.post_id || "saved cursor").slice(0, 14) : r.resume}` : ""}`);
   // Research with nothing to run: no prompt is made (Copy prompt / Run now are greyed with this text).
+  // Brands of this run with no ticked source whose skill enables discovery: they run keyword discovery only (research.mjs start --source none).
+  const discoveryOnly = (sc) => az(arr(promptData.brands).filter(brandIn).filter((b) => b.discovery_enabled && !(sc.per[b.id] || []).length), (x) => x.name || x.id);
   function researchBlock() {
     if (!isResearch(prMode)) return "";
     const scope = arr(promptData.brands).filter(brandIn);
     // Research always covers ALL enabled sources of the chosen brand(s); a brand can run when it has enabled sources, or its skill enables discovery.
     if (!scope.some((x) => arr(x.sources).length || arr(x.suggested).length || x.discovery_enabled)) return "No sources yet: add page links in the brand's Edit page (Overview)";
     if (!PLATS.some((p) => !platOff.has(p))) return "Tick at least one platform";
-    { const sc = srcScope(); if (sc.any && !sc.eff) return "Tick at least one source"; }
+    // No source ticked (or only sources of unticked platforms) still runs when a brand's skill enables discovery: keyword search only (--source none).
+    { const sc = srcScope(); if (sc.any && !sc.eff && !discoveryOnly(sc).length) return "Tick at least one source (or enable discovery in the brand's skill)"; }
     return "";
   }
   // Sources picker: srcOff = unticked "brand:source" (remembered, see prRestore); default = every enabled source ticked.
@@ -1381,7 +1384,8 @@ header + * { margin-top: 0; }
       else {
         // A subset is ticked: --source per brand; brands with nothing ticked are skipped.
         for (const [bid, list] of Object.entries(sc.per)) lines.push(`${brand ? "" : `${bid}: `}sources ${list.join(", ")} (--source ${list.join(",")})`);
-        if (!brand) lines.push("only the brands listed above (brands with no source ticked are skipped)");
+        for (const b of discoveryOnly(sc)) lines.push(`${brand ? "" : `${b.id}: `}no source this run, discovery (keyword search) only (--source none)`);
+        if (!brand) lines.push("only the brands listed above (brands with no source ticked and discovery off are skipped)");
         lines.push("each ticked source is crawled smartly from its registry (new or partial: to the end of the page, resumable; complete: top check only)");
       }
       if (sc.ext.length) lines.push(`external sources for: ${sc.ext.map((b) => b.id).join(", ")} (every source of the brand is fully crawled and no suggestion is pending: after the top check, run EXTRA STEP 1.4b, which only suggests new pages, nothing is crawled from them)`);
