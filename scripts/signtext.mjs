@@ -63,9 +63,10 @@ export function signRules(brand) {
   const cell = (c, role) => (role in col ? c[col[role]] || '' : '');
   const rows = table.slice(sepAt > 0 ? sepAt + 1 : 0).filter((c) => c.length >= 3 && !/^:?-{2,}/.test(c[0]) && !/^scene_type$/i.test(c[0])).map((c) => {
     const key = cell(c, 'key').replace(/`/g, '').toLowerCase(), row = { key, wording: cell(c, 'wording') };
-    if (mode === 'scene') return { ...row, allowed: split(cell(c, 'allowed')), forbidden: split(cell(c, 'forbidden')) };
-    // Placeholder table: the scene column lists ALLOWED scenes (free phrases; sizes in parentheses dropped); "any scene from the other rows" = union.
+    // The scene column lists ALLOWED scenes (free phrases; sizes in parentheses dropped); "any scene from the other rows" = union.
     const scenes = cell(c, 'allowed').replace(/\([^)]*\)/g, '').split(/[,;]/).map((w) => w.trim().toLowerCase()).filter(Boolean);
+    // Scene mode: a wording cell "none ..." = a product without lettering (art only): its sign_text stays empty.
+    if (mode === 'scene') return { ...row, ...(/^\s*(none|no lettering|n\/a|-)\b/i.test(row.wording) ? { no_lettering: true } : {}), design: cell(c, 'design'), allowed: scenes.filter((x) => !/any scene from the other rows/.test(x)), any_row: scenes.some((x) => /any scene from the other rows/.test(x)), forbidden: split(cell(c, 'forbidden')) };
     const lines = placeholderLines(cell(c, 'placeholder'));
     return { ...row, design: cell(c, 'design'), placeholder: cell(c, 'placeholder'), lines, sign_text: lines.join(' / '), allowed: scenes.filter((x) => !/any scene from the other rows/.test(x)), any_row: scenes.some((x) => /any scene from the other rows/.test(x)), forbidden: split(cell(c, 'forbidden')) };
   }).filter((r) => r.key);
@@ -138,10 +139,10 @@ export function ideaSignProblems(brand, idea, { exceptDraft = '', exceptIdea = '
   if (key && !row) p.push(cause('bad-scene-type', `step 2: scene_type "${key}" is not a ${what} of the skill table (${rules.rows.map((r) => r.key).join(' | ')}).`));
   if (row && s('scene')) {
     const has = (w) => hasWord(s('scene'), w);
-    const allowed = ph && row.any_row ? [...new Set(rules.rows.flatMap((r) => r.allowed))] : row.allowed;
+    const allowed = row.any_row ? [...new Set(rules.rows.flatMap((r) => r.allowed))] : row.allowed;
     const bad = row.forbidden.find(has);
     if (bad) p.push(cause('scene-mismatch', `step 2: scene "${s('scene')}" contains "${bad}", not allowed for scene_type ${key} (skill table). Change the scene or the scene_type, then rewrite the wording.`));
-    else if (allowed.length && !(ph ? sceneFits(s('scene'), allowed) : allowed.some(has))) p.push(cause('scene-mismatch', ph ? `step 2: scene "${s('scene')}" fits none of the scenes listed for product ${key}: ${allowed.join(', ')}.` : `step 2: scene "${s('scene')}" has none of the allowed scene words for scene_type ${key}: ${allowed.join(', ')}.`));
+    else if (allowed.length && !sceneFits(s('scene'), allowed)) p.push(cause('scene-mismatch', ph ? `step 2: scene "${s('scene')}" fits none of the scenes listed for product ${key}: ${allowed.join(', ')}.` : `step 2: scene "${s('scene')}" has none of the allowed scene words for scene_type ${key}: ${allowed.join(', ')}.`));
   }
   const sign = s('sign_text'), ref = s('ref_text');
   const desc = s('description');
@@ -154,6 +155,7 @@ export function ideaSignProblems(brand, idea, { exceptDraft = '', exceptIdea = '
     if (descRef) p.push(descRef);
     return p;
   }
+  if (row && row.no_lettering) { if (sign) p.push(cause('sign-on-unlettered', `step 3: product ${key} carries no lettering (skill table: "${row.wording}"): leave sign_text empty.`)); if (descRef) p.push(descRef); return p; }
   if (!sign) p.push(cause('missing-sign-text', 'step 3: "sign_text" is empty: write NEW English wording that fits this scene and audience (never copied from the reference photo).'));
   else {
     if (!asciiLetters(sign) || /[^\x20-\x7E‘’“”]/.test(sign)) p.push(cause('sign-not-english', `step 3: sign_text "${sign}" has non-English letters or symbols (English letters A-Z, digits and & ' - . , ! ? only).`));
