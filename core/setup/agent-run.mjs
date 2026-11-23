@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir } from "node:os";
+import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel } from "../../scripts/agent-models.mjs";
 import { classifyProblem } from "./agent-problems.mjs";
 import { browserSettings, WINDOW_SIZE } from "./own-browser.mjs";
 import { extensionProfileProblem, extensionToken } from "./chrome.mjs";
@@ -51,16 +52,13 @@ export const modelFlag = (model, settings = {}) => {
   const custom = settings?.agent_run?.model_map?.[model];
   return typeof custom === "string" && /^[A-Za-z0-9._:\[\]-]{1,80}$/.test(custom.trim()) ? custom.trim() : model;
 };
-// Settings > Claude: agent.claude_model (haiku default) and agent.claude_effort ('' = no flag). The CLI accepts the exact ids.
-export const CLAUDE_MODEL_IDS = { haiku: "claude-haiku-5-5", sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5" };
-export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+// Settings > Claude: agent.claude_model (an alias or a model id; default claude-haiku-5-5) and agent.claude_effort ('' = no flag). Passed as --model as stored.
+export const EFFORTS = CLAUDE_EFFORTS;
 // The stored setting wins for every run; a model sent with the request (old Run-tab value) is only the fallback when unset.
 export const claudeChoice = (settings = {}, requested = "") => {
-  const a = settings?.agent || {}, ok = (k) => k === "haiku" || k === "sonnet" || k === "opus";
-  const key = ok(a.claude_model) ? a.claude_model : ok(requested) ? requested : "haiku";
-  const custom = settings?.agent_run?.model_map?.[key];
-  const id = typeof custom === "string" && /^[A-Za-z0-9._:[]-]{1,80}$/.test(custom.trim()) ? custom.trim() : CLAUDE_MODEL_IDS[key];
-  return { key, id, effort: EFFORTS.includes(a.claude_effort) ? a.claude_effort : "" };
+  const a = settings?.agent || {}, ok = (k) => validClaudeModel(k) && k !== "default";
+  const id = ok(a.claude_model) ? a.claude_model : ok(requested) ? requested : CLAUDE_DEFAULT;
+  return { key: id, id, effort: EFFORTS.includes(a.claude_effort) ? a.claude_effort : "" };
 };
 export const allowedTools = (mode, settings = {}, engine = "") => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : [])];
 
@@ -376,7 +374,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: MODELS.includes(shown?.model) ? shown.model : "default", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),

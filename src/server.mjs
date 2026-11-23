@@ -9,7 +9,8 @@ import { join, dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
-import { PWSH, toolEnv, psCommand, appWindow } from "../core/platform.mjs";
+import { PWSH, toolEnv, psCommand, appWindow, findTool, runTool } from "../core/platform.mjs";
+import { CODEX_FALLBACK, CLAUDE_GROUPS, parseCodexModels } from "../scripts/agent-models.mjs";
 import { workspace, discoverBrands, listDrafts, brandAvatar, readJson, rawSettings, saveSettings, settings, imageEngine, brandOverview, metricoolBrands, saveMetricoolBrands, linkMetricool, readBrandOverride, acceptSuggestions, dismissSuggestions } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
@@ -51,6 +52,7 @@ const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () 
   addLog({ mode: st.mode, agent: "Claude Code (app)", brands: st.brands || [], started: st.started, reason: why ? `${why}${st.error ? ": " + st.error : ""}` : "", warning: why ? "" : "The agent did not write a run log; this one was added by the app." });
 } });
 for (const sig of ["exit", "SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { agentRun.shutdown(); if (sig !== "exit") process.exit(0); });
+let codexModelsCache = null;
 const configApi = createConfigApi({ hubRoot: root, pwsh: PWSH, env: toolEnv });
 mkdirSync(logs, { recursive: true });
 
@@ -426,6 +428,13 @@ async function handle(req, res) {
     spawn(process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open", [b.dir], { detached: true, stdio: "ignore", windowsHide: false }).unref();
     return { ok: true };
   });
+  // Settings > Codex: the model list comes from `codex debug models` (cached 10 min); the built-in list when the CLI is missing or fails.
+  if (path === "/api/agent-models" && req.method === "GET") return api(res, () => new Promise((done) => {
+    if (codexModelsCache && Date.now() - codexModelsCache.at < 600000) return done(codexModelsCache.data);
+    const fin = (models, source) => { const data = { claude: CLAUDE_GROUPS, codex: models || CODEX_FALLBACK, source: models ? "codex" : "fallback" }; if (models) codexModelsCache = { at: Date.now(), data }; done(data); };
+    const codex = findTool("codex"); if (!codex) return fin(null);
+    runTool(codex, ["debug", "models"], { env: toolEnv, timeout: 20000, maxBuffer: 32 * 1024 * 1024 }, (err, out) => fin(err ? null : parseCodexModels(out)));
+  }));
   // Settings summary "Times": primary and backup hours per day of the research table (config/best-times.json, Facebook).
   if (path === "/api/settings" && req.method === "GET") return api(res, () => {
     const fb = researchTimes().networks?.facebook || {};

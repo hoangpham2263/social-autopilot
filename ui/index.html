@@ -1504,15 +1504,21 @@ header + * { margin-top: 0; }
     drawPrompt(); applyHow();
   });
   // Run tab: read-only line with what the next run uses (chosen in Settings > Claude).
-  const CL_NAMES = { haiku: ["Haiku 5.5", "claude-haiku-5-5"], sonnet: ["Sonnet 5.5", "claude-sonnet-5-5"], opus: ["Opus 5.5", "claude-opus-5-5"] };
+  // Models of both agents come from the server (/api/agent-models): the Claude list, and Codex's live `codex debug models` (cached fallback).
+  let agentModels = null, agentModelsP = null;
+  const loadAgentModels = () => (agentModelsP ||= getJson("/api/agent-models").then((r) => { if (r?.claude) agentModels = r; else agentModelsP = null; return agentModels; }).catch(() => { agentModelsP = null; return null; }));
+  const clFlat = () => (agentModels?.claude || []).flatMap((g) => g.models);
+  const clName = (id) => { const m = clFlat().find((x) => x.id === id); return m ? `${m.name} (${m.id})` : id; };
+  const cxName = (slug) => { const m = (agentModels?.codex || []).find((x) => x.slug === slug); return m ? `${m.name}${m.hidden ? " (hidden)" : ""} (${m.slug})` : slug; };
   let agentCfg = null;
   const showRunModel = () => {
     const el = $("#prModelLine"); if (!el) return;
     const ag = $("#prAgent").value || "";
-    if (/claude/i.test(ag)) { const m = CL_NAMES[agentCfg?.claude_model] ? agentCfg.claude_model : "haiku", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${CL_NAMES[m][0]} (${CL_NAMES[m][1]}) · effort: ${e || "default"}`; }
-    else el.textContent = /codex/i.test(ag) ? "Codex: model and effort are set in Codex itself" : "Set in the agent you paste into";
+    if (/claude/i.test(ag)) { const m = agentCfg?.claude_model || "claude-haiku-5-5", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
+    else if (/codex/i.test(ag)) { const m = agentCfg?.codex_model || "", e = agentCfg?.codex_effort || ""; el.textContent = `Codex ${m ? cxName(m) : "default model"} · effort: ${e || "default"}`; }
+    else el.textContent = "Set in the agent you paste into";
   };
-  const loadAgentCfg = async () => { const r = await getJson("/api/settings").catch(() => null); if (r?.settings) agentCfg = r.settings.agent || {}; showRunModel(); };
+  const loadAgentCfg = async () => { const [r] = await Promise.all([getJson("/api/settings").catch(() => null), loadAgentModels()]); if (r?.settings) agentCfg = r.settings.agent || {}; showRunModel(); };
   loadAgentCfg();
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); showRunModel(); drawPrompt(); applyHow(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"], ["#prBrandBox", "#prBrandField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
@@ -2661,17 +2667,37 @@ function draftTags(d) {
       ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
     // Everything else (pauses, Codex, ffmpeg, folders, image repo) is standard: edited only in workspace/settings.json (README "Settings file").
     agentCfg = s.agent || {}; showRunModel();
-    const clM = CL_NAMES[s.agent?.claude_model] ? s.agent.claude_model : "haiku", clE = s.agent?.claude_effort || "";
+    await loadAgentModels();
+    const clM = s.agent?.claude_model || "claude-haiku-5-5", clE = s.agent?.claude_effort || "", cxM = s.agent?.codex_model || "";
+    const clKnown = clFlat().some((m) => m.id === clM);
+    const clOpts = (agentModels?.claude || []).map((g) => `<optgroup label="${esc(g.family)} · ${esc(g.note)}">${g.models.map((m) => `<option value="${esc(m.id)}"${m.id === clM ? " selected" : ""}>${esc(m.name)} · ${esc(m.id)}</option>`).join("")}</optgroup>`).join("") + `<option value="__other"${clKnown ? "" : " selected"}>Other (type a model id)</option>`;
+    const cxList = agentModels?.codex || [];
+    const cxOpts = `<option value="">Codex default</option>` + cxList.map((m) => `<option value="${esc(m.slug)}"${m.slug === cxM ? " selected" : ""}>${esc(m.name)}${m.hidden ? " (hidden)" : ""} · ${esc(m.slug)}</option>`).join("") + (cxM && !cxList.some((m) => m.slug === cxM) ? `<option value="${esc(cxM)}" selected>${esc(cxM)}</option>` : "");
+    const cxFrom = agentModels?.source === "fallback" ? "; the Codex CLI was not found, so this is the saved list" : "";
     $("#settingsForm").innerHTML = `<div class="fields">
-      <div class="field"><label for="setClModel" title="Model of every Claude Code run in the app (Research, Create, Publish, Sync). Haiku is the cheapest.">Claude model</label><select id="setClModel" data-s="agent.claude_model">${Object.entries(CL_NAMES).map(([k, v]) => `<option value="${k}"${k === clM ? " selected" : ""}>${v[0]} (${v[1]})</option>`).join("")}</select></div>
+      <div class="field"><label for="setClModel" title="Model of every Claude Code run in the app (Research, Create, Publish, Sync), passed as --model. Haiku is the cheapest.">Claude model</label><select id="setClModel">${clOpts}</select></div>
+      <div class="field"><label for="setClOther" title="Any model id the Claude CLI accepts: letters, digits, . _ - [ ] (up to 60). Used when Other is chosen above.">Claude model id (Other)</label><input type="text" id="setClOther" maxlength="60" placeholder="e.g. claude-opus-5-5[1m]" value="${clKnown ? "" : esc(clM)}"${clKnown ? " disabled" : ""}></div>
       <div class="field"><label for="setClEffort" title="Effort level passed as --effort. Default = no flag (Claude Code's own default). Lower effort uses fewer tokens.">Claude effort</label><select id="setClEffort" data-s="agent.claude_effort">${[["", "Default (no flag)"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]].map(([k, t]) => `<option value="${k}"${k === clE ? " selected" : ""}>${t}</option>`).join("")}</select></div>
-      <div class="field"><span class="label" title="Codex has no model or effort setting here">Codex</span><span class="meta">Model and effort are set in Codex itself (its own config); nothing to set here.</span></div>
+      <div class="field"><label for="setCxModel" title="Model of every codex exec the tool starts (image generation), passed as -m. The list is read from the Codex CLI (codex debug models)${cxFrom}. Codex default = no flag.">Codex model</label><select id="setCxModel">${cxOpts}</select></div>
+      <div class="field"><label for="setCxEffort" title="Reasoning effort passed to codex exec as -c model_reasoning_effort. Codex default = no flag.">Codex effort</label><select id="setCxEffort" data-cx="${esc(s.agent?.codex_effort || "")}"></select></div>
       <div class="field"><label title="Create &amp; publish makes enough posts to fill this many days ahead">Plan ahead (days)</label><input type="number" min="1" step="1" data-s="planning.ahead_days" value="${esc(s.planning?.ahead_days ?? 7)}"></div>
       <div class="field"><label for="setImageEngine" title="Codex: Codex CLI makes the images (default). Google Flow: Create &amp; publish tells the agent to make each image in Google Flow in your signed-in Chrome (Playwright MCP), then register it; Google's sparkle is removed locally. Brand rules stay in the skill.">Image engine</label><select id="setImageEngine" data-s="image_engine"><option value="codex"${s.image_engine === "flow" ? "" : " selected"}>Codex</option><option value="flow"${s.image_engine === "flow" ? " selected" : ""}>Google Flow (agent + Chrome)</option></select></div>
       <div class="field"><span class="label" title="Every post gets a random number of images (an album of the same scene) between min and max, 1 to 4. Default 1 to 4. A brand can override it in workspace/brands/&lt;id&gt;.json posts.images_per_post; one run can fix it in the Run tab.">Images per post</span><div class="inline-control"><input type="number" min="1" max="4" step="1" id="setIppMin" aria-label="Minimum images per post" value="${esc(s.posts?.images_per_post?.[0] ?? 1)}"> <span class="meta">to</span> <input type="number" min="1" max="4" step="1" id="setIppMax" aria-label="Maximum images per post" value="${esc(s.posts?.images_per_post?.[1] ?? 4)}"></div></div>
       <div class="field"><label for="setAlbum" title="Posts with 2 or more images: Random picks per post between the same scene with other camera angles and the same product in other scenes (per the brand's table). One run can change it in the Run tab.">Album</label><select id="setAlbum"><option value="random"${["angle", "scene"].includes(s.posts?.album_mode) ? "" : " selected"}>Random</option><option value="angle"${s.posts?.album_mode === "angle" ? " selected" : ""}>Same scene, other angles</option><option value="scene"${s.posts?.album_mode === "scene" ? " selected" : ""}>Other scenes</option></select></div>
       ${s.imageHost ? `<div class="field"><span class="label" title="Push the image right after the post is written into the brand">Auto-host images</span><div class="checks"><label><input type="checkbox" data-s="imageHost.auto_after_writeback"${s.imageHost.auto_after_writeback !== false ? " checked" : ""}> On</label></div></div>` : ""}
       </div>`;
+    // Claude "Other" box follows the select; Codex effort options follow the chosen model (its own list, its default marked).
+    const clSel = $("#setClModel"), clOther = $("#setClOther");
+    clSel.onchange = () => { clOther.disabled = clSel.value !== "__other"; if (!clOther.disabled) clOther.focus(); };
+    const cxSel = $("#setCxModel"), cxEff = $("#setCxEffort");
+    const fillCxEffort = (keep) => {
+      const m = cxList.find((x) => x.slug === cxSel.value);
+      const list = m ? m.efforts : [...new Set(cxList.flatMap((x) => x.efforts))];
+      const lab = (e) => `${e[0].toUpperCase()}${e.slice(1)}${m && m.default_effort === e ? " (model default)" : ""}`;
+      cxEff.innerHTML = `<option value="">Codex default</option>` + list.map((e) => `<option value="${esc(e)}"${e === keep ? " selected" : ""}>${lab(e)}</option>`).join("") + (keep && !list.includes(keep) ? `<option value="${esc(keep)}" selected>${esc(keep)}</option>` : "");
+    };
+    fillCxEffort(cxEff.dataset.cx);
+    cxSel.onchange = () => { const v = cxEff.value, m = cxList.find((x) => x.slug === cxSel.value); fillCxEffort(m && !m.efforts.includes(v) ? "" : v); };
   });
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Edit" : "Close"; };
   $("#settingsSave").onclick = async () => {
@@ -2683,6 +2709,9 @@ function draftTags(d) {
       let o = out; for (const p of parts.slice(0, -1)) o = o[p] ||= {};
       o[parts.at(-1)] = v;
     }
+    const clV = $("#setClModel").value === "__other" ? $("#setClOther").value.trim() : $("#setClModel").value;
+    if (!/^[A-Za-z0-9._\-\[\]]{1,60}$/.test(clV) && clV !== "haiku") { $("#settingsMsg").innerHTML = errLine("Claude model id: letters, digits, . _ - [ ] only (1 to 60 characters)."); return; }
+    out.agent.claude_model = clV; out.agent.codex_model = $("#setCxModel").value; out.agent.codex_effort = $("#setCxEffort").value;
     out.posts = { images_per_post: [Number($("#setIppMin").value), Number($("#setIppMax").value)], album_mode: $("#setAlbum").value };
     const r = await postJson("/api/settings", { settings: out }).catch(() => offline);
     const err = r.error;

@@ -60,6 +60,7 @@ import { readStore, storeDir, storeIdeasFile, markUsed, reuseProblems } from './
 import { track } from './progress.mjs';
 import { ideaSignProblems, promptProblems, signRules, requireSignRules, cause, WORKFLOW_VERSION, perImageSigns, albumSignOf, albumSignProblems, signMode, draftSignMode, placeholderOf, signLines } from './signtext.mjs';
 import { contactSheet } from './contact-sheet.mjs';
+import { codexModelArgs } from './agent-models.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 // The brand's own photo: inside its skill folder, or inside a local folder its social.json lists in
@@ -456,7 +457,7 @@ export async function image(args, s = settings()) {
   if (args.force) for (const f of ['image-generated.png', 'image.png']) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(dir, `image-old-${Date.now()}-${f}`));
   for (const f of ['image-watermarked.png', 'image-clean-report.json']) fs.rmSync(path.join(dir, f), { force: true });
   // codex exec --skip-git-repo-check -s workspace-write - -i <brand product image> [-i <scene ref>] < prompt.txt
-  const codexArgs = ['exec', '--skip-git-repo-check', '-s', 'workspace-write', '-', '-i', draft.product_image, ...(draft.scene_image ? ['-i', draft.scene_image] : [])];
+  const codexArgs = ['exec', ...codexModelArgs(s), '--skip-git-repo-check', '-s', 'workspace-write', '-', '-i', draft.product_image, ...(draft.scene_image ? ['-i', draft.scene_image] : [])];
   const c = codexCommand(s);
   const q = (a) => (c.shell ? `"${a}"` : a);
   const before = new Set(fs.readdirSync(dir));
@@ -898,7 +899,7 @@ export async function imageExtras(dir, draft, s, { force = false } = {}) {
     const raw = path.join(dir, `image-${k}-generated.png`), work = path.join(dir, `.extra-${k}`);
     if (force && fs.existsSync(target)) fs.renameSync(target, path.join(dir, `image-old-${Date.now()}-${f}`));
     fs.rmSync(raw, { force: true }); fs.rmSync(work, { recursive: true, force: true }); fs.mkdirSync(work, { recursive: true });
-    const codexArgs = ['exec', '--skip-git-repo-check', '-s', 'workspace-write', '-', '-i', path.join(dir, 'image.png'), '-i', draft.product_image];
+    const codexArgs = ['exec', ...codexModelArgs(s), '--skip-git-repo-check', '-s', 'workspace-write', '-', '-i', path.join(dir, 'image.png'), '-i', draft.product_image];
     const c = codexCommand(s);
     let r, release;
     try { release = await takeCodexSlotAsync(s); } catch (e) { return fail(e.message); }
