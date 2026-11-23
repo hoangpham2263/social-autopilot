@@ -106,13 +106,19 @@ export const POST_JS = `const post = o.post;
   let why = 'standalone task: no transfer';
   if (post && post.url && post.token_url) {
     try {
-      const tr = await page.context().request.get(post.token_url, { timeout: 10000 });
-      if (!tr.ok()) throw new Error('token HTTP ' + tr.status());
+      // Node fetch first (exposed to browser_run_code_unsafe); extension mode refuses page.context().request ("Browser context management is not supported").
+      const http = async (url, init) => {
+        if (typeof fetch === 'function') { const x = await fetch(url, Object.assign({ signal: AbortSignal.timeout(10000) }, init)); return { ok: x.ok, status: x.status, json: () => x.json() }; }
+        const req = page.context().request, x = init && init.method === 'POST' ? await req.post(url, { headers: init.headers, data: init.body, timeout: 10000 }) : await req.get(url, { timeout: 10000 });
+        return { ok: x.ok(), status: x.status(), json: () => x.json() };
+      };
+      const tr = await http(post.token_url);
+      if (!tr.ok) throw new Error('token HTTP ' + tr.status);
       post.token = (await tr.json()).token;
       const body = JSON.stringify(Object.assign({}, r, { tag: p.tag }));
-      const res = await page.context().request.post(post.url, { headers: { 'X-Collect-Token': post.token, 'content-type': 'text/plain' }, data: body, timeout: 10000 });
-      if (res.ok()) return summary({ saved: true, status: res.status(), tag: p.tag, bytes: body.length });
-      why = 'app answered HTTP ' + res.status() + (res.status() === 403 ? ' (token already used or expired: run collect.mjs script again)' : '');
+      const res = await http(post.url, { method: 'POST', headers: { 'X-Collect-Token': post.token, 'content-type': 'text/plain' }, body });
+      if (res.ok) return summary({ saved: true, status: res.status, tag: p.tag, bytes: body.length });
+      why = 'app answered HTTP ' + res.status + (res.status === 403 ? ' (token already used or expired: run collect.mjs script again)' : '');
     } catch (e) { why = 'post failed: ' + String((e && e.message) || e).slice(0, 120); }
   }
   return summary({ saved: false, reason_saved: why, tag: p.tag, b64: p.line });`;
