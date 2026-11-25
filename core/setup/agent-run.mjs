@@ -70,7 +70,7 @@ export const claudeChoice = (settings = {}, requested = "") => {
   const id = ok(a.claude_model) ? a.claude_model : ok(requested) ? requested : CLAUDE_DEFAULT;
   return { key: id, id, effort: EFFORTS.includes(a.claude_effort) ? a.claude_effort : "" };
 };
-export const allowedTools = (mode, settings = {}, engine = "", threads = 1) => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : []), ...(mode === "create" && threads > 1 ? ["Agent", "Task"] : [])]; // Agent: parallel drafting sub-agents (Threads > 1)
+export const allowedTools = (mode, settings = {}, engine = "", threads = 1) => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : []), ...((mode === "create" || mode === "research") && threads > 1 ? ["Agent", "Task", ...(mode === "research" ? ["Write"] : [])] : [])]; // Agent: parallel workers for the non-browser steps (Threads > 1); Write: verdict files of the classification workers
 
 // Anything that looks like a secret is replaced before a line is kept.
 const SCRUBS = [
@@ -175,16 +175,21 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 // Parallel (safe): Antigravity images (a group of up to N image-generator subagents in ONE turn), Codex images (image-batch slots = max(codex.concurrency, N) via SA_THREADS),
 // Claude drafting text for several posts (N sub-agents, disjoint drafts, one writer per draft). Never parallel: Google Flow (pacing gate per profile), Research (one
 // source at a time in one tab: the state machine, tokens and blocked-platform skipping), Publish and Sync (Metricool).
-export const threadsFor = (mode, threads) => (mode === "create" ? Math.min(4, Math.max(1, Math.trunc(Number(threads)) || 1)) : 1);
+export const threadsFor = (mode, threads) => (mode === "create" || mode === "research" ? Math.min(4, Math.max(1, Math.trunc(Number(threads)) || 1)) : 1);
 export function threadsNote(mode, n, { agy = false, engine = "codex" } = {}) {
-  // n may be the placeholder "{N}" (the copy prompt of the Run tab fills it in). N = 1, or any step but Create: nothing is added.
-  if (mode !== "create" || (n !== "{N}" && !(Number(n) >= 2)) || (agy && engine === "flow")) return ""; // Flow with Antigravity: Threads does not apply (pacing gate), so the prompt never mentions it
-  const t = `THREADS: ${n}\n`;
-  const parts = [];
+  // THREADS drives the steps that use NO browser, nothing else. n may be the placeholder "{N}" (the copy prompt of the Run tab fills it in).
+  // Nothing is added for N = 1, Publish, Sync, a Flow run (any agent: pacing, the pages are Playwright) or an Antigravity Research run (it may call no subagent).
+  if ((mode !== "create" && mode !== "research") || (n !== "{N}" && !(Number(n) >= 2))) return "";
+  if (engine === "flow" && mode === "create") return "";
+  if (agy && mode === "research") return "";
+  const t = `THREADS: ${n}\n`, parts = [];
+  if (mode === "research") {
+    parts.push(`CLASSIFICATION IN PARALLEL (step 1.3 only, the posts the browser already collected): when many posts wait for a verdict you may start up to ${n} sub-agents (Agent tool), each on a DISJOINT slice of the posts that store.mjs classify lists; each judges its slice against product_fit and writes ITS OWN verdict file, then runs store.mjs verdict --file <its file> (the store locks its writes). Sub-agents use NO browser tool and open nothing. You run every other command; wait for all of them before store.mjs classify again.`);
+    return t + parts.join("\n") + "\n";
+  }
   if (engine === "antigravity") parts.push(`IMAGES IN PARALLEL: make the pictures in GROUPS of up to ${n}: in ONE turn call invoke_subagent once per image of the group (type_name "image-generator", nothing else), wait for all, then LOOK at each and run its register-image one after the other. A group is either the covers (image 1) of up to ${n} DIFFERENT posts, or the extras (image 2..4) of ONE post whose cover is already registered. Never two registers of the same draft at the same time; one failing image never blocks its group.`);
-  else if (engine === "flow") parts.push("Google Flow images stay ONE at a time (pacing gate per profile): THREADS does not apply to them.");
   else parts.push(`Codex images: the tool runs up to ${n} at once by itself (draft.mjs image-batch); nothing to do for it.`);
-  if (!agy) parts.push(`DRAFT TEXT IN PARALLEL: when several posts need ideas or captions you may start up to ${n} sub-agents with the Agent tool; each gets DISJOINT draft ids and writes only those drafts' files (one writer per draft). Only YOU run pipeline.mjs, store.mjs, queue and every command that changes shared state; wait for all sub-agents before the next pipeline step.`);
+  if (!agy) parts.push(`WORKERS (steps without a browser): up to ${n} sub-agents (Agent tool) on DISJOINT draft ids: captions, image prompt files, register-image and the checks of different drafts; each writes only its own drafts' files (one writer per draft; shared files go through the tool's locked commands). Keep for YOURSELF what must stay consistent across posts: the ideas list (ideas differ from each other), the sign wording (differs per post), every pipeline.mjs / queue / publish command. Sub-agents use no browser tool. Wait for all of them before the next pipeline step.`);
   else parts.push("Draft text stays one post after another (Antigravity may call no subagent except image-generator).");
   return t + parts.join("\n") + "\n";
 }
@@ -465,7 +470,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       const why = extensionProfileProblem(s, { flow }); if (why) return { ok: false, status: 409, error: why };
     }
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
-    const nThreads = agy && usesFlow(mode, s, imageEngine) ? 1 : threadsFor(mode, threads); // Create only; Research, Publish and Sync always 1; Flow with Antigravity ignores it
+    const nThreads = usesFlow(mode, s, imageEngine) || (agy && mode === "research") ? 1 : threadsFor(mode, threads); // Create and Research (classification) only; Flow runs, Publish and Sync always 1
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);

@@ -509,7 +509,7 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = 100)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="100"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field" data-opt="create" hidden><label for="prImages" title="Codex; Flow driven by Claude; Antigravity makes the images itself (no Flow); Antigravity (Flow) = Antigravity drives Flow. Saved as the default.">Images</label><select id="prImages"><option value="codex">Codex</option><option value="flow">Flow (Claude)</option><option value="antigravity">Antigravity</option><option value="antigravity-flow">Antigravity (Flow)</option></select></div>
-      <div class="field" data-opt="create" hidden><label for="prThreads" title="Pictures and drafts made at the same time (1-4). Not for Flow, Research, Publish">Threads</label><input type="number" id="prThreads" min="1" max="4" step="1" value="1" autocomplete="off"></div>
+      <div class="field" data-opt="threads" hidden><label for="prThreads" title="Pictures and drafts made at the same time (1-4). Not for Flow, Research, Publish">Threads</label><input type="number" id="prThreads" min="1" max="4" step="1" value="1" autocomplete="off"></div>
       <div class="field" data-opt="create" hidden><span class="label" title="Images per post of this run: random between min and max (1 to 4). Default: Settings, Images per post. min = max gives exactly that many.">Images per post</span><span class="imgrow"><span class="pair"><span class="meta">min</span><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" aria-label="Images per post, min" autocomplete="off"><span class="meta">max</span><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" aria-label="Images per post, max" autocomplete="off"></span></span></div>
       <div class="field" data-opt="create" id="prAlbField" hidden><span class="label" title="Which kinds of album posts with 2 or more images can be (random between the ticked ones, per post). Posts with a single image ignore it. Default: Settings, Album.">Image types</span><details id="prAlbBox"><summary id="prAlbSum">All 2</summary><div id="prAlb"></div></details></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
@@ -1358,7 +1358,7 @@ header + * { margin-top: 0; }
     const publishOnly = /publish approved/i.test(prMode);
     // The options of the chosen mode, in the same row as Agent and Brand: Research = Sources, Max posts, Crawl;
     // Create & publish = Posts; Publish approved = Posts, Time, Start.
-    for (const el of $$("#page-prompt [data-opt]")) el.hidden = el.dataset.opt === "research" ? !research : el.dataset.opt === "make" ? research : el.dataset.opt === "create" ? research || publishOnly : !publishOnly;
+    for (const el of $$("#page-prompt [data-opt]")) el.hidden = el.dataset.opt === "research" ? !research : el.dataset.opt === "make" ? research : el.dataset.opt === "threads" ? publishOnly : el.dataset.opt === "create" ? research || publishOnly : !publishOnly;
     // Images: the picker shows the saved image_engine (Agent and Images are saved as settings when changed).
     // The picked library item belongs to Create & publish for its brand; another mode or brand drops it.
     if (prItem && (modeKey(prMode) !== "create" || brand !== prItem.brand)) prItem = null;
@@ -1475,7 +1475,7 @@ header + * { margin-top: 0; }
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
     // Antigravity copy prompt: the same text plus the tool note the runner adds itself (a Run now prompt gets it from the runner).
     const mk = modeKey(prMode), an = promptData.agy_notes || {};
-    const th = howNow() === "copy" && mk === "create" && runAllowed() && threadsVal() > 1 ? String((promptData.threads_notes || {})[(agyPicked() ? "agy" : "claude") + "-" + chosenEngine()] || "").split("{N}").join(threadsVal()) : ""; // the same THREADS text the runner adds to Run now
+    const th = howNow() === "copy" && (mk === "create" || mk === "research") && runAllowed() && !(mk === "research" && agyPicked()) && threadsVal() > 1 ? String((promptData.threads_notes || {})[mk === "research" ? "claude-research" : (agyPicked() ? "agy" : "claude") + "-" + chosenEngine()] || "").split("{N}").join(threadsVal()) : ""; // the same THREADS text the runner adds to Run now
     const lead = subAllowed() ? SUB_LINE + "\n" + th : agyPicked() && howNow() === "copy" ? ((mk === "research" || (mk === "create" && chosenEngine() === "flow") ? an.browser : mk === "create" && chosenEngine() === "antigravity" ? an.images : an.plain) || "") + th : "";
     return lead + buildTask();
   }
@@ -1579,7 +1579,7 @@ header + * { margin-top: 0; }
     if (ag && (ag.value === "Claude Code" || ag.value === "Antigravity")) { const want = agentOfMode(modeKey(prMode)) === "antigravity" && [...ag.options].some((o) => o.value === "Antigravity") ? "Antigravity" : "Claude Code"; if (ag.value !== want) { ag.value = want; store.set("prAgent", want); } }
     // Flow needs Claude: Antigravity is not offered for Create while Images = Flow (Research keeps its own agent); Threads is for Claude Code / Antigravity only.
     if (ag) { const o = [...ag.options].find((x) => x.value === "Antigravity"); if (o) { o.disabled = false; o.title = ""; } }
-    const th = $("#prThreads"); if (th) { th.disabled = !runAllowed() || im.value === "antigravity-flow"; th.title = im.value === "antigravity-flow" ? "Not for Flow (pacing)" : runAllowed() ? "Pictures and drafts made at the same time (1-4); Codex images N at a time (1 = the tool default). Not for Flow, Research or Publish" : "Claude Code or Antigravity only"; }
+    const th = $("#prThreads"); if (th) { const mk = modeKey(prMode), off = !runAllowed() || (mk === "create" && chosenEngine() === "flow") || (mk === "research" && agyPicked()); th.disabled = off; th.title = !runAllowed() ? "Claude Code or Antigravity only" : off ? (mk === "research" ? "Claude Code only" : "Not for Flow") : "Steps without a browser run N at a time (1-4); browsing and Flow stay one at a time"; }
   };
   const saveRunAI = async (changed) => {
     const im = $("#prImages"), mk = modeKey(prMode);
@@ -1934,7 +1934,7 @@ header + * { margin-top: 0; }
     const btn = $("#prRunNow"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "Starting…"; // instant feedback: the click is registered while the app starts Claude
     try {
-      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, ...(key === "create" ? { image_engine: chosenEngine(), threads: threadsVal() } : {}) }).catch(() => ({ error: "The app did not answer." }));
+      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, ...(key === "create" ? { image_engine: chosenEngine(), threads: threadsVal() } : key === "research" ? { threads: threadsVal() } : {}) }).catch(() => ({ error: "The app did not answer." }));
       if (r.error) { flash(r.error); toast(r.error); await loadAgentRun(); return; }
       await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
       await loadAgentRun(); loadProgress();
