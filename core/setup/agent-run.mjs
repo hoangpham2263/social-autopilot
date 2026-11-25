@@ -31,7 +31,9 @@ export const ALLOWED_TOOLS = {
 // Create with image engine Google Flow: the agent drives Flow in the signed-in Chrome, so the Playwright browser tools are added.
 export const FLOW_TOOLS = ["browser_tabs", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_press_key", "browser_wait_for", "browser_run_code_unsafe", "browser_take_screenshot", "browser_evaluate", "browser_file_upload"].map((n) => "mcp__playwright__" + n);
 // The engine of a run: the one chosen for this run (Run tab "Images", per run only) when valid, else the tool setting image_engine.
-export const runEngine = (settings = {}, engine = "") => (engine === "codex" || engine === "flow" ? engine : settings?.image_engine === "flow" ? "flow" : "codex");
+export const runEngine = (settings = {}, engine = "") => (engine === "codex" || engine === "flow" || engine === "antigravity" ? engine : settings?.image_engine === "flow" ? "flow" : "codex");
+// Create with image engine Antigravity (agent.backend antigravity): the agent makes the images with its image-generator subagent: no Flow, no browser, no Playwright MCP.
+export const usesAgyImages = (mode, settings = {}, engine = "") => mode === "create" && runEngine(settings, engine) === "antigravity";
 export const usesFlow = (mode, settings = {}, engine = "") => mode === "create" && runEngine(settings, engine) === "flow";
 // Which runs drive the browser (Playwright MCP): Research, and Create with Flow. Publish and Create with Codex never touch it.
 export const needsBrowser = (mode, settings = {}, engine = "") => mode === "research" || usesFlow(mode, settings, engine);
@@ -120,6 +122,7 @@ export function friendlyTool(name, input = {}) {
     if (/queue\.mjs|brands\.mjs/.test(c)) return "Đang kiểm tra trạng thái";
     return "Đang xử lý…";
   }
+  if (n === "agy_image") return "Antigravity đang tạo ảnh";
   if (n === "Write" || n === "Edit") return /caption|idea/.test(baseName(i.file_path)) ? "Đang viết nội dung (caption/ý tưởng)" : "Đang ghi dữ liệu";
   if (n === "Read") return /\.(png|jpe?g|webp|gif)$/.test(baseName(i.file_path)) ? "Đang xem ảnh" : "Đang đọc tài liệu";
   if (n === "Glob" || n === "Grep") return "Đang tìm dữ liệu";
@@ -184,10 +187,10 @@ export const parseAgyMcpList = (text) => String(text).split(/\r?\n/).slice(1).ma
 export const agySettings = (servers = [], own = "") => ({ permissions: { deny: servers.filter((n) => n !== own).map((n) => `mcp(${n}/*)`) } });
 export const agyModelLine = (id, effort = "") => `Model in use: ${id ? `${id} (Antigravity ${agyName(id)}; the model you chose, agy does not report the running model)` : "Antigravity default model (none chosen; agy does not report it)"} · effort: ${effort || "default"}`;
 // What the prompt must say for agy: its own tool names, and that ONLY the run's Playwright MCP may touch Chrome / Flow / social pages.
-export const agyNote = (server = "", browser = false) => `ANTIGRAVITY NOTE: you run in Antigravity (agy), not Claude Code. Tool names differ: run shell commands (node scripts/...) with run_command, read files with read_file, write files with write_to_file.
+export const agyNote = (server = "", browser = false, images = false) => `ANTIGRAVITY NOTE: you run in Antigravity (agy), not Claude Code. Tool names differ: run shell commands (node scripts/...) with run_command, read files with read_file, write files with write_to_file.
 ${browser ? `BROWSER: the ONLY browser you may use is the Playwright MCP server named "${server}". It is not a direct tool: call it with call_mcp_tool(ServerName="${server}", ToolName=<tool>, Arguments={...}). Wherever this prompt says browser_tabs, browser_navigate, browser_snapshot, browser_click, browser_type, browser_press_key, browser_wait_for, browser_run_code_unsafe, browser_take_screenshot, browser_evaluate, browser_file_upload it means that ToolName of the server "${server}" (read ~/.gemini/antigravity-cli/mcp/${server}/<tool>.json first when unsure about its Arguments).
 NEVER use your own built-in browser tools (browser_subagent, open_browser_url, browser_click_element, browser_input, browser_get_dom, execute_browser_javascript, capture_browser_screenshot, read_browser_page, list_browser_pages and the like) and never another MCP server (for example "playwright"): they do not drive the signed-in Chrome of this run and would break the Flow / social rules (human pacing, visible tab, login). Do not use generate_image for post images either: images come from the tool (Codex) or from Google Flow through "${server}" as described below.
-` : "No browser is needed for this run: do not open any browser.\n"}
+` : "No browser is needed for this run: do not open any browser.\n"}${images ? 'IMAGES: you make the post images yourself with your image-generator subagent: call invoke_subagent with type_name "image-generator" (this is the ONLY subagent you may call) as the prompt describes. Never use browser_*/web tools, Google Flow or any other subagent.\n' : ""}
 `;
 // agy tool call -> the Claude-style (name, input) that friendlyTool() already words in Vietnamese. foreign = not the run's own Playwright MCP / a built-in browser or image tool.
 export function agyToolCall(name, p = {}, own = "") {
@@ -197,7 +200,9 @@ export function agyToolCall(name, p = {}, own = "") {
   if (n === "read_file" || n === "view_file") return { name: "Read", input: { file_path: i.Path || i.AbsolutePath || "" }, foreign: false };
   if (["write_to_file", "replace_file_content", "multi_replace_file_content", "sed_file"].includes(n)) return { name: "Write", input: { file_path: i.TargetFile || i.Path || "" }, foreign: false };
   if (["grep_search", "find_by_name", "list_dir"].includes(n)) return { name: "Grep", input: {}, foreign: false };
-  if (/browser|generate_image/.test(n)) return { name: n, input: {}, foreign: true };
+  if (n === "invoke_subagent") { const t = String(i.type_name || i.TypeName || i.SubagentType || i.subagent_type || ""); return t === "image-generator" ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + (t || "?"), input: {}, foreign: true }; } // only the image-generator subagent is allowed
+  if (["manage_subagents", "schedule", "wait", "wait_5_seconds"].includes(n)) return { name: "agy_image", input: {}, foreign: false }; // waiting for the image-generator subagent
+  if (/browser|generate_image|define_subagent/.test(n)) return { name: n, input: {}, foreign: true };
   return { name: n, input: {}, foreign: false };
 }
 
@@ -383,6 +388,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
     const s = getSettings() || {};
     const backend = agentBackend(s), agy = backend === "antigravity", label = agy ? "Antigravity" : "Claude";
+    if (agy && usesFlow(mode, s, imageEngine)) return { ok: false, status: 400, error: "With Antigravity as the agent the images are made by Antigravity, not Google Flow: choose Images: Antigravity in the Run tab." };
     if (agy && AGY_UNSUPPORTED.includes(mode)) return { ok: false, status: 400, error: `Antigravity cannot run ${mode}: it has no Metricool connector. Choose Claude as the agent in Settings for ${mode}.` };
     const found = agy ? findAgy() : findCli();
     if (!found?.found) return { ok: false, status: 400, error: agy ? "Antigravity CLI (agy) not found: install it or add it to PATH." : "Claude CLI not found: set claudeCli.command in workspace/settings.json." };
@@ -438,7 +444,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
     };
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
-    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: imageEngine === "codex" || imageEngine === "flow" ? imageEngine : "" })); } catch {}
+    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "" })); } catch {}
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
     run.friendly = [];
@@ -454,7 +460,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
     const note = own ? ownNote(bs.headless) : browser ? (flow ? flowExtensionNote : extensionNote) : "";
     // agy reads the prompt as ONE NDJSON user message on stdin (never argv: no length limit, nothing in the process list).
-    const text = note + (agy ? agyNote(mcpName, browser) : "") + prefix + prompt;
+    const text = note + (agy ? agyNote(mcpName, browser, usesAgyImages(mode, s, imageEngine)) : "") + prefix + prompt;
     try { child.stdin?.end(agy ? JSON.stringify({ event: "user", message: { content: text } }) + String.fromCharCode(10) : text); } catch {}
     // Hard time limit: the whole process tree is killed.
     if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);

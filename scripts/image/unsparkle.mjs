@@ -241,6 +241,8 @@ export const decodeImage = (buf) => (isJpeg(buf) ? decodeJpeg(buf) : decodePng(b
 // file (png|jpg) -> out (png). A picture without the star is returned unchanged in its pixels (written as PNG); the input file is never touched.
 export function unsparkleFile(file, out, options = {}) {
   const buf = readFileSync(file), picture = decodeImage(buf);
+  // convertOnly (Antigravity images carry no visible star): no detection, a PNG is copied, a JPEG is converted.
+  if (options.convertOnly) { writeFileSync(out, isJpeg(buf) ? encodePng(picture) : buf); return { applied: false, alpha: 0 }; }
   const result = removeSparkle(picture, options);
   // A PNG without the star is copied byte for byte; a JPEG is converted (its pixels, not re-compressed).
   writeFileSync(out, !result.applied && !isJpeg(buf) ? buf : encodePng(picture));

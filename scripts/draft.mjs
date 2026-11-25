@@ -508,7 +508,8 @@ export async function image(args, s = settings()) {
 const sniffExt = (buf) => (buf[0] === 0xff && buf[1] === 0xd8 ? 'jpg' : buf.subarray(1, 4).toString('latin1') === 'PNG' ? 'png' : '');
 export function registerImage(args, s = settings()) {
   const engine = args.engine && args.engine !== true ? String(args.engine) : 'flow';
-  if (engine !== 'flow') throw new Error('register-image: only --engine flow (Codex images come from draft.mjs image).');
+  if (!['flow', 'antigravity'].includes(engine)) throw new Error('register-image: --engine flow or antigravity (Codex images come from draft.mjs image).');
+  const agy = engine === 'antigravity'; // Antigravity image (image-generator subagent): a JPEG, no Google star; everything else is the Flow path
   const { dir, draft } = findDraft(need(args, 'id'));
   const n = args.n && args.n !== true ? Number(args.n) : 1;
   const files = draftImages(draft);
@@ -520,7 +521,8 @@ export function registerImage(args, s = settings()) {
   if (!ext) throw new Error('--from must be a PNG or JPEG file (the Flow download).');
   const statusFile = path.join(dir, 'status.json');
   const target = path.join(dir, files[n - 1]);
-  const keep = path.join(dir, n === 1 ? `image-generated-flow-original.${ext}` : `image-${String(n).padStart(2, '0')}-flow-original.${ext}`);
+  const tag = agy ? 'agy' : 'flow';
+  const keep = path.join(dir, n === 1 ? `image-generated-${tag}-original.${ext}` : `image-${String(n).padStart(2, '0')}-${tag}-original.${ext}`);
   const generated = path.join(dir, n === 1 ? 'image-generated.png' : `image-${String(n).padStart(2, '0')}-generated.png`);
   // An earlier image of this slot is kept aside (image-old-<time>-...), like draft.mjs image --force.
   const stampNow = Date.now();
@@ -528,20 +530,20 @@ export function registerImage(args, s = settings()) {
   const keepPrefix = path.basename(keep).replace(/\.[a-z]+$/, '.');
   for (const f of fs.readdirSync(dir)) if (f.startsWith(keepPrefix) && path.join(dir, f) !== keep) fs.renameSync(path.join(dir, f), path.join(dir, `image-old-${stampNow}-${f}`));
   fs.writeFileSync(keep, raw);
-  const sparkle = unsparkleFile(keep, generated, { assumePresent: true }); // Flow pictures always carry the star
+  const sparkle = unsparkleFile(keep, generated, agy ? { convertOnly: true } : { assumePresent: true }); // Flow pictures always carry the star; Antigravity ones do not
   const mark = sparkle.applied ? 'removed' : 'none';
   const st0 = readJson(statusFile, {});
   const per = { ...(st0.flow_images || {}), [path.basename(target)]: { original: path.basename(keep), sparkle: mark, alpha: sparkle.alpha, at: stamp() } };
   let cleaned = null;
   if (n === 1) {
     for (const f of ['image-watermarked.png', 'image-clean-report.json']) fs.rmSync(path.join(dir, f), { force: true });
-    setStatus(dir, st0.status && !['preparing', 'generating', 'image_failed'].includes(st0.status) ? st0.status : 'needs_caption', { error: '', watermark: null, logo_check: null, metadata_clean: null, size_check: null, image_engine: 'flow', sparkle: mark, flow_images: per });
+    setStatus(dir, st0.status && !['preparing', 'generating', 'image_failed'].includes(st0.status) ? st0.status : 'needs_caption', { error: '', watermark: null, logo_check: null, metadata_clean: null, size_check: null, image_engine: engine, sparkle: mark, flow_images: per });
     // The cleaning step works on a PNG whatever made it ('codex' = the skill's metadata-only clean; Flow output is our own PNG).
     cleaned = cleanDraftImage(dir, { generator: 'codex', force: true }, s);
   } else {
     const sha = cleanExtraImage(generated, target, s);
     const st = readJson(statusFile, {});
-    setStatus(dir, st.status || 'needs_caption', { images: { ...(st.images || {}), [path.basename(target)]: { state: 'ok', sha1: sha, updated: stamp(), engine: 'flow' } }, logo_check: null, image_engine: 'flow', flow_images: per });
+    setStatus(dir, st.status || 'needs_caption', { images: { ...(st.images || {}), [path.basename(target)]: { state: 'ok', sha1: sha, updated: stamp(), engine } }, logo_check: null, image_engine: engine, flow_images: per });
   }
   // Watermark overlay when the brand has it on (main image), then the automatic check.
   let watermarked = null;
@@ -549,7 +551,7 @@ export function registerImage(args, s = settings()) {
   let checked;
   try { checked = check({ id: draft.id }); } catch (e) { checked = { error: e.message }; }
   const missing = files.filter((f) => !fs.existsSync(path.join(dir, f)));
-  return { id: draft.id, n, image: target, original: keep, engine: 'flow', sparkle: mark, alpha: sparkle.alpha, ...(sparkle.method ? { sparkle_method: sparkle.method } : {}), ...(cleaned ? { metadata_removed: cleaned.removed } : {}), ...(watermarked ? { watermark: watermarked } : {}), status: checked.status, problems: checked.problems || (checked.error ? [checked.error] : []), warnings: checked.warnings || [], ...(missing.length ? { images_missing: missing } : {}),
+  return { id: draft.id, n, image: target, original: keep, engine, sparkle: mark, alpha: sparkle.alpha, ...(sparkle.method ? { sparkle_method: sparkle.method } : {}), ...(cleaned ? { metadata_removed: cleaned.removed } : {}), ...(watermarked ? { watermark: watermarked } : {}), status: checked.status, problems: checked.problems || (checked.error ? [checked.error] : []), warnings: checked.warnings || [], ...(missing.length ? { images_missing: missing } : {}),
     next: missing.length ? `Register the other image(s): ${missing.join(', ')} (draft.mjs register-image --id ${draft.id} --n <k> --from <file>).` : 'LOOK at the image(s) (no Google star left, nothing wrong), then write the captions.' };
 }
 
@@ -575,6 +577,7 @@ export function flowBrief(args, s = settings()) {
   const n = args.n && args.n !== true ? Number(args.n) : 1;
   if (!Number.isInteger(n) || n < 1 || n > files.length) throw new Error(`--n must be 1..${files.length} (this draft has ${files.length} image(s)).`);
   const safe = args.safe === true || args.safe === 'true';
+  const agy = args.engine === 'antigravity'; // Antigravity: the reference stays where it is (ImagePaths takes any path), no copy under Downloads
   // --safe rewrites only the free-text descriptions (scene, angle, props, product type, album scene); the sign wording stays exact.
   const idea0 = draft.idea || {}, mode = refModeOf(draft), sign = draft.sign_text || '';
   const idea = safe ? Object.fromEntries(Object.entries(idea0).map(([k, v]) => [k, ['scene', 'angle', 'props', 'product_type'].includes(k) && typeof v === 'string' ? safeArt(v) : v])) : idea0;
@@ -614,24 +617,28 @@ export function flowBrief(args, s = settings()) {
   }
   if (safe) prompt += ' ' + SAFE_ART_LINE;
   let reference_for_upload = '';
-  if (ref && fs.existsSync(ref)) {
+  if (agy && ref && fs.existsSync(ref)) reference_for_upload = path.resolve(ref);
+  else if (ref && fs.existsSync(ref)) {
     const downloads = path.join(os.homedir(), 'Downloads');
     fs.mkdirSync(downloads, { recursive: true });
     reference_for_upload = path.join(downloads, `sa-ref-${draft.id}-${n}${path.extname(ref) || '.png'}`);
     fs.copyFileSync(ref, reference_for_upload);
   }
   return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, ...(safe ? { safe: true } : {}), needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),
-    reference: n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
+    ...(agy ? { image_paths: reference_for_upload ? [reference_for_upload] : [], image_name: `${draft.id}-${n}`, antigravity_call: 'invoke_subagent(type_name="image-generator"), task gives Prompt = prompt, ImagePaths = image_paths (empty list when none), AspectRatio = aspect, ImageName = image_name; it saves a JPG under ~/.gemini/antigravity-cli/brain/<conversation>/; then run the register command with --from = that file' } : {}),
+    reference: agy ? (reference_for_upload ? (n > 1 ? 'image 1 of this post (ImagePaths): ' : 'reference photo (ImagePaths): ') + reference_for_upload : 'none') : n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
     ...(n > 1 && !fs.existsSync(ref) ? { warning: 'image 1 is not registered yet (extras follow the cover).' } : {}),
     ...(signBlock ? { sign_mode: draftSignMode(draft), sign_wording: sign, sign_rules: signBlock.text, read_first: 'Read sign_rules (the brand skill). The prompt already carries the exact wording and the image-facing rules; after the image, run draft.mjs sign-check.' } : {}),
-    register: `node scripts/draft.mjs register-image --id ${draft.id} --n ${n} --from <downloaded file>` };
+    register: `node scripts/draft.mjs register-image --id ${draft.id} --n ${n}${agy ? ' --engine antigravity' : ''} --from <${agy ? 'generated image file' : 'downloaded file'}>` };
 }
 
 // Google Flow batch helpers (plumbing only; the batching rules live in the skill, references/image-guide.md).
 // flow-queue: every image still missing, in SUBMISSION ORDER: wave 1 = all covers (n=1) of all drafts, wave 2 = all album extras
 // (they take image 1 of their post as reference, so they go after the covers exist in the Flow project). Each item has a stable
 // `tag` (<draft>#<n>) and `order`, the condensed prompt, the reference file and the register command. --ids a,b or --brand <id>.
+export const AGY_QUEUE_NEXT = 'ANTIGRAVITY IMAGES (no Flow, no browser, no flow-pace gate): item by item in this order (a cover before its extras: they use that cover as reference). For each item call invoke_subagent with type_name "image-generator" and a task that gives exactly: Prompt = the item prompt, ImagePaths = its image_paths, AspectRatio = its aspect, ImageName = its image_name. One image takes about 80 s. The subagent saves a JPG under ~/.gemini/antigravity-cli/brain/<conversation>/<name>_<time>.jpg: LOOK at it, then node scripts/draft.mjs register-image --id <draft> --n <k> --engine antigravity --from <that file> (a jpg is converted by the tool). A refused or failed image: retry ONCE with node scripts/draft.mjs flow-brief --id <draft> --n <k> --engine antigravity --safe; still failing -> skip it, report it, go on with the next one.';
 export function flowQueue(args, s = settings()) {
+  const agy = args.engine === 'antigravity';
   const ids = args.ids && args.ids !== true ? String(args.ids).split(',').map((x) => x.trim()).filter(Boolean) : null;
   const drafts = ids ? ids.map((id) => findDraft(id)) : listDrafts(args.brand && args.brand !== true ? String(args.brand) : undefined).filter((d) => !['approved', 'rejected'].includes(d.status.status));
   const items = [];
@@ -639,7 +646,8 @@ export function flowQueue(args, s = settings()) {
   // Order like a person working post by post (user 2026-11-23): each post's cover, then its own extras (they use that cover as
   // reference), then the next post. Drafts keep their order.
   items.sort((a, b) => (drafts.findIndex((d) => d.draft.id === a.id) - drafts.findIndex((d) => d.draft.id === b.id)) || (a.n - b.n));
-  const queue = items.map((it, k) => { const b = flowBrief({ id: it.id, n: String(it.n) }, s); return { order: k + 1, wave: it.n === 1 ? 1 : 2, tag: `${it.id}#${it.n}`, id: it.id, n: it.n, file: b.file, album_mode: b.album_mode, prompt: b.prompt, reference: b.reference, ...(b.warning_scene ? { warning_scene: b.warning_scene } : {}), register: b.register }; });
+  const queue = items.map((it, k) => { const b = flowBrief({ id: it.id, n: String(it.n), ...(agy ? { engine: 'antigravity' } : {}) }, s); return { order: k + 1, wave: it.n === 1 ? 1 : 2, tag: `${it.id}#${it.n}`, id: it.id, n: it.n, file: b.file, album_mode: b.album_mode, prompt: b.prompt, reference: b.reference, ...(agy ? { aspect: b.aspect, image_paths: b.image_paths, image_name: b.image_name } : {}), ...(b.warning_scene ? { warning_scene: b.warning_scene } : {}), register: b.register }; });
+  if (agy) return { count: queue.length, queue, next: AGY_QUEUE_NEXT };
   return { count: queue.length, queue,
     next: 'WORK LIKE A PERSON, post by post, by hand with the browser tools: NEVER write or run a script, loop or batch file that drives Google Flow for several images (Google locks the profile for automated bursts). Upload the reference images of ONE item right before the prompt of that item; never pre-upload the references of several items in bulk. For each post: run node scripts/flow-pace.mjs gate --tag <draft>#1 right BEFORE you submit the cover (it waits a random human-like time; never skip it), submit, wait for it, then the extras of THAT post (each with its own gate right before its submit; the gate itself makes groups of 2-3 with random pauses), wait, download each image, LOOK at it, register it (draft.mjs register-image), then the next post. A "unusual activity" error means STOP (do not retry in a loop).' };
 }

@@ -148,7 +148,7 @@ function someImages(dir, max = 40) {
 function stageA(args) {
   const started = stamp();
   const engineArg = args['image-engine'] && args['image-engine'] !== true ? String(args['image-engine']) : '';
-  if (engineArg && !['codex', 'flow'].includes(engineArg)) throw new Error('--image-engine must be codex or flow.');
+  if (engineArg && !['codex', 'flow', 'antigravity'].includes(engineArg)) throw new Error('--image-engine must be codex, flow or antigravity.');
   const imagesArg = args.images === undefined || args.images === true || args.images === '' ? '' : String(args.images);
   if (imagesArg && !parseImagesOpt(imagesArg)) throw new Error('--images must be N or min-max within 1..4 (e.g. 2 or 1-3); omit it for the default range.');
   const albumArg = parseAlbumOpt(args.album);
@@ -211,6 +211,7 @@ function stageA(args) {
 
 // ----- Flow images (settings image_engine = flow): no Codex run; the agent makes each image in Google Flow (docs/flow-images.md)
 // and registers it: draft.mjs register-image --id <draft> --n <k> --from <downloaded file>. -----
+const manualImages = (e) => e === 'flow' || e === 'antigravity'; // images made by the agent itself (Flow, or Antigravity's image-generator) and registered with register-image
 function flowTodo(st) {
   const todo = [];
   for (const id of st.drafts || []) {
@@ -221,10 +222,12 @@ function flowTodo(st) {
     // EVERY missing image of the post: image.png (cover, n=1) and the album extras image-02.png.. (n>=2, same scene: image 1 is their reference).
     const am = albumModeOf(d.draft);
     todo.push({ id, brand: d.draft.brand, album_images: files.length, ...(am ? { album_mode: am, album_note: am === 'scene' ? 'SCENE album: the same product in a different scene per extra (pick each scene per the brand table, project.md section 10; never a forbidden scene; write it as draft.album_scenes or on the "NEW SCENE FOR THIS IMAGE:" line of prompt-0N.txt; custom-text brand: each extra ALSO has its OWN new sign wording fitting its scene, draft.mjs reprompt --id <draft> --album-signs "<image 2>|<image 3>|..", and sign-check needs --reads-02 --reads-03 ..)' : 'ANGLE album: the same scene, a different camera shot per extra' } : {}), product_image: d.draft.product_image || '',
-      images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, ...(n > 1 ? { make: am === 'scene' ? `a different scene: ${albumSceneOf(d.dir, d.draft, n) || '(not chosen yet: pick per the brand table)'}` : `same scene, ${extraShotOf(n - 1)} shot` } : { make: 'cover' }), brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n} --from <downloaded file>` }; }) });
+      images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, ...(n > 1 ? { make: am === 'scene' ? `a different scene: ${albumSceneOf(d.dir, d.draft, n) || '(not chosen yet: pick per the brand table)'}` : `same scene, ${extraShotOf(n - 1)} shot` } : { make: 'cover' }), brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}${st.image_engine === 'antigravity' ? ' --engine antigravity' : ''}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n}${st.image_engine === 'antigravity' ? ' --engine antigravity' : ''} --from <${st.image_engine === 'antigravity' ? 'generated image file' : 'downloaded file'}>` }; }) });
   }
   return todo;
 }
+const AGY_NEXT = 'Antigravity images (no Flow, no browser, no flow-pace gate; docs/flow-images.md section Antigravity images): for EVERY image listed in flow_images, in order (cover before its extras): node scripts/draft.mjs flow-brief --id <draft> --n <k> --engine antigravity prints the prompt, aspect and image_paths; call invoke_subagent with type_name "image-generator" (only that subagent) giving Prompt, ImagePaths, AspectRatio, ImageName exactly as printed; LOOK at the saved JPG, then run its register command (--engine antigravity --from <that jpg>). Refused or failed image: retry ONCE with --safe, then skip it and report it; never stop the run for one image. Same brand rules as always (sign wording, no logo on the product, scene-fitting text). Then node scripts/pipeline.mjs create --resume.';
+const nextFor = (st) => (st.image_engine === 'antigravity' ? AGY_NEXT : FLOW_NEXT);
 const FLOW_NEXT = 'Google Flow (docs/flow-images.md; Flow project is set up ONCE and reused (node scripts/flow-pace.mjs project get | project set --url <url>; group posts by ratio). READ docs/flow-ui-notes.md and workspace/flow-ui-lessons.md BEFORE opening Flow and follow them; when you find a faster or more reliable way, or a pitfall that cost you more than 3 steps, APPEND one short line to workspace/flow-ui-lessons.md (UI element as shown + what to do; no personal data; no duplicates; create the file with a one-line header if missing).), WORK LIKE A PERSON: one Flow project per run, post by post, by hand with the browser tools. NEVER write or run a script, loop or batch file that drives Flow for several images (Google locks the profile for automated bursts). Upload the reference images of ONE item right before the prompt of that item; never pre-upload the references of several items in bulk. Per image run flow-brief (condensed prompt + ratio + reference copied to Downloads). BEFORE EVERY prompt you submit run: node scripts/flow-pace.mjs gate --tag <draft>#<n> (it waits a random human-like time and makes groups of 2-3; never skip it). For each post: the cover, wait for it, then that post\'s extras n>=2 (attach its image 1 via "+" > thumbnail > "Thêm vào câu lệnh"), wait, download each result (1K), LOOK at it, register it with its register command, then the next post. One image refused by Flow (policy): retry THAT image ONCE with flow-brief --safe; refused again -> skip it, go on; never stop the run for it. Then: node scripts/pipeline.mjs create --resume.';
 
 // ----- Stage B -----
@@ -298,16 +301,16 @@ function stageB(st, file) {
   }
   st.drafts = [...new Set([...(st.drafts || []), ...made])];
   st.image_engine = st.image_engine_choice || imageEngine(settings()); // --image-engine of this run, else the Settings default
-  if (st.drafts.length && st.image_engine !== 'flow') spawnImages(st, made);
+  if (st.drafts.length && !manualImages(st.image_engine)) spawnImages(st, made);
   st.stage = st.drafts.length ? 'images' : problems.length ? 'ideas' : 'captions';
   st.timing = { ...st.timing, B: Date.now() - t0 };
   saveState(st);
   return {
-    stage: 'B done', drafts: made, rejected, problems, images: st.image_engine === 'flow' ? 'flow: made by the agent in Google Flow' : st.batch ? `running in the background (pid ${st.batch.pid}), at most codex.concurrency at once` : 'none',
-    ...(st.image_engine === 'flow' ? { flow_images: flowTodo(st) } : {}),
+    stage: 'B done', drafts: made, rejected, problems, images: st.image_engine === 'antigravity' ? 'antigravity: made by the agent with its image-generator subagent' : st.image_engine === 'flow' ? 'flow: made by the agent in Google Flow' : st.batch ? `running in the background (pid ${st.batch.pid}), at most codex.concurrency at once` : 'none',
+    ...(manualImages(st.image_engine) ? { flow_images: flowTodo(st) } : {}),
     next: problems.length && !made.length
       ? `Fix these entries in the ideas file and send it again: node scripts/pipeline.mjs create --resume --ideas ${rel(path.resolve(file))}`
-      : st.image_engine === 'flow' ? [FLOW_NEXT, `Metricool steps (publish.json items + status queries) if not done yet.${problems.length ? ' Some ideas failed (problems): fix them and send the ideas file again later.' : ''}`]
+      : manualImages(st.image_engine) ? [nextFor(st), `Metricool steps (publish.json items + status queries) if not done yet.${problems.length ? ' Some ideas failed (problems): fix them and send the ideas file again later.' : ''}`]
       : [`Images are being made. Meanwhile do the Metricool steps (publish.json items + status queries) if not done yet.${problems.length ? ' Some ideas failed (problems): fix them and send the ideas file again later.' : ''}`, 'Then: node scripts/pipeline.mjs create --resume (waits for the images, makes the contact sheet).'],
   };
 }
@@ -340,9 +343,9 @@ function captionTemplate(st) {
 }
 function stageC(st, args) {
   const t0 = Date.now();
-  if (st.image_engine === 'flow') {
+  if (manualImages(st.image_engine)) {
     const todo = flowTodo(st);
-    if (todo.length) return { stage: 'C waiting for Flow images', flow_images: todo, next: FLOW_NEXT };
+    if (todo.length) return { stage: st.image_engine === 'antigravity' ? 'C waiting for Antigravity images' : 'C waiting for Flow images', flow_images: todo, next: nextFor(st) };
   }
   const done = waitImages(st, Number(args['wait-minutes'] || 40) * 60000);
   if (!done) return { stage: 'C waiting', next: 'Images are still being made: run node scripts/pipeline.mjs create --resume again.' };
@@ -409,7 +412,7 @@ function stageD(st, file, args) {
   if (redo.length) {
     // Redone images: --force per draft in the background (Codex slots keep the machine limit), then back to Stage C.
     const outFile = path.join(pipeDir(), 'image-batch.json');
-    const flow = st.image_engine === 'flow';
+    const flow = manualImages(st.image_engine);
     // Flow redo: the old images are put aside so the draft shows as waiting for new ones (register-image fills them again).
     if (flow) for (const id of redo) { const d = findDraft(id); for (const f of draftImages(d.draft)) if (fs.existsSync(path.join(d.dir, f))) fs.renameSync(path.join(d.dir, f), path.join(d.dir, `image-old-${Date.now()}-${f}`)); }
     const pids = flow ? [] : redo.map((id) => { const p = spawn(process.execPath, [path.join(here, 'draft.mjs'), 'image', '--id', id, '--force'], { detached: true, stdio: 'ignore', windowsHide: true }); p.unref(); return p.pid; });
@@ -423,7 +426,7 @@ function stageD(st, file, args) {
   if (allReady && !args['no-finish']) return { stage: 'D done', results, ...finish(st) };
   return {
     stage: 'D partial', results, redo, problems,
-    next: redo.length && st.image_engine === 'flow' ? `Redo ${redo.length} image(s) in Google Flow (new prompt.txt written; docs/flow-images.md), register each with draft.mjs register-image --id <draft> --n <k> --from <file> (replaces the old image), then: node scripts/pipeline.mjs create --resume.`
+    next: redo.length && manualImages(st.image_engine) ? `Redo ${redo.length} image(s) in Google Flow (new prompt.txt written; docs/flow-images.md), register each with draft.mjs register-image --id <draft> --n <k> --from <file> (replaces the old image), then: node scripts/pipeline.mjs create --resume.`
       : redo.length ? `Redoing ${redo.length} image(s) in the background: node scripts/pipeline.mjs create --resume (waits, new contact sheet), then captions for those.`
       : `Fix the drafts that are not ready (problems above) in ${rel(path.resolve(file))} and send it again: node scripts/pipeline.mjs create --resume --captions ${rel(path.resolve(file))}${notReady.length || problems.length ? ' (or finish anyway: node scripts/pipeline.mjs create --resume --finish; they stay out of To review)' : ''}`,
   };
