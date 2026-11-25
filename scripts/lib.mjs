@@ -204,6 +204,7 @@ export function saveSettings(input = {}) {
       // The old single choice, still accepted: it sets research and create (unless they are sent too), it is never stored.
       if (a.backend !== undefined) { if (!AGENT_BACKENDS.includes(a.backend)) throw new Error('agent.backend phải là claude hoặc antigravity.'); if (a.research === undefined) next.agent.research = a.backend; if (a.create === undefined) next.agent.create = a.backend; }
       if (a.agy_model !== undefined) { if (!validAgyValue(a.agy_model)) throw new Error('agent.agy_model không hợp lệ.'); next.agent.agy_model = a.agy_model; }
+      if (a.agy_effort === 'max') a.agy_effort = ''; // not supported by agy: stored as unset
       if (a.agy_effort !== undefined) { if (!['', ...AGY_EFFORTS].includes(a.agy_effort)) throw new Error('agent.agy_effort không hợp lệ.'); next.agent.agy_effort = a.agy_effort; }
     }
     // Any save: a legacy agent.backend left in the file becomes research/create (only the ones not set yet) and is dropped.

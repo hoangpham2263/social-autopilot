@@ -49,7 +49,8 @@ export const codexModelArgs = (settings = {}) => {
 
 // Antigravity (`agy`, Google): `agy models` is the live list (tab separated "<id>\t<name>"); this is the cached fallback (taken 2026-11-25, agy 1.5.16)
 // for when the CLI is missing or not signed in. The effort level of some models is part of the id (-high, -low); --effort is a separate flag.
-export const AGY_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+// agy rejects "max" on its default model ("gemini-4-neon has no max effort"): never offered, a stored max counts as unset.
+export const AGY_EFFORTS = ["low", "medium", "high", "xhigh"];
 const am = (id, name) => ({ id, name });
 export const AGY_FALLBACK = [
   am("gemini-4-neon-high", "Gemini 4 Neon (High)"), am("gemini-4-neon-xhigh", "Gemini 4 Neon (XHigh)"), am("gemini-4-neon-medium", "Gemini 4 Neon (Medium)"), am("gemini-4-neon-low", "Gemini 4 Neon (Low)"),
@@ -92,5 +93,7 @@ export const agentFor = (settings = {}, task = "create") => {
 export const agentBackend = (settings = {}) => (settings?.agent?.backend === "antigravity" ? "antigravity" : "claude");
 export const agyChoice = (settings = {}) => {
   const a = settings?.agent || {};
-  return { id: validAgyValue(a.agy_model) ? a.agy_model || "" : "", effort: AGY_EFFORTS.includes(a.agy_effort) ? a.agy_effort : "" };
+  const id = validAgyValue(a.agy_model) ? a.agy_model || "" : "";
+  // A model id that already ends in its level (gemini-4-neon-high) takes no --effort.
+  return { id, effort: AGY_EFFORTS.includes(a.agy_effort) && !/-(low|medium|high|xhigh)$/.test(id) ? a.agy_effort : "" };
 };

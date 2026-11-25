@@ -1552,7 +1552,7 @@ header + * { margin-top: 0; }
     const parts = [`Research: ${AGENT_NAME[agentOfMode("research")]}`, `Tạo: ${AGENT_NAME[agentOfMode("create")]}`, `Ảnh: ${e === "flow" ? "Flow" : e === "antigravity" ? "Antigravity" : "Codex"}`];
     const eff = (x) => (x ? ` (${x})` : ""), short = (t) => String(t).replace(/ \([^()]*\)$/, "");
     parts.push(`Claude ${short(clName(a.claude_model || "claude-sonnet-4-6"))}${eff(a.claude_effort)}`);
-    if (agyUsed) parts.push(`Antigravity ${a.agy_model ? short(agName(a.agy_model)) : "mặc định"}${eff(a.agy_effort)}`);
+    if (agyUsed) parts.push(`Antigravity ${a.agy_model ? short(agName(a.agy_model)) : "mặc định"}${eff(a.agy_effort && a.agy_effort !== "max" && !/-(low|medium|high|xhigh)$/.test(a.agy_model || "") ? a.agy_effort : "")}`);
     if (e === "codex") parts.push(`Codex ${a.codex_model ? short(cxName(a.codex_model)) : "mặc định"}${eff(a.codex_effort)}`);
     return parts.join(" · ");
   };
@@ -2713,7 +2713,7 @@ function draftTags(d) {
     $("#aiCxModel").onchange = () => { const v = $("#aiCxEffort").value, m = cxList.find((x) => x.slug === $("#aiCxModel").value); fillCx(m && !m.efforts.includes(v) ? "" : v); aiSave(); };
     const agM = a.agy_model || "", agGroups = agentModels?.agy || [], agKnown = !agM || agGroups.some((g) => g.models.some((m) => m.id === agM));
     $("#aiAgModel").innerHTML = `<option value="">Mặc định</option>` + agGroups.map((g) => `<optgroup label="${esc(g.family)}">${g.models.map((m) => `<option value="${esc(m.id)}"${m.id === agM ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</optgroup>`).join("") + (agKnown ? "" : `<option value="${esc(agM)}" selected>${esc(agM)}</option>`);
-    $("#aiAgEffort").innerHTML = aiOpts(AI_EFFORTS, a.agy_effort || "");
+    $("#aiAgEffort").innerHTML = aiOpts(AI_EFFORTS.filter(([k]) => k !== "max"), a.agy_effort === "max" ? "" : a.agy_effort || ""); // agy has no max effort
     // Tạo ảnh and Tạo bài follow each other: Flow only with Claude, Antigravity images only with Antigravity.
     $("#aiImage").onchange = () => { const v = $("#aiImage").value; if (v === "flow") $("#aiCreate").value = "claude"; else if (v === "antigravity") $("#aiCreate").value = "antigravity"; aiSave(); };
     $("#aiCreate").onchange = () => { const v = $("#aiCreate").value, im = $("#aiImage"); if (v === "antigravity" && im.value === "flow") im.value = "antigravity"; else if (v === "claude" && im.value === "antigravity") im.value = "codex"; aiSave(); };
