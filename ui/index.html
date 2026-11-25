@@ -508,7 +508,7 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="research" id="prPlatField" hidden><span class="label" title="Which platforms this run covers: unticked platforms drop their sources and are left out of discovery (--platforms). Default: all.">Platforms</span><details id="prPlatBox"><summary id="prPlatSum">All</summary><div id="prPlat"></div></details></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = 100)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="100"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
-      <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images: Codex, Google Flow in your signed-in Chrome (Claude), or Antigravity itself (no Flow). Saved as the default.">Images</label><select id="prImages"><option value="codex">Codex</option><option value="flow">Google Flow</option><option value="antigravity">Antigravity (không qua Flow)</option></select></div>
+      <div class="field" data-opt="create" hidden><label for="prImages" title="Codex; Flow driven by Claude; Antigravity makes the images itself (no Flow); Antigravity (Flow) = Antigravity drives Flow. Saved as the default.">Images</label><select id="prImages"><option value="codex">Codex</option><option value="flow">Flow (Claude)</option><option value="antigravity">Antigravity</option><option value="antigravity-flow">Antigravity (Flow)</option></select></div>
       <div class="field" data-opt="create" hidden><label for="prThreads" title="Pictures and drafts made at the same time (1-4). Not for Flow, Research, Publish">Threads</label><input type="number" id="prThreads" min="1" max="4" step="1" value="1" autocomplete="off"></div>
       <div class="field" data-opt="create" hidden><span class="label" title="Images per post of this run: random between min and max (1 to 4). Default: Settings, Images per post. min = max gives exactly that many.">Images per post</span><span class="imgrow"><span class="pair"><span class="meta">min</span><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" aria-label="Images per post, min" autocomplete="off"><span class="meta">max</span><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" aria-label="Images per post, max" autocomplete="off"></span></span></div>
       <div class="field" data-opt="create" id="prAlbField" hidden><span class="label" title="Which kinds of album posts with 2 or more images can be (random between the ticked ones, per post). Posts with a single image ignore it. Default: Settings, Album.">Image types</span><details id="prAlbBox"><summary id="prAlbSum">All 2</summary><div id="prAlb"></div></details></div>
@@ -1465,7 +1465,7 @@ header + * { margin-top: 0; }
   const AGENT_NAME = { claude: "Claude", antigravity: "Antigravity" };
   const agentOfCfg = (a, mk) => { const v = a?.[mk === "research" ? "research" : "create"]; return mk !== "research" && mk !== "create" ? "claude" : v === "antigravity" || v === "claude" ? v : a?.backend === "antigravity" ? "antigravity" : "claude"; };
   const agentOfMode = (mk) => agentOfCfg(agentCfg || {}, mk);
-  const chosenEngine = () => { const v = $("#prImages").value; return v === "flow" || v === "codex" || v === "antigravity" ? v : promptData.image_engine === "flow" ? "flow" : "codex"; };
+  const chosenEngine = () => { const v = $("#prImages").value; if (v === "antigravity-flow") return "flow"; return v === "flow" || v === "codex" || v === "antigravity" ? v : promptData.image_engine === "flow" ? "flow" : "codex"; };
   const syncFlowOnly = () => { const el = $("#prChrome"); if (el) el.dataset.flow = chosenEngine() === "flow" ? "1" : "0"; };
   let prBlock = ""; // research with nothing to run: the reason (no prompt is made)
   function buildPrompt() {
@@ -1476,7 +1476,7 @@ header + * { margin-top: 0; }
     // Antigravity copy prompt: the same text plus the tool note the runner adds itself (a Run now prompt gets it from the runner).
     const mk = modeKey(prMode), an = promptData.agy_notes || {};
     const th = howNow() === "copy" && mk === "create" && runAllowed() && threadsVal() > 1 ? String((promptData.threads_notes || {})[(agyPicked() ? "agy" : "claude") + "-" + chosenEngine()] || "").split("{N}").join(threadsVal()) : ""; // the same THREADS text the runner adds to Run now
-    const lead = subAllowed() ? SUB_LINE + "\n" + th : agyPicked() && howNow() === "copy" ? ((mk === "research" ? an.browser : mk === "create" && chosenEngine() === "antigravity" ? an.images : an.plain) || "") + th : "";
+    const lead = subAllowed() ? SUB_LINE + "\n" + th : agyPicked() && howNow() === "copy" ? ((mk === "research" || (mk === "create" && chosenEngine() === "flow") ? an.browser : mk === "create" && chosenEngine() === "antigravity" ? an.images : an.plain) || "") + th : "";
     return lead + buildTask();
   }
   function buildTask() {
@@ -1563,7 +1563,7 @@ header + * { margin-top: 0; }
     const lvl = (m, e) => (e && e !== "max" && !/-(low|medium|high|xhigh)$/.test(m || "") && !String(agName(m)).toLowerCase().includes("(" + e + ")") ? e : ""); // no level that the model id or name already carries
     const line = (agent, label, model, effort) => ({ text: [agent, label, effort].filter(Boolean).join(" · "), full: `${agent || "Claude"} ${model}${effort ? " · effort: " + effort : ""}` });
     let r;
-    if (/antigravity/i.test(ag)) { const m = a.agy_model || ""; r = line("Antigravity", m ? short(agName(m)) : "", m ? agName(m) : "default model", lvl(m, a.agy_effort)); }
+    if (/antigravity/i.test(ag)) { const m = a.agy_model || ""; r = line($("#prImages").value === "antigravity-flow" && modeKey(prMode) === "create" ? "Antigravity (Flow)" : "Antigravity", m ? short(agName(m)) : "", m ? agName(m) : "default model", lvl(m, a.agy_effort)); }
     else if (/claude/i.test(ag)) { const m = a.claude_model || "claude-sonnet-4-6"; r = line("", short(clName(m)), clName(m), a.claude_effort); }
     else if (/codex/i.test(ag)) { const m = a.codex_model || ""; r = line("Codex", m ? short(cxName(m)) : "", m ? cxName(m) : "default model", a.codex_effort); }
     else r = { text: "—", full: "Set in the agent you paste into" };
@@ -1574,20 +1574,23 @@ header + * { margin-top: 0; }
   const syncRunPickers = () => {
     const im = $("#prImages"), ag = $("#prAgent"); if (!im) return;
     const e = cfgImage || promptData?.image_engine || "codex";
-    im.value = e === "flow" && agentOfMode("create") === "antigravity" ? "antigravity" : e === "flow" || e === "antigravity" ? e : "codex";
+    im.value = e === "flow" ? (agentOfMode("create") === "antigravity" ? "antigravity-flow" : "flow") : e === "antigravity" ? "antigravity" : "codex";
     // the Agent select follows agent.* (Codex / ChatGPT are copy-only choices and never change them)
     if (ag && (ag.value === "Claude Code" || ag.value === "Antigravity")) { const want = agentOfMode(modeKey(prMode)) === "antigravity" && [...ag.options].some((o) => o.value === "Antigravity") ? "Antigravity" : "Claude Code"; if (ag.value !== want) { ag.value = want; store.set("prAgent", want); } }
     // Flow needs Claude: Antigravity is not offered for Create while Images = Flow (Research keeps its own agent); Threads is for Claude Code / Antigravity only.
-    if (ag) { const o = [...ag.options].find((x) => x.value === "Antigravity"); if (o) { o.disabled = modeKey(prMode) === "create" && im.value === "flow"; o.title = o.disabled ? "Flow runs with Claude Code" : ""; } }
-    const th = $("#prThreads"); if (th) { th.disabled = !runAllowed(); th.title = runAllowed() ? "Pictures and drafts made at the same time (1-4); Codex images N at a time (1 = the tool default). Not for Flow, Research or Publish" : "Claude Code or Antigravity only"; }
+    if (ag) { const o = [...ag.options].find((x) => x.value === "Antigravity"); if (o) { o.disabled = false; o.title = ""; } }
+    const th = $("#prThreads"); if (th) { th.disabled = !runAllowed() || im.value === "antigravity-flow"; th.title = im.value === "antigravity-flow" ? "Not for Flow (pacing)" : runAllowed() ? "Pictures and drafts made at the same time (1-4); Codex images N at a time (1 = the tool default). Not for Flow, Research or Publish" : "Claude Code or Antigravity only"; }
   };
   const saveRunAI = async (changed) => {
     const im = $("#prImages"), mk = modeKey(prMode);
-    let res = agentOfMode("research"), cre = agentOfMode("create"), img = im.value;
-    if (changed === "agent" && (mk === "research" || mk === "create")) { res = cre = agyPicked() ? "antigravity" : "claude"; if (cre === "antigravity" && img === "flow") img = "antigravity"; else if (cre === "claude" && img === "antigravity") img = "codex"; }
-    if (changed === "images") { if (img === "flow") cre = "claude"; else if (img === "antigravity") cre = "antigravity"; }
+    let res = agentOfMode("research"), cre = agentOfMode("create"), img = im.value; // img: codex | flow (Claude) | antigravity | antigravity-flow
+    if (changed === "agent" && (mk === "research" || mk === "create")) {
+      res = cre = agyPicked() ? "antigravity" : "claude";
+      if (cre === "antigravity" && img === "flow") img = "antigravity-flow"; else if (cre === "claude" && img === "antigravity") img = "codex"; else if (cre === "claude" && img === "antigravity-flow") img = "flow";
+    }
+    if (changed === "images") { if (img === "flow") cre = "claude"; else if (img === "antigravity" || img === "antigravity-flow") cre = "antigravity"; }
     if (runGuard()) { await loadAgentCfg(); return; }
-    const settings = { image_engine: img, agent: { research: res, create: cre } };
+    const settings = { image_engine: img === "antigravity-flow" ? "flow" : img, agent: { research: res, create: cre } };
     const r = await postJson("/api/settings", { settings }).catch(() => offline);
     if (r.error) { flash(r.error); toast(r.error); }
     await loadAgentCfg();
@@ -1595,7 +1598,7 @@ header + * { margin-top: 0; }
   $("#prImages").onchange = async () => {
     await saveRunAI("images");
     // Antigravity images need the Antigravity agent: a Codex / ChatGPT paste target moves to it (quietly).
-    { const ag = $("#prAgent"); if ($("#prImages").value === "antigravity" && !runAllowed() && [...ag.options].some((o) => o.value === "Antigravity")) { ag.value = "Antigravity"; store.set("prAgent", "Antigravity"); drawPrompt(); applyHow(); } }
+    { const ag = $("#prAgent"); if (/^antigravity/.test($("#prImages").value) && !runAllowed() && [...ag.options].some((o) => o.value === "Antigravity")) { ag.value = "Antigravity"; store.set("prAgent", "Antigravity"); drawPrompt(); applyHow(); } }
     regenerate();
   };
   // Threads (Create only): remembered in this browser, sent with the run request, counted in the prompt as THREADS: N.
@@ -1607,7 +1610,7 @@ header + * { margin-top: 0; }
   $("#prAgent").onchange = async () => {
     store.set("prAgent", $("#prAgent").value);
     if (runAllowed() && modeKey(prMode) !== "publish") await saveRunAI("agent");
-    else if (!runAllowed() && $("#prImages").value === "antigravity") { $("#prImages").value = "codex"; await saveRunAI("images"); } // Codex cannot use the image-generator: Images go back to Codex
+    else if (!runAllowed() && /^antigravity/.test($("#prImages").value)) { $("#prImages").value = "codex"; await saveRunAI("images"); } // Codex cannot use the image-generator: Images go back to Codex
     showRunModel(); drawPrompt(); applyHow();
   };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"], ["#prBrandBox", "#prBrandField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
@@ -1749,7 +1752,7 @@ header + * { margin-top: 0; }
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
     // Elapsed and the step live in the progress bar only; here just the mode, the limit and the turns (the current action is in the live log).
     $("#arElapsed").textContent = [`${r.mode}${r.flow ? " (Flow)" : ""}`, r.model && r.model !== "default" ? r.model : "", r.limit_min ? `limit ${r.limit_min} min` : "", r.turns ? `${r.turns} turns` : ""].filter(Boolean).join(" · ");
-    const startMsg = r.mode === "research" ? `Starting… ${appAgent()} works in the browser.` : r.mode === "create" ? (chosenEngine() === "antigravity" ? "Starting… Antigravity makes the images and writes drafts." : chosenEngine() === "flow" ? "Starting… images are made in Google Flow, drafts are written." : "Starting… image generation uses the Codex quota and writes drafts.") : "Starting…";
+    const startMsg = r.mode === "research" ? `Starting… ${appAgent()} works in the browser.` : r.mode === "create" ? (chosenEngine() === "antigravity" ? "Starting… Antigravity makes the images and writes drafts." : chosenEngine() === "flow" ? `Starting… ${appAgent() === "Antigravity" ? "Antigravity makes" : "images are made"} the images in Google Flow, drafts are written.` : "Starting… image generation uses the Codex quota and writes drafts.") : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
     { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : busy ? (arr(r.friendly).length ? "" : startMsg) : full || r.last_text || ""), !bad && !busy && !!(full || r.last_text), !!full); } // while running the raw assistant text stays out (live log has the friendly lines)
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
@@ -1805,7 +1808,7 @@ header + * { margin-top: 0; }
     // ONE line: counts (from the server: facts on disk) + elapsed (+ a rough time left once 3 units are done); Stop keeps the last counts.
     const text = (e) => {
       const left = busy && p && p.done >= 3 && p.done < p.total && e > 0 ? Math.max(1, Math.round((e / p.done) * (p.total - p.done) / 60)) : 0;
-      return [p ? p.label : busy ? "Đang chuẩn bị…" : "", `${arMmss(e)}`, left ? `~${left} min left` : ""].filter(Boolean).join(" · ");
+      return [p ? p.label : busy ? "Đang chuẩn bị…" : "", `${arMmss(e)}`, left ? `~${left} min left` : "", !busy && r.quota ? `hết hạn mức ảnh${r.quota.at ? ", hồi lúc " + r.quota.at : ""} · chọn Antigravity (Flow) hoặc Codex` : ""].filter(Boolean).join(" · ");
     };
     const elapsed = busy && r.started ? Math.max(0, Math.round((Date.now() - Date.parse(r.started)) / 1000)) : r.elapsed_s || 0;
     let pct = p ? Math.round((p.done / p.total) * 100) : st === "done" ? 100 : 0;

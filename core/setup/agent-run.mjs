@@ -33,7 +33,7 @@ export const FLOW_TOOLS = ["browser_tabs", "browser_navigate", "browser_snapshot
 // The engine of a run: the one chosen for this run (Run tab "Images", per run only) when valid, else the tool setting image_engine.
 export const runEngine = (settings = {}, engine = "") => {
   const e = engine === "codex" || engine === "flow" || engine === "antigravity" ? engine : settings?.image_engine === "flow" || settings?.image_engine === "antigravity" ? settings.image_engine : "codex";
-  return e === "flow" && agentFor(settings, "create") === "antigravity" ? "antigravity" : e; // old settings (agent.backend antigravity + Flow): Antigravity never uses Flow
+  return e; // Flow with an Antigravity Create agent = "Antigravity (Flow)": agy drives Flow through its per-run Playwright MCP
 };
 // Create with image engine Antigravity (agent.backend antigravity): the agent makes the images with its image-generator subagent: no Flow, no browser, no Playwright MCP.
 export const usesAgyImages = (mode, settings = {}, engine = "") => mode === "create" && runEngine(settings, engine) === "antigravity";
@@ -178,7 +178,7 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 export const threadsFor = (mode, threads) => (mode === "create" ? Math.min(4, Math.max(1, Math.trunc(Number(threads)) || 1)) : 1);
 export function threadsNote(mode, n, { agy = false, engine = "codex" } = {}) {
   // n may be the placeholder "{N}" (the copy prompt of the Run tab fills it in). N = 1, or any step but Create: nothing is added.
-  if (mode !== "create" || (n !== "{N}" && !(Number(n) >= 2))) return "";
+  if (mode !== "create" || (n !== "{N}" && !(Number(n) >= 2)) || (agy && engine === "flow")) return ""; // Flow with Antigravity: Threads does not apply (pacing gate), so the prompt never mentions it
   const t = `THREADS: ${n}\n`;
   const parts = [];
   if (engine === "antigravity") parts.push(`IMAGES IN PARALLEL: make the pictures in GROUPS of up to ${n}: in ONE turn call invoke_subagent once per image of the group (type_name "image-generator", nothing else), wait for all, then LOOK at each and run its register-image one after the other. A group is either the covers (image 1) of up to ${n} DIFFERENT posts, or the extras (image 2..4) of ONE post whose cover is already registered. Never two registers of the same draft at the same time; one failing image never blocks its group.`);
@@ -210,19 +210,29 @@ export const agyModelLine = (id, effort = "") => `Model in use: ${id ? `${id} (A
 // What the prompt must say for agy: its own tool names, and that ONLY the run's Playwright MCP may touch Chrome / Flow / social pages.
 export const agyNote = (server = "", browser = false, images = false) => `ANTIGRAVITY NOTE: you run in Antigravity (agy), not Claude Code. Tool names differ: run shell commands (node scripts/...) with run_command, read files with read_file, write files with write_to_file.
 ${browser ? `BROWSER: the ONLY browser you may use is the Playwright MCP server named "${server}". It is not a direct tool: call it with call_mcp_tool(ServerName="${server}", ToolName=<tool>, Arguments={...}). Wherever this prompt says browser_tabs, browser_navigate, browser_snapshot, browser_click, browser_type, browser_press_key, browser_wait_for, browser_run_code_unsafe, browser_take_screenshot, browser_evaluate, browser_file_upload it means that ToolName of the server "${server}" (read ~/.gemini/antigravity-cli/mcp/${server}/<tool>.json first when unsure about its Arguments).
-NEVER use your own built-in browser tools (browser_subagent, open_browser_url, browser_click_element, browser_input, browser_get_dom, execute_browser_javascript, capture_browser_screenshot, read_browser_page, list_browser_pages and the like) and never another MCP server: they do not drive the signed-in Chrome of this run and would break the login and social-page rules of this run. Do not use generate_image either.
+NEVER use your own built-in browser tools (browser_subagent, open_browser_url, browser_click_element, browser_input, browser_get_dom, execute_browser_javascript, capture_browser_screenshot, read_browser_page, list_browser_pages and the like) and never another MCP server: they do not drive the signed-in Chrome of this run and would break the login and social-page rules of this run. Do not use generate_image either, and call no subagent.
 ` : "No browser is needed for this run: do not open any browser.\n"}${images ? 'IMAGES: you make the post images yourself with your image-generator subagent: call invoke_subagent with type_name "image-generator" (this is the ONLY subagent you may call) as the prompt describes. Never use browser_*/web tools, Google Flow or any other subagent.\n' : ""}
 `;
+// Antigravity image quota: "429 RESOURCE_EXHAUSTED ... reset after 3h30m" -> { reset_at, at: "HH:mm" } (at is "" when no reset time is given), else null.
+const QUOTA_RE = /RESOURCE_EXHAUSTED|\b429\b[^\n]{0,80}(?:quota|exhaust|rate)|quota[^\n]{0,60}(?:exhaust|exceed)/i;
+const RESET_RE = /reset(?:s)?\s+after\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?/i;
+export function agyQuota(text, nowMs = Date.now()) {
+  const t = String(text || ""); if (!QUOTA_RE.test(t)) return null;
+  const m = RESET_RE.exec(t), sec = m ? (Number(m[1]) || 0) * 3600 + (Number(m[2]) || 0) * 60 + (Number(m[3]) || 0) : 0;
+  if (!sec) return { reset_at: "", at: "" };
+  const d = new Date(nowMs + sec * 1000);
+  return { reset_at: d.toISOString(), at: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` };
+}
 // agy tool call -> the Claude-style (name, input) that friendlyTool() already words in Vietnamese. foreign = not the run's own Playwright MCP / a built-in browser or image tool.
-export function agyToolCall(name, p = {}, own = "", subagents = null) {
+export function agyToolCall(name, p = {}, own = "", subagents = null, allowImages = false) {
   const n = String(name || ""), i = p && typeof p === "object" ? p : {};
   if (n === "call_mcp_tool") return i.ServerName === own ? { name: "mcp__playwright__" + String(i.ToolName || ""), input: i.Arguments || {}, foreign: false } : { name: "mcp__" + String(i.ServerName || "?") + "__" + String(i.ToolName || ""), input: {}, foreign: true };
   if (n === "run_command") return { name: "Bash", input: { command: String(i.CommandLine || "") }, foreign: false };
   if (n === "read_file" || n === "view_file") return { name: "Read", input: { file_path: i.Path || i.AbsolutePath || "" }, foreign: false };
   if (["write_to_file", "replace_file_content", "multi_replace_file_content", "sed_file"].includes(n)) return { name: "Write", input: { file_path: i.TargetFile || i.Path || "" }, foreign: false };
   if (["grep_search", "find_by_name", "list_dir"].includes(n)) return { name: "Grep", input: {}, foreign: false };
-  if (n === "invoke_subagent" && Array.isArray(subagents) && subagents.length) return subagents.every((x) => /^image-generator$/i.test(String(x?.type_name || ""))) ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + subagents.map((x) => x?.type_name || "?").join(","), input: {}, foreign: true }; // a list of image-generator subagents in one turn is allowed, anything else is not
-  if (n === "invoke_subagent") { const t = String(i.type_name || i.TypeName || i.SubagentType || i.subagent_type || ""); return !t || t === "image-generator" ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + (t || "?"), input: {}, foreign: true }; } // only the image-generator subagent is allowed
+  if (n === "invoke_subagent" && Array.isArray(subagents) && subagents.length) return allowImages && subagents.every((x) => /^image-generator$/i.test(String(x?.type_name || ""))) ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + subagents.map((x) => x?.type_name || "?").join(","), input: {}, foreign: true }; // a list of image-generator subagents in one turn is allowed, anything else is not
+  if (n === "invoke_subagent") { const t = String(i.type_name || i.TypeName || i.SubagentType || i.subagent_type || ""); return !t || (allowImages && t === "image-generator") ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + (t || "?"), input: {}, foreign: true }; } // only the image-generator subagent is allowed
   if (["manage_subagents", "schedule", "wait", "wait_5_seconds"].includes(n)) return { name: "agy_image", input: {}, foreign: false }; // waiting for the image-generator subagent
   if (/browser|generate_image|define_subagent/.test(n)) return { name: n, input: {}, foreign: true };
   return { name: n, input: {}, foreign: false };
@@ -299,6 +309,15 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   // Auth / Metricool problems are visible at once (live); login / profile problems only from the final text.
   const scan = (run, text, kinds = run.own ? ["metricool"] : ["auth", "metricool"]) => { if (run.state.problem) return; const p = classifyProblem(text, { mode: run.state.mode, needsBrowser: run.browser, own: run.own, kinds }); if (p) touch(run, { problem: p }); };
   // Antigravity events (see the AGY block above): init, step_update (agent_response / tool), result.
+  // A quota answer of the image generator stops the run cleanly (the rest would fail too) and says when it resets.
+  const quotaCheck = (run, text) => {
+    if (!run.agyImages || run.state.quota || typeof text !== "string" || !text) return;
+    const q = agyQuota(text, now()); if (!q) return;
+    run.state.quota = q;
+    run.guardError = `Antigravity hết hạn mức tạo ảnh${q.at ? ` (hồi lúc ${q.at})` : ""}. Chọn Images: Antigravity (Flow) hoặc Codex rồi chạy tiếp.`;
+    addLine(run, "! " + run.guardError); say(run, run.guardError);
+    if (!run.forced && !run.ended) { run.forced = "failed"; killTree(run.child); setTimeout(() => finish(run, null), graceMs).unref?.(); }
+  };
   const handleAgy = (run, ev) => {
     if (ev.event === "init") { if (typeof ev.init?.model === "string" && ev.init.model) handleLine(run, JSON.stringify({ type: "system", subtype: "init", model: ev.init.model })); return; } // agy 1.5.16 sends no model; used when a later version does
     if (ev.event === "step_update" && ev.step_update) {
@@ -309,14 +328,16 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
           const text = (run.agyText[k] || "").trim(); delete run.agyText[k];
           run.state.turns = (run.state.turns || 0) + 1;
           const u = su.usage; if (u && typeof u === "object") { const t = run.state.usage ||= { input_tokens: 0, output_tokens: 0, total_tokens: 0 }; for (const key of Object.keys(t)) t[key] += Number(u[key]) || 0; }
+          quotaCheck(run, text);
           if (text) { addLine(run, "A: " + text); say(run, text.replace(/\s+/g, " ")); scan(run, text); const t = sanitize(text); if (t) run.state.last_text = t; run.lastRaw = text; }
           touch(run);
         }
       } else if ((su.step_type === "tool" || su.step_type === "subagent") && su.tool_name) {
         // Every event of the step is judged again: subagent_info / parameters can appear after the first event.
         const first = !run.agyTools.has(k); run.agyTools.add(k);
-        const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName, su.subagent_info?.subagents);
+        const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName, su.subagent_info?.subagents, run.agyImages);
         if (su.tool_name === "invoke_subagent" && su.state === "DONE" && !(su.subagent_info?.subagents || []).length && !(su.tool_info?.parameters?.type_name) && !run.agyWarned?.has(k)) { (run.agyWarned ||= new Set()).add(k); addLine(run, "! subagent step ended without type info (could not check it)"); }
+        if (su.state === "DONE") quotaCheck(run, su.tool_info?.output);
         if (first) addLine(run, "tool: " + c.name);
         if (c.foreign) { // a built-in browser/web tool, a subagent other than image-generator, or an MCP server other than this run's own: the run is stopped
           run.guardError = `Antigravity used a tool this run does not allow (${c.name}): stopped.`;
@@ -331,6 +352,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (typeof r.num_turns === "number" && r.num_turns > 0) run.state.turns = r.num_turns;
       if (typeof r.response === "string" && r.response.trim()) { run.state.last_text = sanitize(r.response); run.state.report = sanitizeReport(r.response); if (!ok) scan(run, r.response); }
       if (!ok && r.error) scan(run, String(r.error));
+      quotaCheck(run, String(r.error || "")); quotaCheck(run, String(r.response || ""));
       addLine(run, `result: ${run.result.subtype}${ok ? "" : " (error)"}`);
       touch(run);
     }
@@ -427,7 +449,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const s = getSettings() || {};
     const backend = agentFor(s, mode), agy = backend === "antigravity", label = agy ? "Antigravity" : "Claude"; // one agent per task (Run tab Agent); publish and sync are always Claude
     if (mode === "create" && runEngine(s, imageEngine) === "antigravity" && !agy) return { ok: false, status: 400, error: "Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity (Run tab: Agent and Images)." };
-    const engineMapped = mode === "create" && agy && (imageEngine === "flow" || (!imageEngine && s.image_engine === "flow")); // runEngine() turns Flow into Antigravity images for an Antigravity Create run: said in the run, never Flow
+
     const found = agy ? findAgy() : findCli();
     if (!found?.found) return { ok: false, status: 400, error: agy ? "Antigravity CLI (agy) not found: install it or add it to PATH." : "Claude CLI not found: set claudeCli.command in workspace/settings.json." };
     const flow = usesFlow(mode, s, imageEngine);
@@ -443,7 +465,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       const why = extensionProfileProblem(s, { flow }); if (why) return { ok: false, status: 409, error: why };
     }
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
-    const nThreads = threadsFor(mode, threads); // Create only; Research, Publish and Sync always 1
+    const nThreads = agy && usesFlow(mode, s, imageEngine) ? 1 : threadsFor(mode, threads); // Create only; Research, Publish and Sync always 1; Flow with Antigravity ignores it
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
@@ -473,14 +495,14 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (browser) args.push("--mcp-config", cfg);
       if (mode === "research") args.push("--strict-mcp-config");
     }
-    const env = { ...process.env, ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
+    const env = { ...process.env, ...(agy ? { SA_AGENT: "antigravity" } : {}), ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
     catch (e) { cleanupRun({ cfg, mcpName, agyPath: found.path }); return { ok: false, status: 500, error: sanitize(e.message) }; }
     const started = new Date(now()).toISOString();
     const run = {
-      child, cfg, backend, label, mcpName, mcpGone: false, agyPath: found.path, agyText: {}, agyTools: new Set(), settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
+      child, cfg, backend, label, mcpName, agyImages: usesAgyImages(mode, s, imageEngine), mcpGone: false, agyPath: found.path, agyText: {}, agyTools: new Set(), settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
       state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
     };
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
@@ -490,7 +512,6 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     run.friendly = [];
     { const ml = agy ? agyModelLine(choice.id, choice.effort) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
     say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
-    if (engineMapped) say(run, "Ảnh: Antigravity tạo (không dùng Flow)");
     addLine(run, `start: ${mode} run ${runId}`);
     saveState(run.state);
     child.stdout?.on("data", (c) => feed(run, c));
@@ -531,7 +552,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      backend: shown?.backend || "claude", threads: shown?.threads || 1, usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      backend: shown?.backend || "claude", quota: shown?.quota || null, threads: shown?.threads || 1, usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),

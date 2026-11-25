@@ -210,9 +210,9 @@ export function saveSettings(input = {}) {
     // Any save: a legacy agent.backend left in the file becomes research/create (only the ones not set yet) and is dropped.
     if (next.agent && next.agent.backend !== undefined) { next.agent = { ...next.agent }; const b = AGENT_PICK.includes(next.agent.backend) ? next.agent.backend : 'claude'; next.agent.research ??= b; next.agent.create ??= b; delete next.agent.backend; }
     { const create = agentFor({ agent: next.agent || cur.agent }, 'create');
-      if (input.image_engine === undefined && changes.image_engine === 'flow' && create === 'antigravity') { changes.image_engine = 'antigravity'; next.image_engine = 'antigravity'; } // old settings: Antigravity never uses Flow
-      if (changes.image_engine === 'antigravity' && create !== 'antigravity') throw new Error('Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity.');
-      if (changes.image_engine === 'flow' && create === 'antigravity') throw new Error('Flow chỉ chạy với agent Claude: Antigravity tạo ảnh không qua Flow.'); }
+
+      if (changes.image_engine === 'antigravity' && create !== 'antigravity') throw new Error('Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity. (Flow chạy được với cả Claude lẫn Antigravity.)');
+    }
     // No approval step any more (user, 09/11/2026): older settings files lose their approval block on save.
     delete next.approval;
     next.research = changes.research;

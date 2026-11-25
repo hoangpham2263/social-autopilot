@@ -509,8 +509,10 @@ export async function image(args, s = settings()) {
 // copy; watermark when on; check). The source file is only read. n = 1 main image (image.png), 2 and 3 album extras.
 const sniffExt = (buf) => (buf[0] === 0xff && buf[1] === 0xd8 ? 'jpg' : buf.subarray(1, 4).toString('latin1') === 'PNG' ? 'png' : '');
 export function registerImage(args, s = settings()) {
-  const engine = args.engine && args.engine !== true ? String(args.engine) : 'flow';
-  if (!['flow', 'antigravity'].includes(engine)) throw new Error('register-image: --engine flow or antigravity (Codex images come from draft.mjs image).');
+  const engine0 = args.engine && args.engine !== true ? String(args.engine) : 'flow';
+  if (!['flow', 'antigravity', 'antigravity-flow'].includes(engine0)) throw new Error('register-image: --engine flow, antigravity or antigravity-flow (Codex images come from draft.mjs image).');
+  const engine = engine0 === 'antigravity-flow' ? 'flow' : engine0; // antigravity-flow = Flow images driven by Antigravity: processed like Flow
+  const rec = engine === 'flow' && (engine0 === 'antigravity-flow' || process.env.SA_AGENT === 'antigravity') ? 'antigravity-flow' : engine; // what status.json records
   const agy = engine === 'antigravity'; // Antigravity image (image-generator subagent): a JPEG, no Google star; everything else is the Flow path
   const { dir, draft } = findDraft(need(args, 'id'));
   const n = args.n && args.n !== true ? Number(args.n) : 1;
@@ -539,13 +541,13 @@ export function registerImage(args, s = settings()) {
   let cleaned = null;
   if (n === 1) {
     for (const f of ['image-watermarked.png', 'image-clean-report.json']) fs.rmSync(path.join(dir, f), { force: true });
-    setStatus(dir, st0.status && !['preparing', 'generating', 'image_failed'].includes(st0.status) ? st0.status : 'needs_caption', { error: '', watermark: null, logo_check: null, metadata_clean: null, size_check: null, image_engine: engine, sparkle: mark, flow_images: per });
+    setStatus(dir, st0.status && !['preparing', 'generating', 'image_failed'].includes(st0.status) ? st0.status : 'needs_caption', { error: '', watermark: null, logo_check: null, metadata_clean: null, size_check: null, image_engine: rec, sparkle: mark, flow_images: per });
     // The cleaning step works on a PNG whatever made it ('codex' = the skill's metadata-only clean; Flow output is our own PNG).
     cleaned = cleanDraftImage(dir, { generator: 'codex', force: true }, s);
   } else {
     const sha = cleanExtraImage(generated, target, s);
     const st = readJson(statusFile, {});
-    setStatus(dir, st.status || 'needs_caption', { images: { ...(st.images || {}), [path.basename(target)]: { state: 'ok', sha1: sha, updated: stamp(), engine } }, logo_check: null, image_engine: engine, flow_images: per });
+    setStatus(dir, st.status || 'needs_caption', { images: { ...(st.images || {}), [path.basename(target)]: { state: 'ok', sha1: sha, updated: stamp(), engine: rec } }, logo_check: null, image_engine: rec, flow_images: per });
   }
   // Watermark overlay when the brand has it on (main image), then the automatic check.
   let watermarked = null;
@@ -553,7 +555,7 @@ export function registerImage(args, s = settings()) {
   let checked;
   try { checked = check({ id: draft.id }); } catch (e) { checked = { error: e.message }; }
   const missing = files.filter((f) => !fs.existsSync(path.join(dir, f)));
-  return { id: draft.id, n, image: target, original: keep, engine, sparkle: mark, alpha: sparkle.alpha, ...(sparkle.method ? { sparkle_method: sparkle.method } : {}), ...(cleaned ? { metadata_removed: cleaned.removed } : {}), ...(watermarked ? { watermark: watermarked } : {}), status: checked.status, problems: checked.problems || (checked.error ? [checked.error] : []), warnings: checked.warnings || [], ...(missing.length ? { images_missing: missing } : {}),
+  return { id: draft.id, n, image: target, original: keep, engine: rec, sparkle: mark, alpha: sparkle.alpha, ...(sparkle.method ? { sparkle_method: sparkle.method } : {}), ...(cleaned ? { metadata_removed: cleaned.removed } : {}), ...(watermarked ? { watermark: watermarked } : {}), status: checked.status, problems: checked.problems || (checked.error ? [checked.error] : []), warnings: checked.warnings || [], ...(missing.length ? { images_missing: missing } : {}),
     next: missing.length ? `Register the other image(s): ${missing.join(', ')} (draft.mjs register-image --id ${draft.id} --n <k>${agy ? ' --engine antigravity' : ''} --from <file>).` : (agy ? 'LOOK at the image(s) (nothing wrong), then write the captions.' : 'LOOK at the image(s) (no Google star left, nothing wrong), then write the captions.') };
 }
 
@@ -565,7 +567,8 @@ export function registerImage(args, s = settings()) {
 // --engine of flow-brief / flow-queue: flow or antigravity, else an error; omitted = the settings image_engine when it is one of those, else flow.
 const engineOf = (args, s = settings()) => {
   const v = args.engine === undefined ? '' : String(args.engine);
-  if (v && !['flow', 'antigravity'].includes(v)) throw new Error('--engine must be flow or antigravity.');
+  if (v && !['flow', 'antigravity', 'antigravity-flow'].includes(v)) throw new Error('--engine must be flow, antigravity or antigravity-flow.');
+  if (v === 'antigravity-flow') return 'flow'; // Flow images driven by Antigravity: the same helper output as Flow
   return v || (s?.image_engine === 'antigravity' ? 'antigravity' : 'flow');
 };
 const q = (x) => String(x || '').replace(/"/g, "'").replace(/\s+/g, ' ').trim();
