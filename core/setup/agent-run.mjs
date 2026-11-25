@@ -2,7 +2,7 @@
 // One run at a time (one browser, one agent). The prompt goes to STDIN, never argv. Nothing secret is stored.
 // Tool/stream output (inputs and results of tools) is never kept: only assistant text and tool NAMES, scrubbed and cut.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync, copyFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir } from "node:os";
@@ -282,11 +282,32 @@ const defaultNpx = (plat) => {
 const defaultAgyExec = (file, args, opts = {}) => spawnSync(file, args, { encoding: "utf8", windowsHide: true, timeout: 30000, ...opts });
 export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}), findCli, findAgy = () => ({ found: false, path: "" }), agyExec = defaultAgyExec, plat = osPlatform(), spawnFn = spawn, killTree = (c) => defaultKill(c, plat), npxOk = () => defaultNpx(plat), now = () => Date.now(), graceMs = 4000, onEnd = null, home = homedir(), browserCheck = () => "", loginWindowOpen = () => false }) {
   const runsDir = join(workspace, "runs"), tmpDir = join(workspace, "tmp");
-  const stateFile = join(runsDir, "agent-run.json"), logFile = join(runsDir, "agent-run.log"), inputFile = join(runsDir, "agent-run-input.json");
+  // Every app window (process) has its OWN run files (agent-run-<instance>.*): a window never reads or overwrites another's live run. agent-run.json is only a mirror
+  // of the last write (other tools / tests). When a window starts, it adopts the newest run of a window that is gone (so the last result and Resume survive a restart).
+  const instance = randomBytes(3).toString("hex");
+  const stateFile = join(runsDir, `agent-run-${instance}.json`), logFile = join(runsDir, `agent-run-${instance}.log`), inputFile = join(runsDir, `agent-run-${instance}-input.json`), legacyState = join(runsDir, "agent-run.json");
+  const aliveApp = (pid) => { if (!pid || pid === process.pid) return !!pid; try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+  const stateFilesOfOthers = () => { // [{ file, st, inst }]: every state file in runs/ (instance files + the legacy mirror)
+    const out = [];
+    try { for (const n of readdirSync(runsDir)) { const m = /^agent-run-([0-9a-f]{6})\.json$/.exec(n) || (n === "agent-run.json" ? [n, ""] : null); if (!m || m[1] === instance) continue; try { out.push({ file: join(runsDir, n), st: JSON.parse(readFileSync(join(runsDir, n), "utf8")), inst: m[1] }); } catch {} } } catch {}
+    return out;
+  };
+  (function adoptPrevious() {
+    try {
+      mkdirSync(runsDir, { recursive: true });
+      const dead = stateFilesOfOthers().filter((x) => !aliveApp(x.st?.app_pid)).sort((a, b) => String(b.st?.updated).localeCompare(String(a.st?.updated)));
+      const best = dead[0]; if (!best) return;
+      const sib = (suffix) => join(runsDir, best.inst ? `agent-run-${best.inst}${suffix}` : `agent-run${suffix}`);
+      copyFileSync(best.file, stateFile);
+      for (const [from, to] of [[sib(".log"), logFile], [sib("-input.json"), inputFile], [sib("-friendly.json"), join(runsDir, `agent-run-${instance}-friendly.json`)]]) { try { if (existsSync(from)) copyFileSync(from, to); } catch {} }
+      // files of windows that are gone and older than a week
+      for (const x of dead.slice(1)) { try { if (x.inst && Date.now() - statSync(x.file).mtimeMs > 7 * 86400000) for (const sfx of [".json", ".log", "-input.json", "-friendly.json"]) rmSync(join(runsDir, `agent-run-${x.inst}${sfx}`), { force: true }); } catch {} }
+    } catch {}
+  })();
   let cur = null; // the active run
   let last = null; // the finished run's state (this process)
 
-  const friendlyFile = join(runsDir, "agent-run-friendly.json");
+  const friendlyFile = join(runsDir, `agent-run-${instance}-friendly.json`);
   const saveFriendly = (run) => { try { mkdirSync(runsDir, { recursive: true }); writeFileSync(friendlyFile, JSON.stringify(run.friendly)); } catch {} };
   const friendlyView = (list) => (Array.isArray(list) ? list : []).slice(-FRIENDLY_LINES).map((f) => ({ t: f.t || "", text: String(f.text || ""), n: f.n || 1 }));
   const say = (run, text) => {
@@ -297,13 +318,12 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   };
   // A sa-pw-<run id> server belongs to a live run when the state file says that run is still running and its process is alive.
   const ownedByLiveRun = (name) => {
-    const st = (cur && cur.state) || readState();
-    if (!st || st.status !== "running" || agyServerName(st.run_id) !== name || !st.pid) return false;
-    if (cur && cur.state.run_id === st.run_id) return true;
-    try { process.kill(st.pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
+    if (cur && agyServerName(cur.state.run_id) === name) return true;
+    // another window's run: its state says running and that window's process is alive
+    return stateFilesOfOthers().some(({ st }) => st?.status === "running" && st.run_id && agyServerName(st.run_id) === name && aliveApp(st.app_pid || st.pid));
   };
   const readState = () => { try { return JSON.parse(readFileSync(stateFile, "utf8")); } catch { return null; } };
-  const saveState = (st) => { try { mkdirSync(runsDir, { recursive: true }); writeFileSync(stateFile, JSON.stringify(st, null, 2)); } catch {} };
+  const saveState = (st) => { try { mkdirSync(runsDir, { recursive: true }); st.app_pid = process.pid; const txt = JSON.stringify(st, null, 2); writeFileSync(stateFile, txt); try { writeFileSync(legacyState, txt); } catch {} } catch {} };
   const touch = (run, patch = {}) => { Object.assign(run.state, patch, { updated: new Date(now()).toISOString() }); saveState(run.state); };
   const addLine = (run, text) => {
     const line = sanitize(text); if (!line) return;
@@ -399,8 +419,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   // Removes what a run left outside the tool: its temp config and, for agy, the Playwright MCP server added to agy's global config.
   const cleanupRun = (run) => {
     try { rmSync(run.cfg, { force: true }); } catch {}
-    // Flow runs copy reference photos to Downloads (sa-ref-*): the ones made during this run go when it ends.
-    if (run.state?.flow && !run.refsGone) { run.refsGone = true; try { const dl = join(home, "Downloads"), t0 = Date.parse(run.state.started) - 60000; for (const n of readdirSync(dl)) if (/^sa-ref-.+\.(png|jpe?g|webp)$/i.test(n) && statSync(join(dl, n)).mtimeMs >= t0) rmSync(join(dl, n), { force: true }); } catch {} }
+    // This run's own leftovers only (its run id is in every name): temp folder with the settings snapshot, Codex slots, Flow reference copies in Downloads (sa-ref-<run id>-*).
+    if (run.state?.run_id && !run.tmpGone) { run.tmpGone = true; for (const d of [join(tmpDir, `run-${run.state.run_id}`), join(tmpDir, "codex-slots", run.state.run_id)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} } try { const dl = join(home, "Downloads"), pre = `sa-ref-${run.state.run_id}-`; for (const n of readdirSync(dl)) if (n.startsWith(pre)) rmSync(join(dl, n), { force: true }); } catch {} }
     if (run.mcpName && !run.mcpGone) { run.mcpGone = true; try { agyExec(run.agyPath, ["mcp", "remove", run.mcpName]); } catch {} }
   };
   const finish = (run, code, err) => {
@@ -439,14 +459,14 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   }
 
   function start({ mode, prompt, brands, imageEngine, model, threads, resume = false } = {}) {
-    let prefix = "", from = "";
+    let prefix = "", from = "", resumedPipe = "";
     if (resume) {
       if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
       const ri = resumeInfo();
       if (!ri.available) return { ok: false, status: 409, error: "There is no stopped run to continue." };
       const inp = readInput();
       ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.threads;
-      prefix = continueLine(mode, ri); from = ri.run_id;
+      prefix = continueLine(mode, ri); from = ri.run_id; resumedPipe = inp.pipe_id || ri.run_id;
     }
     const bad = validate({ mode, prompt, model, threads });
     if (bad) return { ok: false, status: 400, error: bad };
@@ -472,6 +492,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
     const nThreads = usesFlow(mode, s, imageEngine) || (agy && mode === "research") ? 1 : threadsFor(mode, threads); // Create and Research (classification) only; Flow runs, Publish and Sync always 1
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
+    const pipeId = resumedPipe || runId; // the pipeline folder of this run (a resumed run keeps the one of the run it continues)
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
@@ -500,7 +521,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (browser) args.push("--mcp-config", cfg);
       if (mode === "research") args.push("--strict-mcp-config");
     }
-    const env = { ...process.env, ...(agy ? { SA_AGENT: "antigravity" } : {}), ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
+    const snapDir = join(tmpDir, `run-${runId}`); try { mkdirSync(snapDir, { recursive: true }); writeFileSync(join(snapDir, "settings.json"), JSON.stringify(s)); } catch {}
+    const env = { ...process.env, SA_RUN_ID: runId, SA_PIPE_ID: pipeId, SA_SETTINGS: join(snapDir, "settings.json"), ...(agy ? { SA_AGENT: "antigravity" } : {}), ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
@@ -508,10 +530,10 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const started = new Date(now()).toISOString();
     const run = {
       child, cfg, backend, label, mcpName, agyImages: usesAgyImages(mode, s, imageEngine), mcpGone: false, agyPath: found.path, agyText: {}, agyTools: new Set(), settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, pipe_id: pipeId, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
     };
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
-    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads })); } catch {}
+    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads, pipe_id: pipeId })); } catch {}
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
     run.friendly = [];
@@ -557,7 +579,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      backend: shown?.backend || "claude", quota: shown?.quota || null, threads: shown?.threads || 1, usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      backend: shown?.backend || "claude", pipe_id: shown?.pipe_id || "", quota: shown?.quota || null, threads: shown?.threads || 1, usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),

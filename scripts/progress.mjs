@@ -51,17 +51,18 @@ export const STALE_MS = 6 * 3600 * 1000;
 
 const off = () => /^(off|0|false)$/i.test(process.env.SA_PROGRESS || '');
 const validMode = (m) => { if (!MODES.includes(m)) throw new Error('mode must be research, create or publish.'); return m; };
-export const progressFile = (mode) => path.join(workspace, 'runs', `current-${validMode(mode)}.json`);
+// key = the run's pipe id (SA_PIPE_ID inside a run; the app passes it when it reads): current-<mode>-<key>.json, so runs of one mode never share a panel.
+export const progressFile = (mode, key = process.env.SA_PIPE_ID || '') => path.join(workspace, 'runs', `current-${validMode(mode)}${key ? '-' + key : ''}.json`);
 export const template = (mode) => STEPS[validMode(mode)].map((s, i) => ({ n: i + 1, key: s.keys[0], keys: s.keys, name: s.name, state: 'pending', detail: '', at: '' }));
-export const readRun = (mode) => { try { return readJson(progressFile(mode), null); } catch { return null; } };
+export const readRun = (mode, key) => { try { return readJson(progressFile(mode, key), null); } catch { return null; } };
 export const isActive = (run, now = Date.now()) => !!run && !run.finished && now - Date.parse(run.updated || run.created || 0) < STALE_MS;
 const begun = (run) => run.steps.some((s) => s.state !== 'pending');
 
 // A new pending run (the app's Copy prompt, or a run started without one): resets the panel.
-export function newRun(mode, { brands = [], agent = '' } = {}) {
+export function newRun(mode, { brands = [], agent = '', key = '' } = {}) {
   const now = stamp();
   const run = { run_id: `${now.replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}-${mode}`, mode: validMode(mode), brands: [].concat(brands).map(String).filter(Boolean), agent: String(agent || ''), created: now, started: now, updated: now, finished: null, result: null, steps: template(mode), items: null, item_parts: {} };
-  writeJson(progressFile(mode), run);
+  writeJson(progressFile(mode, key), run);
   return run;
 }
 
@@ -202,8 +203,8 @@ const madeItems = (cmd) => (run, brand) => {
 };
 
 // The Prompt tab's panel: the fixed steps of the mode, the current run (if any) and whether it is still running.
-export function progressView(mode, now = Date.now()) {
-  const run = readRun(mode);
+export function progressView(mode, now = Date.now(), key = '') {
+  const run = readRun(mode, key);
   return { mode: validMode(mode), steps: template(mode).map(({ n, key, name }) => ({ n, key, name })), run, active: isActive(run, now), stale: !!run && !run.finished && !isActive(run, now) };
 }
 

@@ -84,15 +84,19 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 // A scheduled agent and a manual chat run can overlap: every read-modify-write of a shared file
 // (status.json, ideas.json, research-log.json, the brand's catalog.json and social.json) runs inside this lock, a
 // <file>.lock folder (mkdir is atomic). A lock older than 2 minutes is a crashed run's and is taken over.
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 export function withLock(file, fn, { timeoutMs = 20000, staleMs = 120000 } = {}) {
-  const lock = `${file}.lock`;
+  const lock = `${file}.lock`, ownerFile = path.join(lock, 'owner.json');
   const start = Date.now();
   for (;;) {
-    try { fs.mkdirSync(lock); break; } catch (e) {
+    try { fs.mkdirSync(lock); try { fs.writeFileSync(ownerFile, JSON.stringify({ pid: process.pid, run: process.env.SA_RUN_ID || '' })); } catch {} break; } catch (e) {
       if (e.code === 'ENOENT') { fs.mkdirSync(path.dirname(lock), { recursive: true }); continue; }
       if (e.code !== 'EEXIST') throw e;
+      let owner = null; try { owner = JSON.parse(fs.readFileSync(ownerFile, 'utf8')); } catch {}
+      // The holder is gone (its process died): take the lock over at once; else a lock older than staleMs is a crashed run's.
+      if (owner?.pid && !pidAlive(owner.pid)) { fs.rmSync(lock, { recursive: true, force: true }); continue; }
       try { if (Date.now() - fs.statSync(lock).mtimeMs > staleMs) { fs.rmSync(lock, { recursive: true, force: true }); continue; } } catch {}
-      if (Date.now() - start > timeoutMs) throw new Error(`Đang bận: ${path.basename(file)} đang được tiến trình khác ghi. Chạy lại sau.`);
+      if (Date.now() - start > timeoutMs) throw new Error(`Đang bận: ${path.basename(file)} đang được ${owner?.run ? `lượt chạy ${owner.run}` : 'tiến trình khác'}${owner?.pid ? ` (pid ${owner.pid})` : ''} ghi. Chạy lại sau.`);
       sleep(100);
     }
   }
@@ -112,7 +116,8 @@ const merge = (a, b) => {
   return o;
 };
 export function settings() {
-  const s = merge(readJson(path.join(toolRoot, 'config', 'settings.json')), readJson(path.join(workspace, 'settings.json'), {}));
+  // SA_SETTINGS = the snapshot of settings the app's runner took when THIS run started: another window's later change never alters a live run.
+  const s = merge(readJson(path.join(toolRoot, 'config', 'settings.json')), readJson(process.env.SA_SETTINGS || path.join(workspace, 'settings.json'), {}));
   const root = process.env.SA_SKILLS_ROOT || s.skillsRoot;
   s.skillsRoot = path.resolve(toolRoot, root);
   return s;

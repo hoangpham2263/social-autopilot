@@ -357,7 +357,7 @@ async function handle(req, res) {
   // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
   // current-<mode>.json) and the last run log of the mode. POST = Copy prompt: a new pending run (resets the panel).
   if (path === "/api/progress" && req.method === "GET") return api(res, () => {
-    const view = progressView(get("mode"));
+    const st = agentRun.status(), view = progressView(get("mode"), Date.now(), st.mode === get("mode") ? st.pipe_id || "" : ""); // this window's own run only
     const last = listLogs({ mode: view.mode, limit: 1 })[0];
     return { ...view, last_log: last ? { id: last.id, ended: last.ended, result: last.result, headline: last.headline } : null };
   });
@@ -365,7 +365,8 @@ async function handle(req, res) {
     const b = await body(req);
     const known = new Set(discovered().brands.map((x) => x.id));
     const brands = (Array.isArray(b.brands) ? b.brands : []).map(String).filter((x) => known.has(x));
-    return { run: newRun(String(b.mode ?? ""), { brands, agent: typeof b.agent === "string" ? b.agent.slice(0, 40) : "" }) };
+    const st = agentRun.status(), key = st.active && st.mode === String(b.mode ?? "") ? st.pipe_id || "" : "";
+    return { run: newRun(String(b.mode ?? ""), { brands, agent: typeof b.agent === "string" ? b.agent.slice(0, 40) : "", key }) };
   });
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));

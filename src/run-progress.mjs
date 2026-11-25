@@ -26,8 +26,8 @@ export function researchProgress(brands, started) {
   return { rows, kept: sum("kept"), found: sum("found"), target: sum("target"), units: sum("units"), unitsDone: sum("unitsDone") };
 }
 
-export function createProgress(started) {
-  const file = join(workspace, "pipeline", "create.json");
+export function createProgress(started, pipeId = "") {
+  const file = join(workspace, "pipeline", ...(pipeId ? [pipeId] : []), "create.json");
   if (!fresh(file, started)) return null;
   const st = readJson(file, null);
   if (!st) return null;
@@ -58,7 +58,7 @@ export function runProgress(st, allBrands = []) {
   const mode = st?.mode || "", started = st?.started || "", scope = scopeOf(st, allBrands);
   const out = { mode, active: !!st?.active, started };
   if (mode === "research") out.research = researchProgress(scope, started);
-  else if (mode === "create") out.create = createProgress(started);
+  else if (mode === "create") out.create = createProgress(started, st?.pipe_id || "");
   else if (mode === "publish") out.publish = publishProgress(scope);
   return out;
 }
@@ -74,7 +74,7 @@ export function progressOf(st, allBrands = []) {
       return { done: Math.min(r.kept, r.target), total: r.target, label: `Sources ${r.unitsDone}/${r.units} · Found ${r.found} · Kept ${r.kept}/${r.target}` };
     }
     if (mode === "create") {
-      const c = createProgress(started);
+      const c = createProgress(started, st?.pipe_id || "");
       if (!c) return null;
       const posts = Math.max(c.requested, c.drafts);
       if (!posts) return null;

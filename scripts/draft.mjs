@@ -379,7 +379,8 @@ function tryCodexSlot(n, dir) {
 }
 // Run tab Threads above 1 (SA_THREADS, set by the app's runner): that many Codex images at once; unset = the codex.concurrency setting.
 const threadsEnv = () => { const n = Number(process.env.SA_THREADS); return Number.isInteger(n) && n >= 1 && n <= 4 ? n : 0; };
-const slotSetup = (s) => { const dir = path.join(workspace, 'tmp', 'codex-slots'); fs.mkdirSync(dir, { recursive: true }); return { n: threadsEnv() || Math.max(1, Number(s.codex?.concurrency) || 3), dir }; };
+// Slots belong to the RUN (SA_RUN_ID, set by the app's runner): two runs / windows never take each other's slots; a standalone command shares the folder 'codex-slots'.
+const slotSetup = (s) => { const dir = path.join(workspace, 'tmp', 'codex-slots', ...(process.env.SA_RUN_ID ? [process.env.SA_RUN_ID] : [])); fs.mkdirSync(dir, { recursive: true }); return { n: threadsEnv() || Math.max(1, Number(s.codex?.concurrency) || 3), dir }; };
 const slotWait = (s) => ((Number(s.codex?.timeout_minutes) || 15) * 2 + 5) * 60000;
 export function takeCodexSlot(s = settings(), { waitMs = slotWait(s) } = {}) {
   const { n, dir } = slotSetup(s), until = Date.now() + waitMs;
@@ -633,7 +634,7 @@ export function flowBrief(args, s = settings()) {
     const downloads = path.join(os.homedir(), 'Downloads');
     fs.mkdirSync(downloads, { recursive: true });
     try { for (const f of fs.readdirSync(downloads)) if (/^sa-ref-.+\.(png|jpe?g|webp)$/i.test(f) && Date.now() - fs.statSync(path.join(downloads, f)).mtimeMs > 2 * 86400000) fs.rmSync(path.join(downloads, f), { force: true }); } catch {} // old reference copies of earlier Flow runs
-    reference_for_upload = path.join(downloads, `sa-ref-${draft.id}-${n}${path.extname(ref) || '.png'}`);
+    reference_for_upload = path.join(downloads, `sa-ref-${process.env.SA_RUN_ID ? process.env.SA_RUN_ID + '-' : ''}${draft.id}-${n}${path.extname(ref) || '.png'}`);
     fs.copyFileSync(ref, reference_for_upload);
   }
   return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, ...(safe ? { safe: true } : {}), needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),

@@ -53,7 +53,8 @@ const SIGN_CHECKLIST = [
 import { draftImages, parseImagesOpt, parseAlbumOpt, albumModeOf, albumSceneOf, extraShotOf } from './draft-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const pipeDir = () => path.join(workspace, 'pipeline');
+// One folder per app run (SA_PIPE_ID = the run id, kept by a resumed run): two Create / Publish runs never share create.json, ideas-todo.json, captions-todo.json, publish.json...
+export const pipeDir = () => (process.env.SA_PIPE_ID ? path.join(workspace, 'pipeline', process.env.SA_PIPE_ID) : path.join(workspace, 'pipeline'));
 const stateFile = () => path.join(pipeDir(), 'create.json');
 const IDEA_FIELDS = ['product_type', 'scene', 'angle', 'props', 'caption_structure', 'hook', 'why'];
 const IMAGE = /\.(png|jpe?g|webp)$/i;
