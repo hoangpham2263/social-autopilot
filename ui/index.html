@@ -99,8 +99,6 @@ fieldset.spaced { margin-top: 24px; }
 .sub-title { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
 #page-settings legend .meta { margin-left: 8px; }
 #prChrome[data-flow="0"] .flow-only { display: none; }
-#prModelLine { cursor: pointer; display: inline-block; border: 1px solid transparent; padding: 2px 6px; margin-left: -6px; } #prModelLine:hover { text-decoration: underline; } #prModelLine:focus-visible { outline: none; border-color: var(--accent); }
-.run-sum-line { margin: 0 0 12px; }
 @media (max-width: 600px) { .fgrid { grid-template-columns: minmax(0, 1fr); } }
 .placeholder-media { aspect-ratio: 1 / 1; background: #e4e6eb; }
 fieldset { border: 1px solid var(--line); background: #fff; padding: 10px 12px; margin: 0 0 12px; min-width: 0; }
@@ -496,15 +494,17 @@ header + * { margin-top: 0; }
       <div class="field auto"><span class="label">Mode</span><span class="seg" id="prMode" role="group" aria-label="Mode"></span></div>
       <div class="field auto" id="prMcField" hidden><span class="label">&nbsp;</span><span class="meta inline-control" id="prMcNote" hidden></span></div>
     </div>
-    <div class="run-sum-line" id="prModelField"><span class="meta" id="prModelLine" role="button" tabindex="0">…</span></div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Agent: Cài đặt > Cách chạy">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
+      <div class="field"><label for="prRunAgent" title="Who does Research and Create in the app (Publish and Sync always use Claude)">Run with</label><select id="prRunAgent"><option value="claude">Claude</option><option value="antigravity">Antigravity</option></select></div>
+      <div class="field" id="prModelField"><span class="label">In use</span><span class="meta" id="prModelLine">…</span></div>
+      <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts the chosen agent (Run with) for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
       <div class="field" id="prBrandField"><span class="label">Brand</span><details id="prBrandBox"><summary id="prBrandSum">All</summary><div id="prBrandList"></div></details></div>
       <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
       <div class="field" data-opt="research" id="prPlatField" hidden><span class="label" title="Which platforms this run covers: unticked platforms drop their sources and are left out of discovery (--platforms). Default: all.">Platforms</span><details id="prPlatBox"><summary id="prPlatSum">All</summary><div id="prPlat"></div></details></div>
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = 100)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="100"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
+      <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images: Codex, Google Flow in your signed-in Chrome (Claude), or Antigravity itself (no Flow). Saved as the default.">Images</label><select id="prImages"><option value="codex">Codex</option><option value="flow">Google Flow</option><option value="antigravity">Antigravity (không qua Flow)</option></select></div>
       <div class="field" data-opt="create" hidden><span class="label" title="Images per post of this run: random between min and max (1 to 4). Default: Settings, Images per post. min = max gives exactly that many.">Images per post</span><span class="imgrow"><span class="pair"><span class="meta">min</span><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" aria-label="Images per post, min" autocomplete="off"><span class="meta">max</span><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" aria-label="Images per post, max" autocomplete="off"></span></span></div>
       <div class="field" data-opt="create" id="prAlbField" hidden><span class="label" title="Which kinds of album posts with 2 or more images can be (random between the ticked ones, per post). Posts with a single image ignore it. Default: Settings, Album.">Image types</span><details id="prAlbBox"><summary id="prAlbSum">All 2</summary><div id="prAlb"></div></details></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
@@ -514,12 +514,12 @@ header + * { margin-top: 0; }
     <div class="meta flow-check" id="prFlowRunHint" role="status" hidden></div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
-      <button class="btn primary" type="button" id="prRunNow" title="Agent: Cài đặt > Cách chạy">Run now</button>
+      <button class="btn primary" type="button" id="prRunNow" title="Starts the chosen agent (Run with) with this prompt (headless), no pasting">Run now</button>
       <button class="btn" type="button" id="prResume" disabled>Chạy tiếp lượt trước</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
       <span class="meta" id="prExtHint" hidden></span>
-      <span class="meta" id="prAppHint">Agent: Cài đặt > Cách chạy.</span>
+      <span class="meta" id="prAppHint">Starts the agent chosen in Run with; the live panel below shows progress.</span>
       <span class="status-tag c-amber" id="prRunPill" hidden>A run is active in the app <button class="linkbtn" type="button" id="prRunPillGo">show</button></span>
     </div>
     <div class="meta" id="prLoginHint" role="status" hidden></div>
@@ -531,6 +531,26 @@ header + * { margin-top: 0; }
       <div class="ar-resbar" id="arResBar" hidden><button class="btn" type="button" id="arCopyRes">Copy report</button></div>
       <div class="ar-logbox" id="arLogBox"><span class="label">Live log</span><div class="ar-feed" id="arFeed" aria-live="polite"></div><details class="ar-tech"><summary>Chi tiết kỹ thuật</summary><pre class="ar-log" id="arLog"></pre></details></div>
     </div>
+    <!-- Browser: the tool's own Chrome profile (log in once, runs are headless in the background). Status from GET /api/browser. -->
+    <details class="sec" id="prChrome" data-flow="0">
+      <summary><span>Browser</span><span id="prChromeSum" class="meta">· loading…</span></summary>
+      <div id="prBrowser">
+        <div class="bgrid">
+          <div class="f"><label for="prBrowserMode">Browser for runs</label><select id="prBrowserMode"><option value="own">Tool's own Chrome (separate profile)</option><option value="extension">My everyday Chrome (Playwright extension, click Connect)</option></select></div>
+          <div class="f"><label for="prChromeProfile">Chrome profile (everyday Chrome)</label><select id="prChromeProfile"></select></div>
+          <div class="f flow-only"><label for="prFlowAccount">Tài khoản Google cho Flow (để trống = Flow tự chọn)</label><select id="prFlowAccount"><option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option></select><button class="btn" type="button" id="prFlowAccountSave" hidden>Lưu</button></div>
+          <div class="f"><button class="btn" type="button" id="prBrowserLogin" title="Own Chrome mode: opens the tool's separate profile. Everyday Chrome mode: opens the Chrome profile chosen above (with the login sites as tabs). Opens a visible Chrome window on the own profile with the sites below: log in by hand, then close the window. The tool never sees your passwords.">Open browser to log in</button></div>
+        </div>
+        <div class="meta flow-check flow-only" id="prFlowCheck" role="status" hidden></div>
+        <div class="f" id="prTokenRow" hidden><label for="prChromeToken">Token Playwright (tùy chọn)</label><div class="tok-row"><input id="prChromeToken" type="password" autocomplete="off" placeholder="Dán token của extension trong profile này"><button class="btn" type="button" id="prTokenSave">Lưu token</button><button class="btn" type="button" id="prTokenClear">Xoá token</button></div><span class="meta" id="prTokenMsg" role="status"></span></div>
+        <div class="row-actions"><button class="btn" type="button" id="prChromeInstall" hidden>Cài extension vào profile này</button></div>
+        <div class="meta" id="prChromeProfileMsg" role="status">Profiles found on this machine. Only profiles with the Playwright extension can be driven; the Chrome window of that profile must be open and you click Connect once per run.</div>
+        <div class="meta" id="prBrowserStatus" role="status"></div>
+        <div class="meta flow-only" id="prFlowAccountMsg" role="status">Danh sách là các tài khoản Google đã đăng nhập trong Chrome riêng của tool. Flow hay mở tài khoản đầu tiên: chọn tài khoản còn credit để agent dùng đúng tài khoản đó (không đăng xuất, không xoá tài khoản nào).</div>
+        <div id="prLogins"></div>
+        <div class="meta">Runs use this profile in the background (headless). Facebook may show a checkpoint for automated browsers; if a site blocks headless runs, switch browser.headless off in Settings. Sites you log in to: Facebook, Instagram, Pinterest, Etsy, Houzz, Google (Flow).</div>
+      </div>
+    </details>
     <!-- Run progress of the selected mode (scripts/progress.mjs, GET /api/progress): steps, counter, time, last message. -->
     <fieldset class="run-panel" id="prRun"><legend>Run progress</legend>
       <div class="run-sum" id="prRunSum"><span class="meta">Loading…</span></div>
@@ -545,33 +565,7 @@ header + * { margin-top: 0; }
   </section>
 
   <section class="page" id="page-settings" hidden>
-    <fieldset id="setAI"><legend>Cách chạy<span class="meta" id="aiMsg" role="status"></span></legend>
-      <div class="fgrid">
-        <div class="fld"><label for="aiResearch">Research</label><select id="aiResearch"></select></div>
-        <div class="fld"><label for="aiCreate">Tạo bài</label><select id="aiCreate"></select></div>
-        <div class="fld"><label for="aiImage">Tạo ảnh</label><select id="aiImage"></select></div>
-        <div class="fld"><label for="aiPublish">Publish · Sync</label><input id="aiPublish" value="Claude" disabled></div>
-      </div>
-      <div id="prChrome" data-flow="0">
-        <div class="sub-title">Trình duyệt <span id="prChromeSum" class="meta"></span></div>
-        <div id="prBrowser">
-          <div class="bgrid">
-            <div class="f"><label for="prBrowserMode">Trình duyệt chạy</label><select id="prBrowserMode"><option value="own">Chrome riêng của tool</option><option value="extension">Chrome hằng ngày</option></select></div>
-            <div class="f"><label for="prChromeProfile">Chrome profile</label><select id="prChromeProfile"></select></div>
-            <div class="f flow-only"><label for="prFlowAccount">Tài khoản Flow</label><select id="prFlowAccount"><option value="">Tự chọn</option></select><button class="btn" type="button" id="prFlowAccountSave" hidden>Lưu</button></div>
-            <div class="f"><button class="btn" type="button" id="prBrowserLogin">Mở Chrome để đăng nhập</button></div>
-          </div>
-          <div class="meta flow-check flow-only" id="prFlowCheck" role="status" hidden></div>
-          <div class="f" id="prTokenRow" hidden><label for="prChromeToken">Token Playwright</label><div class="tok-row"><input id="prChromeToken" type="password" autocomplete="off" placeholder="Dán token"><button class="btn" type="button" id="prTokenSave">Lưu</button><button class="btn" type="button" id="prTokenClear">Xoá</button></div><span class="meta" id="prTokenMsg" role="status"></span></div>
-          <div class="row-actions"><button class="btn" type="button" id="prChromeInstall" hidden>Cài extension</button></div>
-          <div class="meta" id="prChromeProfileMsg" role="status"></div>
-          <div class="meta" id="prBrowserStatus" role="status"></div>
-          <div class="meta flow-only" id="prFlowAccountMsg" role="status"></div>
-          <div id="prLogins"></div>
-        </div>
-      </div>
-    </fieldset>
-    <fieldset><legend>Model Claude</legend>
+    <fieldset><legend>Model Claude<span class="meta" id="aiMsg" role="status"></span></legend>
       <div class="fgrid"><div class="fld"><label for="aiClModel">Model</label><select id="aiClModel"></select></div><div class="fld"><label for="aiClEffort">Mức suy nghĩ</label><select id="aiClEffort"></select></div><div class="fld full" id="aiClOtherBox" hidden><label for="aiClOther">Mã model</label><input type="text" id="aiClOther" maxlength="60" placeholder="claude-opus-5-5" spellcheck="false"></div></div>
     </fieldset>
     <fieldset><legend>Model Codex</legend>
@@ -1457,11 +1451,11 @@ header + * { margin-top: 0; }
   const subAllowed = () => /claude code/i.test($("#prAgent").value || "");
   // The image engine of THIS run (Run tab, Images): the select starts at settings image_engine and is never saved.
 
-  // Every AI choice lives in Settings > Cách chạy (agentCfg = settings.agent, cfgImage = settings.image_engine); the Run tab only reads it.
+  // The Run tab pickers (Images, Run with) are stored in settings image_engine and agent.research / agent.create (agentCfg, cfgImage); Settings only holds the models.
   const AGENT_NAME = { claude: "Claude", antigravity: "Antigravity" };
   const agentOfCfg = (a, mk) => { const v = a?.[mk === "research" ? "research" : "create"]; return mk !== "research" && mk !== "create" ? "claude" : v === "antigravity" || v === "claude" ? v : a?.backend === "antigravity" ? "antigravity" : "claude"; };
   const agentOfMode = (mk) => agentOfCfg(agentCfg || {}, mk);
-  const chosenEngine = () => { const e = cfgImage || promptData?.image_engine || "codex"; return e === "flow" && agentOfMode("create") === "antigravity" ? "antigravity" : e === "flow" || e === "antigravity" ? e : "codex"; };
+  const chosenEngine = () => { const v = $("#prImages").value; return v === "flow" || v === "codex" || v === "antigravity" ? v : promptData.image_engine === "flow" ? "flow" : "codex"; };
   const syncFlowOnly = () => { const el = $("#prChrome"); if (el) el.dataset.flow = chosenEngine() === "flow" ? "1" : "0"; };
   let prBlock = ""; // research with nothing to run: the reason (no prompt is made)
   function buildPrompt() {
@@ -1547,23 +1541,38 @@ header + * { margin-top: 0; }
   const appAgent = () => AGENT_NAME[agentOfMode(modeKey(prMode))]; // who "Run in the app" starts for this mode (Settings > Cách chạy)
   const cxName = (slug) => { const m = (agentModels?.codex || []).find((x) => x.slug === slug); return m ? `${m.name}${m.hidden ? " (hidden)" : ""} (${m.slug})` : slug; };
   let runningModel = "";
-  const aiSummary = () => {
-    const a = agentCfg || {}, e = chosenEngine(), agyUsed = ["research", "create"].some((mk) => agentOfMode(mk) === "antigravity");
-    const parts = [`Research: ${AGENT_NAME[agentOfMode("research")]}`, `Tạo: ${AGENT_NAME[agentOfMode("create")]}`, `Ảnh: ${e === "flow" ? "Flow" : e === "antigravity" ? "Antigravity" : "Codex"}`];
-    const eff = (x) => (x ? ` (${x})` : ""), short = (t) => String(t).replace(/ \([^()]*\)$/, "");
-    parts.push(`Claude ${short(clName(a.claude_model || "claude-sonnet-4-6"))}${eff(a.claude_effort)}`);
-    if (agyUsed) parts.push(`Antigravity ${a.agy_model ? short(agName(a.agy_model)) : "mặc định"}${eff(a.agy_effort && a.agy_effort !== "max" && !/-(low|medium|high|xhigh)$/.test(a.agy_model || "") ? a.agy_effort : "")}`);
-    if (e === "codex") parts.push(`Codex ${a.codex_model ? short(cxName(a.codex_model)) : "mặc định"}${eff(a.codex_effort)}`);
-    return parts.join(" · ");
-  };
   const showRunModel = () => {
     const el = $("#prModelLine"); if (!el) return;
-    el.title = "Đổi trong Cài đặt"; try { for (const id of ["#prRunNow", "#prHow [data-how=app]"]) { const b = $(id); if (b && !b.disabled) b.title = `${appAgent()}: Cài đặt > Cách chạy`; } } catch {}
-    if (runningModel) { el.textContent = `Đang chạy: ${runningModel}`; return; }
-    el.textContent = howNow() === "app" ? aiSummary() : /codex/i.test($("#prAgent").value || "") ? `Codex ${agentCfg?.codex_model ? cxName(agentCfg.codex_model) : "mặc định"}` : /claude/i.test($("#prAgent").value || "") ? `Claude ${clName(agentCfg?.claude_model || "claude-sonnet-4-6")}` : "Chọn trong agent bạn dán vào";
+    if (runningModel) { el.textContent = `running: ${runningModel}`; return; }
+    const ag = $("#prAgent").value || "", a = agentCfg || {};
+    if (/claude/i.test(ag) && howNow() === "app" && agentOfMode(modeKey(prMode)) === "antigravity") { const m = a.agy_model || "", e = a.agy_effort || ""; el.textContent = `Antigravity ${m ? agName(m) : "default model"} · effort: ${e || "default"}`; }
+    else if (/claude/i.test(ag)) { const m = a.claude_model || "claude-sonnet-4-6", e = a.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
+    else if (/codex/i.test(ag)) { const m = a.codex_model || "", e = a.codex_effort || ""; el.textContent = `Codex ${m ? cxName(m) : "default model"} · effort: ${e || "default"}`; }
+    else el.textContent = "Set in the agent you paste into";
   };
-  { const ml = $("#prModelLine"); ml.onclick = () => show("settings"); ml.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show("settings"); } }; }
-  const loadAgentCfg = async () => { const [r] = await Promise.all([getJson("/api/settings").catch(() => null), loadAgentModels()]); if (r?.settings) { agentCfg = r.settings.agent || {}; cfgImage = r.settings.image_engine || ""; } showRunModel(); try { syncFlowOnly(); regenerate(); } catch {} };
+  // Run tab pickers Images (Codex / Flow / Antigravity) and Run with (Claude / Antigravity) are stored in settings image_engine and agent.research / agent.create.
+  // Flow needs Claude, Antigravity images need Antigravity (the server rejects other combinations, the pickers keep them consistent).
+  const syncRunPickers = () => {
+    const im = $("#prImages"), ra = $("#prRunAgent"); if (!im || !ra) return;
+    const e = cfgImage || promptData?.image_engine || "codex";
+    im.value = e === "flow" && agentOfMode("create") === "antigravity" ? "antigravity" : e === "flow" || e === "antigravity" ? e : "codex";
+    const mk = modeKey(prMode), fixed = mk !== "research" && mk !== "create";
+    ra.value = fixed ? "claude" : agentOfMode(mk); ra.disabled = fixed; ra.title = fixed ? "Publish and Sync always run with Claude" : "Who does Research and Create in the app";
+  };
+  const saveRunAI = async (changed) => {
+    const im = $("#prImages"), ra = $("#prRunAgent"), mk = modeKey(prMode);
+    let res = agentOfMode("research"), cre = agentOfMode("create"), img = im.value;
+    if (changed === "agent") { if (mk === "research") res = ra.value; else if (mk === "create") { cre = ra.value; if (cre === "antigravity" && img === "flow") img = "antigravity"; else if (cre === "claude" && img === "antigravity") img = "codex"; } }
+    if (changed === "images") { if (img === "flow") cre = "claude"; else if (img === "antigravity") cre = "antigravity"; }
+    if (runGuard()) { await loadAgentCfg(); return; }
+    const settings = { image_engine: img, agent: { research: res, create: cre } };
+    const r = await postJson("/api/settings", { settings }).catch(() => offline);
+    if (r.error) { flash(r.error); toast(r.error); }
+    await loadAgentCfg();
+  };
+  $("#prImages").onchange = async () => { await saveRunAI("images"); regenerate(); };
+  $("#prRunAgent").onchange = async () => { await saveRunAI("agent"); regenerate(); };
+  const loadAgentCfg = async () => { const [r] = await Promise.all([getJson("/api/settings").catch(() => null), loadAgentModels()]); if (r?.settings) { agentCfg = r.settings.agent || {}; cfgImage = r.settings.image_engine || ""; } showRunModel(); try { syncRunPickers(); syncFlowOnly(); regenerate(); } catch {} };
   loadAgentCfg();
   $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); showRunModel(); drawPrompt(); applyHow(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"], ["#prBrandBox", "#prBrandField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
@@ -1655,12 +1664,13 @@ header + * { margin-top: 0; }
     for (const id of ["#prCopy", "#prMsg", "#prTextBox"]) $(id).hidden = app;
     // The Chrome connection section is for Run in the app (Run now needs the connection); with Copy prompt it is not shown.
     // Only where a browser is used: Research, and Create & publish with Google Flow (Publish approved opens none).
-    syncFlowOnly();
+    { const mk = modeKey(prMode); $("#prChrome").hidden = !app || !(mk === "research" || (mk === "create" && chosenEngine() === "flow")); }
+    syncFlowOnly(); try { syncRunPickers(); } catch {}
     $("#prRunNow").hidden = !app; $("#prResume").hidden = !app; if (!app) $("#prStop").hidden = true;
     showRunModel();
     $("#prAppHint").hidden = !app;
     { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
-      $("#prAppHint").textContent = claude ? `${appAgent()} chạy trong app, tiến trình ở bên dưới.` + (extTxt ? " " + extTxt + "." : "") : "Chọn prompt Claude Code để chạy trong app"; }
+      $("#prAppHint").textContent = claude ? `Starts ${appAgent()} for you; the live panel below shows progress.` + (extTxt ? " " + extTxt + "." : "") : "Chọn prompt Claude Code để chạy trong app"; }
     $("#prAppHint").style.color = claude ? "" : "#b06000";
     $("#prRunPill").hidden = app || !busy;
   }
@@ -1677,12 +1687,12 @@ header + * { margin-top: 0; }
     { const m = r?.active ? r.model_in_use || "" : ""; if (m !== runningModel) { runningModel = m; showRunModel(); } }
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
     const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
-    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Chọn prompt Claude Code (agent chạy: Cài đặt > Cách chạy)`);
+    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Chọn prompt Claude Code (agent: Run with)`);
     setDisabled($("#prCopy"), !!prBlock, prBlock);
     // Continue the previous run (GET /api/agent-run resume): enabled only when the last run stopped / failed midway; same inputs, only the missing work.
     { const rs = r?.resume, ok = !!rs?.available && !busy && !noCli && claude, btn = $("#prResume");
       const what = rs?.available ? `${{ research: "Research", create: "Create & publish", publish: "Publish approved" }[rs.mode] || rs.mode}${rs.brands?.length ? " · " + rs.brands.join(", ") : ""} · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : "";
-      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Chọn prompt Claude Code (agent chạy: Cài đặt > Cách chạy)") : "No stopped run to continue: the last run finished or none was started from the app");
+      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Chọn prompt Claude Code (agent: Run with)") : "No stopped run to continue: the last run finished or none was started from the app");
       if (ok) btn.title = `Continues the previous run with the same options, without redoing finished work: ${what}`; }
     { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
     // Flow run whose Flow account is not signed in to the chosen profile: blocked (a warning alone never blocks).
@@ -1947,7 +1957,7 @@ header + * { margin-top: 0; }
       const tip = [x.reason || "", "Source: " + (x.source === "visit" ? "visit" : "cookies"), x.checked_at ? "Checked " + new Date(x.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""].filter(Boolean).join(" · ");
       return `<div class="bl-row" data-p="${esc(x.platform)}"><span class="bl-name"><span class="dot ${dot}"></span>${esc(x.name || BL_NAMES[x.platform] || x.platform)}</span><span class="meta" title="${esc(tip)}">${word}${x.state === "unknown" ? ` <span title="${esc(tip)}">(?)</span>` : ""}</span>${x.required ? `<span class="bl-req" title="Runs need this login">REQUIRED</span>` : ""}<button class="btn" type="button" data-login="${esc(x.platform)}"${busyRun ? ` disabled title="A run is active: wait for it or press Stop"` : ` title="Opens the own browser on ${esc(BL_NAMES[x.platform] || x.platform)}: log in, then close the window"`}>Log in</button></div>`;
     }).join("");
-    const html = `<div class="bl-head"><b>Logins</b><button class="btn" type="button" id="blRefresh" title="Check the login state again (reads cookie names and expiry only)"${blBusy || blVisiting ? " disabled" : ""}>Refresh</button><button class="btn" type="button" id="blVisit" title="Opens one account page per site in a background browser and reads only the address it ends on"${blBusy || blVisiting || busyRun ? " disabled" : ""}>${blVisiting ? "Checking…" : "Check by visiting"}</button></div>${blSum || blProg ? `<div class="meta" id="blSum" role="status">${esc(blVisiting ? blProg || "Checking…" : blSum)}</div>` : ""}<div class="bl-list">${list}</div>`;
+    const html = `<div class="bl-head"><b>Logins</b><button class="btn" type="button" id="blRefresh" title="Check the login state again (reads cookie names and expiry only)"${blBusy || blVisiting ? " disabled" : ""}>Refresh</button><button class="btn" type="button" id="blVisit" title="Opens one account page per site in a background browser and reads only the address it ends on"${blBusy || blVisiting || busyRun ? " disabled" : ""}>${blVisiting ? "Checking…" : "Check by visiting"}</button></div>${blSum || blProg ? `<div class="meta" id="blSum" role="status">${esc(blVisiting ? blProg || "Checking…" : blSum)}</div>` : ""}<div class="bl-list">${list}</div><div class="meta">Refresh is a quick hint from cookies: a login can look fine here yet be expired on the site. Check by visiting opens the account pages in a background browser with your logged-in session (only when you press it); Facebook may show a checkpoint to automated browsers.</div>`;
     if (html !== box.dataset.sig) {
       box.dataset.sig = html; box.innerHTML = html;
       $("#blRefresh").onclick = () => blRefresh({ fresh: true, toastErr: true, announce: true });
@@ -2008,7 +2018,7 @@ header + * { margin-top: 0; }
     { const fa = $("#prFlowAccount");
       if (fa && !bi.error && document.activeElement !== fa && fa.dataset.dirty !== "1") {
         const list = [...new Set([...((bi.mode === "extension" && Array.isArray(bi.profile_accounts) && bi.profile_accounts.length) ? bi.profile_accounts : (bi.google_accounts || [])), ...(bi.flow_account ? [bi.flow_account.toLowerCase()] : [])])];
-        fa.innerHTML = '<option value="">Tự chọn</option>' + list.map((e) => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join("") + '<option value="__other">Khác (nhập email)…</option>';
+        fa.innerHTML = '<option value="">Tự chọn (Flow tự mở tài khoản đầu tiên)</option>' + list.map((e) => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join("") + '<option value="__other">Khác (nhập email)…</option>';
         fa.value = (bi.flow_account || "").toLowerCase();
       } }
     try { flowCheckDraw(); } catch {}
@@ -2018,7 +2028,7 @@ header + * { margin-top: 0; }
     bst.textContent = line;
     login.disabled = busy || !!bi.window_open; login.title = busy ? "A headless run holds the profile: wait for it or press Stop" : bi.window_open ? "The login window is already open" : login.title;
     sum.innerHTML = bi.error ? '<span class="status-tag c-amber">unavailable</span>' : `<span class="status-tag ${bi.window_open ? "c-amber" : bi.profile_exists ? "c-green" : "c-amber"}">own browser:${esc(bi.window_open ? "login window open" : bi.profile_exists ? "ready" : "log in once")}</span>`;
-    if (!$("#page-prompt").hidden || !$("#page-settings").hidden) browserTimer = setTimeout(loadBrowser, 3000);
+    if (!$("#page-prompt").hidden) browserTimer = setTimeout(loadBrowser, 3000);
   });
   // Browser mode + Chrome profile picker (profiles read from this machine's Local State).
   // The Flow account follows the profile: exactly one signed-in Google account = that account; several = keep the current one when it is
@@ -2698,10 +2708,6 @@ function draftTags(d) {
   const aiMark = (html) => { const m = $("#aiMsg"); if (m) m.innerHTML = html; };
   function renderAI(s) {
     aiSaved = s; const a = s.agent || {}, cre = agentOfCfg(a, "create"), res = agentOfCfg(a, "research");
-    const img = s.image_engine === "flow" && cre === "antigravity" ? "antigravity" : s.image_engine === "flow" || s.image_engine === "antigravity" ? s.image_engine : "codex";
-    const ag = [["claude", "Claude"], ["antigravity", "Antigravity"]];
-    $("#aiResearch").innerHTML = aiOpts(ag, res); $("#aiCreate").innerHTML = aiOpts(ag, cre);
-    $("#aiImage").innerHTML = aiOpts([["codex", "Codex"], ["flow", "Flow (Claude)"], ["antigravity", "Antigravity (không qua Flow)"]], img);
     const clM = a.claude_model || "claude-sonnet-4-6", clKnown = clFlat().some((m) => m.id === clM);
     $("#aiClModel").innerHTML = (agentModels?.claude || []).map((g) => `<optgroup label="${esc(g.family)}">${g.models.map((m) => `<option value="${esc(m.id)}"${m.id === clM ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</optgroup>`).join("") + `<option value="__other"${clKnown ? "" : " selected"}>Khác…</option>`;
     $("#aiClOther").value = clKnown ? "" : clM; $("#aiClOtherBox").hidden = clKnown;
@@ -2714,10 +2720,7 @@ function draftTags(d) {
     const agM = a.agy_model || "", agGroups = agentModels?.agy || [], agKnown = !agM || agGroups.some((g) => g.models.some((m) => m.id === agM));
     $("#aiAgModel").innerHTML = `<option value="">Mặc định</option>` + agGroups.map((g) => `<optgroup label="${esc(g.family)}">${g.models.map((m) => `<option value="${esc(m.id)}"${m.id === agM ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</optgroup>`).join("") + (agKnown ? "" : `<option value="${esc(agM)}" selected>${esc(agM)}</option>`);
     $("#aiAgEffort").innerHTML = aiOpts(AI_EFFORTS.filter(([k]) => k !== "max"), a.agy_effort === "max" ? "" : a.agy_effort || ""); // agy has no max effort
-    // Tạo ảnh and Tạo bài follow each other: Flow only with Claude, Antigravity images only with Antigravity.
-    $("#aiImage").onchange = () => { const v = $("#aiImage").value; if (v === "flow") $("#aiCreate").value = "claude"; else if (v === "antigravity") $("#aiCreate").value = "antigravity"; aiSave(); };
-    $("#aiCreate").onchange = () => { const v = $("#aiCreate").value, im = $("#aiImage"); if (v === "antigravity" && im.value === "flow") im.value = "antigravity"; else if (v === "claude" && im.value === "antigravity") im.value = "codex"; aiSave(); };
-    $("#aiResearch").onchange = aiSave; $("#aiClEffort").onchange = aiSave; $("#aiAgModel").onchange = aiSave; $("#aiAgEffort").onchange = aiSave;
+        $("#aiClEffort").onchange = aiSave; $("#aiAgModel").onchange = aiSave; $("#aiAgEffort").onchange = aiSave;
     $("#aiClModel").onchange = () => { const o = $("#aiClModel").value === "__other"; $("#aiClOtherBox").hidden = !o; if (o) $("#aiClOther").focus(); else aiSave(); };
     $("#aiClOther").onchange = aiSave;
   }
@@ -2727,12 +2730,12 @@ function draftTags(d) {
     if (runGuard()) { if (aiSaved) renderAI(aiSaved); return; }
     const clV = $("#aiClModel").value === "__other" ? $("#aiClOther").value.trim() : $("#aiClModel").value;
     if (!/^[A-Za-z0-9._\-\[\]]{1,60}$/.test(clV)) { aiMark(errLine("Mã model: chữ, số, . _ - [ ]")); return; }
-    const body = { image_engine: $("#aiImage").value, agent: { research: $("#aiResearch").value, create: $("#aiCreate").value, claude_model: clV, claude_effort: $("#aiClEffort").value, codex_model: $("#aiCxModel").value, codex_effort: $("#aiCxEffort").value, agy_model: $("#aiAgModel").value, agy_effort: $("#aiAgEffort").value } };
+    const body = { agent: { claude_model: clV, claude_effort: $("#aiClEffort").value, codex_model: $("#aiCxModel").value, codex_effort: $("#aiCxEffort").value, agy_model: $("#aiAgModel").value, agy_effort: $("#aiAgEffort").value } };
     aiMark("…");
     const r = await postJson("/api/settings", { settings: body }).catch(() => offline);
     if (r.error) { aiMark(errLine(r.error)); if (aiSaved) renderAI(aiSaved); return; }
     aiMark(`<span class="ok-text">Đã lưu</span>`);
-    const g = await getJson("/api/settings").catch(() => null); if (g?.settings) { aiSaved = g.settings; agentCfg = g.settings.agent || {}; cfgImage = g.settings.image_engine || ""; showRunModel(); try { syncFlowOnly(); regenerate(); } catch {} }
+    const g = await getJson("/api/settings").catch(() => null); if (g?.settings) { aiSaved = g.settings; agentCfg = g.settings.agent || {}; cfgImage = g.settings.image_engine || ""; showRunModel(); try { syncRunPickers(); syncFlowOnly(); regenerate(); } catch {} }
   }
   const loadSettings = safely("#settingsView", async () => {
     loadAccounts();
@@ -2752,7 +2755,7 @@ function draftTags(d) {
       ${arr(r.times?.table).length ? row("Posting times", `<details><summary>Ranked hours per day (best first)</summary><div class="table-wrap"><table class="edit times"><thead><tr><th>Day</th><th>Primary</th><th>Backup</th><th>Acceptable</th></tr></thead><tbody>${r.times.table.map((t) => `<tr><td>${esc(DAY_NAME[t.day] || t.day)}</td>${["primary", "backup", "acceptable"].map((k) => `<td>${t[k].map((h, i) => `<span class="meta">${i + 1}.</span>${esc(h)}`).join(" ")}</td>`).join("")}</tr>`).join("")}</tbody></table></div><div class="meta">Primary: the studies' best hours; Backup: their next-best hours for that day (Sprout Social, Buffer, Hootsuite); Acceptable: the rest of 07:00–22:00 by the overall Facebook engagement curve. Research table (America/New_York); Metricool's best times replace Primary and lead Backup once synced. Edit in config/best-times.json.</div></details>`) : ""}
       ${row("Metricool brands", `${arr(mb.brands).filter((b) => !b.removed).length}${mb.updated_at ? ` <span class="meta">updated ${esc(String(mb.updated_at).slice(0, 16).replace("T", " "))}</span>` : ` <span class="meta">loaded on the next Create &amp; publish run</span>`}`)}</dl>`;
     // Everything else (pauses, Codex, ffmpeg, folders, image repo) is standard: edited only in workspace/settings.json (README "Settings file").
-    agentCfg = s.agent || {}; cfgImage = s.image_engine || ""; showRunModel(); try { syncFlowOnly(); regenerate(); loadBrowser(); } catch {}
+    agentCfg = s.agent || {}; cfgImage = s.image_engine || ""; showRunModel(); try { syncFlowOnly(); regenerate(); } catch {}
     await loadAgentModels();
     renderAI(s);
     $("#settingsForm").innerHTML = `<div class="fields">

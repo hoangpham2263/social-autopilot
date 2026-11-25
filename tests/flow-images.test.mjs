@@ -93,14 +93,14 @@ test('register-image: star at the 1K and 2K places, built-in cleaner when the sk
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('Run tab: no Images picker any more; one summary line, the engine comes from Settings > Cách chạy and goes to the pipeline command --image-engine', () => {
+test('Run tab Images option: the prompt gets the chosen engine and the pipeline command --image-engine', () => {
   const html = fs.readFileSync(path.join(root, 'ui', 'index.html'), 'utf8');
-  assert.ok(!html.includes('id="prImages"') && html.includes('id="prModelLine"') && html.includes('id="aiImage"') && html.includes('data-opt="create"'));
+  assert.ok(html.includes('id="prImages"') && html.includes('data-opt="create"'));
   assert.ok(html.includes('--image-engine ${chosenEngine()}') && html.includes('image_engine: chosenEngine()'));
   const pipe = fs.readFileSync(path.join(root, 'scripts', 'pipeline.mjs'), 'utf8');
   assert.ok(pipe.includes("args['image-engine']") && pipe.includes('image_engine_choice'));
   // The setting stays the default holder: the UI never saves the per-run choice.
-  assert.ok(!/postJson\("\/api\/settings"[^)]*prModelLine/.test(html));
+  assert.ok(!/postJson\("\/api\/settings"[^)]*prImages/.test(html));
 });
 
 // Batch + album (4 images): register-image --n 2..4, flow-brief, the run option --images in the pipeline/UI/prompt text.
