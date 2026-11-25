@@ -132,6 +132,8 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt .fields { gap: 16px 8px; }
 #page-prompt .fields > .field:not(.auto):not(:has(#prStart)) { width: 146px; flex: 0 1 146px; }
 /* Images per post: the select keeps a readable width ("Random 1 to 4", "Album 2 to 4", "Custom..."); in Custom mode the cell grows to hold min and max. */
+#page-prompt .fields > #prModelField { width: auto !important; flex: 1 1 160px !important; min-width: 0; }
+#prModelLine { display: block; height: var(--ctl-h); line-height: var(--ctl-h); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #page-prompt .fields > .field:has(#prImgMin) { width: auto !important; flex: 0 0 auto !important; min-width: 0; } /* sized by its content, so the row wraps to a new line instead of scrolling sideways */
 #page-prompt { overflow-x: hidden; }
 #page-prompt .imgrow { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
@@ -496,9 +498,8 @@ header + * { margin-top: 0; }
     </div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div class="field"><label for="prRunAgent" title="Who does Research and Create in the app (Publish and Sync always use Claude)">Run with</label><select id="prRunAgent"><option value="claude">Claude</option><option value="antigravity">Antigravity</option></select></div>
       <div class="field" id="prModelField"><span class="label">In use</span><span class="meta" id="prModelLine">…</span></div>
-      <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts the chosen agent (Run with) for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
+      <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts the chosen Agent (Claude Code or Antigravity) for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
       <div class="field" id="prBrandField"><span class="label">Brand</span><details id="prBrandBox"><summary id="prBrandSum">All</summary><div id="prBrandList"></div></details></div>
       <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
       <div class="field" data-opt="research" id="prPlatField" hidden><span class="label" title="Which platforms this run covers: unticked platforms drop their sources and are left out of discovery (--platforms). Default: all.">Platforms</span><details id="prPlatBox"><summary id="prPlatSum">All</summary><div id="prPlat"></div></details></div>
@@ -514,12 +515,12 @@ header + * { margin-top: 0; }
     <div class="meta flow-check" id="prFlowRunHint" role="status" hidden></div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
-      <button class="btn primary" type="button" id="prRunNow" title="Starts the chosen agent (Run with) with this prompt (headless), no pasting">Run now</button>
+      <button class="btn primary" type="button" id="prRunNow" title="Starts the chosen Agent with this prompt (headless), no pasting">Run now</button>
       <button class="btn" type="button" id="prResume" disabled>Chạy tiếp lượt trước</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
       <span class="meta" id="prExtHint" hidden></span>
-      <span class="meta" id="prAppHint">Starts the agent chosen in Run with; the live panel below shows progress.</span>
+      <span class="meta" id="prAppHint">Starts the chosen Agent for you; the live panel below shows progress.</span>
       <span class="status-tag c-amber" id="prRunPill" hidden>A run is active in the app <button class="linkbtn" type="button" id="prRunPillGo">show</button></span>
     </div>
     <div class="meta" id="prLoginHint" role="status" hidden></div>
@@ -1330,8 +1331,11 @@ header + * { margin-top: 0; }
     $("#prMode").innerHTML = modes.map((m) => `<button class="btn" type="button" data-mode="${esc(m)}" aria-pressed="${m === prMode}" title="${esc(MODE_TIP[modeKey(m)] || "")}">${esc(m)}</button>`).join("");
     showModeCounts();
     for (const b of $$("#prMode button")) b.onclick = () => { prMode = b.dataset.mode; store.set("prMode", prMode); drawPrompt(); applyHow(); };
-    const agents = prompts.filter((p) => p.mode === prMode).map((p) => p.agent);
-    const agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
+    const base = prompts.filter((p) => p.mode === prMode).map((p) => p.agent);
+    // Antigravity runs the Claude Code prompt (plus its tool note); not offered for Publish (Publish and Sync always run with Claude).
+    const agents = base.includes("Claude Code") && modeKey(prMode) !== "publish" ? base.flatMap((a) => (a === "Claude Code" ? [a, "Antigravity"] : [a])) : base;
+    let agent = agents.includes($("#prAgent").value) ? $("#prAgent").value : agents.includes(store.get("prAgent")) ? store.get("prAgent") : agents[0];
+    if (agent === "Claude Code" || agent === "Antigravity") agent = agents.includes("Antigravity") && agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity" : "Claude Code"; // from agent.* : never Claude Code while Antigravity is saved
     $("#prAgent").innerHTML = agents.map((a) => `<option${a === agent ? " selected" : ""}>${esc(a)}</option>`).join("");
     if (!prRestored && prompts.length) { prRestored = true; prRestore(prompts, brands); }
     let pick = brandPick.slice();
@@ -1369,7 +1373,7 @@ header + * { margin-top: 0; }
     const tzName = (tz) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" }).formatToParts(new Date()).find((x) => x.type === "timeZoneName")?.value || tz; } catch { return tz; } };
     const mcTz = arr(promptData.brands).find((x) => x.id === brand)?.metricool_timezone || promptData.default_tz || "America/New_York";
     $("#prWindowLabel").textContent = `Time (${tzName(mcTz)})`;
-    const p = prompts.find((x) => x.mode === prMode && x.agent === agent);
+    const p = prompts.find((x) => x.mode === prMode && x.agent === (agent === "Antigravity" ? "Claude Code" : agent));
     prBase = p ? p.text : "";
     drawPlatforms();
     drawSources();
@@ -1448,10 +1452,12 @@ header + * { margin-top: 0; }
   // Everything runs in ONE background sub-agent: the Claude Code prompt always starts with this line. Codex has no
   // sub-agent tool (own session) and ChatGPT runs nothing, so neither gets the line.
   const SUB_LINE = "Run this whole task in ONE background sub-agent (Agent tool, general-purpose) with the prompt below; keep this chat free; when it finishes, relay its 'Report' section to me.";
-  const subAllowed = () => /claude code/i.test($("#prAgent").value || "");
+  const subAllowed = () => /claude code/i.test($("#prAgent").value || ""); // the sub-agent lead line is for Claude Code only
+  const agyPicked = () => /antigravity/i.test($("#prAgent").value || "");
+  const runAllowed = () => subAllowed() || agyPicked(); // Run now: Claude Code or Antigravity (Codex = copy prompt only)
   // The image engine of THIS run (Run tab, Images): the select starts at settings image_engine and is never saved.
 
-  // The Run tab pickers (Images, Run with) are stored in settings image_engine and agent.research / agent.create (agentCfg, cfgImage); Settings only holds the models.
+  // The Run tab pickers (Agent, Images) are stored in settings image_engine and agent.research / agent.create (agentCfg, cfgImage); Settings only holds the models.
   const AGENT_NAME = { claude: "Claude", antigravity: "Antigravity" };
   const agentOfCfg = (a, mk) => { const v = a?.[mk === "research" ? "research" : "create"]; return mk !== "research" && mk !== "create" ? "claude" : v === "antigravity" || v === "claude" ? v : a?.backend === "antigravity" ? "antigravity" : "claude"; };
   const agentOfMode = (mk) => agentOfCfg(agentCfg || {}, mk);
@@ -1463,7 +1469,9 @@ header + * { margin-top: 0; }
     extHint();
     if (prBlock) return prBlock;
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
-    const lead = subAllowed() ? SUB_LINE + "\n" : "";
+    // Antigravity copy prompt: the same text plus the tool note the runner adds itself (a Run now prompt gets it from the runner).
+    const mk = modeKey(prMode), an = promptData.agy_notes || {};
+    const lead = subAllowed() ? SUB_LINE + "\n" : agyPicked() && howNow() === "copy" ? (mk === "research" ? an.browser : mk === "create" && chosenEngine() === "antigravity" ? an.images : an.plain) || "" : "";
     return lead + buildTask();
   }
   function buildTask() {
@@ -1538,31 +1546,35 @@ header + * { margin-top: 0; }
   let agentCfg = null, cfgImage = "";
   const agFlat = () => (agentModels?.agy || []).flatMap((g) => g.models);
   const agName = (id) => { const m = agFlat().find((x) => x.id === id); return m ? `${m.name} (${m.id})` : id; };
-  const appAgent = () => AGENT_NAME[agentOfMode(modeKey(prMode))]; // who "Run in the app" starts for this mode (Settings > Cách chạy)
+  const appAgent = () => (agyPicked() ? "Antigravity" : "Claude Code"); // who "Run in the app" starts for this mode (Settings > Cách chạy)
   const cxName = (slug) => { const m = (agentModels?.codex || []).find((x) => x.slug === slug); return m ? `${m.name}${m.hidden ? " (hidden)" : ""} (${m.slug})` : slug; };
   let runningModel = "";
+  // "In use": one short line, never wrapped (model without its id, effort only when set); the full text with ids is the tooltip.
   const showRunModel = () => {
     const el = $("#prModelLine"); if (!el) return;
-    if (runningModel) { el.textContent = `running: ${runningModel}`; return; }
-    const ag = $("#prAgent").value || "", a = agentCfg || {};
-    if (/claude/i.test(ag) && howNow() === "app" && agentOfMode(modeKey(prMode)) === "antigravity") { const m = a.agy_model || "", e = a.agy_effort || ""; el.textContent = `Antigravity ${m ? agName(m) : "default model"} · effort: ${e || "default"}`; }
-    else if (/claude/i.test(ag)) { const m = a.claude_model || "claude-sonnet-4-6", e = a.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
-    else if (/codex/i.test(ag)) { const m = a.codex_model || "", e = a.codex_effort || ""; el.textContent = `Codex ${m ? cxName(m) : "default model"} · effort: ${e || "default"}`; }
-    else el.textContent = "Set in the agent you paste into";
+    if (runningModel) { el.textContent = runningModel; el.title = `running: ${runningModel}`; return; }
+    const ag = $("#prAgent").value || "", a = agentCfg || {}, short = (t) => String(t).replace(/ \([^()]*\)$/, "");
+    const line = (agent, label, model, effort) => ({ text: [agent, label, effort].filter(Boolean).join(" · "), full: `${agent || "Claude"} ${model}${effort ? " · effort: " + effort : ""}` });
+    let r;
+    if (/antigravity/i.test(ag)) { const m = a.agy_model || ""; r = line("Antigravity", m ? short(agName(m)) : "", m ? agName(m) : "default model", a.agy_effort); }
+    else if (/claude/i.test(ag)) { const m = a.claude_model || "claude-sonnet-4-6"; r = line("", short(clName(m)), clName(m), a.claude_effort); }
+    else if (/codex/i.test(ag)) { const m = a.codex_model || ""; r = line("Codex", m ? short(cxName(m)) : "", m ? cxName(m) : "default model", a.codex_effort); }
+    else r = { text: "—", full: "Set in the agent you paste into" };
+    el.textContent = r.text; el.title = r.full;
   };
-  // Run tab pickers Images (Codex / Flow / Antigravity) and Run with (Claude / Antigravity) are stored in settings image_engine and agent.research / agent.create.
+  // Run tab pickers Agent (Claude Code / Antigravity) and Images (Codex / Flow / Antigravity) are stored in settings image_engine and agent.research / agent.create.
   // Flow needs Claude, Antigravity images need Antigravity (the server rejects other combinations, the pickers keep them consistent).
   const syncRunPickers = () => {
-    const im = $("#prImages"), ra = $("#prRunAgent"); if (!im || !ra) return;
+    const im = $("#prImages"), ag = $("#prAgent"); if (!im) return;
     const e = cfgImage || promptData?.image_engine || "codex";
     im.value = e === "flow" && agentOfMode("create") === "antigravity" ? "antigravity" : e === "flow" || e === "antigravity" ? e : "codex";
-    const mk = modeKey(prMode), fixed = mk !== "research" && mk !== "create";
-    ra.value = fixed ? "claude" : agentOfMode(mk); ra.disabled = fixed; ra.title = fixed ? "Publish and Sync always run with Claude" : "Who does Research and Create in the app";
+    // the Agent select follows agent.* (Codex / ChatGPT are copy-only choices and never change them)
+    if (ag && (ag.value === "Claude Code" || ag.value === "Antigravity")) { const want = agentOfMode(modeKey(prMode)) === "antigravity" && [...ag.options].some((o) => o.value === "Antigravity") ? "Antigravity" : "Claude Code"; if (ag.value !== want) { ag.value = want; store.set("prAgent", want); } }
   };
   const saveRunAI = async (changed) => {
-    const im = $("#prImages"), ra = $("#prRunAgent"), mk = modeKey(prMode);
+    const im = $("#prImages"), mk = modeKey(prMode);
     let res = agentOfMode("research"), cre = agentOfMode("create"), img = im.value;
-    if (changed === "agent") { if (mk === "research") res = ra.value; else if (mk === "create") { cre = ra.value; if (cre === "antigravity" && img === "flow") img = "antigravity"; else if (cre === "claude" && img === "antigravity") img = "codex"; } }
+    if (changed === "agent" && (mk === "research" || mk === "create")) { res = cre = agyPicked() ? "antigravity" : "claude"; if (cre === "antigravity" && img === "flow") img = "antigravity"; else if (cre === "claude" && img === "antigravity") img = "codex"; }
     if (changed === "images") { if (img === "flow") cre = "claude"; else if (img === "antigravity") cre = "antigravity"; }
     if (runGuard()) { await loadAgentCfg(); return; }
     const settings = { image_engine: img, agent: { research: res, create: cre } };
@@ -1571,10 +1583,9 @@ header + * { margin-top: 0; }
     await loadAgentCfg();
   };
   $("#prImages").onchange = async () => { await saveRunAI("images"); regenerate(); };
-  $("#prRunAgent").onchange = async () => { await saveRunAI("agent"); regenerate(); };
   const loadAgentCfg = async () => { const [r] = await Promise.all([getJson("/api/settings").catch(() => null), loadAgentModels()]); if (r?.settings) { agentCfg = r.settings.agent || {}; cfgImage = r.settings.image_engine || ""; } showRunModel(); try { syncRunPickers(); syncFlowOnly(); regenerate(); } catch {} };
   loadAgentCfg();
-  $("#prAgent").onchange = () => { store.set("prAgent", $("#prAgent").value); showRunModel(); drawPrompt(); applyHow(); };
+  $("#prAgent").onchange = async () => { store.set("prAgent", $("#prAgent").value); if (runAllowed() && modeKey(prMode) !== "publish") await saveRunAI("agent"); showRunModel(); drawPrompt(); applyHow(); };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"], ["#prBrandBox", "#prBrandField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
   for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
     const v = $(id).value;
@@ -1659,7 +1670,7 @@ header + * { margin-top: 0; }
   // How to run: "Run in the app" (Run now + live panel) or "Copy prompt" (prompt box). Default Copy prompt until the user picks the app once. Only hides; #prText keeps being regenerated.
   const howNow = () => (store.get("prHow") === "app" ? "app" : "copy");
   function applyHow() {
-    const app = howNow() === "app", busy = !!arState?.active, claude = subAllowed();
+    const app = howNow() === "app", busy = !!arState?.active, claude = runAllowed();
     for (const b of $$("#prHow button")) b.setAttribute("aria-pressed", String(b.dataset.how === howNow()));
     for (const id of ["#prCopy", "#prMsg", "#prTextBox"]) $(id).hidden = app;
     // The Chrome connection section is for Run in the app (Run now needs the connection); with Copy prompt it is not shown.
@@ -1670,29 +1681,29 @@ header + * { margin-top: 0; }
     showRunModel();
     $("#prAppHint").hidden = !app;
     { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
-      $("#prAppHint").textContent = claude ? `Starts ${appAgent()} for you; the live panel below shows progress.` + (extTxt ? " " + extTxt + "." : "") : "Chọn prompt Claude Code để chạy trong app"; }
+      $("#prAppHint").textContent = claude ? `Starts ${appAgent()} for you; the live panel below shows progress.` + (extTxt ? " " + extTxt + "." : "") : "Chọn Agent Claude Code hoặc Antigravity để chạy trong app"; }
     $("#prAppHint").style.color = claude ? "" : "#b06000";
     $("#prRunPill").hidden = app || !busy;
   }
-  for (const b of $$("#prHow button")) b.onclick = () => { store.set("prHow", b.dataset.how); arDraw(); };
-  $("#prRunPillGo").onclick = () => { store.set("prHow", "app"); arDraw(); };
+  for (const b of $$("#prHow button")) b.onclick = () => { store.set("prHow", b.dataset.how); regenerate(); };
+  $("#prRunPillGo").onclick = () => { store.set("prHow", "app"); regenerate(); };
   // Run progress: Copy prompt mode keeps "waiting or going"; Run in the app shows it only for an app run or recent steps.
   let progState = null, progSteps = null, arTick = 0;
   function prRunVis() { const p = progState; $("#prRun").hidden = !p || (howNow() === "app" ? !(arState?.active || p.stepped) : !p.active); }
   const arClock = (n) => (n < 60 ? `${n} s` : `${Math.floor(n / 60)} min ${n % 60} s`);
   function arDraw() {
-    const r = arState, claude = subAllowed();
+    const r = arState, claude = runAllowed();
     applyHow(); try { blDraw(); } catch {}
-    const busy = !!r?.active, noCli = r && (agentOfMode(modeKey(prMode)) === "antigravity" ? r.agy && !r.agy.found : r.cli && !r.cli.found);
+    const busy = !!r?.active, noCli = r && (agyPicked() ? r.agy && !r.agy.found : r.cli && !r.cli.found);
     { const m = r?.active ? r.model_in_use || "" : ""; if (m !== runningModel) { runningModel = m; showRunModel(); } }
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
     const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
-    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Chọn prompt Claude Code (agent: Run with)`);
+    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Chọn Agent Claude Code hoặc Antigravity`);
     setDisabled($("#prCopy"), !!prBlock, prBlock);
     // Continue the previous run (GET /api/agent-run resume): enabled only when the last run stopped / failed midway; same inputs, only the missing work.
     { const rs = r?.resume, ok = !!rs?.available && !busy && !noCli && claude, btn = $("#prResume");
       const what = rs?.available ? `${{ research: "Research", create: "Create & publish", publish: "Publish approved" }[rs.mode] || rs.mode}${rs.brands?.length ? " · " + rs.brands.join(", ") : ""} · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : "";
-      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Chọn prompt Claude Code (agent: Run with)") : "No stopped run to continue: the last run finished or none was started from the app");
+      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Chọn Agent Claude Code hoặc Antigravity") : "No stopped run to continue: the last run finished or none was started from the app");
       if (ok) btn.title = `Continues the previous run with the same options, without redoing finished work: ${what}`; }
     { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
     // Flow run whose Flow account is not signed in to the chosen profile: blocked (a warning alone never blocks).
@@ -1703,7 +1714,7 @@ header + * { margin-top: 0; }
     box.hidden = howNow() !== "app"; prRunVis();
     if (!show) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last ar-result"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
     $("#arLast").className = "ar-last ar-result"; $("#arLogBox").hidden = false; box.classList.add("has-log");
-    if (noCli) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
+    if (noCli) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const endedAt = r.started ? Date.parse(r.started) + (r.elapsed_s || 0) * 1000 : 0;
     if (!busy && endedAt && Date.now() - endedAt > 10 * 60000) { // stale result: one quiet line instead of the result block
       $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last ar-result";
