@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConfigApi } from "../core/setup/config-api.mjs";
 import { PWSH, toolEnv, psCommand, appWindow, findTool, runTool } from "../core/platform.mjs";
-import { CODEX_FALLBACK, CLAUDE_GROUPS, parseCodexModels } from "../scripts/agent-models.mjs";
+import { CODEX_FALLBACK, CLAUDE_GROUPS, parseCodexModels, AGY_FALLBACK, agyGroups, parseAgyModels } from "../scripts/agent-models.mjs";
+import { homedir } from "node:os";
 import { workspace, discoverBrands, listDrafts, brandAvatar, readJson, rawSettings, saveSettings, settings, imageEngine, brandOverview, metricoolBrands, saveMetricoolBrands, linkMetricool, readBrandOverride, acceptSuggestions, dismissSuggestions } from "../scripts/lib.mjs";
 import { summary } from "../scripts/draft-lib.mjs";
 import { previewOf } from "../scripts/preview.mjs";
@@ -40,7 +41,10 @@ let PORT = BASE_PORT;
 const logs = join(workspace, "logs");
 // Run now: headless Claude for one mode (core/setup/agent-run.mjs); one run at a time, killed when this server stops.
 // When a run ends the result goes to the run log (Log tab) like a prompt run: the agent normally writes it (runlog.mjs add); this only fills in when it did not (failed, stopped, timeout, or forgot).
+// Antigravity CLI (agy): PATH first, then its usual install folder.
+const findAgy = () => { const p = findTool("agy") || [join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "agy", "bin", "agy.exe"), join(homedir(), ".local", "bin", "agy")].find((x) => existsSync(x)) || ""; return { found: !!p, path: p }; };
 const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }),
+  findAgy,
   // Own browser: a run refuses to start while the login window holds the profile (or when there is no profile yet).
   loginWindowOpen: () => { const d = browserSettings(settings(), root).profileDir; return visitActive() || (existsSync(d) && profileLocked(d)); },
   browserCheck: (dir) => profileProblem({ dir, exists: existsSync(dir), locked: false }),
@@ -49,10 +53,10 @@ const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () 
   const lastLog = listLogs({ mode: st.mode, limit: 1 })[0];
   if (lastLog && Date.parse(lastLog.ended) >= Date.parse(st.started)) return;
   const why = { failed: "run failed", stopped: "stopped by the user", timeout: "time limit reached" }[st.status] || "";
-  addLog({ mode: st.mode, agent: "Claude Code (app)", brands: st.brands || [], started: st.started, reason: why ? `${why}${st.error ? ": " + st.error : ""}` : "", warning: why ? "" : "The agent did not write a run log; this one was added by the app." });
+  addLog({ mode: st.mode, agent: st.backend === "antigravity" ? "Antigravity (app)" : "Claude Code (app)", brands: st.brands || [], started: st.started, reason: why ? `${why}${st.error ? ": " + st.error : ""}` : "", warning: why ? "" : "The agent did not write a run log; this one was added by the app." });
 } });
 for (const sig of ["exit", "SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { agentRun.shutdown(); if (sig !== "exit") process.exit(0); });
-let codexModelsCache = null;
+let codexModelsCache = null, agyModelsCache = null;
 const configApi = createConfigApi({ hubRoot: root, pwsh: PWSH, env: toolEnv });
 mkdirSync(logs, { recursive: true });
 
@@ -428,13 +432,17 @@ async function handle(req, res) {
     spawn(process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open", [b.dir], { detached: true, stdio: "ignore", windowsHide: false }).unref();
     return { ok: true };
   });
-  // Settings > Codex: the model list comes from `codex debug models` (cached 10 min); the built-in list when the CLI is missing or fails.
-  if (path === "/api/agent-models" && req.method === "GET") return api(res, () => new Promise((done) => {
-    if (codexModelsCache && Date.now() - codexModelsCache.at < 600000) return done(codexModelsCache.data);
-    const fin = (models, source) => { const data = { claude: CLAUDE_GROUPS, codex: models || CODEX_FALLBACK, source: models ? "codex" : "fallback" }; if (models) codexModelsCache = { at: Date.now(), data }; done(data); };
-    const codex = findTool("codex"); if (!codex) return fin(null);
-    runTool(codex, ["debug", "models"], { env: toolEnv, timeout: 20000, maxBuffer: 32 * 1024 * 1024 }, (err, out) => fin(err ? null : parseCodexModels(out)));
-  }));
+  // Settings > Codex / Antigravity: the model lists come from `codex debug models` and `agy models` (each cached 10 min); the built-in lists when a CLI is missing, not signed in or fails.
+  const cliList = (cache, file, args, parse) => new Promise((done) => {
+    if (cache.v && Date.now() - cache.at < 600000) return done(cache.v);
+    if (!file) return done(null);
+    runTool(file, args, { env: toolEnv, timeout: 20000, maxBuffer: 32 * 1024 * 1024, cwd: root }, (err, out) => { const v = err ? null : parse(out); if (v) { cache.v = v; cache.at = Date.now(); } done(v); });
+  });
+  if (path === "/api/agent-models" && req.method === "GET") return api(res, async () => {
+    const agyExe = (findAgy().path || "");
+    const [codex, agy] = await Promise.all([cliList((codexModelsCache ||= {}), findTool("codex"), ["debug", "models"], parseCodexModels), cliList((agyModelsCache ||= {}), agyExe, ["models"], parseAgyModels)]);
+    return { claude: CLAUDE_GROUPS, codex: codex || CODEX_FALLBACK, source: codex ? "codex" : "fallback", agy: agyGroups(agy || AGY_FALLBACK), agy_source: agy ? "agy" : "fallback" };
+  });
   // Settings summary "Times": primary and backup hours per day of the research table (config/best-times.json, Facebook).
   if (path === "/api/settings" && req.method === "GET") return api(res, () => {
     const fb = researchTimes().networks?.facebook || {};

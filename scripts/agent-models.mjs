@@ -46,3 +46,43 @@ export const codexModelArgs = (settings = {}) => {
   if (a.codex_effort && validCodexValue(a.codex_effort)) out.push("-c", `model_reasoning_effort=${a.codex_effort}`);
   return out;
 };
+
+// Antigravity (`agy`, Google): `agy models` is the live list (tab separated "<id>\t<name>"); this is the cached fallback (taken 2026-11-25, agy 1.5.16)
+// for when the CLI is missing or not signed in. The effort level of some models is part of the id (-high, -low); --effort is a separate flag.
+export const AGY_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const am = (id, name) => ({ id, name });
+export const AGY_FALLBACK = [
+  am("gemini-4-neon-high", "Gemini 4 Neon (High)"), am("gemini-4-neon-xhigh", "Gemini 4 Neon (XHigh)"), am("gemini-4-neon-medium", "Gemini 4 Neon (Medium)"), am("gemini-4-neon-low", "Gemini 4 Neon (Low)"),
+  am("gemini-4-carbon-medium", "Gemini 4 Carbon (Medium)"), am("gemini-4-carbon-high", "Gemini 4 Carbon (High)"), am("gemini-4-carbon-low", "Gemini 4 Carbon (Low)"),
+  am("gemini-4-argon-medium", "Gemini 4 Argon (Medium)"), am("gemini-4-argon-high", "Gemini 4 Argon (High)"), am("gemini-4-argon-low", "Gemini 4 Argon (Low)"),
+  am("gemini-4-hydrogen-high", "Gemini 4 Hydrogen (High)"), am("gemini-4-hydrogen-xhigh", "Gemini 4 Hydrogen (XHigh)"), am("gemini-4-hydrogen-medium", "Gemini 4 Hydrogen (Medium)"), am("gemini-4-hydrogen-low", "Gemini 4 Hydrogen (Low)"),
+  am("gemini-pro-orchestrator-neon", "Orchestrator (Neon)"), am("gemini-pro-orchestrator", "Orchestrator (Carbon)"), am("gemini-pro-orchestrator-argon", "Orchestrator (Argon)"),
+  am("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"), am("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)"), am("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)"),
+  am("claude-sonnet-4-6", "Claude Sonnet 4.6 (Thinking)"), am("claude-opus-4-6-thinking", "Claude Opus 4.6 (Thinking)"), am("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"),
+];
+export const validAgyValue = (v) => v === "" || (typeof v === "string" && /^[A-Za-z0-9._\-]{1,60}$/.test(v));
+// Parse the output of `agy models` ("Fetching available models..." then "<id>\t<name>" lines); null when nothing looks like a model line (for example "please sign in").
+export function parseAgyModels(text) {
+  const out = String(text).split(/\r?\n/).map((l) => l.split("\t")).filter((p) => p.length >= 2 && /^[A-Za-z0-9._\-]{1,60}$/.test(p[0].trim()))
+    .map((p) => ({ id: p[0].trim(), name: p.slice(1).join(" ").trim() || p[0].trim() }));
+  return out.length ? out : null;
+}
+// Groups for the picker: one group per model name without its "(Level)" part, so the variants of a model sit together; list order is kept.
+export function agyGroups(models = AGY_FALLBACK) {
+  const groups = [];
+  for (const m of models) {
+    const family = m.name.replace(/\s*\([^)]*\)\s*$/, "").replace(/\s+\(Thinking\)$/, "") || m.name;
+    let g = groups.find((x) => x.family === family);
+    if (!g) groups.push((g = { family, models: [] }));
+    g.models.push(m);
+  }
+  return groups;
+}
+export const agyName = (id, models = AGY_FALLBACK) => models.find((m) => m.id === id)?.name || id;
+// Antigravity model + effort of every agent run (Settings > Antigravity); '' = agy's own default (no flag). The backend choice itself is agent.backend: "claude" (default) or "antigravity".
+export const AGENT_BACKENDS = ["claude", "antigravity"];
+export const agentBackend = (settings = {}) => (settings?.agent?.backend === "antigravity" ? "antigravity" : "claude");
+export const agyChoice = (settings = {}) => {
+  const a = settings?.agent || {};
+  return { id: validAgyValue(a.agy_model) ? a.agy_model || "" : "", effort: AGY_EFFORTS.includes(a.agy_effort) ? a.agy_effort : "" };
+};

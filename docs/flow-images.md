@@ -87,3 +87,9 @@ Create with Flow runs in the tool's own Chrome profile (log in to Google once: R
 
 ## Codex parallelism (image engine codex)
 `draft.mjs image-batch` runs one `draft.mjs image` process per draft, up to `codex.concurrency` (default 3) at once, all sharing the machine-wide Codex slots (`workspace/tmp/codex-slots`). Inside one draft the album extras (`prompt-02..04.txt`) now also run in parallel (they only need `image.png`), each in its own work folder `<draft>/.extra-0k` and each waiting for a shared slot without blocking, so the total never exceeds `codex.concurrency`. Status per image is merged under the status lock.
+
+## Antigravity as the agent of "Run now" (Settings > Agent for Run in the app)
+
+`agent.backend = "antigravity"` makes Run now start `agy` (Google Antigravity CLI, signed in once) instead of Claude Code, for Research and Create (Publish and Sync stay on Claude: agy has no Metricool connector). Same prompt, same rules (flow-pace gate, visible tab, no Flow scripts); the run only gets an extra ANTIGRAVITY NOTE. Model and effort: `agent.agy_model` ('' = agy default) and `agent.agy_effort`.
+- The prompt goes to agy as one NDJSON message on stdin; output is parsed from `--output-format stream-json`. The first log line shows the model agy echoes in `init` (only present when `--model` is passed).
+- agy has no per-run MCP config: the run's Playwright MCP is added to agy's global config as `sa-pw-<run id>` and removed when the run ends (also on Stop, failure, app exit, and a sweep at the next start). Every other configured MCP server (for example a global `playwright`) is denied for the run with `--settings` `permissions.deny` `mcp(<server>/*)`. agy calls the tools as `call_mcp_tool(ServerName="sa-pw-...", ToolName="browser_navigate", ...)`; the note says so, and forbids agy's built-in `browser_*` tools.

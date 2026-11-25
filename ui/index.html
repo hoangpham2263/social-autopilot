@@ -1509,13 +1509,17 @@ header + * { margin-top: 0; }
   const loadAgentModels = () => (agentModelsP ||= getJson("/api/agent-models").then((r) => { if (r?.claude) agentModels = r; else agentModelsP = null; return agentModels; }).catch(() => { agentModelsP = null; return null; }));
   const clFlat = () => (agentModels?.claude || []).flatMap((g) => g.models);
   const clName = (id) => { const m = clFlat().find((x) => x.id === id); return m ? `${m.name} (${m.id})` : id; };
+  const agFlat = () => (agentModels?.agy || []).flatMap((g) => g.models);
+  const agName = (id) => { const m = agFlat().find((x) => x.id === id); return m ? `${m.name} (${m.id})` : id; };
+  const appAgent = () => (agentCfg?.backend === "antigravity" ? "Antigravity" : "Claude Code"); // who "Run in the app" starts (Settings > Agent)
   const cxName = (slug) => { const m = (agentModels?.codex || []).find((x) => x.slug === slug); return m ? `${m.name}${m.hidden ? " (hidden)" : ""} (${m.slug})` : slug; };
   let agentCfg = null, runningModel = "";
   const showRunModel = () => {
     const el = $("#prModelLine"); if (!el) return;
     if (runningModel) { el.textContent = `running: ${runningModel}`; return; }
     const ag = $("#prAgent").value || "";
-    if (/claude/i.test(ag)) { const m = agentCfg?.claude_model || "claude-sonnet-4-6", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
+    if (/claude/i.test(ag) && howNow() === "app" && agentCfg?.backend === "antigravity") { const m = agentCfg?.agy_model || "", e = agentCfg?.agy_effort || ""; el.textContent = `Antigravity ${m ? agName(m) : "default model"} · effort: ${e || "default"}`; }
+    else if (/claude/i.test(ag)) { const m = agentCfg?.claude_model || "claude-sonnet-4-6", e = agentCfg?.claude_effort || ""; el.textContent = `Claude ${clName(m)} · effort: ${e || "default"}`; }
     else if (/codex/i.test(ag)) { const m = agentCfg?.codex_model || "", e = agentCfg?.codex_effort || ""; el.textContent = `Codex ${m ? cxName(m) : "default model"} · effort: ${e || "default"}`; }
     else el.textContent = "Set in the agent you paste into";
   };
@@ -1617,7 +1621,7 @@ header + * { margin-top: 0; }
     showRunModel();
     $("#prAppHint").hidden = !app;
     { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
-      $("#prAppHint").textContent = claude ? "Starts Claude Code for you; the live panel below shows progress." + (extTxt ? " " + extTxt + "." : "") : "Run in the app needs Claude Code"; }
+      $("#prAppHint").textContent = claude ? `Starts ${appAgent()} for you; the live panel below shows progress.` + (extTxt ? " " + extTxt + "." : "") : "Run in the app needs Claude Code"; }
     $("#prAppHint").style.color = claude ? "" : "#b06000";
     $("#prRunPill").hidden = app || !busy;
   }
@@ -1634,7 +1638,7 @@ header + * { margin-top: 0; }
     { const m = r?.active ? r.model_in_use || "" : ""; if (m !== runningModel) { runningModel = m; showRunModel(); } }
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
     const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
-    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : noBrand ? "No usable brand: link a skill on Overview first" : "Run now starts Claude Code: choose the Claude Code agent");
+    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agentCfg?.backend === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Run now starts ${appAgent()}: choose the Claude Code prompt`);
     setDisabled($("#prCopy"), !!prBlock, prBlock);
     // Continue the previous run (GET /api/agent-run resume): enabled only when the last run stopped / failed midway; same inputs, only the missing work.
     { const rs = r?.resume, ok = !!rs?.available && !busy && !noCli && claude, btn = $("#prResume");
@@ -1650,7 +1654,7 @@ header + * { margin-top: 0; }
     box.hidden = howNow() !== "app"; prRunVis();
     if (!show) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last ar-result"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
     $("#arLast").className = "ar-last ar-result"; $("#arLogBox").hidden = false; box.classList.add("has-log");
-    if (noCli) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
+    if (noCli) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = agentCfg?.backend === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const endedAt = r.started ? Date.parse(r.started) + (r.elapsed_s || 0) * 1000 : 0;
     if (!busy && endedAt && Date.now() - endedAt > 10 * 60000) { // stale result: one quiet line instead of the result block
       $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last ar-result";
@@ -2675,8 +2679,15 @@ function draftTags(d) {
     const clOpts = (agentModels?.claude || []).map((g) => `<optgroup label="${esc(g.family)} · ${esc(g.note)}">${g.models.map((m) => `<option value="${esc(m.id)}"${m.id === clM ? " selected" : ""}>${esc(m.name)} · ${esc(m.id)}</option>`).join("")}</optgroup>`).join("") + `<option value="__other"${clKnown ? "" : " selected"}>Other (type a model id)</option>`;
     const cxList = agentModels?.codex || [];
     const cxOpts = `<option value="">Codex default</option>` + cxList.map((m) => `<option value="${esc(m.slug)}"${m.slug === cxM ? " selected" : ""}>${esc(m.name)}${m.hidden ? " (hidden)" : ""} · ${esc(m.slug)}</option>`).join("") + (cxM && !cxList.some((m) => m.slug === cxM) ? `<option value="${esc(cxM)}" selected>${esc(cxM)}</option>` : "");
+    const agB = s.agent?.backend === "antigravity" ? "antigravity" : "claude", agM = s.agent?.agy_model || "", agE = s.agent?.agy_effort || "";
+    const agGroups = agentModels?.agy || [], agKnown = !agM || agGroups.some((g) => g.models.some((m) => m.id === agM));
+    const agOpts = `<option value="">Antigravity default</option>` + agGroups.map((g) => `<optgroup label="${esc(g.family)}">${g.models.map((m) => `<option value="${esc(m.id)}"${m.id === agM ? " selected" : ""}>${esc(m.name)} · ${esc(m.id)}</option>`).join("")}</optgroup>`).join("") + (agKnown ? "" : `<option value="${esc(agM)}" selected>${esc(agM)}</option>`);
+    const agFrom = agentModels?.agy_source === "fallback" ? "; the Antigravity CLI was not found or not signed in, so this is the saved list" : "";
     const cxFrom = agentModels?.source === "fallback" ? "; the Codex CLI was not found, so this is the saved list" : "";
     $("#settingsForm").innerHTML = `<div class="fields">
+      <div class="field"><label for="setBackend" title="Which agent Run in the app starts for Research and Create: Claude Code (default) or Antigravity (agy, signed in with your Google account). Publish and Sync always use Claude (Antigravity has no Metricool connector). The browser stays the Playwright MCP of the run.">Agent for Run in the app</label><select id="setBackend" data-s="agent.backend"><option value="claude"${agB === "claude" ? " selected" : ""}>Claude Code</option><option value="antigravity"${agB === "antigravity" ? " selected" : ""}>Antigravity (Research and Create)</option></select></div>
+      <div class="field"><label for="setAgModel" title="Model of every Antigravity run in the app, passed as --model. The list is read from the Antigravity CLI (agy models)${agFrom}. Antigravity default = no flag. The app cannot see which model really ran (agy does not report it), so the Run tab shows the one chosen here.">Antigravity model</label><select id="setAgModel" data-s="agent.agy_model">${agOpts}</select></div>
+      <div class="field"><label for="setAgEffort" title="Effort level passed as --effort. Default = no flag (Antigravity's own default).">Antigravity effort</label><select id="setAgEffort" data-s="agent.agy_effort">${[["", "Default (no flag)"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]].map(([k, t]) => `<option value="${k}"${k === agE ? " selected" : ""}>${t}</option>`).join("")}</select></div>
       <div class="field"><label for="setClModel" title="Model of every Claude Code run in the app (Research, Create, Publish, Sync), passed as --model. Default Sonnet 4.6 handles long multi-step browser work reliably; Haiku is the lightest but may stop midway.">Claude model</label><select id="setClModel">${clOpts}</select></div>
       <div class="field"><label for="setClOther" title="Any model id the Claude CLI accepts: letters, digits, . _ - [ ] (up to 60). Used when Other is chosen above.">Claude model id (Other)</label><input type="text" id="setClOther" maxlength="60" placeholder="e.g. claude-opus-5-5[1m]" value="${clKnown ? "" : esc(clM)}"${clKnown ? " disabled" : ""}></div>
       <div class="field"><label for="setClEffort" title="Effort level passed as --effort. Default = no flag (Claude Code's own default). Lower effort uses fewer tokens.">Claude effort</label><select id="setClEffort" data-s="agent.claude_effort">${[["", "Default (no flag)"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]].map(([k, t]) => `<option value="${k}"${k === clE ? " selected" : ""}>${t}</option>`).join("")}</select></div>

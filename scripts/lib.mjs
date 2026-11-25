@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { trackCli } from './progress.mjs';
-import { validClaudeModel, validCodexValue, CLAUDE_EFFORTS } from './agent-models.mjs';
+import { validClaudeModel, validCodexValue, CLAUDE_EFFORTS, AGY_EFFORTS, AGENT_BACKENDS, validAgyValue } from './agent-models.mjs';
 import { validateBrowserSettings } from '../core/setup/own-browser.mjs';
 
 export const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -198,6 +198,10 @@ export function saveSettings(input = {}) {
       if (a.claude_effort !== undefined) { if (!['', ...CLAUDE_EFFORTS].includes(a.claude_effort)) throw new Error('agent.claude_effort không hợp lệ.'); next.agent.claude_effort = a.claude_effort; }
       if (a.codex_model !== undefined) { if (!validCodexValue(a.codex_model)) throw new Error('agent.codex_model không hợp lệ.'); next.agent.codex_model = a.codex_model; }
       if (a.codex_effort !== undefined) { if (!validCodexValue(a.codex_effort)) throw new Error('agent.codex_effort không hợp lệ.'); next.agent.codex_effort = a.codex_effort; }
+      // Antigravity (agy): backend of "Run now" (claude | antigravity), its model id ('' = agy default) and effort.
+      if (a.backend !== undefined) { if (!AGENT_BACKENDS.includes(a.backend)) throw new Error('agent.backend phải là claude hoặc antigravity.'); next.agent.backend = a.backend; }
+      if (a.agy_model !== undefined) { if (!validAgyValue(a.agy_model)) throw new Error('agent.agy_model không hợp lệ.'); next.agent.agy_model = a.agy_model; }
+      if (a.agy_effort !== undefined) { if (!['', ...AGY_EFFORTS].includes(a.agy_effort)) throw new Error('agent.agy_effort không hợp lệ.'); next.agent.agy_effort = a.agy_effort; }
     }
     // No approval step any more (user, 09/11/2026): older settings files lose their approval block on save.
     delete next.approval;
