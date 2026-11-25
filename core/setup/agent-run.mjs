@@ -5,7 +5,7 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync, copyFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { platform as osPlatform, homedir } from "node:os";
+import { platform as osPlatform, homedir, tmpdir } from "node:os";
 import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel, claudeName, agentFor, agyChoice, agyName } from "../../scripts/agent-models.mjs";
 import { classifyProblem } from "./agent-problems.mjs";
 import { browserSettings, WINDOW_SIZE } from "./own-browser.mjs";
@@ -218,11 +218,11 @@ ${browser ? `BROWSER: the ONLY browser you may use is the Playwright MCP server 
 NEVER use your own built-in browser tools (browser_subagent, open_browser_url, browser_click_element, browser_input, browser_get_dom, execute_browser_javascript, capture_browser_screenshot, read_browser_page, list_browser_pages and the like) and never another MCP server: they do not drive the signed-in Chrome of this run and would break the login and social-page rules of this run. Do not use generate_image either, and call no subagent.
 ` : "No browser is needed for this run: do not open any browser.\n"}${images ? 'IMAGES: you make the post images yourself with your image-generator subagent: call invoke_subagent with type_name "image-generator" (this is the ONLY subagent you may call) as the prompt describes. Never use browser_*/web tools, Google Flow or any other subagent.\n' : ""}
 `;
-// Antigravity image quota: "429 RESOURCE_EXHAUSTED ... reset after 3h30m" -> { reset_at, at: "HH:mm" } (at is "" when no reset time is given), else null.
-const QUOTA_RE = /RESOURCE_EXHAUSTED|\b429\b[^\n]{0,80}(?:quota|exhaust|rate)|quota[^\n]{0,60}(?:exhaust|exceed)/i;
+// Antigravity image quota (the real answer: HTTP 429 + resource exhausted + "exhausted your capacity ... reset after XhYm") -> { reset_at, at: "HH:mm" } ("" when no reset time), else null.
+const QUOTA_RE = /\bRESOURCE_EXHAUSTED\b|\bHTTP\/?[\d.]*\s*429\b|\b429\s+Too Many Requests\b/i, QUOTA_DETAIL_RE = /exhausted your capacity|reset(?:s)? after|quota (?:will )?reset|quota exceeded/i; // both kinds of words: "429 ms to generate" or a file that names the error is not a quota stop
 const RESET_RE = /reset(?:s)?\s+after\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?/i;
 export function agyQuota(text, nowMs = Date.now()) {
-  const t = String(text || ""); if (!QUOTA_RE.test(t)) return null;
+  const t = String(text || ""); if (!QUOTA_RE.test(t) || !QUOTA_DETAIL_RE.test(t)) return null;
   const m = RESET_RE.exec(t), sec = m ? (Number(m[1]) || 0) * 3600 + (Number(m[2]) || 0) * 60 + (Number(m[3]) || 0) : 0;
   if (!sec) return { reset_at: "", at: "" };
   const d = new Date(nowMs + sec * 1000);
@@ -231,7 +231,7 @@ export function agyQuota(text, nowMs = Date.now()) {
 // agy tool call -> the Claude-style (name, input) that friendlyTool() already words in Vietnamese. foreign = not the run's own Playwright MCP / a built-in browser or image tool.
 export function agyToolCall(name, p = {}, own = "", subagents = null, allowImages = false) {
   const n = String(name || ""), i = p && typeof p === "object" ? p : {};
-  if (n === "call_mcp_tool") return i.ServerName === own ? { name: "mcp__playwright__" + String(i.ToolName || ""), input: i.Arguments || {}, foreign: false } : { name: "mcp__" + String(i.ServerName || "?") + "__" + String(i.ToolName || ""), input: {}, foreign: true };
+  if (n === "call_mcp_tool") return i.ServerName === own ? { name: "mcp__playwright__" + String(i.ToolName || ""), input: i.Arguments || {}, foreign: false } : { name: `MCP server "${String(i.ServerName || "?")}" (${String(i.ToolName || "?")})`, input: {}, foreign: true };
   if (n === "run_command") return { name: "Bash", input: { command: String(i.CommandLine || "") }, foreign: false };
   if (n === "read_file" || n === "view_file") return { name: "Read", input: { file_path: i.Path || i.AbsolutePath || "" }, foreign: false };
   if (["write_to_file", "replace_file_content", "multi_replace_file_content", "sed_file"].includes(n)) return { name: "Write", input: { file_path: i.TargetFile || i.Path || "" }, foreign: false };
@@ -317,6 +317,21 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     saveFriendly(run);
   };
   // A sa-pw-<run id> server belongs to a live run when the state file says that run is still running and its process is alive.
+  // Registry of live runs shared by every window of every workspace on this machine (os temp / social-autopilot-live / <run id>.json: app pid, workspace),
+  // written when a run adds its MCP server and removed when it ends. The sweep removes a sa-pw-<run id> server ONLY when it is provably dead; when unsure it skips.
+  const REG = join(tmpdir(), "social-autopilot-live");
+  const registerLive = (run) => { try { mkdirSync(REG, { recursive: true }); writeFileSync(join(REG, `${run.state.run_id}.json`), JSON.stringify({ run_id: run.state.run_id, app_pid: process.pid, child_pid: run.state.pid ?? null, workspace, started: run.state.started })); } catch {} };
+  const unregisterLive = (run) => { try { rmSync(join(REG, `${run.state.run_id}.json`), { force: true }); } catch {} };
+  const provablyDead = (name) => {
+    const runId = name.slice("sa-pw-".length);
+    if (cur && cur.state.run_id === runId) return false;
+    try { const e = JSON.parse(readFileSync(join(REG, `${runId}.json`), "utf8")); return !aliveApp(e.app_pid) && !aliveApp(e.child_pid); } catch (e) { if (e?.code !== "ENOENT") return false; }
+    const mine = stateFilesOfOthers().find((x) => x.st?.run_id === runId);
+    if (mine) return !(mine.st.status === "running" && aliveApp(mine.st.app_pid || mine.st.pid));
+    // known to nobody (an older version, or another workspace without a registry entry): dead only when its start time (the run id) is over a day old
+    const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})-/.exec(runId);
+    return !!m && Date.now() - Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`) > 86400000;
+  };
   const ownedByLiveRun = (name) => {
     if (cur && agyServerName(cur.state.run_id) === name) return true;
     // another window's run: its state says running and that window's process is alive
@@ -340,8 +355,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const q = agyQuota(text, now()); if (!q) return;
     run.state.quota = q;
     run.guardError = `Antigravity hết hạn mức tạo ảnh${q.at ? ` (hồi lúc ${q.at})` : ""}. Chọn Images: Antigravity (Flow) hoặc Codex rồi chạy tiếp.`;
-    addLine(run, "! " + run.guardError); say(run, run.guardError);
-    if (!run.forced && !run.ended) { run.forced = "failed"; killTree(run.child); setTimeout(() => finish(run, null), graceMs).unref?.(); }
+    addLine(run, "! " + run.guardError); say(run, run.guardError); run.guardSaid = true;
+    if (!run.forced && !run.ended) { run.forced = "failed"; run.killed = true; killTree(run.child); setTimeout(() => finish(run, null), graceMs).unref?.(); }
   };
   const handleAgy = (run, ev) => {
     if (ev.event === "init") { if (typeof ev.init?.model === "string" && ev.init.model) handleLine(run, JSON.stringify({ type: "system", subtype: "init", model: ev.init.model })); return; } // agy 1.5.16 sends no model; used when a later version does
@@ -353,7 +368,6 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
           const text = (run.agyText[k] || "").trim(); delete run.agyText[k];
           run.state.turns = (run.state.turns || 0) + 1;
           const u = su.usage; if (u && typeof u === "object") { const t = run.state.usage ||= { input_tokens: 0, output_tokens: 0, total_tokens: 0 }; for (const key of Object.keys(t)) t[key] += Number(u[key]) || 0; }
-          quotaCheck(run, text);
           if (text) { addLine(run, "A: " + text); say(run, text.replace(/\s+/g, " ")); scan(run, text); const t = sanitize(text); if (t) run.state.last_text = t; run.lastRaw = text; }
           touch(run);
         }
@@ -362,12 +376,12 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
         const first = !run.agyTools.has(k); run.agyTools.add(k);
         const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName, su.subagent_info?.subagents, run.agyImages);
         if (su.tool_name === "invoke_subagent" && su.state === "DONE" && !(su.subagent_info?.subagents || []).length && !(su.tool_info?.parameters?.type_name) && !run.agyWarned?.has(k)) { (run.agyWarned ||= new Set()).add(k); addLine(run, "! subagent step ended without type info (could not check it)"); }
-        if (su.state === "DONE") quotaCheck(run, su.tool_info?.output);
+        if (su.state === "DONE" && su.tool_name === "invoke_subagent") quotaCheck(run, su.tool_info?.output); // the subagent's answer only: never the output of reading a file or running a command
         if (first) addLine(run, "tool: " + c.name);
         if (c.foreign) { // a built-in browser/web tool, a subagent other than image-generator, or an MCP server other than this run's own: the run is stopped
-          run.guardError = `Antigravity used a tool this run does not allow (${c.name}): stopped.`;
-          addLine(run, "! " + run.guardError); say(run, "Dừng: agent gọi công cụ không được phép");
-          if (!run.forced) { run.forced = "failed"; killTree(run.child); setTimeout(() => finish(run, null), graceMs).unref?.(); }
+          run.guardError = `Antigravity used ${c.name}, which this run does not allow: stopped.`;
+          addLine(run, "! " + run.guardError); say(run, "Dừng: agent gọi công cụ không được phép"); run.guardSaid = true;
+          if (!run.forced) { run.forced = "failed"; run.killed = true; killTree(run.child); setTimeout(() => finish(run, null), graceMs).unref?.(); }
         } else if (first) say(run, friendlyTool(c.name, c.input));
         if (first) touch(run);
       }
@@ -377,13 +391,14 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (typeof r.num_turns === "number" && r.num_turns > 0) run.state.turns = r.num_turns;
       if (typeof r.response === "string" && r.response.trim()) { run.state.last_text = sanitize(r.response); run.state.report = sanitizeReport(r.response); if (!ok) scan(run, r.response); }
       if (!ok && r.error) scan(run, String(r.error));
-      quotaCheck(run, String(r.error || "")); quotaCheck(run, String(r.response || ""));
+      quotaCheck(run, String(r.error || "")); if (!ok) quotaCheck(run, String(r.response || ""));
       addLine(run, `result: ${run.result.subtype}${ok ? "" : " (error)"}`);
       touch(run);
     }
   };
   const handleLine = (run, raw) => {
     let ev; try { ev = JSON.parse(raw); } catch { addLine(run, raw); return; }
+    if (run.killed) return; // the run was stopped by the guard / quota stop: later events of the dying process are ignored
     if (run.backend === "antigravity" && typeof ev.event === "string") return handleAgy(run, ev);
     if (ev.type === "system" && ev.subtype === "init" && typeof ev.model === "string" && ev.model) {
       const id = sanitize(ev.model, 80), line = run.backend === "antigravity" ? agyModelLine(id, run.effort).replace("the model you chose, agy does not report the running model", "reported by agy") : modelLine(id, run.effort), ok = modelMatches(run.settingModel, id), t = new Date(now()).toISOString();
@@ -420,7 +435,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   const cleanupRun = (run) => {
     try { rmSync(run.cfg, { force: true }); } catch {}
     // This run's own leftovers only (its run id is in every name): temp folder with the settings snapshot, Codex slots, Flow reference copies in Downloads (sa-ref-<run id>-*).
-    if (run.state?.run_id && !run.tmpGone) { run.tmpGone = true; for (const d of [join(tmpDir, `run-${run.state.run_id}`), join(tmpDir, "codex-slots", run.state.run_id)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} } try { const dl = join(home, "Downloads"), pre = `sa-ref-${run.state.run_id}-`; for (const n of readdirSync(dl)) if (n.startsWith(pre)) rmSync(join(dl, n), { force: true }); } catch {} }
+    if (run.state?.run_id && !run.tmpGone) { run.tmpGone = true; unregisterLive(run); for (const d of [join(tmpDir, `run-${run.state.run_id}`), join(tmpDir, "codex-slots", run.state.run_id)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} } try { const dl = join(home, "Downloads"), pre = `sa-ref-${run.state.run_id}-`; for (const n of readdirSync(dl)) if (n.startsWith(pre)) rmSync(join(dl, n), { force: true }); } catch {} }
     if (run.mcpName && !run.mcpGone) { run.mcpGone = true; try { agyExec(run.agyPath, ["mcp", "remove", run.mcpName]); } catch {} }
   };
   const finish = (run, code, err) => {
@@ -439,7 +454,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const problem = run.state.problem;
     const error = status === "failed" ? (problem ? problem.message : sanitize(run.guardError || err || run.stderr.at(-1) || (run.result?.is_error ? `${run.label} reported ${run.result.error || run.result.subtype || "an error"}.` : `${run.label} exited with code ${code}.`)))
       : status === "timeout" ? `Stopped after the ${run.limitMin}-minute limit.${problem ? " " + problem.message : ""}` : status === "done" && problem ? problem.message : "";
-    say(run, status === "failed" ? `Lỗi: ${error}` : status === "stopped" ? "Bị dừng" : status === "timeout" ? "Hết thời gian" : problem ? `Hoàn tất, nhưng cần xem: ${problem.message}` : "Hoàn tất");
+    if (!(status === "failed" && run.guardSaid)) say(run, status === "failed" ? `Lỗi: ${error}` : status === "stopped" ? "Bị dừng" : status === "timeout" ? "Hết thời gian" : problem ? `Hoàn tất, nhưng cần xem: ${problem.message}` : "Hoàn tất");
     addLine(run, `end: ${status}${code === null || code === undefined ? "" : " (exit " + code + ")"}`);
     try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {}
     touch(run, { status, exit_code: code ?? null, error });
@@ -505,7 +520,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       const ex = (a) => agyExec(found.path, a), listed = ex(["mcp", "list"]);
       if (listed?.error || listed?.status !== 0) return { ok: false, status: 500, error: sanitize(`Could not read the MCP servers of Antigravity: ${listed?.error?.message || listed?.stderr || listed?.status}`) };
       const names = parseAgyMcpList(listed.stdout);
-      for (const n of names.filter((n) => AGY_SERVER_RE.test(n) && !ownedByLiveRun(n))) ex(["mcp", "remove", n]); // leftovers of dead runs only (a live run, also of another app window, is left alone)
+      for (const n of names.filter((n) => AGY_SERVER_RE.test(n) && provablyDead(n))) ex(["mcp", "remove", n]); // leftovers of provably dead runs only; a live run (any window, any workspace) or an unsure case is left alone
       if (browser) {
         mcpName = agyServerName(runId);
         const srv = mcp.mcpServers.playwright, added = ex(agyMcpAddArgs(mcpName, { ...srv, env: {} })); // no -e: PLAYWRIGHT_MCP_EXTENSION_TOKEN / PROFILE_DIR_NAME reach the server through the environment of the agy process (checked: an MCP server inherits it), so no token sits in argv or in agy's mcp_config.json
@@ -535,6 +550,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
     try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads, pipe_id: pipeId })); } catch {}
     cur = run;
+    if (mcpName) registerLive(run);
     try { writeFileSync(logFile, ""); } catch {}
     run.friendly = [];
     { const ml = agy ? agyModelLine(choice.id, choice.effort) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
@@ -542,7 +558,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     addLine(run, `start: ${mode} run ${runId}`);
     saveState(run.state);
     child.stdout?.on("data", (c) => feed(run, c));
-    child.stderr?.on("data", (c) => { for (const l of c.toString("utf8").split(/\r?\n/)) { const t = sanitize(l); if (t) { run.stderr.push(t); if (run.stderr.length > 20) run.stderr.shift(); addLine(run, "! " + t); } } });
+    child.stderr?.on("data", (c) => { run.stderrAll = ((run.stderrAll || "") + "\n" + c.toString("utf8")).slice(-4000); quotaCheck(run, run.stderrAll); // the whole chunk: the reset time is on a later line than the error
+      for (const l of c.toString("utf8").split(/\r?\n/)) { const t = sanitize(l); if (t) { run.stderr.push(t); if (run.stderr.length > 20) run.stderr.shift(); addLine(run, "! " + t); } } });
     child.on("error", (e) => finish(run, null, e.message));
     child.on("close", (code) => finish(run, code));
     child.stdin?.on("error", () => {});

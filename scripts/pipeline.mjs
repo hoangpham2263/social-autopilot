@@ -213,6 +213,8 @@ function stageA(args) {
 // ----- Flow images (settings image_engine = flow): no Codex run; the agent makes each image in Google Flow (docs/flow-images.md)
 // and registers it: draft.mjs register-image --id <draft> --n <k> --from <downloaded file>. -----
 const manualImages = (e) => e === 'flow' || e === 'antigravity'; // images made by the agent itself (Flow, or Antigravity's image-generator) and registered with register-image
+// --engine of the commands printed for an item: antigravity for self-made images; antigravity-flow when Antigravity drives Flow (the app's run sets SA_AGENT); none for Flow with Claude.
+const engineFlag = (st) => (st.image_engine === 'antigravity' ? ' --engine antigravity' : st.image_engine === 'flow' && process.env.SA_AGENT === 'antigravity' ? ' --engine antigravity-flow' : '');
 function flowTodo(st) {
   const todo = [];
   for (const id of st.drafts || []) {
@@ -223,7 +225,7 @@ function flowTodo(st) {
     // EVERY missing image of the post: image.png (cover, n=1) and the album extras image-02.png.. (n>=2, same scene: image 1 is their reference).
     const am = albumModeOf(d.draft);
     todo.push({ id, brand: d.draft.brand, album_images: files.length, ...(am ? { album_mode: am, album_note: am === 'scene' ? 'SCENE album: the same product in a different scene per extra (pick each scene per the brand table, project.md section 10; never a forbidden scene; write it as draft.album_scenes or on the "NEW SCENE FOR THIS IMAGE:" line of prompt-0N.txt; custom-text brand: each extra ALSO has its OWN new sign wording fitting its scene, draft.mjs reprompt --id <draft> --album-signs "<image 2>|<image 3>|..", and sign-check needs --reads-02 --reads-03 ..)' : 'ANGLE album: the same scene, a different camera shot per extra' } : {}), product_image: d.draft.product_image || '',
-      images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, ...(n > 1 ? { make: am === 'scene' ? `a different scene: ${albumSceneOf(d.dir, d.draft, n) || '(not chosen yet: pick per the brand table)'}` : `same scene, ${extraShotOf(n - 1)} shot` } : { make: 'cover' }), brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}${st.image_engine === 'antigravity' ? ' --engine antigravity' : ''}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n}${st.image_engine === 'antigravity' ? ' --engine antigravity' : ''} --from <${st.image_engine === 'antigravity' ? 'generated image file' : 'downloaded file'}>` }; }) });
+      images_to_make: missing.map((f) => { const n = files.indexOf(f) + 1; return { n, file: f, prompt: path.join(d.dir, n === 1 ? 'prompt.txt' : 'prompt-' + String(n).padStart(2, '0') + '.txt'), needs_image1_as_reference: n > 1, ...(n > 1 ? { make: am === 'scene' ? `a different scene: ${albumSceneOf(d.dir, d.draft, n) || '(not chosen yet: pick per the brand table)'}` : `same scene, ${extraShotOf(n - 1)} shot` } : { make: 'cover' }), brief: `node scripts/draft.mjs flow-brief --id ${id} --n ${n}${engineFlag(st)}`, register: `node scripts/draft.mjs register-image --id ${id} --n ${n}${engineFlag(st)} --from <${st.image_engine === 'antigravity' ? 'generated image file' : 'downloaded file'}>` }; }) });
   }
   return todo;
 }

@@ -1484,7 +1484,7 @@ header + * { margin-top: 0; }
     // skill_line comes from the server (scripts/prompts.mjs skillLine): legacy skill folder, or brand folder (brands/<id>: project and data together) + skill root + --brand <id>.
     const skills = scope.map((x) => x.skill_line || `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
     // {{IMAGES}}: the Google Flow lines for Flow, the Antigravity lines for Antigravity (text from the server, scripts/prompts.mjs); nothing for codex.
-    const images = chosenEngine() === "flow" ? promptData.images_text || "" : chosenEngine() === "antigravity" ? promptData.images_text_agy || "" : "";
+    const images = chosenEngine() === "flow" ? (promptData.images_text || "") + (agyPicked() ? "\n  REGISTER: Flow is driven by Antigravity: add --engine antigravity-flow to every register-image command." : "") : chosenEngine() === "antigravity" ? promptData.images_text_agy || "" : "";
     return prBase.replace(/\n?\{\{IMAGES\}\}/g, () => (images ? "\n" + images : "")).replace(/\n?\{\{EXTERNAL\}\}/g, () => (isResearch(prMode) && srcScope().ext.length ? "\n" + (promptData.external_text || "") : "")).replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, brandPick.join(", ") || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
   // Count line above the prompt box (the box itself fills the leftover page height by CSS).
