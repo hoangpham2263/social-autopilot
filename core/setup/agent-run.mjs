@@ -177,9 +177,9 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 // source at a time in one tab: the state machine, tokens and blocked-platform skipping), Publish and Sync (Metricool).
 export const threadsFor = (mode, threads) => (mode === "create" ? Math.min(4, Math.max(1, Math.trunc(Number(threads)) || 1)) : 1);
 export function threadsNote(mode, n, { agy = false, engine = "codex" } = {}) {
-  let t = `THREADS: ${n}\n`;
-  if (n < 2) return t;
-  if (mode !== "create") return t;
+  // n may be the placeholder "{N}" (the copy prompt of the Run tab fills it in). N = 1, or any step but Create: nothing is added.
+  if (mode !== "create" || (n !== "{N}" && !(Number(n) >= 2))) return "";
+  const t = `THREADS: ${n}\n`;
   const parts = [];
   if (engine === "antigravity") parts.push(`IMAGES IN PARALLEL: make the pictures in GROUPS of up to ${n}: in ONE turn call invoke_subagent once per image of the group (type_name "image-generator", nothing else), wait for all, then LOOK at each and run its register-image one after the other. A group is either the covers (image 1) of up to ${n} DIFFERENT posts, or the extras (image 2..4) of ONE post whose cover is already registered. Never two registers of the same draft at the same time; one failing image never blocks its group.`);
   else if (engine === "flow") parts.push("Google Flow images stay ONE at a time (pacing gate per profile): THREADS does not apply to them.");
@@ -280,6 +280,13 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (last && last.text === t) { last.n++; last.t = new Date(now()).toISOString(); } else { run.friendly.push({ t: new Date(now()).toISOString(), text: t, n: 1 }); if (run.friendly.length > 200) run.friendly.splice(0, run.friendly.length - 200); }
     saveFriendly(run);
   };
+  // A sa-pw-<run id> server belongs to a live run when the state file says that run is still running and its process is alive.
+  const ownedByLiveRun = (name) => {
+    const st = (cur && cur.state) || readState();
+    if (!st || st.status !== "running" || agyServerName(st.run_id) !== name || !st.pid) return false;
+    if (cur && cur.state.run_id === st.run_id) return true;
+    try { process.kill(st.pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
+  };
   const readState = () => { try { return JSON.parse(readFileSync(stateFile, "utf8")); } catch { return null; } };
   const saveState = (st) => { try { mkdirSync(runsDir, { recursive: true }); writeFileSync(stateFile, JSON.stringify(st, null, 2)); } catch {} };
   const touch = (run, patch = {}) => { Object.assign(run.state, patch, { updated: new Date(now()).toISOString() }); saveState(run.state); };
@@ -305,16 +312,18 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
           if (text) { addLine(run, "A: " + text); say(run, text.replace(/\s+/g, " ")); scan(run, text); const t = sanitize(text); if (t) run.state.last_text = t; run.lastRaw = text; }
           touch(run);
         }
-      } else if ((su.step_type === "tool" || su.step_type === "subagent") && su.tool_name && !run.agyTools.has(k)) {
-        run.agyTools.add(k);
+      } else if ((su.step_type === "tool" || su.step_type === "subagent") && su.tool_name) {
+        // Every event of the step is judged again: subagent_info / parameters can appear after the first event.
+        const first = !run.agyTools.has(k); run.agyTools.add(k);
         const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName, su.subagent_info?.subagents);
-        addLine(run, "tool: " + c.name);
+        if (su.tool_name === "invoke_subagent" && su.state === "DONE" && !(su.subagent_info?.subagents || []).length && !(su.tool_info?.parameters?.type_name) && !run.agyWarned?.has(k)) { (run.agyWarned ||= new Set()).add(k); addLine(run, "! subagent step ended without type info (could not check it)"); }
+        if (first) addLine(run, "tool: " + c.name);
         if (c.foreign) { // a built-in browser/web tool, a subagent other than image-generator, or an MCP server other than this run's own: the run is stopped
           run.guardError = `Antigravity used a tool this run does not allow (${c.name}): stopped.`;
           addLine(run, "! " + run.guardError); say(run, "Dừng: agent gọi công cụ không được phép");
           if (!run.forced) { run.forced = "failed"; killTree(run.child); setTimeout(() => finish(run, null), graceMs).unref?.(); }
-        } else say(run, friendlyTool(c.name, c.input));
-        touch(run);
+        } else if (first) say(run, friendlyTool(c.name, c.input));
+        if (first) touch(run);
       }
     } else if (ev.event === "result" && ev.result) {
       const r = ev.result, ok = r.status === "SUCCESS";
@@ -416,9 +425,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (bad) return { ok: false, status: 400, error: bad };
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
     const s = getSettings() || {};
-    const backend = agentFor(s, mode), agy = backend === "antigravity", label = agy ? "Antigravity" : "Claude"; // one agent per task (Settings > Cách chạy); publish and sync are always Claude
-    if (mode === "create" && runEngine(s, imageEngine) === "antigravity" && !agy) return { ok: false, status: 400, error: "Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity (Cài đặt > Cách chạy)." };
-    if (agy && usesFlow(mode, s, imageEngine)) return { ok: false, status: 400, error: "With Antigravity as the agent the images are made by Antigravity, not Google Flow: choose Images: Antigravity in the Run tab." };
+    const backend = agentFor(s, mode), agy = backend === "antigravity", label = agy ? "Antigravity" : "Claude"; // one agent per task (Run tab Agent); publish and sync are always Claude
+    if (mode === "create" && runEngine(s, imageEngine) === "antigravity" && !agy) return { ok: false, status: 400, error: "Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity (Run tab: Agent and Images)." };
+    const engineMapped = mode === "create" && agy && (imageEngine === "flow" || (!imageEngine && s.image_engine === "flow")); // runEngine() turns Flow into Antigravity images for an Antigravity Create run: said in the run, never Flow
     const found = agy ? findAgy() : findCli();
     if (!found?.found) return { ok: false, status: 400, error: agy ? "Antigravity CLI (agy) not found: install it or add it to PATH." : "Claude CLI not found: set claudeCli.command in workspace/settings.json." };
     const flow = usesFlow(mode, s, imageEngine);
@@ -448,7 +457,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       const ex = (a) => agyExec(found.path, a), listed = ex(["mcp", "list"]);
       if (listed?.error || listed?.status !== 0) return { ok: false, status: 500, error: sanitize(`Could not read the MCP servers of Antigravity: ${listed?.error?.message || listed?.stderr || listed?.status}`) };
       const names = parseAgyMcpList(listed.stdout);
-      for (const n of names.filter((n) => AGY_SERVER_RE.test(n))) ex(["mcp", "remove", n]); // leftovers of a run that never cleaned up
+      for (const n of names.filter((n) => AGY_SERVER_RE.test(n) && !ownedByLiveRun(n))) ex(["mcp", "remove", n]); // leftovers of dead runs only (a live run, also of another app window, is left alone)
       if (browser) {
         mcpName = agyServerName(runId);
         const srv = mcp.mcpServers.playwright, added = ex(agyMcpAddArgs(mcpName, { ...srv, env: {} })); // no -e: PLAYWRIGHT_MCP_EXTENSION_TOKEN / PROFILE_DIR_NAME reach the server through the environment of the agy process (checked: an MCP server inherits it), so no token sits in argv or in agy's mcp_config.json
@@ -464,7 +473,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (browser) args.push("--mcp-config", cfg);
       if (mode === "research") args.push("--strict-mcp-config");
     }
-    const env = { ...process.env, SA_THREADS: String(nThreads), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
+    const env = { ...process.env, ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
@@ -481,6 +490,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     run.friendly = [];
     { const ml = agy ? agyModelLine(choice.id, choice.effort) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
     say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
+    if (engineMapped) say(run, "Ảnh: Antigravity tạo (không dùng Flow)");
     addLine(run, `start: ${mode} run ${runId}`);
     saveState(run.state);
     child.stdout?.on("data", (c) => feed(run, c));

@@ -134,6 +134,8 @@ details[open] > summary { margin-bottom: 6px; }
 /* Images per post: the select keeps a readable width ("Random 1 to 4", "Album 2 to 4", "Custom..."); in Custom mode the cell grows to hold min and max. */
 #page-prompt .fields > #prModelField { width: auto !important; flex: 1 1 160px !important; min-width: 0; }
 #prModelLine { display: block; height: var(--ctl-h); line-height: var(--ctl-h); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#prThreads:focus-visible, #prCount:focus-visible, #prMax:focus-visible { outline: none; border-color: var(--accent); }
+#prMode { flex-wrap: wrap; max-width: 100%; } #prMode .btn { flex: 0 1 auto; min-width: 0; white-space: normal; text-align: center; }
 #page-prompt .fields > .field:has(#prThreads) { width: 96px !important; flex: 0 0 96px !important; }
 #page-prompt .fields > .field:has(#prImgMin) { width: auto !important; flex: 0 0 auto !important; min-width: 0; } /* sized by its content, so the row wraps to a new line instead of scrolling sideways */
 #page-prompt { overflow-x: hidden; }
@@ -1440,7 +1442,6 @@ header + * { margin-top: 0; }
       if (prItem && !pub) lines.push(`from library item ${prItem.id} (--items ${prItem.id})`);
       else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `send exactly min(${count}, approved posts not on Metricool yet) posts IN TOTAL over all brands in scope, oldest approved first (--limit ${count}); fewer available than ${count}: send those and say "Hết stock: chỉ còn X bài đã duyệt (bạn chọn ${count})"; the report says "requested ${count}, done M"` : `${count} posts per brand (pipeline.mjs create --count ${count}); the report says "requested ${count}, done M"; fewer possible than ${count}: make those and say "Hết stock: chỉ còn X bài khả dụng (bạn chọn ${count})"`);
       if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
-      if (!pub && threadsVal() > 1) lines.push(`THREADS: ${threadsVal()} (parallel steps, see the IMAGES lines; 1 = one after another)`);
       if (!pub) lines.push(`images by ${chosenEngine() === "flow" ? "Google Flow" : chosenEngine() === "antigravity" ? "Antigravity tạo ảnh (không qua Flow)" : "Codex"} (pipeline.mjs create --image-engine ${chosenEngine()}; this run only)`);
       const imf = pub ? "" : imgFlag(), alf = pub ? "" : albFlag();
       if (imf) lines.push(/^\d$/.test(imf) ? `exactly ${imf} image${imf === "1" ? "" : "s"} (pipeline.mjs create --images ${imf}; this run only)` : `${imf.replace("-", " to ")} images per post (--images ${imf}; this run only)`);
@@ -1474,7 +1475,8 @@ header + * { margin-top: 0; }
     if (!prBase) return "No prompt in docs/scheduled-prompt.md.";
     // Antigravity copy prompt: the same text plus the tool note the runner adds itself (a Run now prompt gets it from the runner).
     const mk = modeKey(prMode), an = promptData.agy_notes || {};
-    const lead = subAllowed() ? SUB_LINE + "\n" : agyPicked() && howNow() === "copy" ? (mk === "research" ? an.browser : mk === "create" && chosenEngine() === "antigravity" ? an.images : an.plain) || "" : "";
+    const th = howNow() === "copy" && mk === "create" && runAllowed() && threadsVal() > 1 ? String((promptData.threads_notes || {})[(agyPicked() ? "agy" : "claude") + "-" + chosenEngine()] || "").split("{N}").join(threadsVal()) : ""; // the same THREADS text the runner adds to Run now
+    const lead = subAllowed() ? SUB_LINE + "\n" + th : agyPicked() && howNow() === "copy" ? ((mk === "research" ? an.browser : mk === "create" && chosenEngine() === "antigravity" ? an.images : an.plain) || "") + th : "";
     return lead + buildTask();
   }
   function buildTask() {
@@ -1549,17 +1551,19 @@ header + * { margin-top: 0; }
   let agentCfg = null, cfgImage = "";
   const agFlat = () => (agentModels?.agy || []).flatMap((g) => g.models);
   const agName = (id) => { const m = agFlat().find((x) => x.id === id); return m ? `${m.name} (${m.id})` : id; };
-  const appAgent = () => (agyPicked() ? "Antigravity" : "Claude Code"); // who "Run in the app" starts for this mode (Settings > Cách chạy)
+  const appAgent = () => (agyPicked() ? "Antigravity" : "Claude Code"); // who "Run in the app" starts for this mode (Run tab, Agent)
   const cxName = (slug) => { const m = (agentModels?.codex || []).find((x) => x.slug === slug); return m ? `${m.name}${m.hidden ? " (hidden)" : ""} (${m.slug})` : slug; };
   let runningModel = "";
-  // "In use": one short line, never wrapped (model without its id, effort only when set); the full text with ids is the tooltip.
+  // "In use": one short line, never wrapped (model without its id, effort only when set and not already in the model name); the full text with ids is the tooltip.
   const showRunModel = () => {
     const el = $("#prModelLine"); if (!el) return;
     if (runningModel) { el.textContent = runningModel; el.title = `running: ${runningModel}`; return; }
-    const ag = $("#prAgent").value || "", a = agentCfg || {}, short = (t) => String(t).replace(/ \([^()]*\)$/, "");
+    if (!agentModels || !agentCfg) { el.textContent = "…"; el.title = ""; return; } // neutral until the settings and model lists are loaded
+    const ag = $("#prAgent").value || "", a = agentCfg, short = (t) => String(t).replace(/ \([^()]*\)$/, "");
+    const lvl = (m, e) => (e && e !== "max" && !/-(low|medium|high|xhigh)$/.test(m || "") && !String(agName(m)).toLowerCase().includes("(" + e + ")") ? e : ""); // no level that the model id or name already carries
     const line = (agent, label, model, effort) => ({ text: [agent, label, effort].filter(Boolean).join(" · "), full: `${agent || "Claude"} ${model}${effort ? " · effort: " + effort : ""}` });
     let r;
-    if (/antigravity/i.test(ag)) { const m = a.agy_model || ""; r = line("Antigravity", m ? short(agName(m)) : "", m ? agName(m) : "default model", a.agy_effort); }
+    if (/antigravity/i.test(ag)) { const m = a.agy_model || ""; r = line("Antigravity", m ? short(agName(m)) : "", m ? agName(m) : "default model", lvl(m, a.agy_effort)); }
     else if (/claude/i.test(ag)) { const m = a.claude_model || "claude-sonnet-4-6"; r = line("", short(clName(m)), clName(m), a.claude_effort); }
     else if (/codex/i.test(ag)) { const m = a.codex_model || ""; r = line("Codex", m ? short(cxName(m)) : "", m ? cxName(m) : "default model", a.codex_effort); }
     else r = { text: "—", full: "Set in the agent you paste into" };
@@ -1573,6 +1577,9 @@ header + * { margin-top: 0; }
     im.value = e === "flow" && agentOfMode("create") === "antigravity" ? "antigravity" : e === "flow" || e === "antigravity" ? e : "codex";
     // the Agent select follows agent.* (Codex / ChatGPT are copy-only choices and never change them)
     if (ag && (ag.value === "Claude Code" || ag.value === "Antigravity")) { const want = agentOfMode(modeKey(prMode)) === "antigravity" && [...ag.options].some((o) => o.value === "Antigravity") ? "Antigravity" : "Claude Code"; if (ag.value !== want) { ag.value = want; store.set("prAgent", want); } }
+    // Flow needs Claude: Antigravity is not offered for Create while Images = Flow (Research keeps its own agent); Threads is for Claude Code / Antigravity only.
+    if (ag) { const o = [...ag.options].find((x) => x.value === "Antigravity"); if (o) { o.disabled = modeKey(prMode) === "create" && im.value === "flow"; o.title = o.disabled ? "Flow runs with Claude Code" : ""; } }
+    const th = $("#prThreads"); if (th) { th.disabled = !runAllowed(); th.title = runAllowed() ? "Pictures and drafts made at the same time (1-4); Codex images N at a time (1 = the tool default). Not for Flow, Research or Publish" : "Claude Code or Antigravity only"; }
   };
   const saveRunAI = async (changed) => {
     const im = $("#prImages"), mk = modeKey(prMode);
@@ -1585,14 +1592,24 @@ header + * { margin-top: 0; }
     if (r.error) { flash(r.error); toast(r.error); }
     await loadAgentCfg();
   };
-  $("#prImages").onchange = async () => { await saveRunAI("images"); regenerate(); };
+  $("#prImages").onchange = async () => {
+    await saveRunAI("images");
+    // Antigravity images need the Antigravity agent: a Codex / ChatGPT paste target moves to it (quietly).
+    { const ag = $("#prAgent"); if ($("#prImages").value === "antigravity" && !runAllowed() && [...ag.options].some((o) => o.value === "Antigravity")) { ag.value = "Antigravity"; store.set("prAgent", "Antigravity"); drawPrompt(); applyHow(); } }
+    regenerate();
+  };
   // Threads (Create only): remembered in this browser, sent with the run request, counted in the prompt as THREADS: N.
   const threadsVal = () => Math.min(4, Math.max(1, Math.trunc(Number($("#prThreads").value)) || 1));
   { const t = Number(store.get("prThreads")); if (Number.isInteger(t) && t >= 1 && t <= 4) $("#prThreads").value = t; }
   $("#prThreads").onchange = () => { $("#prThreads").value = threadsVal(); store.set("prThreads", threadsVal()); regenerate(); };
   const loadAgentCfg = async () => { const [r] = await Promise.all([getJson("/api/settings").catch(() => null), loadAgentModels()]); if (r?.settings) { agentCfg = r.settings.agent || {}; cfgImage = r.settings.image_engine || ""; } showRunModel(); try { syncRunPickers(); syncFlowOnly(); regenerate(); } catch {} };
   loadAgentCfg();
-  $("#prAgent").onchange = async () => { store.set("prAgent", $("#prAgent").value); if (runAllowed() && modeKey(prMode) !== "publish") await saveRunAI("agent"); showRunModel(); drawPrompt(); applyHow(); };
+  $("#prAgent").onchange = async () => {
+    store.set("prAgent", $("#prAgent").value);
+    if (runAllowed() && modeKey(prMode) !== "publish") await saveRunAI("agent");
+    else if (!runAllowed() && $("#prImages").value === "antigravity") { $("#prImages").value = "codex"; await saveRunAI("images"); } // Codex cannot use the image-generator: Images go back to Codex
+    showRunModel(); drawPrompt(); applyHow();
+  };
   document.addEventListener("click", (e) => { for (const [box, field] of [["#prSrcBox", "#prSrcField"], ["#prPlatBox", "#prPlatField"], ["#prAlbBox", "#prAlbField"], ["#prBrandBox", "#prBrandField"]]) if ($(box).open && !e.target.closest(field)) $(box).open = false; });
   for (const id of ["#prMax", "#prCount", "#prWindow", "#prStart", "#prSwap", "#prImgMin", "#prImgMax"]) $(id).onchange = () => {
     const v = $(id).value;
@@ -1688,7 +1705,7 @@ header + * { margin-top: 0; }
     showRunModel();
     $("#prAppHint").hidden = !app;
     { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
-      $("#prAppHint").textContent = claude ? `Starts ${appAgent()} for you; the live panel below shows progress.` + (extTxt ? " " + extTxt + "." : "") : "Chọn Agent Claude Code hoặc Antigravity để chạy trong app"; }
+      $("#prAppHint").textContent = claude ? `Starts ${appAgent()} for you; the live panel below shows progress.` + (extTxt ? " " + extTxt + "." : "") : "Choose the Claude Code or Antigravity Agent to run in the app"; }
     $("#prAppHint").style.color = claude ? "" : "#b06000";
     $("#prRunPill").hidden = app || !busy;
   }
@@ -1705,12 +1722,12 @@ header + * { margin-top: 0; }
     { const m = r?.active ? r.model_in_use || "" : ""; if (m !== runningModel) { runningModel = m; showRunModel(); } }
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
     const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
-    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Chọn Agent Claude Code hoặc Antigravity`);
+    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Choose the Claude Code or Antigravity Agent`);
     setDisabled($("#prCopy"), !!prBlock, prBlock);
     // Continue the previous run (GET /api/agent-run resume): enabled only when the last run stopped / failed midway; same inputs, only the missing work.
     { const rs = r?.resume, ok = !!rs?.available && !busy && !noCli && claude, btn = $("#prResume");
       const what = rs?.available ? `${{ research: "Research", create: "Create & publish", publish: "Publish approved" }[rs.mode] || rs.mode}${rs.brands?.length ? " · " + rs.brands.join(", ") : ""} · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : "";
-      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Chọn Agent Claude Code hoặc Antigravity") : "No stopped run to continue: the last run finished or none was started from the app");
+      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Choose the Claude Code or Antigravity Agent") : "No stopped run to continue: the last run finished or none was started from the app");
       if (ok) btn.title = `Continues the previous run with the same options, without redoing finished work: ${what}`; }
     { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
     // Flow run whose Flow account is not signed in to the chosen profile: blocked (a warning alone never blocks).

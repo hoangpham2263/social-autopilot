@@ -377,9 +377,9 @@ function tryCodexSlot(n, dir) {
   }
   return null;
 }
-// Run tab Threads (SA_THREADS, set by the app's runner): never fewer Codex images at once than the setting allows, up to N more.
+// Run tab Threads above 1 (SA_THREADS, set by the app's runner): that many Codex images at once; unset = the codex.concurrency setting.
 const threadsEnv = () => { const n = Number(process.env.SA_THREADS); return Number.isInteger(n) && n >= 1 && n <= 4 ? n : 0; };
-const slotSetup = (s) => { const dir = path.join(workspace, 'tmp', 'codex-slots'); fs.mkdirSync(dir, { recursive: true }); return { n: Math.max(1, Number(s.codex?.concurrency) || 3, threadsEnv()), dir }; };
+const slotSetup = (s) => { const dir = path.join(workspace, 'tmp', 'codex-slots'); fs.mkdirSync(dir, { recursive: true }); return { n: threadsEnv() || Math.max(1, Number(s.codex?.concurrency) || 3), dir }; };
 const slotWait = (s) => ((Number(s.codex?.timeout_minutes) || 15) * 2 + 5) * 60000;
 export function takeCodexSlot(s = settings(), { waitMs = slotWait(s) } = {}) {
   const { n, dir } = slotSetup(s), until = Date.now() + waitMs;
@@ -405,7 +405,7 @@ export async function takeCodexSlotAsync(s = settings(), { waitMs = slotWait(s) 
 // on the machine than codex.concurrency: the slots above). Each finished image moves the app's Run progress.
 export async function imageBatch(args, s = settings()) {
   const brand = need(args, 'brand');
-  const limit = Math.max(1, Number(args.concurrency && args.concurrency !== true ? args.concurrency : Math.max(s.codex.concurrency || 3, threadsEnv())));
+  const limit = Math.max(1, Number(args.concurrency && args.concurrency !== true ? args.concurrency : (threadsEnv() || s.codex.concurrency || 3)));
   const all = waitingForImage(brand, !!args.force, s);
   const todo = [], skipped = [];
   for (const d of all) {
@@ -645,7 +645,7 @@ export function flowBrief(args, s = settings()) {
 // flow-queue: every image still missing, in SUBMISSION ORDER: wave 1 = all covers (n=1) of all drafts, wave 2 = all album extras
 // (they take image 1 of their post as reference, so they go after the covers exist in the Flow project). Each item has a stable
 // `tag` (<draft>#<n>) and `order`, the condensed prompt, the reference file and the register command. --ids a,b or --brand <id>.
-export const AGY_QUEUE_NEXT = 'ANTIGRAVITY IMAGES (no Flow, no browser, no flow-pace gate): item by item in this order (a cover before its extras: they use that cover as reference). For each item call invoke_subagent with type_name "image-generator" and a task that gives exactly: Prompt = the item prompt, ImagePaths = its image_paths, AspectRatio = its aspect, ImageName = its image_name. One image takes about 80 s. The subagent saves a JPG under ~/.gemini/antigravity-cli/brain/<conversation>/<name>_<time>.jpg: LOOK at it, then node scripts/draft.mjs register-image --id <draft> --n <k> --engine antigravity --from <that file> (a jpg is converted by the tool). A refused or failed image: retry ONCE with node scripts/draft.mjs flow-brief --id <draft> --n <k> --engine antigravity --safe; still failing -> skip it, report it, go on with the next one.';
+export const AGY_QUEUE_NEXT = 'ANTIGRAVITY IMAGES (no Flow, no browser, no flow-pace gate): in this order (a cover before its extras: they use that cover as reference), in groups of THREADS (the THREADS line of the run, default 1 = one item at a time): for each item of a group call invoke_subagent with type_name "image-generator" in ONE turn, each with a task that gives exactly: Prompt = the item prompt, ImagePaths = its image_paths, AspectRatio = its aspect, ImageName = its image_name. One image takes about 80 s; a group is the covers of different posts or the extras of one post. The subagent saves a JPG under ~/.gemini/antigravity-cli/brain/<conversation>/<name>_<time>.jpg: LOOK at it, then node scripts/draft.mjs register-image --id <draft> --n <k> --engine antigravity --from <that file> (a jpg is converted by the tool). A refused or failed image: retry ONCE with node scripts/draft.mjs flow-brief --id <draft> --n <k> --engine antigravity --safe; still failing -> skip it, report it, go on with the next one.';
 export function flowQueue(args, s = settings()) {
   const agy = engineOf(args, s) === 'antigravity';
   const ids = args.ids && args.ids !== true ? String(args.ids).split(',').map((x) => x.trim()).filter(Boolean) : null;

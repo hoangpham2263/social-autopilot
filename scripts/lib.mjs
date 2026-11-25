@@ -199,7 +199,7 @@ export function saveSettings(input = {}) {
       if (a.codex_model !== undefined) { if (!validCodexValue(a.codex_model)) throw new Error('agent.codex_model không hợp lệ.'); next.agent.codex_model = a.codex_model; }
       if (a.codex_effort !== undefined) { if (!validCodexValue(a.codex_effort)) throw new Error('agent.codex_effort không hợp lệ.'); next.agent.codex_effort = a.codex_effort; }
       // Antigravity (agy): backend of "Run now" (claude | antigravity), its model id ('' = agy default) and effort.
-      // Per-task agent (Settings > Cách chạy). The old single agent.backend is turned into research/create here and dropped.
+      // Per-task agent (Run tab, Agent). The old single agent.backend is turned into research/create here and dropped.
       for (const k of ['research', 'create']) if (a[k] !== undefined) { if (!AGENT_PICK.includes(a[k])) throw new Error('agent.' + k + ' phải là claude hoặc antigravity.'); next.agent[k] = a[k]; }
       // The old single choice, still accepted: it sets research and create (unless they are sent too), it is never stored.
       if (a.backend !== undefined) { if (!AGENT_BACKENDS.includes(a.backend)) throw new Error('agent.backend phải là claude hoặc antigravity.'); if (a.research === undefined) next.agent.research = a.backend; if (a.create === undefined) next.agent.create = a.backend; }

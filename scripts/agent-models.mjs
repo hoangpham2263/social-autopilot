@@ -82,7 +82,7 @@ export function agyGroups(models = AGY_FALLBACK) {
 export const agyName = (id, models = AGY_FALLBACK) => models.find((m) => m.id === id)?.name || id;
 // Antigravity model + effort of every agent run (Settings > Antigravity); '' = agy's own default (no flag). The backend choice itself is agent.backend: "claude" (default) or "antigravity".
 export const AGENT_BACKENDS = ["claude", "antigravity"];
-// One AI choice per task (Settings > Cách chạy): agent.research and agent.create (the drafts' text AND, with image engine antigravity, their images) are claude | antigravity.
+// One AI choice per task (Run tab, Agent): agent.research and agent.create (the drafts' text AND, with image engine antigravity, their images) are claude | antigravity.
 // Publish and Sync are always Claude (Antigravity has no Metricool connector). The old single choice agent.backend still counts when agent.research/create are not set.
 export const AGENT_PICK = ["claude", "antigravity"];
 export const agentFor = (settings = {}, task = "create") => {
