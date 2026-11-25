@@ -228,6 +228,12 @@ export function agyQuota(text, nowMs = Date.now()) {
   const d = new Date(nowMs + sec * 1000);
   return { reset_at: d.toISOString(), at: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` };
 }
+// A dropped connection to agy ("the connection to the agent was interrupted", "conversation update stream lost", "subscriber fell behind updates"): transient transport trouble.
+// NEVER quota text (that stays on the strict quota path) and never a login / ordinary error.
+export const isTransientAgyError = (t) => {
+  const x = String(t || "");
+  return /connection to the agent was interrupted|update stream lost|subscriber fell behind|stream lost|stalled for \d+s|ECONNRESET|EPIPE|unexpected EOF|deadline exceeded|\bunavailable\b|connection (?:reset|closed|refused)/i.test(x) && !QUOTA_RE.test(x) && !/RESOURCE_EXHAUSTED|exhausted your capacity|quota (?:will )?reset|quota exceeded/i.test(x);
+};
 // agy tool call -> the Claude-style (name, input) that friendlyTool() already words in Vietnamese. foreign = not the run's own Playwright MCP / a built-in browser or image tool.
 export function agyToolCall(name, p = {}, own = "", subagents = null, allowImages = false) {
   const n = String(name || ""), i = p && typeof p === "object" ? p : {};
@@ -304,6 +310,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       for (const x of dead.slice(1)) { try { if (x.inst && Date.now() - statSync(x.file).mtimeMs > 7 * 86400000) for (const sfx of [".json", ".log", "-input.json", "-friendly.json"]) rmSync(join(runsDir, `agent-run-${x.inst}${sfx}`), { force: true }); } catch {} }
     } catch {}
   })();
+  const NET_WAITS = (process.env.SA_NET_WAITS || "15000,30000,60000").split(",").map(Number).filter((n) => n > 0); // SA_NET_WAITS only for tests
+  const netTry = { n: 0 }; // consecutive automatic relaunches after a dropped agy connection (reset by progress and by a new start)
   let cur = null; // the active run
   let last = null; // the finished run's state (this process)
 
@@ -391,6 +399,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (typeof r.num_turns === "number" && r.num_turns > 0) run.state.turns = r.num_turns;
       if (typeof r.response === "string" && r.response.trim()) { run.state.last_text = sanitize(r.response); run.state.report = sanitizeReport(r.response); if (!ok) scan(run, r.response); }
       if (!ok && r.error) scan(run, String(r.error));
+      if (!ok && r.error) run.netErr = String(r.error);
       quotaCheck(run, String(r.error || "")); // the run's error field only: never the response text (it may quote old errors)
       addLine(run, `result: ${run.result.subtype}${ok ? "" : " (error)"}`);
       touch(run);
@@ -398,6 +407,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   };
   const handleLine = (run, raw) => {
     let ev; try { ev = JSON.parse(raw); } catch { addLine(run, raw); return; }
+    if (run.backend === "antigravity") run.evCount = (run.evCount || 0) + 1;
     if (run.killed) return; // the run was stopped by the guard / quota stop: later events of the dying process are ignored
     if (run.backend === "antigravity" && typeof ev.event === "string") return handleAgy(run, ev);
     if (ev.type === "system" && ev.subtype === "init" && typeof ev.model === "string" && ev.model) {
@@ -442,7 +452,30 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (run.ended) return; run.ended = true;
     clearTimeout(run.timer);
     if (run.buf.trim()) handleLine(run, run.buf.trim());
-    cleanupRun(run);
+    cleanupRun(run); // the run's MCP server, temp folder and registry entry go now; the relaunch adds its own (no leak, no duplicate)
+    { // a dropped Antigravity connection (an error event, or the process died with only stderr): start the same run again, after a backoff, status stays running
+      const text = run.backend === "antigravity" && !run.forced && !run.killed && !run.guardError && !run.state.quota ? (run.netErr || (!run.result && code !== 0 ? run.stderr.join(" ") : "")) : "";
+      if (text && isTransientAgyError(text)) {
+        if ((run.evCount || 0) > 5) netTry.n = 0; // this launch got somewhere
+        if (netTry.n < 5) {
+          const delay = NET_WAITS[Math.min(netTry.n, NET_WAITS.length - 1)]; netTry.n++;
+          const msg = `Mất kết nối với Antigravity, tự chạy lại (lần ${netTry.n}/5)`;
+          addLine(run, `⚠ ${msg}, sau ${Math.round(delay / 1000)} giây`); say(run, msg);
+          try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {}
+          const wait = { waiting: true, child: null, browser: run.browser, own: run.own, ended: false, lines: run.lines, friendly: run.friendly, state: { ...run.state, status: "running", error: "", problem: null, exit_code: null, last_text: run.state.last_text }, timer: null };
+          cur = wait; saveState(wait.state);
+          wait.timer = setTimeout(() => {
+            if (cur !== wait) return;
+            cur = null;
+            const r = start({ _retry: { lines: run.lines.slice(), friendly: run.friendly.slice(), started: run.state.started } });
+            if (!r.ok) { wait.state.status = "failed"; wait.state.error = r.error; wait.state.updated = new Date(now()).toISOString(); last = wait.state; saveState(wait.state); try { onEnd?.({ ...wait.state }); } catch {} }
+          }, delay);
+          wait.timer.unref?.();
+          return;
+        }
+        addLine(run, "⚠ Mất kết nối với Antigravity: đã tự chạy lại 5 lần, vẫn lỗi"); // the run now fails with its original error
+      }
+    }
     const status = run.forced || (code === 0 && !run.result?.is_error ? "done" : "failed");
     // Last look for an actionable cause: the exit text, stderr, the final text (login / profile problems only count here).
     if (status !== "stopped") {
@@ -473,9 +506,13 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return available ? { available, run_id: st.run_id, mode: st.mode, status, brands: Array.isArray(inp.brands) ? inp.brands : [], model: inp.model || "default", image_engine: inp.image_engine || "", started: st.started || "", ended: st.updated || "" } : { available: false };
   }
 
-  function start({ mode, prompt, brands, imageEngine, model, threads, resume = false } = {}) {
+  function start({ mode, prompt, brands, imageEngine, model, threads, resume = false, _retry = null } = {}) {
     let prefix = "", from = "", resumedPipe = "";
-    if (resume) {
+    if (_retry) { // automatic relaunch of the SAME run after a dropped connection: same inputs, the continue line, the same pipeline folder, the previous log lines kept
+      const inp = readInput(); if (!inp) return { ok: false, status: 409, error: "Nothing to restart." };
+      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.threads;
+      prefix = continueLine(mode, { status: "failed" }); from = inp.run_id; resumedPipe = inp.pipe_id || inp.run_id;
+    } else if (resume) {
       if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
       const ri = resumeInfo();
       if (!ri.available) return { ok: false, status: 409, error: "There is no stopped run to continue." };
@@ -483,6 +520,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.threads;
       prefix = continueLine(mode, ri); from = ri.run_id; resumedPipe = inp.pipe_id || ri.run_id;
     }
+    if (!_retry && !resume) netTry.n = 0; // a start by the person begins a fresh count
     const bad = validate({ mode, prompt, model, threads });
     if (bad) return { ok: false, status: 400, error: bad };
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
@@ -542,7 +580,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
     catch (e) { cleanupRun({ cfg, mcpName, agyPath: found.path }); return { ok: false, status: 500, error: sanitize(e.message) }; }
-    const started = new Date(now()).toISOString();
+    const started = _retry?.started || new Date(now()).toISOString();
     const run = {
       child, cfg, backend, label, mcpName, agyImages: usesAgyImages(mode, s, imageEngine), mcpGone: false, agyPath: found.path, agyText: {}, agyTools: new Set(), settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
       state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, pipe_id: pipeId, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
@@ -551,11 +589,14 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads, pipe_id: pipeId })); } catch {}
     cur = run;
     if (mcpName) registerLive(run);
-    try { writeFileSync(logFile, ""); } catch {}
-    run.friendly = [];
-    { const ml = agy ? agyModelLine(choice.id, choice.effort) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
-    say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
-    addLine(run, `start: ${mode} run ${runId}`);
+    if (_retry) { run.lines = _retry.lines; run.friendly = _retry.friendly; try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {} addLine(run, `restart: ${mode} run ${runId}`); }
+    else {
+      try { writeFileSync(logFile, ""); } catch {}
+      run.friendly = [];
+      { const ml = agy ? agyModelLine(choice.id, choice.effort) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
+      say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
+      addLine(run, `start: ${mode} run ${runId}`);
+    }
     saveState(run.state);
     child.stdout?.on("data", (c) => feed(run, c));
     child.stderr?.on("data", (c) => { run.stderrAll = ((run.stderrAll || "") + "\n" + c.toString("utf8")).slice(-4000); quotaCheck(run, run.stderrAll); // the whole chunk: the reset time is on a later line than the error
@@ -576,12 +617,18 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
 
   function stop() {
     if (!cur) return { ok: false, status: 409, error: "No run is active." };
+    if (cur.waiting) { // between two launches: a user Stop ends the run, no relaunch
+      const w = cur; clearTimeout(w.timer); cur = null; w.state.status = "stopped"; w.state.updated = new Date(now()).toISOString(); w.lines.push("end: stopped"); say(w, "Bị dừng"); try { writeFileSync(logFile, w.lines.join("\n") + "\n"); } catch {} last = w.state; saveState(w.state);
+      try { onEnd?.({ ...w.state }); } catch {}
+      return { ok: true, status: 200, run_id: w.state.run_id };
+    }
     const run = cur; run.forced = "stopped"; killTree(run.child);
     setTimeout(() => finish(run, null), graceMs).unref?.();
     return { ok: true, status: 200, run_id: run.state.run_id };
   }
   function shutdown() {
     if (!cur) return;
+    if (cur.waiting) { clearTimeout(cur.timer); cur.state.status = "stopped"; saveState(cur.state); return; }
     cur.forced = cur.forced || "stopped"; killTree(cur.child);
     cleanupRun(cur);
     touch(cur, { status: "stopped" });
