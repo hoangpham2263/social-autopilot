@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { trackCli } from './progress.mjs';
-import { validClaudeModel, validCodexValue, CLAUDE_EFFORTS, AGY_EFFORTS, AGENT_BACKENDS, validAgyValue } from './agent-models.mjs';
+import { validClaudeModel, validCodexValue, CLAUDE_EFFORTS, AGY_EFFORTS, AGENT_BACKENDS, AGENT_PICK, agentFor, validAgyValue } from './agent-models.mjs';
 import { validateBrowserSettings } from '../core/setup/own-browser.mjs';
 
 export const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -119,7 +119,7 @@ export function settings() {
 }
 
 // Image engine for new draft images: codex (Codex CLI, default) or flow (the agent drives Google Flow through the Playwright MCP).
-export const IMAGE_ENGINES = ['codex', 'flow'];
+export const IMAGE_ENGINES = ['codex', 'flow', 'antigravity']; // antigravity = the agent makes the images itself (never Flow); needs agent.create = antigravity
 export const imageEngine = (s = settings()) => (IMAGE_ENGINES.includes(s?.image_engine) ? s.image_engine : 'codex');
 
 // The settings as stored (defaults + this machine's workspace/settings.json), without resolving paths.
@@ -150,7 +150,7 @@ export function saveSettings(input = {}) {
     void mc;
     const changes = {
       skillsRoot: str(input.skillsRoot ?? cur.skillsRoot, 'skillsRoot'),
-      image_engine: (() => { const v = input.image_engine ?? cur.image_engine ?? 'codex'; if (!IMAGE_ENGINES.includes(v)) throw new Error('image_engine phải là codex hoặc flow.'); return v; })(),
+      image_engine: (() => { const v = input.image_engine ?? cur.image_engine ?? 'codex'; if (!IMAGE_ENGINES.includes(v)) throw new Error('image_engine phải là codex, flow hoặc antigravity.'); return v; })(),
       // Plan ahead (days): Create & publish makes enough posts to cover this many days at posts_per_day.
       planning: { ahead_days: int(pl.ahead_days ?? cur.planning?.ahead_days ?? 7, 'planning.ahead_days', 1) },
       // Research: only the human-like pause between page actions; there are no run or post limits.
@@ -199,10 +199,17 @@ export function saveSettings(input = {}) {
       if (a.codex_model !== undefined) { if (!validCodexValue(a.codex_model)) throw new Error('agent.codex_model không hợp lệ.'); next.agent.codex_model = a.codex_model; }
       if (a.codex_effort !== undefined) { if (!validCodexValue(a.codex_effort)) throw new Error('agent.codex_effort không hợp lệ.'); next.agent.codex_effort = a.codex_effort; }
       // Antigravity (agy): backend of "Run now" (claude | antigravity), its model id ('' = agy default) and effort.
+      // Per-task agent (Settings > Cách chạy). The old single agent.backend is turned into research/create here and dropped.
+      if (next.agent.backend !== undefined && next.agent.research === undefined && next.agent.create === undefined) { const b = AGENT_PICK.includes(next.agent.backend) ? next.agent.backend : 'claude'; next.agent.research = b; next.agent.create = b; }
+      for (const k of ['research', 'create']) if (a[k] !== undefined) { if (!AGENT_PICK.includes(a[k])) throw new Error('agent.' + k + ' phải là claude hoặc antigravity.'); next.agent[k] = a[k]; }
       if (a.backend !== undefined) { if (!AGENT_BACKENDS.includes(a.backend)) throw new Error('agent.backend phải là claude hoặc antigravity.'); next.agent.backend = a.backend; }
       if (a.agy_model !== undefined) { if (!validAgyValue(a.agy_model)) throw new Error('agent.agy_model không hợp lệ.'); next.agent.agy_model = a.agy_model; }
       if (a.agy_effort !== undefined) { if (!['', ...AGY_EFFORTS].includes(a.agy_effort)) throw new Error('agent.agy_effort không hợp lệ.'); next.agent.agy_effort = a.agy_effort; }
     }
+    { const create = agentFor({ agent: next.agent || cur.agent }, 'create'); if (next.agent && next.agent.research !== undefined) delete next.agent.backend;
+      if (input.image_engine === undefined && changes.image_engine === 'flow' && create === 'antigravity') { changes.image_engine = 'antigravity'; next.image_engine = 'antigravity'; } // old settings: Antigravity never uses Flow
+      if (changes.image_engine === 'antigravity' && create !== 'antigravity') throw new Error('Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity.');
+      if (changes.image_engine === 'flow' && create === 'antigravity') throw new Error('Flow chỉ chạy với agent Claude: Antigravity tạo ảnh không qua Flow.'); }
     // No approval step any more (user, 09/11/2026): older settings files lose their approval block on save.
     delete next.approval;
     next.research = changes.research;

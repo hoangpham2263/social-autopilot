@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir } from "node:os";
-import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel, claudeName, agentBackend, agyChoice, agyName } from "../../scripts/agent-models.mjs";
+import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel, claudeName, agentFor, agyChoice, agyName } from "../../scripts/agent-models.mjs";
 import { classifyProblem } from "./agent-problems.mjs";
 import { browserSettings, WINDOW_SIZE } from "./own-browser.mjs";
 import { extensionProfileProblem, extensionToken } from "./chrome.mjs";
@@ -31,7 +31,10 @@ export const ALLOWED_TOOLS = {
 // Create with image engine Google Flow: the agent drives Flow in the signed-in Chrome, so the Playwright browser tools are added.
 export const FLOW_TOOLS = ["browser_tabs", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_press_key", "browser_wait_for", "browser_run_code_unsafe", "browser_take_screenshot", "browser_evaluate", "browser_file_upload"].map((n) => "mcp__playwright__" + n);
 // The engine of a run: the one chosen for this run (Run tab "Images", per run only) when valid, else the tool setting image_engine.
-export const runEngine = (settings = {}, engine = "") => (engine === "codex" || engine === "flow" || engine === "antigravity" ? engine : settings?.image_engine === "flow" ? "flow" : "codex");
+export const runEngine = (settings = {}, engine = "") => {
+  const e = engine === "codex" || engine === "flow" || engine === "antigravity" ? engine : settings?.image_engine === "flow" || settings?.image_engine === "antigravity" ? settings.image_engine : "codex";
+  return e === "flow" && agentFor(settings, "create") === "antigravity" ? "antigravity" : e; // old settings (agent.backend antigravity + Flow): Antigravity never uses Flow
+};
 // Create with image engine Antigravity (agent.backend antigravity): the agent makes the images with its image-generator subagent: no Flow, no browser, no Playwright MCP.
 export const usesAgyImages = (mode, settings = {}, engine = "") => mode === "create" && runEngine(settings, engine) === "antigravity";
 export const usesFlow = (mode, settings = {}, engine = "") => mode === "create" && runEngine(settings, engine) === "flow";
@@ -387,7 +390,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     if (bad) return { ok: false, status: 400, error: bad };
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
     const s = getSettings() || {};
-    const backend = agentBackend(s), agy = backend === "antigravity", label = agy ? "Antigravity" : "Claude";
+    const backend = agentFor(s, mode), agy = backend === "antigravity", label = agy ? "Antigravity" : "Claude"; // one agent per task (Settings > Cách chạy); publish and sync are always Claude
+    if (mode === "create" && runEngine(s, imageEngine) === "antigravity" && !agy) return { ok: false, status: 400, error: "Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity (Cài đặt > Cách chạy)." };
     if (agy && usesFlow(mode, s, imageEngine)) return { ok: false, status: 400, error: "With Antigravity as the agent the images are made by Antigravity, not Google Flow: choose Images: Antigravity in the Run tab." };
     if (agy && AGY_UNSUPPORTED.includes(mode)) return { ok: false, status: 400, error: `Antigravity cannot run ${mode}: it has no Metricool connector. Choose Claude as the agent in Settings for ${mode}.` };
     const found = agy ? findAgy() : findCli();
@@ -483,7 +487,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
 
   function status() {
     const run = cur, st = run ? run.state : last || readState();
-    const cli = agentBackend(getSettings() || {}) === "antigravity" ? findAgy() : findCli();
+    const cli = findCli(), agyCli = findAgy();
     // A state file left "running" by an app that closed is not an active run.
     const shown = st && !run && st.status === "running" ? { ...st, status: "failed", error: "The app closed while this run was active." } : st;
     const lines = run ? run.lines : (() => { try { return readFileSync(logFile, "utf8").split("\n").filter(Boolean); } catch { return []; } })();
@@ -494,7 +498,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),
-      cli: { found: !!cli?.found, path: cli?.path || "" },
+      cli: { found: !!cli?.found, path: cli?.path || "" }, agy: { found: !!agyCli?.found },
     };
   }
   return { start, stop, status, shutdown, isActive: () => !!cur, browserActive: () => !!cur?.browser && !!cur?.own };
