@@ -2,7 +2,7 @@
 // One run at a time (one browser, one agent). The prompt goes to STDIN, never argv. Nothing secret is stored.
 // Tool/stream output (inputs and results of tools) is never kept: only assistant text and tool NAMES, scrubbed and cut.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir } from "node:os";
@@ -114,8 +114,9 @@ export function friendlyTool(name, input = {}) {
     const did = (/--id[= ]+["']?([a-z0-9][a-z0-9-]{2,60})/i.exec(c) || /--tag[= ]+["']?([a-z0-9][a-z0-9-]{2,60})#/i.exec(c) || [])[1];
     const num = (/--n[= ]+["']?(\d)/i.exec(c) || /--tag[= ]+["']?[a-z0-9-]+#(\d)/i.exec(c) || [])[1];
     const m = (t) => (did ? `Bài ${did}${num ? ` · ảnh ${num}` : ""} · ${t}` : t);
-    if (/draft\.mjs\s+register-image/.test(c)) return m("Lưu ảnh Flow");
-    if (/draft\.mjs\s+flow-brief/.test(c)) return m(/--safe\b/.test(c) ? "Flow từ chối → thử lại 1 lần bằng mô tả an toàn" : "Chuẩn bị nội dung gửi Flow");
+    const agyImg = /--engine[= ]+antigravity/.test(c); // Antigravity images: never worded as Flow
+    if (/draft\.mjs\s+register-image/.test(c)) return m(agyImg ? "Lưu ảnh Antigravity" : "Lưu ảnh Flow");
+    if (/draft\.mjs\s+flow-brief/.test(c)) return m(/--safe\b/.test(c) ? (agyImg ? "Ảnh bị từ chối → thử lại 1 lần bằng mô tả an toàn" : "Flow từ chối → thử lại 1 lần bằng mô tả an toàn") : agyImg ? "Chuẩn bị nội dung cho Antigravity tạo ảnh" : "Chuẩn bị nội dung gửi Flow");
     if (/draft\.mjs\s+sign-check/.test(c)) return m("Kiểm chữ trên biển");
     if (/flow-pace\.mjs\s+gate/.test(c)) return m("Chờ nhịp rồi gửi prompt Flow");
     if (/flow-pace\.mjs/.test(c)) return "Đang điều nhịp Flow";
@@ -209,7 +210,7 @@ export const agyModelLine = (id, effort = "") => `Model in use: ${id ? `${id} (A
 // What the prompt must say for agy: its own tool names, and that ONLY the run's Playwright MCP may touch Chrome / Flow / social pages.
 export const agyNote = (server = "", browser = false, images = false) => `ANTIGRAVITY NOTE: you run in Antigravity (agy), not Claude Code. Tool names differ: run shell commands (node scripts/...) with run_command, read files with read_file, write files with write_to_file.
 ${browser ? `BROWSER: the ONLY browser you may use is the Playwright MCP server named "${server}". It is not a direct tool: call it with call_mcp_tool(ServerName="${server}", ToolName=<tool>, Arguments={...}). Wherever this prompt says browser_tabs, browser_navigate, browser_snapshot, browser_click, browser_type, browser_press_key, browser_wait_for, browser_run_code_unsafe, browser_take_screenshot, browser_evaluate, browser_file_upload it means that ToolName of the server "${server}" (read ~/.gemini/antigravity-cli/mcp/${server}/<tool>.json first when unsure about its Arguments).
-NEVER use your own built-in browser tools (browser_subagent, open_browser_url, browser_click_element, browser_input, browser_get_dom, execute_browser_javascript, capture_browser_screenshot, read_browser_page, list_browser_pages and the like) and never another MCP server: they do not drive the signed-in Chrome of this run and would break the Flow / social rules (human pacing, visible tab, login). Do not use generate_image for post images either: images come from the tool (Codex) or from Google Flow through "${server}" as described below.
+NEVER use your own built-in browser tools (browser_subagent, open_browser_url, browser_click_element, browser_input, browser_get_dom, execute_browser_javascript, capture_browser_screenshot, read_browser_page, list_browser_pages and the like) and never another MCP server: they do not drive the signed-in Chrome of this run and would break the login and social-page rules of this run. Do not use generate_image either.
 ` : "No browser is needed for this run: do not open any browser.\n"}${images ? 'IMAGES: you make the post images yourself with your image-generator subagent: call invoke_subagent with type_name "image-generator" (this is the ONLY subagent you may call) as the prompt describes. Never use browser_*/web tools, Google Flow or any other subagent.\n' : ""}
 `;
 // agy tool call -> the Claude-style (name, input) that friendlyTool() already words in Vietnamese. foreign = not the run's own Playwright MCP / a built-in browser or image tool.
@@ -362,6 +363,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   // Removes what a run left outside the tool: its temp config and, for agy, the Playwright MCP server added to agy's global config.
   const cleanupRun = (run) => {
     try { rmSync(run.cfg, { force: true }); } catch {}
+    // Flow runs copy reference photos to Downloads (sa-ref-*): the ones made during this run go when it ends.
+    if (run.state?.flow && !run.refsGone) { run.refsGone = true; try { const dl = join(home, "Downloads"), t0 = Date.parse(run.state.started) - 60000; for (const n of readdirSync(dl)) if (/^sa-ref-.+\.(png|jpe?g|webp)$/i.test(n) && statSync(join(dl, n)).mtimeMs >= t0) rmSync(join(dl, n), { force: true }); } catch {} }
     if (run.mcpName && !run.mcpGone) { run.mcpGone = true; try { agyExec(run.agyPath, ["mcp", "remove", run.mcpName]); } catch {} }
   };
   const finish = (run, code, err) => {
@@ -451,7 +454,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
         const srv = mcp.mcpServers.playwright, added = ex(agyMcpAddArgs(mcpName, { ...srv, env: {} })); // no -e: PLAYWRIGHT_MCP_EXTENSION_TOKEN / PROFILE_DIR_NAME reach the server through the environment of the agy process (checked: an MCP server inherits it), so no token sits in argv or in agy's mcp_config.json
         if (added?.error || added?.status !== 0) { try { ex(["mcp", "remove", mcpName]); } catch {} return { ok: false, status: 500, error: sanitize(`Could not add the Playwright MCP to Antigravity: ${added?.error?.message || added?.stderr || added?.stdout || added?.status}`) }; }
       }
-      writeFileSync(cfg, JSON.stringify(agySettings(names.filter((n) => !AGY_SERVER_RE.test(n)), mcpName)));
+      try { writeFileSync(cfg, JSON.stringify(agySettings(names.filter((n) => !AGY_SERVER_RE.test(n)), mcpName))); }
+      catch (e) { if (mcpName) { try { ex(["mcp", "remove", mcpName]); } catch {} } return { ok: false, status: 500, error: sanitize(e.message) }; }
     } else if (browser) writeFileSync(cfg, JSON.stringify(mcp));
     const args = agy ? ["--input-format", "stream-json", "--output-format", "stream-json", "-p=", "--dangerously-skip-permissions", "--settings", cfg, ...(choice.id ? ["--model", choice.id] : []), ...(choice.effort ? ["--effort", choice.effort] : []), ...(limitMin > 0 ? ["--print-timeout", `${limitMin}m`] : []), ...addDirs({ toolRoot, settings: s, flow, home }).flatMap((d) => ["--add-dir", d])] : ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine, nThreads).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
     if (!agy) {

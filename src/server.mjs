@@ -18,7 +18,7 @@ import { previewOf } from "../scripts/preview.mjs";
 import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial, saveOverride } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
-import { runProgress } from "./run-progress.mjs";
+import { runProgress, progressOf } from "./run-progress.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar, registryAll, resetRegistry } from "../scripts/store.mjs";
 import { promptList, skillLine, ALL_BRANDS, FLOW_IMAGES_TEXT, AGY_IMAGES_TEXT, EXTERNAL_TEXT } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
@@ -349,7 +349,7 @@ async function handle(req, res) {
     if (!r.ok) throw new Error(r.error);
     return { ok: true, run_id: r.run_id, started: r.started };
   });
-  if (path === "/api/agent-run" && req.method === "GET") return api(res, () => agentRun.status());
+  if (path === "/api/agent-run" && req.method === "GET") return api(res, () => { const st = agentRun.status(); return { ...st, progress: progressOf(st, discovered().brands.filter((b) => b.usable).map((b) => b.id)) }; }); // progress {done,total,label}: facts on disk, one function
   if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); try { if (!agentRun.status().active) rmSync(join(workspace, "pipeline", "publish.json"), { force: true }); } catch {} // a send plan of an earlier run is never reused (it caused duplicate Metricool posts)
     const r = agentRun.start(b.resume === true ? { resume: true } : { mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine, model: b.model, threads: b.threads }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started, brands: r.brands, resumed: r.resumed } : { error: r.error }); }
   if (path === "/api/run-progress" && req.method === "GET") return api(res, () => runProgress(agentRun.status(), discovered().brands.filter((b) => b.usable).map((b) => b.id)));

@@ -520,7 +520,7 @@ export function registerImage(args, s = settings()) {
   const from = path.resolve(String(need(args, 'from')));
   if (!fs.existsSync(from) || !fs.statSync(from).isFile()) throw new Error(`Không thấy file: ${from}`);
   const raw = fs.readFileSync(from), ext = sniffExt(raw);
-  if (!ext) throw new Error('--from must be a PNG or JPEG file (the Flow download).');
+  if (!ext) throw new Error(`--from must be a PNG or JPEG file (the ${agy ? 'generated image' : 'Flow download'}).`);
   const statusFile = path.join(dir, 'status.json');
   const target = path.join(dir, files[n - 1]);
   const tag = agy ? 'agy' : 'flow';

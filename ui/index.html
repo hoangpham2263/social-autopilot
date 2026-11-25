@@ -1357,7 +1357,7 @@ header + * { margin-top: 0; }
     // The options of the chosen mode, in the same row as Agent and Brand: Research = Sources, Max posts, Crawl;
     // Create & publish = Posts; Publish approved = Posts, Time, Start.
     for (const el of $$("#page-prompt [data-opt]")) el.hidden = el.dataset.opt === "research" ? !research : el.dataset.opt === "make" ? research : el.dataset.opt === "create" ? research || publishOnly : !publishOnly;
-    // Images: starts at the tool setting (image_engine); once the person picks one it stays for this page, never written to the setting.
+    // Images: the picker shows the saved image_engine (Agent and Images are saved as settings when changed).
     // The picked library item belongs to Create & publish for its brand; another mode or brand drops it.
     if (prItem && (modeKey(prMode) !== "create" || brand !== prItem.brand)) prItem = null;
     $("#prItemField").hidden = !prItem;
@@ -1458,7 +1458,7 @@ header + * { margin-top: 0; }
   const subAllowed = () => /claude code/i.test($("#prAgent").value || ""); // the sub-agent lead line is for Claude Code only
   const agyPicked = () => /antigravity/i.test($("#prAgent").value || "");
   const runAllowed = () => subAllowed() || agyPicked(); // Run now: Claude Code or Antigravity (Codex = copy prompt only)
-  // The image engine of THIS run (Run tab, Images): the select starts at settings image_engine and is never saved.
+  // The image engine of this run (Run tab, Images): the saved settings image_engine.
 
   // The Run tab pickers (Agent, Images) are stored in settings image_engine and agent.research / agent.create (agentCfg, cfgImage); Settings only holds the models.
   const AGENT_NAME = { claude: "Claude", antigravity: "Antigravity" };
@@ -1481,7 +1481,7 @@ header + * { margin-top: 0; }
     const scope = az(arr(promptData.brands).filter(brandIn), (x) => x.id);
     // skill_line comes from the server (scripts/prompts.mjs skillLine): legacy skill folder, or brand folder (brands/<id>: project and data together) + skill root + --brand <id>.
     const skills = scope.map((x) => x.skill_line || `SKILL: ${x.id} → ${x.dir} (read its SKILL.md + project/project.md + project/social.json)`).join("\n") || "SKILL: (no linked, usable brand)";
-    // {{IMAGES}}: the Google Flow lines when settings image_engine is flow (text from the server, scripts/prompts.mjs); nothing for codex.
+    // {{IMAGES}}: the Google Flow lines for Flow, the Antigravity lines for Antigravity (text from the server, scripts/prompts.mjs); nothing for codex.
     const images = chosenEngine() === "flow" ? promptData.images_text || "" : chosenEngine() === "antigravity" ? promptData.images_text_agy || "" : "";
     return prBase.replace(/\n?\{\{IMAGES\}\}/g, () => (images ? "\n" + images : "")).replace(/\n?\{\{EXTERNAL\}\}/g, () => (isResearch(prMode) && srcScope().ext.length ? "\n" + (promptData.external_text || "") : "")).replace(/\{\{SKILLS\}\}/g, () => skills).replace(/\{\{TOOL\}\}/g, promptData.tool_root || "the social-autopilot folder").replace(/\{\{BRAND\}\}/g, brandPick.join(", ") || promptData.all_brands || "all usable brands").replace(/\{\{OPTIONS\}\}/g, options());
   }
@@ -1648,7 +1648,7 @@ header + * { margin-top: 0; }
     loadProgress();
   };
 
-  // ----- Run now: starts headless Claude with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
+  // ----- Run now: starts the headless agent (Claude Code or Antigravity) with the same prompt Copy prompt gives (POST /api/agent-run); status polled every 3 s -----
   const AR_CHIP = { running: ["Running", "c-green"], done: ["Done", ""], failed: ["Failed", "c-red"], stopped: ["Stopped", "c-amber"], timeout: ["Timeout", "c-amber"] };
   let browserState = null;
   // Flow profile/account check (everyday-Chrome mode). Google flags a whole Chrome PROFILE, so: WARN when the chosen profile holds several
@@ -1732,7 +1732,7 @@ header + * { margin-top: 0; }
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
     // Elapsed and the step live in the progress bar only; here just the mode, the limit and the turns (the current action is in the live log).
     $("#arElapsed").textContent = [`${r.mode}${r.flow ? " (Flow)" : ""}`, r.model && r.model !== "default" ? r.model : "", r.limit_min ? `limit ${r.limit_min} min` : "", r.turns ? `${r.turns} turns` : ""].filter(Boolean).join(" · ");
-    const startMsg = r.mode === "research" ? "Starting… Claude works in the own browser in the background." : r.mode === "create" ? "Starting… image generation uses the Codex quota and writes drafts." : "Starting…";
+    const startMsg = r.mode === "research" ? `Starting… ${appAgent()} works in the browser.` : r.mode === "create" ? (chosenEngine() === "antigravity" ? "Starting… Antigravity makes the images and writes drafts." : chosenEngine() === "flow" ? "Starting… images are made in Google Flow, drafts are written." : "Starting… image generation uses the Codex quota and writes drafts.") : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
     { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : busy ? (arr(r.friendly).length ? "" : startMsg) : full || r.last_text || ""), !bad && !busy && !!(full || r.last_text), !!full); } // while running the raw assistant text stays out (live log has the friendly lines)
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
@@ -1782,23 +1782,23 @@ header + * { margin-top: 0; }
   // Progress bar: fill = done steps / total steps of the mode (Run progress data); no step data yet = indeterminate shimmer.
   function arBarDraw(r) {
     const bar = $("#arBar"), track = $("#arTrack"), fill = $("#arFill"), seg = $("#arSeg"), meta = $("#arBarMeta");
-    const busy = !!r.active, st = r.status, ps = progSteps && progSteps.mode === r.mode && progSteps.total > 0 ? progSteps : null;
+    const busy = !!r.active, st = r.status, p = r.progress && r.progress.total > 0 ? r.progress : null;
     bar.hidden = false;
     const cls = busy ? "" : st === "done" ? "ok" : st === "failed" ? "bad" : "warn";
+    // ONE line: counts (from the server: facts on disk) + elapsed (+ a rough time left once 3 units are done); Stop keeps the last counts.
+    const text = (e) => {
+      const left = busy && p && p.done >= 3 && p.done < p.total && e > 0 ? Math.max(1, Math.round((e / p.done) * (p.total - p.done) / 60)) : 0;
+      return [p ? p.label : busy ? "Đang chuẩn bị…" : "", `${arMmss(e)}`, left ? `~${left} min left` : ""].filter(Boolean).join(" · ");
+    };
     const elapsed = busy && r.started ? Math.max(0, Math.round((Date.now() - Date.parse(r.started)) / 1000)) : r.elapsed_s || 0;
-    let pct = 0, label = "";
-    if (ps) {
-      pct = Math.round((ps.done / ps.total) * 100);
-      const cur = ps.run >= 0 ? ps.run + 1 : Math.min(ps.total, ps.done + 1);
-      label = `step ${Math.min(ps.total, cur)} of ${ps.total}`;
-      if (!busy && st === "done") pct = 100;
-    } else if (!busy) pct = st === "done" ? 100 : 0;
-    track.className = "ar-track " + cls + (busy ? " run" : "") + (busy && !ps ? " indet" : "");
-    fill.style.width = busy && !ps ? "" : pct + "%";
-    if (busy && ps) { seg.hidden = false; seg.style.left = pct + "%"; seg.style.width = Math.min(100 / ps.total, 100 - pct) + "%"; } else seg.hidden = true;
+    let pct = p ? Math.round((p.done / p.total) * 100) : st === "done" ? 100 : 0;
+    if (busy && p) pct = Math.min(pct, 99);
+    if (!busy && st === "done") pct = 100;
+    track.className = "ar-track " + cls + (busy ? " run" : "") + (busy && !p ? " indet" : "");
+    fill.style.width = busy && !p ? "" : pct + "%";
+    seg.hidden = true;
     track.setAttribute("aria-valuenow", String(pct));
-    { const ct = rpState && rpState.mode === r.mode && rpState.started === r.started ? rpText(rpState) : ""; $("#arCount").hidden = !ct; $("#arCount").textContent = ct; }
-    const text = (e) => [label, `elapsed ${arMmss(e)}`].filter(Boolean).join(" · ");
+    $("#arCount").hidden = true; $("#arCount").textContent = ""; // the one line below replaces the separate counter
     meta.textContent = text(elapsed);
     clearInterval(arTick); arTick = 0;
     if (busy && r.started) arTick = setInterval(() => { if (!arState?.active) { clearInterval(arTick); arTick = 0; return; } meta.textContent = text(Math.max(0, Math.round((Date.now() - Date.parse(arState.started)) / 1000))); }, 1000);
