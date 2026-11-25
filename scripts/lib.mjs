@@ -36,8 +36,17 @@ function log(line) {
 const progressOf = (ok, data) => { try { trackCli(process.argv[1], parseArgs(), ok, data); } catch {} };
 // A closed pipe (| head) must not crash the script.
 process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0); throw e; });
-export function out(data) { log('ok'); progressOf(true, data); process.stdout.write(JSON.stringify({ ok: true, ...data }, null, 2) + '\n'); }
-export function fail(error, extra = {}) { log('error: ' + error); progressOf(false, { error, ...extra }); process.stdout.write(JSON.stringify({ ok: false, error, ...extra }, null, 2) + '\n'); process.exit(1); }
+// A stored quota error (an old per-item error, a draft status, a pipeline file) is never echoed in full: a command's JSON is what the agent reads, and a long HTTP 429 / quota text in it
+// looks like a fresh quota stop to people and tools. It is cut to a short label with the reset time.
+const QUOTA_ECHO = /(?:HTTP\/?[\d.]*\s*429|\b429\s+Too Many Requests|\bRESOURCE_EXHAUSTED\b)[\s\S]{0,600}/i;
+export function shortQuota(text) {
+  const m = QUOTA_ECHO.exec(String(text)); if (!m) return text;
+  const r = /reset(?:s)?\s+after\s*((?:\d+\s*h)?\s*(?:\d+\s*m)?)/i.exec(m[0]);
+  return String(text).slice(0, m.index).trim() + ` [CAUSE:QUOTA${r && r[1].trim() ? ' reset after ' + r[1].trim() : ''}]`;
+}
+export function scrubQuota(v) { if (typeof v === 'string') return shortQuota(v); if (Array.isArray(v)) return v.map(scrubQuota); if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubQuota(x)])); return v; }
+export function out(data) { log('ok'); progressOf(true, data); process.stdout.write(JSON.stringify(scrubQuota({ ok: true, ...data }), null, 2) + '\n'); }
+export function fail(error, extra = {}) { log('error: ' + error); progressOf(false, { error, ...extra }); process.stdout.write(JSON.stringify(scrubQuota({ ok: false, error, ...extra }), null, 2) + '\n'); process.exit(1); }
 // True when the file is the script being run (not imported by another script).
 export const isMain = (url) => process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(url);
 export function main(fn) {

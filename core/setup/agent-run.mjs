@@ -391,7 +391,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (typeof r.num_turns === "number" && r.num_turns > 0) run.state.turns = r.num_turns;
       if (typeof r.response === "string" && r.response.trim()) { run.state.last_text = sanitize(r.response); run.state.report = sanitizeReport(r.response); if (!ok) scan(run, r.response); }
       if (!ok && r.error) scan(run, String(r.error));
-      quotaCheck(run, String(r.error || "")); if (!ok) quotaCheck(run, String(r.response || ""));
+      quotaCheck(run, String(r.error || "")); // the run's error field only: never the response text (it may quote old errors)
       addLine(run, `result: ${run.result.subtype}${ok ? "" : " (error)"}`);
       touch(run);
     }
