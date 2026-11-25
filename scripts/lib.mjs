@@ -200,13 +200,15 @@ export function saveSettings(input = {}) {
       if (a.codex_effort !== undefined) { if (!validCodexValue(a.codex_effort)) throw new Error('agent.codex_effort không hợp lệ.'); next.agent.codex_effort = a.codex_effort; }
       // Antigravity (agy): backend of "Run now" (claude | antigravity), its model id ('' = agy default) and effort.
       // Per-task agent (Settings > Cách chạy). The old single agent.backend is turned into research/create here and dropped.
-      if (next.agent.backend !== undefined && next.agent.research === undefined && next.agent.create === undefined) { const b = AGENT_PICK.includes(next.agent.backend) ? next.agent.backend : 'claude'; next.agent.research = b; next.agent.create = b; }
       for (const k of ['research', 'create']) if (a[k] !== undefined) { if (!AGENT_PICK.includes(a[k])) throw new Error('agent.' + k + ' phải là claude hoặc antigravity.'); next.agent[k] = a[k]; }
-      if (a.backend !== undefined) { if (!AGENT_BACKENDS.includes(a.backend)) throw new Error('agent.backend phải là claude hoặc antigravity.'); next.agent.backend = a.backend; }
+      // The old single choice, still accepted: it sets research and create (unless they are sent too), it is never stored.
+      if (a.backend !== undefined) { if (!AGENT_BACKENDS.includes(a.backend)) throw new Error('agent.backend phải là claude hoặc antigravity.'); if (a.research === undefined) next.agent.research = a.backend; if (a.create === undefined) next.agent.create = a.backend; }
       if (a.agy_model !== undefined) { if (!validAgyValue(a.agy_model)) throw new Error('agent.agy_model không hợp lệ.'); next.agent.agy_model = a.agy_model; }
       if (a.agy_effort !== undefined) { if (!['', ...AGY_EFFORTS].includes(a.agy_effort)) throw new Error('agent.agy_effort không hợp lệ.'); next.agent.agy_effort = a.agy_effort; }
     }
-    { const create = agentFor({ agent: next.agent || cur.agent }, 'create'); if (next.agent && next.agent.research !== undefined) delete next.agent.backend;
+    // Any save: a legacy agent.backend left in the file becomes research/create (only the ones not set yet) and is dropped.
+    if (next.agent && next.agent.backend !== undefined) { next.agent = { ...next.agent }; const b = AGENT_PICK.includes(next.agent.backend) ? next.agent.backend : 'claude'; next.agent.research ??= b; next.agent.create ??= b; delete next.agent.backend; }
+    { const create = agentFor({ agent: next.agent || cur.agent }, 'create');
       if (input.image_engine === undefined && changes.image_engine === 'flow' && create === 'antigravity') { changes.image_engine = 'antigravity'; next.image_engine = 'antigravity'; } // old settings: Antigravity never uses Flow
       if (changes.image_engine === 'antigravity' && create !== 'antigravity') throw new Error('Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity.');
       if (changes.image_engine === 'flow' && create === 'antigravity') throw new Error('Flow chỉ chạy với agent Claude: Antigravity tạo ảnh không qua Flow.'); }

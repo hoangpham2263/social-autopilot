@@ -173,8 +173,7 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 // ----- Antigravity backend (agent.backend = "antigravity", CLI `agy`) -----
 // Same runner, other CLI: `agy -p= --input-format stream-json --output-format stream-json` reads the prompt as one NDJSON message on STDIN
 // ({"event":"user","message":{"content":...}}, checked with agy 1.5.16) and prints NDJSON events: init, step_update (agent_response with text_delta,
-// tool with tool_name/tool_info.parameters), result. agy has no Metricool connector, so Publish and Sync stay on Claude.
-export const AGY_UNSUPPORTED = ["publish", "sync"];
+// tool with tool_name/tool_info.parameters), result. agy has no Metricool connector: agentFor() always returns Claude for Publish and Sync.
 const AGY_SERVER_RE = /^sa-pw-[A-Za-z0-9-]+$/;
 export const agyServerName = (runId) => `sa-pw-${String(runId).replace(/[^A-Za-z0-9-]/g, "")}`;
 // agy only knows MCP servers from its GLOBAL config (~/.gemini/config/mcp_config.json; --settings has no mcpServers key), so the run's Playwright MCP is
@@ -203,7 +202,7 @@ export function agyToolCall(name, p = {}, own = "") {
   if (n === "read_file" || n === "view_file") return { name: "Read", input: { file_path: i.Path || i.AbsolutePath || "" }, foreign: false };
   if (["write_to_file", "replace_file_content", "multi_replace_file_content", "sed_file"].includes(n)) return { name: "Write", input: { file_path: i.TargetFile || i.Path || "" }, foreign: false };
   if (["grep_search", "find_by_name", "list_dir"].includes(n)) return { name: "Grep", input: {}, foreign: false };
-  if (n === "invoke_subagent") { const t = String(i.type_name || i.TypeName || i.SubagentType || i.subagent_type || ""); return t === "image-generator" ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + (t || "?"), input: {}, foreign: true }; } // only the image-generator subagent is allowed
+  if (n === "invoke_subagent") { const t = String(i.type_name || i.TypeName || i.SubagentType || i.subagent_type || ""); return !t || t === "image-generator" ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + (t || "?"), input: {}, foreign: true }; } // only the image-generator subagent is allowed
   if (["manage_subagents", "schedule", "wait", "wait_5_seconds"].includes(n)) return { name: "agy_image", input: {}, foreign: false }; // waiting for the image-generator subagent
   if (/browser|generate_image|define_subagent/.test(n)) return { name: n, input: {}, foreign: true };
   return { name: n, input: {}, foreign: false };
@@ -211,7 +210,7 @@ export function agyToolCall(name, p = {}, own = "") {
 
 export function validate({ mode, prompt, model }) {
   if (!MODES.includes(mode)) return "mode must be research, create, publish or sync.";
-  if (model !== undefined && model !== null && model !== "" && !MODELS.includes(model)) return "model must be default, haiku, sonnet or opus.";
+  if (model !== undefined && model !== null && model !== "" && !MODELS.includes(model) && !(typeof model === "string" && /^[A-Za-z0-9._\-\[\]]{1,80}$/.test(model))) return "model must be default, a Claude alias / id or an Antigravity model id."; // a resume sends the key the run stored (a Claude or agy model id)
   if (typeof prompt !== "string") return "prompt must be a string.";
   if (prompt.length < 200 || prompt.length > 60000) return "prompt must be 200 to 60000 characters.";
   if (!prompt.startsWith("TASK:")) return "prompt must start with TASK:.";
@@ -289,7 +288,11 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
         run.agyTools.add(k);
         const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName);
         addLine(run, "tool: " + c.name);
-        if (c.foreign) { addLine(run, "! tool outside this run's Playwright MCP: " + c.name); say(run, "Cảnh báo: agent gọi công cụ ngoài Playwright của lần chạy này"); } else say(run, friendlyTool(c.name, c.input));
+        if (c.foreign) { // a built-in browser/web tool, a subagent other than image-generator, or an MCP server other than this run's own: the run is stopped
+          run.guardError = `Antigravity used a tool this run does not allow (${c.name}): stopped.`;
+          addLine(run, "! " + run.guardError); say(run, "Dừng: agent gọi công cụ không được phép");
+          if (!run.forced) { run.forced = "failed"; killTree(run.child); setTimeout(() => finish(run, null), graceMs).unref?.(); }
+        } else say(run, friendlyTool(c.name, c.input));
         touch(run);
       }
     } else if (ev.event === "result" && ev.result) {
@@ -355,7 +358,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     }
     if (!run.state.report && run.lastRaw) run.state.report = sanitizeReport(run.lastRaw);
     const problem = run.state.problem;
-    const error = status === "failed" ? (problem ? problem.message : sanitize(err || run.stderr.at(-1) || (run.result?.is_error ? `${run.label} reported ${run.result.error || run.result.subtype || "an error"}.` : `${run.label} exited with code ${code}.`)))
+    const error = status === "failed" ? (problem ? problem.message : sanitize(run.guardError || err || run.stderr.at(-1) || (run.result?.is_error ? `${run.label} reported ${run.result.error || run.result.subtype || "an error"}.` : `${run.label} exited with code ${code}.`)))
       : status === "timeout" ? `Stopped after the ${run.limitMin}-minute limit.${problem ? " " + problem.message : ""}` : status === "done" && problem ? problem.message : "";
     say(run, status === "failed" ? `Lỗi: ${error}` : status === "stopped" ? "Bị dừng" : status === "timeout" ? "Hết thời gian" : problem ? `Hoàn tất, nhưng cần xem: ${problem.message}` : "Hoàn tất");
     addLine(run, `end: ${status}${code === null || code === undefined ? "" : " (exit " + code + ")"}`);
@@ -393,7 +396,6 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const backend = agentFor(s, mode), agy = backend === "antigravity", label = agy ? "Antigravity" : "Claude"; // one agent per task (Settings > Cách chạy); publish and sync are always Claude
     if (mode === "create" && runEngine(s, imageEngine) === "antigravity" && !agy) return { ok: false, status: 400, error: "Tạo ảnh = Antigravity cần agent Tạo bài = Antigravity (Cài đặt > Cách chạy)." };
     if (agy && usesFlow(mode, s, imageEngine)) return { ok: false, status: 400, error: "With Antigravity as the agent the images are made by Antigravity, not Google Flow: choose Images: Antigravity in the Run tab." };
-    if (agy && AGY_UNSUPPORTED.includes(mode)) return { ok: false, status: 400, error: `Antigravity cannot run ${mode}: it has no Metricool connector. Choose Claude as the agent in Settings for ${mode}.` };
     const found = agy ? findAgy() : findCli();
     if (!found?.found) return { ok: false, status: 400, error: agy ? "Antigravity CLI (agy) not found: install it or add it to PATH." : "Claude CLI not found: set claudeCli.command in workspace/settings.json." };
     const flow = usesFlow(mode, s, imageEngine);
@@ -425,7 +427,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       for (const n of names.filter((n) => AGY_SERVER_RE.test(n))) ex(["mcp", "remove", n]); // leftovers of a run that never cleaned up
       if (browser) {
         mcpName = agyServerName(runId);
-        const srv = mcp.mcpServers.playwright, added = ex(agyMcpAddArgs(mcpName, { ...srv, env: { ...(srv.env || {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) } }));
+        const srv = mcp.mcpServers.playwright, added = ex(agyMcpAddArgs(mcpName, { ...srv, env: {} })); // no -e: PLAYWRIGHT_MCP_EXTENSION_TOKEN / PROFILE_DIR_NAME reach the server through the environment of the agy process (checked: an MCP server inherits it), so no token sits in argv or in agy's mcp_config.json
         if (added?.error || added?.status !== 0) { try { ex(["mcp", "remove", mcpName]); } catch {} return { ok: false, status: 500, error: sanitize(`Could not add the Playwright MCP to Antigravity: ${added?.error?.message || added?.stderr || added?.stdout || added?.status}`) }; }
       }
       writeFileSync(cfg, JSON.stringify(agySettings(names.filter((n) => !AGY_SERVER_RE.test(n)), mcpName)));

@@ -5,7 +5,7 @@
 //
 //   node scripts/pipeline.mjs mcp-plan [--brand <id|all>]
 //        the Metricool MCP calls to make first (getBrandSettings, getBestTimeToPostByNetwork per brand, exact args)
-//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"] [--image-engine codex|flow] [--images N|min-max] [--album angle|scene|random]
+//   node scripts/pipeline.mjs create --brand <id|all> [--count N | --items S0008,S0012] [--agent "Claude Code"] [--image-engine codex|flow|antigravity] [--images N|min-max] [--album angle|scene|random]
 //        --items: ideas from exactly these library items (passed to ideas.mjs init; one brand); only their ideas go in the
 //        ideas file. A reused item comes with _context.previous_uses + reuse_rule (take a new angle).
 //        [--brand-settings <file> --best-times-dir <dir>]   (the saved MCP answers: sync-brands / sync-times run here)
@@ -426,7 +426,7 @@ function stageD(st, file, args) {
   if (allReady && !args['no-finish']) return { stage: 'D done', results, ...finish(st) };
   return {
     stage: 'D partial', results, redo, problems,
-    next: redo.length && manualImages(st.image_engine) ? `Redo ${redo.length} image(s) in Google Flow (new prompt.txt written; docs/flow-images.md), register each with draft.mjs register-image --id <draft> --n <k> --from <file> (replaces the old image), then: node scripts/pipeline.mjs create --resume.`
+    next: redo.length && manualImages(st.image_engine) ? (st.image_engine === 'antigravity' ? `Redo ${redo.length} image(s) with Antigravity (image-generator; new prompt.txt written; docs/flow-images.md), register each with draft.mjs register-image --id <draft> --n <k> --engine antigravity --from <file> (replaces the old image), then: node scripts/pipeline.mjs create --resume.` : `Redo ${redo.length} image(s) in Google Flow (new prompt.txt written; docs/flow-images.md), register each with draft.mjs register-image --id <draft> --n <k> --from <file> (replaces the old image), then: node scripts/pipeline.mjs create --resume.`)
       : redo.length ? `Redoing ${redo.length} image(s) in the background: node scripts/pipeline.mjs create --resume (waits, new contact sheet), then captions for those.`
       : `Fix the drafts that are not ready (problems above) in ${rel(path.resolve(file))} and send it again: node scripts/pipeline.mjs create --resume --captions ${rel(path.resolve(file))}${notReady.length || problems.length ? ' (or finish anyway: node scripts/pipeline.mjs create --resume --finish; they stay out of To review)' : ''}`,
   };

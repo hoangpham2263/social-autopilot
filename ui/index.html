@@ -99,7 +99,7 @@ fieldset.spaced { margin-top: 24px; }
 .sub-title { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
 #page-settings legend .meta { margin-left: 8px; }
 #prChrome[data-flow="0"] .flow-only { display: none; }
-#prModelLine { cursor: pointer; } #prModelLine:hover { text-decoration: underline; }
+#prModelLine { cursor: pointer; display: inline-block; border: 1px solid transparent; padding: 2px 6px; margin-left: -6px; } #prModelLine:hover { text-decoration: underline; } #prModelLine:focus-visible { outline: none; border-color: var(--accent); }
 .run-sum-line { margin: 0 0 12px; }
 @media (max-width: 600px) { .fgrid { grid-template-columns: minmax(0, 1fr); } }
 .placeholder-media { aspect-ratio: 1 / 1; background: #e4e6eb; }
@@ -499,7 +499,7 @@ header + * { margin-top: 0; }
     <div class="run-sum-line" id="prModelField"><span class="meta" id="prModelLine" role="button" tabindex="0">…</span></div>
     <div class="fields">
       <div class="field"><label for="prAgent">Agent</label><select id="prAgent"></select></div>
-      <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Starts Claude Code for you and shows progress here">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
+      <div class="field auto"><span class="label">How to run</span><span class="seg" id="prHow" role="group" aria-label="How to run"><button class="btn" type="button" data-how="app" title="Agent: Cài đặt > Cách chạy">Run in the app</button><button class="btn" type="button" data-how="copy" title="Copy the prompt and paste it into Claude Code / Codex yourself">Copy prompt</button></span></div>
       <div class="field" id="prBrandField"><span class="label">Brand</span><details id="prBrandBox"><summary id="prBrandSum">All</summary><div id="prBrandList"></div></details></div>
       <div class="field" data-opt="research" id="prSrcField" hidden><span class="label" title="Which sources this run crawls (default: all enabled; turn sources on or off for good in the brand's Edit page)">Sources</span><details id="prSrcBox"><summary id="prSrcSum">All</summary><div id="prSrc"></div></details></div>
       <div class="field" data-opt="research" id="prPlatField" hidden><span class="label" title="Which platforms this run covers: unticked platforms drop their sources and are left out of discovery (--platforms). Default: all.">Platforms</span><details id="prPlatBox"><summary id="prPlatSum">All</summary><div id="prPlat"></div></details></div>
@@ -514,12 +514,12 @@ header + * { margin-top: 0; }
     <div class="meta flow-check" id="prFlowRunHint" role="status" hidden></div>
     <div class="actions">
       <button class="btn primary" type="button" id="prCopy">Copy prompt</button>
-      <button class="btn primary" type="button" id="prRunNow" title="Starts Claude Code itself with this prompt (headless), no pasting">Run now</button>
+      <button class="btn primary" type="button" id="prRunNow" title="Agent: Cài đặt > Cách chạy">Run now</button>
       <button class="btn" type="button" id="prResume" disabled>Chạy tiếp lượt trước</button>
       <button class="btn" type="button" id="prStop" title="Stops the run started from this app" hidden>Stop</button>
       <span class="meta" id="prMsg">Paste into Claude Code / Codex opened in the tool folder</span>
       <span class="meta" id="prExtHint" hidden></span>
-      <span class="meta" id="prAppHint">Starts Claude Code for you; the live panel below shows progress.</span>
+      <span class="meta" id="prAppHint">Agent: Cài đặt > Cách chạy.</span>
       <span class="status-tag c-amber" id="prRunPill" hidden>A run is active in the app <button class="linkbtn" type="button" id="prRunPillGo">show</button></span>
     </div>
     <div class="meta" id="prLoginHint" role="status" hidden></div>
@@ -1558,7 +1558,7 @@ header + * { margin-top: 0; }
   };
   const showRunModel = () => {
     const el = $("#prModelLine"); if (!el) return;
-    el.title = "Đổi trong Cài đặt";
+    el.title = "Đổi trong Cài đặt"; try { for (const id of ["#prRunNow", "#prHow [data-how=app]"]) { const b = $(id); if (b && !b.disabled) b.title = `${appAgent()}: Cài đặt > Cách chạy`; } } catch {}
     if (runningModel) { el.textContent = `Đang chạy: ${runningModel}`; return; }
     el.textContent = howNow() === "app" ? aiSummary() : /codex/i.test($("#prAgent").value || "") ? `Codex ${agentCfg?.codex_model ? cxName(agentCfg.codex_model) : "mặc định"}` : /claude/i.test($("#prAgent").value || "") ? `Claude ${clName(agentCfg?.claude_model || "claude-sonnet-4-6")}` : "Chọn trong agent bạn dán vào";
   };
@@ -1660,7 +1660,7 @@ header + * { margin-top: 0; }
     showRunModel();
     $("#prAppHint").hidden = !app;
     { const ext = $("#prExtHint"), extTxt = ext && !ext.hidden ? ext.textContent : ""; if (ext) ext.dataset.fold = app ? "1" : "";
-      $("#prAppHint").textContent = claude ? `Starts ${appAgent()} for you; the live panel below shows progress.` + (extTxt ? " " + extTxt + "." : "") : "Run in the app needs Claude Code"; }
+      $("#prAppHint").textContent = claude ? `${appAgent()} chạy trong app, tiến trình ở bên dưới.` + (extTxt ? " " + extTxt + "." : "") : "Chọn prompt Claude Code để chạy trong app"; }
     $("#prAppHint").style.color = claude ? "" : "#b06000";
     $("#prRunPill").hidden = app || !busy;
   }
@@ -1677,12 +1677,12 @@ header + * { margin-top: 0; }
     { const m = r?.active ? r.model_in_use || "" : ""; if (m !== runningModel) { runningModel = m; showRunModel(); } }
     // No brand to run for: the chosen brand is not usable, or (All) no brand is usable.
     const noBrand = promptData?.brands && !arr(promptData.brands).some((x) => x.usable && (!brandPick.length || brandPick.includes(x.id)));
-    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Run now starts ${appAgent()}: choose the Claude Code prompt`);
+    setDisabled($("#prRunNow"), busy || noCli || !claude || !!prBlock || noBrand, prBlock ? prBlock : busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : noBrand ? "No usable brand: link a skill on Overview first" : `Chọn prompt Claude Code (agent chạy: Cài đặt > Cách chạy)`);
     setDisabled($("#prCopy"), !!prBlock, prBlock);
     // Continue the previous run (GET /api/agent-run resume): enabled only when the last run stopped / failed midway; same inputs, only the missing work.
     { const rs = r?.resume, ok = !!rs?.available && !busy && !noCli && claude, btn = $("#prResume");
       const what = rs?.available ? `${{ research: "Research", create: "Create & publish", publish: "Publish approved" }[rs.mode] || rs.mode}${rs.brands?.length ? " · " + rs.brands.join(", ") : ""} · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : "";
-      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? "Claude CLI not found: set claudeCli.command in workspace/settings.json" : "Run now starts Claude Code: choose the Claude Code agent") : "No stopped run to continue: the last run finished or none was started from the app");
+      setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agentOfMode(modeKey(prMode)) === "antigravity" ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Chọn prompt Claude Code (agent chạy: Cài đặt > Cách chạy)") : "No stopped run to continue: the last run finished or none was started from the app");
       if (ok) btn.title = `Continues the previous run with the same options, without redoing finished work: ${what}`; }
     { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
     // Flow run whose Flow account is not signed in to the chosen profile: blocked (a warning alone never blocks).
@@ -2721,15 +2721,15 @@ function draftTags(d) {
     $("#aiClModel").onchange = () => { const o = $("#aiClModel").value === "__other"; $("#aiClOtherBox").hidden = !o; if (o) $("#aiClOther").focus(); else aiSave(); };
     $("#aiClOther").onchange = aiSave;
   }
-  async function aiSave() {
-    if (aiBusy) return;
+  let aiPending = false;
+  async function aiSave() { if (aiBusy) { aiPending = true; return; } aiBusy = true; try { do { aiPending = false; await aiSaveOnce(); } while (aiPending); } finally { aiBusy = false; } } // a change made while a save runs is saved right after it
+  async function aiSaveOnce() {
     if (runGuard()) { if (aiSaved) renderAI(aiSaved); return; }
     const clV = $("#aiClModel").value === "__other" ? $("#aiClOther").value.trim() : $("#aiClModel").value;
     if (!/^[A-Za-z0-9._\-\[\]]{1,60}$/.test(clV)) { aiMark(errLine("Mã model: chữ, số, . _ - [ ]")); return; }
     const body = { image_engine: $("#aiImage").value, agent: { research: $("#aiResearch").value, create: $("#aiCreate").value, claude_model: clV, claude_effort: $("#aiClEffort").value, codex_model: $("#aiCxModel").value, codex_effort: $("#aiCxEffort").value, agy_model: $("#aiAgModel").value, agy_effort: $("#aiAgEffort").value } };
-    aiBusy = true; aiMark("…");
+    aiMark("…");
     const r = await postJson("/api/settings", { settings: body }).catch(() => offline);
-    aiBusy = false;
     if (r.error) { aiMark(errLine(r.error)); if (aiSaved) renderAI(aiSaved); return; }
     aiMark(`<span class="ok-text">Đã lưu</span>`);
     const g = await getJson("/api/settings").catch(() => null); if (g?.settings) { aiSaved = g.settings; agentCfg = g.settings.agent || {}; cfgImage = g.settings.image_engine || ""; showRunModel(); try { syncFlowOnly(); regenerate(); } catch {} }
