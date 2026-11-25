@@ -70,7 +70,7 @@ export const claudeChoice = (settings = {}, requested = "") => {
   const id = ok(a.claude_model) ? a.claude_model : ok(requested) ? requested : CLAUDE_DEFAULT;
   return { key: id, id, effort: EFFORTS.includes(a.claude_effort) ? a.claude_effort : "" };
 };
-export const allowedTools = (mode, settings = {}, engine = "") => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : [])];
+export const allowedTools = (mode, settings = {}, engine = "", threads = 1) => [...ALLOWED_TOOLS[mode], ...(usesFlow(mode, settings, engine) ? FLOW_TOOLS : []), ...(mode === "create" && threads > 1 ? ["Agent", "Task"] : [])]; // Agent: parallel drafting sub-agents (Threads > 1)
 
 // Anything that looks like a secret is replaced before a line is kept.
 const SCRUBS = [
@@ -170,6 +170,24 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 
 `;
 
+// ----- Threads (Run tab "Threads" 1-4, Create only): what may run in parallel -----
+// Parallel (safe): Antigravity images (a group of up to N image-generator subagents in ONE turn), Codex images (image-batch slots = max(codex.concurrency, N) via SA_THREADS),
+// Claude drafting text for several posts (N sub-agents, disjoint drafts, one writer per draft). Never parallel: Google Flow (pacing gate per profile), Research (one
+// source at a time in one tab: the state machine, tokens and blocked-platform skipping), Publish and Sync (Metricool).
+export const threadsFor = (mode, threads) => (mode === "create" ? Math.min(4, Math.max(1, Math.trunc(Number(threads)) || 1)) : 1);
+export function threadsNote(mode, n, { agy = false, engine = "codex" } = {}) {
+  let t = `THREADS: ${n}\n`;
+  if (n < 2) return t;
+  if (mode !== "create") return t;
+  const parts = [];
+  if (engine === "antigravity") parts.push(`IMAGES IN PARALLEL: make the pictures in GROUPS of up to ${n}: in ONE turn call invoke_subagent once per image of the group (type_name "image-generator", nothing else), wait for all, then LOOK at each and run its register-image one after the other. A group is either the covers (image 1) of up to ${n} DIFFERENT posts, or the extras (image 2..4) of ONE post whose cover is already registered. Never two registers of the same draft at the same time; one failing image never blocks its group.`);
+  else if (engine === "flow") parts.push("Google Flow images stay ONE at a time (pacing gate per profile): THREADS does not apply to them.");
+  else parts.push(`Codex images: the tool runs up to ${n} at once by itself (draft.mjs image-batch); nothing to do for it.`);
+  if (!agy) parts.push(`DRAFT TEXT IN PARALLEL: when several posts need ideas or captions you may start up to ${n} sub-agents with the Agent tool; each gets DISJOINT draft ids and writes only those drafts' files (one writer per draft). Only YOU run pipeline.mjs, store.mjs, queue and every command that changes shared state; wait for all sub-agents before the next pipeline step.`);
+  else parts.push("Draft text stays one post after another (Antigravity may call no subagent except image-generator).");
+  return t + parts.join("\n") + "\n";
+}
+
 // ----- Antigravity backend (agent.backend = "antigravity", CLI `agy`) -----
 // Same runner, other CLI: `agy -p= --input-format stream-json --output-format stream-json` reads the prompt as one NDJSON message on STDIN
 // ({"event":"user","message":{"content":...}}, checked with agy 1.5.16) and prints NDJSON events: init, step_update (agent_response with text_delta,
@@ -195,20 +213,22 @@ NEVER use your own built-in browser tools (browser_subagent, open_browser_url, b
 ` : "No browser is needed for this run: do not open any browser.\n"}${images ? 'IMAGES: you make the post images yourself with your image-generator subagent: call invoke_subagent with type_name "image-generator" (this is the ONLY subagent you may call) as the prompt describes. Never use browser_*/web tools, Google Flow or any other subagent.\n' : ""}
 `;
 // agy tool call -> the Claude-style (name, input) that friendlyTool() already words in Vietnamese. foreign = not the run's own Playwright MCP / a built-in browser or image tool.
-export function agyToolCall(name, p = {}, own = "") {
+export function agyToolCall(name, p = {}, own = "", subagents = null) {
   const n = String(name || ""), i = p && typeof p === "object" ? p : {};
   if (n === "call_mcp_tool") return i.ServerName === own ? { name: "mcp__playwright__" + String(i.ToolName || ""), input: i.Arguments || {}, foreign: false } : { name: "mcp__" + String(i.ServerName || "?") + "__" + String(i.ToolName || ""), input: {}, foreign: true };
   if (n === "run_command") return { name: "Bash", input: { command: String(i.CommandLine || "") }, foreign: false };
   if (n === "read_file" || n === "view_file") return { name: "Read", input: { file_path: i.Path || i.AbsolutePath || "" }, foreign: false };
   if (["write_to_file", "replace_file_content", "multi_replace_file_content", "sed_file"].includes(n)) return { name: "Write", input: { file_path: i.TargetFile || i.Path || "" }, foreign: false };
   if (["grep_search", "find_by_name", "list_dir"].includes(n)) return { name: "Grep", input: {}, foreign: false };
+  if (n === "invoke_subagent" && Array.isArray(subagents) && subagents.length) return subagents.every((x) => /^image-generator$/i.test(String(x?.type_name || ""))) ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + subagents.map((x) => x?.type_name || "?").join(","), input: {}, foreign: true }; // a list of image-generator subagents in one turn is allowed, anything else is not
   if (n === "invoke_subagent") { const t = String(i.type_name || i.TypeName || i.SubagentType || i.subagent_type || ""); return !t || t === "image-generator" ? { name: "agy_image", input: {}, foreign: false } : { name: "subagent:" + (t || "?"), input: {}, foreign: true }; } // only the image-generator subagent is allowed
   if (["manage_subagents", "schedule", "wait", "wait_5_seconds"].includes(n)) return { name: "agy_image", input: {}, foreign: false }; // waiting for the image-generator subagent
   if (/browser|generate_image|define_subagent/.test(n)) return { name: n, input: {}, foreign: true };
   return { name: n, input: {}, foreign: false };
 }
 
-export function validate({ mode, prompt, model }) {
+export function validate({ mode, prompt, model, threads }) {
+  if (threads !== undefined && threads !== null && threads !== "" && !(Number.isInteger(Number(threads)) && Number(threads) >= 1 && Number(threads) <= 4)) return "threads must be a whole number from 1 to 4.";
   if (!MODES.includes(mode)) return "mode must be research, create, publish or sync.";
   if (model !== undefined && model !== null && model !== "" && !MODELS.includes(model) && !(typeof model === "string" && /^[A-Za-z0-9._\-\[\]]{1,80}$/.test(model))) return "model must be default, a Claude alias / id or an Antigravity model id."; // a resume sends the key the run stored (a Claude or agy model id)
   if (typeof prompt !== "string") return "prompt must be a string.";
@@ -284,9 +304,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
           if (text) { addLine(run, "A: " + text); say(run, text.replace(/\s+/g, " ")); scan(run, text); const t = sanitize(text); if (t) run.state.last_text = t; run.lastRaw = text; }
           touch(run);
         }
-      } else if (su.step_type === "tool" && su.tool_name && !run.agyTools.has(k)) {
+      } else if ((su.step_type === "tool" || su.step_type === "subagent") && su.tool_name && !run.agyTools.has(k)) {
         run.agyTools.add(k);
-        const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName);
+        const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName, su.subagent_info?.subagents);
         addLine(run, "tool: " + c.name);
         if (c.foreign) { // a built-in browser/web tool, a subagent other than image-generator, or an MCP server other than this run's own: the run is stopped
           run.guardError = `Antigravity used a tool this run does not allow (${c.name}): stopped.`;
@@ -379,17 +399,17 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return available ? { available, run_id: st.run_id, mode: st.mode, status, brands: Array.isArray(inp.brands) ? inp.brands : [], model: inp.model || "default", image_engine: inp.image_engine || "", started: st.started || "", ended: st.updated || "" } : { available: false };
   }
 
-  function start({ mode, prompt, brands, imageEngine, model, resume = false } = {}) {
+  function start({ mode, prompt, brands, imageEngine, model, threads, resume = false } = {}) {
     let prefix = "", from = "";
     if (resume) {
       if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
       const ri = resumeInfo();
       if (!ri.available) return { ok: false, status: 409, error: "There is no stopped run to continue." };
       const inp = readInput();
-      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || "";
+      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.threads;
       prefix = continueLine(mode, ri); from = ri.run_id;
     }
-    const bad = validate({ mode, prompt, model });
+    const bad = validate({ mode, prompt, model, threads });
     if (bad) return { ok: false, status: 400, error: bad };
     if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
     const s = getSettings() || {};
@@ -411,6 +431,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       const why = extensionProfileProblem(s, { flow }); if (why) return { ok: false, status: 409, error: why };
     }
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
+    const nThreads = threadsFor(mode, threads); // Create only; Research, Publish and Sync always 1
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
     const cfg = join(tmpDir, `mcp-${runId}.json`);
@@ -432,14 +453,14 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       }
       writeFileSync(cfg, JSON.stringify(agySettings(names.filter((n) => !AGY_SERVER_RE.test(n)), mcpName)));
     } else if (browser) writeFileSync(cfg, JSON.stringify(mcp));
-    const args = agy ? ["--input-format", "stream-json", "--output-format", "stream-json", "-p=", "--dangerously-skip-permissions", "--settings", cfg, ...(choice.id ? ["--model", choice.id] : []), ...(choice.effort ? ["--effort", choice.effort] : []), ...(limitMin > 0 ? ["--print-timeout", `${limitMin}m`] : []), ...addDirs({ toolRoot, settings: s, flow, home }).flatMap((d) => ["--add-dir", d])] : ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
+    const args = agy ? ["--input-format", "stream-json", "--output-format", "stream-json", "-p=", "--dangerously-skip-permissions", "--settings", cfg, ...(choice.id ? ["--model", choice.id] : []), ...(choice.effort ? ["--effort", choice.effort] : []), ...(limitMin > 0 ? ["--print-timeout", `${limitMin}m`] : []), ...addDirs({ toolRoot, settings: s, flow, home }).flatMap((d) => ["--add-dir", d])] : ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine, nThreads).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
     if (!agy) {
       args.push("--model", choice.id);
       if (choice.effort) args.push("--effort", choice.effort);
       if (browser) args.push("--mcp-config", cfg);
       if (mode === "research") args.push("--strict-mcp-config");
     }
-    const env = { ...process.env, ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
+    const env = { ...process.env, SA_THREADS: String(nThreads), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
@@ -447,10 +468,10 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const started = new Date(now()).toISOString();
     const run = {
       child, cfg, backend, label, mcpName, mcpGone: false, agyPath: found.path, agyText: {}, agyTools: new Set(), settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
     };
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
-    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "" })); } catch {}
+    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads })); } catch {}
     cur = run;
     try { writeFileSync(logFile, ""); } catch {}
     run.friendly = [];
@@ -466,7 +487,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
     const note = own ? ownNote(bs.headless) : browser ? (flow ? flowExtensionNote : extensionNote) : "";
     // agy reads the prompt as ONE NDJSON user message on stdin (never argv: no length limit, nothing in the process list).
-    const text = note + (agy ? agyNote(mcpName, browser, usesAgyImages(mode, s, imageEngine)) : "") + prefix + prompt;
+    const text = note + threadsNote(mode, nThreads, { agy, engine: runEngine(s, imageEngine) }) + (agy ? agyNote(mcpName, browser, usesAgyImages(mode, s, imageEngine)) : "") + prefix + prompt;
     try { child.stdin?.end(agy ? JSON.stringify({ event: "user", message: { content: text } }) + String.fromCharCode(10) : text); } catch {}
     // Hard time limit: the whole process tree is killed.
     if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
@@ -496,7 +517,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      backend: shown?.backend || "claude", usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      backend: shown?.backend || "claude", threads: shown?.threads || 1, usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),

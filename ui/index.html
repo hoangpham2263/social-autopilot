@@ -134,6 +134,7 @@ details[open] > summary { margin-bottom: 6px; }
 /* Images per post: the select keeps a readable width ("Random 1 to 4", "Album 2 to 4", "Custom..."); in Custom mode the cell grows to hold min and max. */
 #page-prompt .fields > #prModelField { width: auto !important; flex: 1 1 160px !important; min-width: 0; }
 #prModelLine { display: block; height: var(--ctl-h); line-height: var(--ctl-h); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#page-prompt .fields > .field:has(#prThreads) { width: 96px !important; flex: 0 0 96px !important; }
 #page-prompt .fields > .field:has(#prImgMin) { width: auto !important; flex: 0 0 auto !important; min-width: 0; } /* sized by its content, so the row wraps to a new line instead of scrolling sideways */
 #page-prompt { overflow-x: hidden; }
 #page-prompt .imgrow { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
@@ -506,6 +507,7 @@ header + * { margin-top: 0; }
       <div class="field" data-opt="research" hidden><label for="prMax" title="The target of new posts for each brand in this run (empty = 100)">Max posts per brand</label><input type="number" id="prMax" autocomplete="off" min="1" step="1" placeholder="100"></div>
       <div class="field" data-opt="make" hidden><label for="prCount">Posts</label><input type="number" id="prCount" min="1" step="1"></div>
       <div class="field" data-opt="create" hidden><label for="prImages" title="Who makes the images: Codex, Google Flow in your signed-in Chrome (Claude), or Antigravity itself (no Flow). Saved as the default.">Images</label><select id="prImages"><option value="codex">Codex</option><option value="flow">Google Flow</option><option value="antigravity">Antigravity (không qua Flow)</option></select></div>
+      <div class="field" data-opt="create" hidden><label for="prThreads" title="Pictures and drafts made at the same time (1-4). Not for Flow, Research, Publish">Threads</label><input type="number" id="prThreads" min="1" max="4" step="1" value="1" autocomplete="off"></div>
       <div class="field" data-opt="create" hidden><span class="label" title="Images per post of this run: random between min and max (1 to 4). Default: Settings, Images per post. min = max gives exactly that many.">Images per post</span><span class="imgrow"><span class="pair"><span class="meta">min</span><input type="number" id="prImgMin" min="1" max="4" step="1" value="1" aria-label="Images per post, min" autocomplete="off"><span class="meta">max</span><input type="number" id="prImgMax" min="1" max="4" step="1" value="4" aria-label="Images per post, max" autocomplete="off"></span></span></div>
       <div class="field" data-opt="create" id="prAlbField" hidden><span class="label" title="Which kinds of album posts with 2 or more images can be (random between the ticked ones, per post). Posts with a single image ignore it. Default: Settings, Album.">Image types</span><details id="prAlbBox"><summary id="prAlbSum">All 2</summary><div id="prAlb"></div></details></div>
       <div class="field auto" id="prItemField" hidden><span class="label">Library item</span><span class="inline-control"><span id="prItemName"></span> <button class="btn" type="button" id="prItemClear" title="Back to the automatic pick">Clear</button> <label id="prSwapLabel" title="Keep the reference's product/sign, only change the scene (the brand's skill allows reference_redraw)"><input type="checkbox" id="prSwap"> Scene-swap</label></span></div>
@@ -1438,6 +1440,7 @@ header + * { margin-top: 0; }
       if (prItem && !pub) lines.push(`from library item ${prItem.id} (--items ${prItem.id})`);
       else if (count > 0) lines.push(/publish approved/i.test(prMode) ? `send exactly min(${count}, approved posts not on Metricool yet) posts IN TOTAL over all brands in scope, oldest approved first (--limit ${count}); fewer available than ${count}: send those and say "Hết stock: chỉ còn X bài đã duyệt (bạn chọn ${count})"; the report says "requested ${count}, done M"` : `${count} posts per brand (pipeline.mjs create --count ${count}); the report says "requested ${count}, done M"; fewer possible than ${count}: make those and say "Hết stock: chỉ còn X bài khả dụng (bạn chọn ${count})"`);
       if (prItem && !pub && $("#prSwap").checked) lines.push(SWAP_LINE(prItem.id));
+      if (!pub && threadsVal() > 1) lines.push(`THREADS: ${threadsVal()} (parallel steps, see the IMAGES lines; 1 = one after another)`);
       if (!pub) lines.push(`images by ${chosenEngine() === "flow" ? "Google Flow" : chosenEngine() === "antigravity" ? "Antigravity tạo ảnh (không qua Flow)" : "Codex"} (pipeline.mjs create --image-engine ${chosenEngine()}; this run only)`);
       const imf = pub ? "" : imgFlag(), alf = pub ? "" : albFlag();
       if (imf) lines.push(/^\d$/.test(imf) ? `exactly ${imf} image${imf === "1" ? "" : "s"} (pipeline.mjs create --images ${imf}; this run only)` : `${imf.replace("-", " to ")} images per post (--images ${imf}; this run only)`);
@@ -1583,6 +1586,10 @@ header + * { margin-top: 0; }
     await loadAgentCfg();
   };
   $("#prImages").onchange = async () => { await saveRunAI("images"); regenerate(); };
+  // Threads (Create only): remembered in this browser, sent with the run request, counted in the prompt as THREADS: N.
+  const threadsVal = () => Math.min(4, Math.max(1, Math.trunc(Number($("#prThreads").value)) || 1));
+  { const t = Number(store.get("prThreads")); if (Number.isInteger(t) && t >= 1 && t <= 4) $("#prThreads").value = t; }
+  $("#prThreads").onchange = () => { $("#prThreads").value = threadsVal(); store.set("prThreads", threadsVal()); regenerate(); };
   const loadAgentCfg = async () => { const [r] = await Promise.all([getJson("/api/settings").catch(() => null), loadAgentModels()]); if (r?.settings) { agentCfg = r.settings.agent || {}; cfgImage = r.settings.image_engine || ""; } showRunModel(); try { syncRunPickers(); syncFlowOnly(); regenerate(); } catch {} };
   loadAgentCfg();
   $("#prAgent").onchange = async () => { store.set("prAgent", $("#prAgent").value); if (runAllowed() && modeKey(prMode) !== "publish") await saveRunAI("agent"); showRunModel(); drawPrompt(); applyHow(); };
@@ -1907,7 +1914,7 @@ header + * { margin-top: 0; }
     const btn = $("#prRunNow"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "Starting…"; // instant feedback: the click is registered while the app starts Claude
     try {
-      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, ...(key === "create" ? { image_engine: chosenEngine() } : {}) }).catch(() => ({ error: "The app did not answer." }));
+      const r = await postJson("/api/agent-run", { mode: key, prompt: text, brands, ...(key === "create" ? { image_engine: chosenEngine(), threads: threadsVal() } : {}) }).catch(() => ({ error: "The app did not answer." }));
       if (r.error) { flash(r.error); toast(r.error); await loadAgentRun(); return; }
       await postJson("/api/progress", { mode: key, brands, agent: $("#prAgent").value || "" }).catch(() => {});
       await loadAgentRun(); loadProgress();

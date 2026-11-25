@@ -377,7 +377,9 @@ function tryCodexSlot(n, dir) {
   }
   return null;
 }
-const slotSetup = (s) => { const dir = path.join(workspace, 'tmp', 'codex-slots'); fs.mkdirSync(dir, { recursive: true }); return { n: Math.max(1, Number(s.codex?.concurrency) || 3), dir }; };
+// Run tab Threads (SA_THREADS, set by the app's runner): never fewer Codex images at once than the setting allows, up to N more.
+const threadsEnv = () => { const n = Number(process.env.SA_THREADS); return Number.isInteger(n) && n >= 1 && n <= 4 ? n : 0; };
+const slotSetup = (s) => { const dir = path.join(workspace, 'tmp', 'codex-slots'); fs.mkdirSync(dir, { recursive: true }); return { n: Math.max(1, Number(s.codex?.concurrency) || 3, threadsEnv()), dir }; };
 const slotWait = (s) => ((Number(s.codex?.timeout_minutes) || 15) * 2 + 5) * 60000;
 export function takeCodexSlot(s = settings(), { waitMs = slotWait(s) } = {}) {
   const { n, dir } = slotSetup(s), until = Date.now() + waitMs;
@@ -403,7 +405,7 @@ export async function takeCodexSlotAsync(s = settings(), { waitMs = slotWait(s) 
 // on the machine than codex.concurrency: the slots above). Each finished image moves the app's Run progress.
 export async function imageBatch(args, s = settings()) {
   const brand = need(args, 'brand');
-  const limit = Math.max(1, Number(args.concurrency && args.concurrency !== true ? args.concurrency : s.codex.concurrency || 3));
+  const limit = Math.max(1, Number(args.concurrency && args.concurrency !== true ? args.concurrency : Math.max(s.codex.concurrency || 3, threadsEnv())));
   const all = waitingForImage(brand, !!args.force, s);
   const todo = [], skipped = [];
   for (const d of all) {

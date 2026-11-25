@@ -351,7 +351,7 @@ async function handle(req, res) {
   });
   if (path === "/api/agent-run" && req.method === "GET") return api(res, () => agentRun.status());
   if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); try { if (!agentRun.status().active) rmSync(join(workspace, "pipeline", "publish.json"), { force: true }); } catch {} // a send plan of an earlier run is never reused (it caused duplicate Metricool posts)
-    const r = agentRun.start(b.resume === true ? { resume: true } : { mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine, model: b.model }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started, brands: r.brands, resumed: r.resumed } : { error: r.error }); }
+    const r = agentRun.start(b.resume === true ? { resume: true } : { mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine, model: b.model, threads: b.threads }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started, brands: r.brands, resumed: r.resumed } : { error: r.error }); }
   if (path === "/api/run-progress" && req.method === "GET") return api(res, () => runProgress(agentRun.status(), discovered().brands.filter((b) => b.usable).map((b) => b.id)));
   if (path === "/api/agent-run/stop" && req.method === "POST") { const r = agentRun.stop(); return send(res, r.status, r.ok ? { ok: true } : { error: r.error }); }
   // Prompt tab, Run progress (scripts/progress.mjs): the fixed steps of the mode, its current run (workspace/runs/
