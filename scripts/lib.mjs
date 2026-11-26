@@ -830,14 +830,33 @@ export function inspectBrand(dir) {
   const checker = skillScript(dir, 'check-skill.mjs');
   if (!fs.existsSync(checker)) result.problems.push('skill thiếu scripts/check-skill.mjs');
   else {
-    const r = spawnSync(process.execPath, [checker, ...skillScriptArgs(dir, ['--tool-ready'])], { cwd: skillRoot, encoding: 'utf8', windowsHide: true });
-    result.ready = r.status === 0;
-    if (!result.ready) result.problems.push(...String(r.stdout).split(/\r?\n/).filter((l) => /^\s+- |^LỖI /.test(l)).map((l) => l.replace(/^\s+- /, 'missing: ').trim()));
+    // The skill check is a child process (~170 ms per brand, paid by EVERY script call): its answer is kept for 60 s per brand, and dropped at once when a file it reads changes.
+    const ck = readyCache(dir, [checker, path.join(dir, 'project', 'project.md'), path.join(dir, 'project', 'social.json'), path.join(skillRoot, 'SKILL.md')]);
+    let ready, lines;
+    if (ck.hit) ({ ready, lines } = ck.hit);
+    else {
+      const r = spawnSync(process.execPath, [checker, ...skillScriptArgs(dir, ['--tool-ready'])], { cwd: skillRoot, encoding: 'utf8', windowsHide: true });
+      ready = r.status === 0; lines = String(r.stdout).split(/\r?\n/).filter((l) => /^\s+- |^LỖI /.test(l)).map((l) => l.replace(/^\s+- /, 'missing: ').trim());
+      ck.save({ ready, lines });
+    }
+    result.ready = ready;
+    if (!result.ready) result.problems.push(...lines);
   }
   result.usable = result.enabled && result.ready;
   return result;
 }
 
+// Skill-check answers kept on disk (workspace/tmp/skill-ready.json), key = brand folder; valid 60 s and while the signature (mtime + size of the files given) is unchanged.
+const READY_TTL = 60000;
+function readyCache(dir, files) {
+  if (process.env.SA_NO_READY_CACHE) return { hit: null, save() {} };
+  const file = path.join(workspace, 'tmp', 'skill-ready.json');
+  const sig = files.map((f) => { try { const st = fs.statSync(f); return `${st.mtimeMs}:${st.size}`; } catch { return '-'; } }).join('|');
+  const all = readJson(file, {});
+  const e = all[dir];
+  const hit = e && e.sig === sig && Date.now() - e.at < READY_TTL ? e : null;
+  return { hit, save(v) { try { all[dir] = { ...v, sig, at: Date.now() }; for (const key of Object.keys(all)) if (Date.now() - all[key].at > 600000) delete all[key]; fs.mkdirSync(path.dirname(file), { recursive: true }); writeJson(file, all); } catch {} } };
+}
 export function discoverBrands(s = settings()) {
   const root = s.skillsRoot;
   const dirs = skillDirs(s);
