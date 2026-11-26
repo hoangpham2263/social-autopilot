@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdir
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { platform as osPlatform, homedir, tmpdir } from "node:os";
-import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel, claudeName, agentFor, agyChoice, agyName } from "../../scripts/agent-models.mjs";
+import { CLAUDE_DEFAULT, CLAUDE_EFFORTS, validClaudeModel, claudeName, agentFor, agyChoice, agyName, AGY_FAST_DEFAULT } from "../../scripts/agent-models.mjs";
 import { classifyProblem } from "./agent-problems.mjs";
 import { browserSettings, WINDOW_SIZE } from "./own-browser.mjs";
 import { extensionProfileProblem, extensionToken } from "./chrome.mjs";
@@ -210,10 +210,12 @@ export function agyMcpAddArgs(name, server) {
 export const parseAgyMcpList = (text) => String(text).split(/\r?\n/).slice(1).map((l) => l.trim().split(/\s+/)).filter((p) => p.length >= 3 && /^[A-Za-z0-9._-]{1,80}$/.test(p[0])).map((p) => p[0]);
 // Session-only settings of agy (--settings): every OTHER configured MCP server (for example the global "playwright" one) is denied by a permission rule,
 // so the run can only reach its own Playwright MCP (rule syntax mcp(server/*) checked: it blocks even with --dangerously-skip-permissions).
-export const agySettings = (servers = [], own = "") => ({ permissions: { deny: servers.filter((n) => n !== own).map((n) => `mcp(${n}/*)`) } });
-export const agyModelLine = (id, effort = "") => `Model in use: ${id ? `${id} (Antigravity ${agyName(id)}; the model you chose, agy does not report the running model)` : "Antigravity default model (none chosen; agy does not report it)"} · effort: ${effort || "default"}`;
+// idle = a light run (no browser, no image subagent to wait for): agy's timer / background tools are denied too, they only leave it waiting for minutes.
+export const AGY_IDLE_TOOLS = ["manage_task", "schedule", "wait", "wait_5_seconds", "send_command_input"];
+export const agySettings = (servers = [], own = "", idle = false) => ({ permissions: { deny: [...servers.filter((n) => n !== own).map((n) => `mcp(${n}/*)`), ...(idle ? AGY_IDLE_TOOLS : [])] } });
+export const agyModelLine = (id, effort = "", fast = false) => `Model in use: ${id ? `${id} (Antigravity ${agyName(id)}; ${fast ? "default for light steps" : "the model you chose"}, agy does not report the running model)` : "Antigravity default model (none chosen; agy does not report it)"} · effort: ${effort || "default"}`;
 // What the prompt must say for agy: its own tool names, and that ONLY the run's Playwright MCP may touch Chrome / Flow / social pages.
-export const agyNote = (server = "", browser = false, images = false) => `ANTIGRAVITY NOTE: you run in Antigravity (agy), not Claude Code. Tool names differ: run shell commands (node scripts/...) with run_command, read files with read_file, write files with write_to_file.
+export const agyNote = (server = "", browser = false, images = false) => `ANTIGRAVITY NOTE: you run in Antigravity (agy), not Claude Code. Tool names differ: run shell commands (node scripts/...) with run_command, read files with read_file, write files with write_to_file. FOREGROUND ONLY: do every step in the foreground, one command at a time; never use manage_task, background tasks, schedule or timer / wait tools for the work (they leave you idle for minutes)${images ? " (waiting for your image-generator subagents is the one exception)" : ""}. Several decisions at once go in ONE command when the tool offers a batch form.
 ${browser ? `BROWSER: the ONLY browser you may use is the Playwright MCP server named "${server}". It is not a direct tool: call it with call_mcp_tool(ServerName="${server}", ToolName=<tool>, Arguments={...}). Wherever this prompt says browser_tabs, browser_navigate, browser_snapshot, browser_click, browser_type, browser_press_key, browser_wait_for, browser_run_code_unsafe, browser_take_screenshot, browser_evaluate, browser_file_upload it means that ToolName of the server "${server}" (read ~/.gemini/antigravity-cli/mcp/${server}/<tool>.json first when unsure about its Arguments).
 NEVER use your own built-in browser tools (browser_subagent, open_browser_url, browser_click_element, browser_input, browser_get_dom, execute_browser_javascript, capture_browser_screenshot, read_browser_page, list_browser_pages and the like) and never another MCP server: they do not drive the signed-in Chrome of this run and would break the login and social-page rules of this run. Do not use generate_image either, and call no subagent.
 ` : "No browser is needed for this run: do not open any browser.\n"}${images ? 'IMAGES: you make the post images yourself with your image-generator subagent: call invoke_subagent with type_name "image-generator" (this is the ONLY subagent you may call) as the prompt describes. Never use browser_*/web tools, Google Flow or any other subagent.\n' : ""}
@@ -386,6 +388,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
         if (su.tool_name === "invoke_subagent" && su.state === "DONE" && !(su.subagent_info?.subagents || []).length && !(su.tool_info?.parameters?.type_name) && !run.agyWarned?.has(k)) { (run.agyWarned ||= new Set()).add(k); addLine(run, "! subagent step ended without type info (could not check it)"); }
         if (su.state === "DONE" && su.tool_name === "invoke_subagent") quotaCheck(run, su.tool_info?.output); // the subagent's answer only: never the output of reading a file or running a command
         if (first) addLine(run, "tool: " + c.name);
+        else if (su.state === "DONE" && Number(su.duration_seconds) >= 2) addLine(run, `  ${c.name}: ${Math.round(Number(su.duration_seconds) * 10) / 10} s`); // slow steps, shown in the details
         if (c.foreign) { // a built-in browser/web tool, a subagent other than image-generator, or an MCP server other than this run's own: the run is stopped
           run.guardError = `Antigravity used ${c.name}, which this run does not allow: stopped.`;
           addLine(run, "! " + run.guardError); say(run, "Dừng: agent gọi công cụ không được phép"); run.guardSaid = true;
@@ -551,7 +554,10 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     // The Playwright MCP is only configured for runs that need the browser: Publish and Create with Codex never start it.
     const mcp = browser ? mcpConfig({ plat, profile, own: own ? { userDataDir: bs.profileDir, headless: bs.headless, outputDir: join(tmpDir, "playwright-output") } : null, background: !flow, snapshot: mode === "research" ? "none" : "" }) : null;
     const extTok = browser && !own && profile ? extensionToken(workspace, profile) : "";
-    const choice = agy ? agyChoice(s) : claudeChoice(s, model), modelKey = agy ? choice.id || "default" : choice.key;
+    const choice = agy ? agyChoice(s) : claudeChoice(s, model);
+    const fastDefault = agy && !choice.id && mode === "create" && !usesFlow(mode, s, imageEngine); // light steps: the fast model unless one was chosen
+    if (fastDefault) choice.id = AGY_FAST_DEFAULT;
+    const modelKey = agy ? choice.id || "default" : choice.key;
     let mcpName = "";
     if (agy) {
       // agy: the run's Playwright MCP goes into agy's global config under a unique name (removed in cleanupRun); every other configured server is denied for this run.
@@ -564,7 +570,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
         const srv = mcp.mcpServers.playwright, added = ex(agyMcpAddArgs(mcpName, { ...srv, env: {} })); // no -e: PLAYWRIGHT_MCP_EXTENSION_TOKEN / PROFILE_DIR_NAME reach the server through the environment of the agy process (checked: an MCP server inherits it), so no token sits in argv or in agy's mcp_config.json
         if (added?.error || added?.status !== 0) { try { ex(["mcp", "remove", mcpName]); } catch {} return { ok: false, status: 500, error: sanitize(`Could not add the Playwright MCP to Antigravity: ${added?.error?.message || added?.stderr || added?.stdout || added?.status}`) }; }
       }
-      try { writeFileSync(cfg, JSON.stringify(agySettings(names.filter((n) => !AGY_SERVER_RE.test(n)), mcpName))); }
+      try { writeFileSync(cfg, JSON.stringify(agySettings(names.filter((n) => !AGY_SERVER_RE.test(n)), mcpName, !browser && !usesAgyImages(mode, s, imageEngine)))); }
       catch (e) { if (mcpName) { try { ex(["mcp", "remove", mcpName]); } catch {} } return { ok: false, status: 500, error: sanitize(e.message) }; }
     } else if (browser) writeFileSync(cfg, JSON.stringify(mcp));
     const args = agy ? ["--input-format", "stream-json", "--output-format", "stream-json", "-p=", "--dangerously-skip-permissions", "--settings", cfg, ...(choice.id ? ["--model", choice.id] : []), ...(choice.effort ? ["--effort", choice.effort] : []), ...(limitMin > 0 ? ["--print-timeout", `${limitMin}m`] : []), ...addDirs({ toolRoot, settings: s, flow, home }).flatMap((d) => ["--add-dir", d])] : ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "default", ...(maxTurns > 0 ? ["--max-turns", String(maxTurns)] : []), "--allowedTools", allowedTools(mode, s, imageEngine, nThreads).join(","), "--add-dir", ...addDirs({ toolRoot, settings: s, flow, home })];
@@ -593,7 +599,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     else {
       try { writeFileSync(logFile, ""); } catch {}
       run.friendly = [];
-      { const ml = agy ? agyModelLine(choice.id, choice.effort) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
+      { const ml = agy ? agyModelLine(choice.id, choice.effort, fastDefault) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
       say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
       addLine(run, `start: ${mode} run ${runId}`);
     }
@@ -638,7 +644,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
     const run = cur, st = run ? run.state : last || readState();
     const cli = findCli(), agyCli = findAgy();
     // A state file left "running" by an app that closed is not an active run.
-    const shown = st && !run && st.status === "running" ? { ...st, status: "failed", error: "The app closed while this run was active." } : st;
+    const shown = st && !run && st.status === "running" ? { ...st, status: "stopped", error: "" } : st;
     const lines = run ? run.lines : (() => { try { return readFileSync(logFile, "utf8").split("\n").filter(Boolean); } catch { return []; } })();
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",

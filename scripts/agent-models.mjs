@@ -61,6 +61,8 @@ export const AGY_FALLBACK = [
   am("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"), am("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)"), am("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)"),
   am("claude-sonnet-4-6", "Claude Sonnet 4.6 (Thinking)"), am("claude-opus-4-6-thinking", "Claude Opus 4.6 (Thinking)"), am("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"),
 ];
+// The light steps of an Antigravity run (drafting, captions, checks: no browser) start on this fast model when no model is chosen; a chosen model always wins.
+export const AGY_FAST_DEFAULT = "gemini-3.8-flash-medium";
 export const validAgyValue = (v) => v === "" || (typeof v === "string" && /^[A-Za-z0-9._\-]{1,60}$/.test(v));
 // Parse the output of `agy models` ("Fetching available models..." then "<id>\t<name>" lines); null when nothing looks like a model line (for example "please sign in").
 export function parseAgyModels(text) {
