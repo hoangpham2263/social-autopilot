@@ -73,14 +73,26 @@ function git(repo, ...args) {
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${(r.stderr || r.stdout || '').trim()}`);
   return r.stdout.trim();
 }
+// Network git calls (pull, push, clone) are retried with a short backoff (2 s, 5 s, 10 s) on a transient network error; a refused push (not fast-forward) or an auth error is not retried.
+export const TRANSIENT_GIT = /could not resolve host|timed out|timeout|connection (?:reset|closed|refused|was reset)|early eof|unexpected disconnect|rpc failed|http (?:5\d\d|429)|the requested url returned error: (?:5\d\d|429)|remote end hung up|temporary failure|network is unreachable|ssl_error|unable to access/i;
+const naptime = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+export function gitNet(repo, args, { waits = [2000, 5000, 10000], run = (a) => spawnSync('git', a, { cwd: repo, encoding: 'utf8', windowsHide: true }) } = {}) {
+  for (let i = 0; ; i++) {
+    const r = run(args);
+    if (r.status === 0) return String(r.stdout || '').trim();
+    const text = String(r.stderr || r.stdout || r.error?.message || '').trim();
+    if (i >= waits.length || !TRANSIENT_GIT.test(text) || /non-fast-forward|rejected|authentication failed|permission denied|could not read username/i.test(text)) throw new Error(`git ${args.join(' ')}: ${text}`);
+    naptime(waits[i]);
+  }
+}
 const hasRemote = (h) => spawnSync('git', ['remote', 'get-url', h.remote], { cwd: h.repo, windowsHide: true }).status === 0;
-const sync = (h) => { if (h.push && hasRemote(h)) git(h.repo, 'pull', '--ff-only', '--quiet', h.remote, h.branch); };
+const sync = (h) => { if (h.push && hasRemote(h)) gitNet(h.repo, ['pull', '--ff-only', '--quiet', h.remote, h.branch]); };
 function commitPush(h, rels, message) {
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--', ...rels], { cwd: h.repo, windowsHide: true }).status === 1;
   if (staged) git(h.repo, 'commit', '--quiet', '-m', message, '--', ...rels);
   let pushed = false;
   if (h.push && hasRemote(h)) {
-    git(h.repo, 'push', '--quiet', h.remote, `HEAD:${h.branch}`);
+    gitNet(h.repo, ['push', '--quiet', h.remote, `HEAD:${h.branch}`]);
     pushed = true;
   }
   return { committed: staged, pushed, commit: git(h.repo, 'rev-parse', 'HEAD') };
