@@ -189,6 +189,7 @@ details[open] > summary { margin-bottom: 6px; }
 #page-prompt > #prAgentRun { flex: 0 0 auto; min-height: 0; max-height: none; margin-bottom: 12px; overflow: visible; }
 #page-prompt > #prAgentRun.has-log { min-height: 0; }
 #prAgentRun > * { min-width: 0; }
+.ar-resline { margin: 0 0 6px; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; } .ar-resline.ok { color: #2e8b57; } .ar-resline.warn { color: #b06000; } .ar-resline.bad { color: rgb(176, 0, 0); } /* same colours as the bar and the chip */
 .ar-result { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; line-height: 1.45; }
 .ar-result:empty { display: none; }
 .ar-result .md-h { font-weight: 600; margin: 8px 0 2px; } .ar-result .md-h:first-child { margin-top: 0; }
@@ -532,6 +533,7 @@ header + * { margin-top: 0; }
     <div class="ar-panel" id="prAgentRun" hidden>
       <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span><span class="ar-count" id="arCount" hidden></span></div>
       <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span></div>
+      <div class="ar-resline" id="arResLine" role="status" hidden></div>
       <div id="arLast" class="ar-last ar-result"></div>
       <div class="ar-resbar" id="arResBar" hidden><button class="btn" type="button" id="arCopyRes">Copy report</button></div>
       <div class="ar-logbox" id="arLogBox"><span class="label">Live log</span><div class="ar-feed" id="arFeed" aria-live="polite"></div><details class="ar-tech"><summary>Chi tiết kỹ thuật</summary><pre class="ar-log" id="arLog"></pre></details></div>
@@ -632,7 +634,7 @@ header + * { margin-top: 0; }
   // Run lock: while a run started from the app is active (arState.active), writes except Stop/progress/log are refused here too (setRunLock below).
   const RUN_LOCK_MSG = "A run is active: wait for it to finish or press Stop";
   let runLocked = false;
-  const runBlocked = (url, data) => data !== undefined && runLocked && !/^\/api\/(agent-run\/stop|client-error|progress|setup-login)/.test(url);
+  const runBlocked = (url, data) => data !== undefined && runLocked && !/^\/api\/(agent-run\/stop|client-error|progress|setup-login|settings|setup)/.test(url);
   const call = (url, data) => runBlocked(url, data) ? Promise.resolve({ error: RUN_LOCK_MSG }) : fetch(url, data === undefined ? { cache: "no-store" } : { method: "POST", headers: { "content-type": "application/json", "x-sa-token": document.querySelector('meta[name="sa-token"]')?.content || "" }, body: JSON.stringify(data) }).then((r) => r.json());
   const getJson = (url) => call(url);
   const postJson = (url, data) => call(url, data);
@@ -1589,7 +1591,6 @@ header + * { margin-top: 0; }
       if (cre === "antigravity" && img === "flow") img = "antigravity-flow"; else if (cre === "claude" && img === "antigravity") img = "codex"; else if (cre === "claude" && img === "antigravity-flow") img = "flow";
     }
     if (changed === "images") { if (img === "flow") cre = "claude"; else if (img === "antigravity" || img === "antigravity-flow") cre = "antigravity"; }
-    if (runGuard()) { await loadAgentCfg(); return; }
     const settings = { image_engine: img === "antigravity-flow" ? "flow" : img, agent: { research: res, create: cre } };
     const r = await postJson("/api/settings", { settings }).catch(() => offline);
     if (r.error) { flash(r.error); toast(r.error); }
@@ -1758,7 +1759,18 @@ header + * { margin-top: 0; }
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
-    arFeedDraw(r); arBarDraw(r);
+    arFeedDraw(r); arBarDraw(r); arResLineDraw(r);
+  }
+  // ONE result line per finished run: green done with the counts, amber stopped / partial (quota reset time when that was the cause), red failed with the short cause.
+  function arResLineDraw(r) {
+    const el = $("#arResLine"); if (!el) return;
+    if (r.active || !["done", "failed", "stopped", "timeout"].includes(r.status)) { el.hidden = true; return; }
+    const p = r.progress && r.progress.total > 0 ? r.progress.label : "";
+    let cls = "ok", text;
+    if (r.status === "failed") { cls = "bad"; text = "Failed: " + String(r.problem?.message || r.error || "").replace(/\s+/g, " ").slice(0, 160); }
+    else if (r.status === "stopped" || r.status === "timeout") { cls = "warn"; text = (r.status === "timeout" ? "Timed out" : "Stopped") + (p ? " · " + p : "") + (r.quota ? " · image quota used up" + (r.quota.at ? ", back at " + r.quota.at : "") : ""); }
+    else { cls = r.problem ? "warn" : "ok"; text = (r.problem ? "Done, check: " + r.problem.message : "Done") + (p ? " · " + p : ""); }
+    el.className = "ar-resline " + cls; el.textContent = text; el.hidden = false;
   }
   // Markdown-lite for the final report: HTML is escaped first, then #/## headings, **bold**, `code`, "- "/"* " bullets and blank lines.
   function mdLite(src, real = false) {
@@ -1841,7 +1853,9 @@ header + * { margin-top: 0; }
   async function loadAgentRun() {
     clearTimeout(arTimer); arTimer = 0;
     const r = await getJson("/api/agent-run").catch(() => null);
-    if (r && !r.error) {
+    // The status of a failed run carries its own error text: only a reply WITHOUT a status is an API error.
+    const okRes = !!r && (!r.error || typeof r.status === "string");
+    if (okRes) {
       // What the run has produced so far (GET /api/run-progress, same poll); kept after the run ends (final counts).
       if (r.active || arState?.active || (!rpState && r.status && r.status !== "idle")) { const p = await getJson("/api/run-progress").catch(() => null); if (p && !p.error) rpState = p; }
       const was = arState; arState = r; arDraw();
@@ -1849,7 +1863,7 @@ header + * { margin-top: 0; }
       if (was?.active && !r.active) arEnded(r);
       else if (r.problem && !arToldProblem.has(r.started + r.problem.kind) && (r.active || was)) { arToldProblem.add(r.started + r.problem.kind); toast(r.problem.message); }
     }
-    if (r && !r.error) arFails = 0; else arFails++;
+    if (okRes) arFails = 0; else arFails++;
     runLockSync();
     if (arState?.active) arTimer = setTimeout(loadAgentRun, $("#page-prompt").hidden ? 5000 : 3000);
   }
@@ -1861,7 +1875,7 @@ header + * { margin-top: 0; }
   const RUN_LOCK_BANNER = "A run is active \u2014 controls are locked until it finishes. Stop is available in the Run tab.";
   const RUN_LOCK_RUN_SEL = "#page-prompt button, #page-prompt input, #page-prompt select, #page-prompt textarea";
   const RUN_LOCK_KEEP = "#prStop, #prRunPillGo, #prText, #prAgentRun, #prAgentRun *, #runLockBar";
-  const RUN_LOCK_DATA_SEL = "[data-runlock], #settingsSave, #setRecheck, #setLogin, #brandSave, #addSrc, [data-install], [data-link], [data-unlink], [data-rmsrc], [data-recrawl], [data-accept], [data-dismiss], [data-confirm], [data-act=approve], [data-act=drop], [data-act=cancel], [data-act=cancel-go], [data-act=unreview], [data-restore], [data-reject]";
+  const RUN_LOCK_DATA_SEL = "[data-runlock], #brandSave, #addSrc, [data-install], [data-link], [data-unlink], [data-rmsrc], [data-recrawl], [data-accept], [data-dismiss], [data-confirm], [data-act=approve], [data-act=drop], [data-act=cancel], [data-act=cancel-go], [data-act=unreview], [data-restore], [data-reject]";
   const RUN_LOCK_HEAD_SEL = "header .reload, header .config, header [data-runlock-head]";
   let arFails = 0;
   const runGuard = () => { if (!runLocked) return false; toast(RUN_LOCK_MSG); return true; };
@@ -2720,7 +2734,6 @@ function draftTags(d) {
   // one-time code to type there.
   let loginTimer = 0;
   async function setupStep(step) {
-    if (runGuard()) return; 
     const msg = $("#setLoginMsg");
     for (const b of $$("#page-settings fieldset .btn")) b.disabled = true;
     msg.innerHTML = `<span class="meta">${step === "login" ? "Opening the ChatGPT sign-in page in Chrome…" : "Installing Codex CLI…"}</span>`;
@@ -2765,7 +2778,6 @@ function draftTags(d) {
   let aiPending = false;
   async function aiSave() { if (aiBusy) { aiPending = true; return; } aiBusy = true; try { do { aiPending = false; await aiSaveOnce(); } while (aiPending); } finally { aiBusy = false; } } // a change made while a save runs is saved right after it
   async function aiSaveOnce() {
-    if (runGuard()) { if (aiSaved) renderAI(aiSaved); return; }
     const clV = $("#aiClModel").value === "__other" ? $("#aiClOther").value.trim() : $("#aiClModel").value;
     if (!/^[A-Za-z0-9._\-\[\]]{1,60}$/.test(clV)) { aiMark(errLine("Mã model: chữ, số, . _ - [ ]")); return; }
     const body = { agent: { claude_model: clV, claude_effort: $("#aiClEffort").value, codex_model: $("#aiCxModel").value, codex_effort: $("#aiCxEffort").value, agy_model: $("#aiAgModel").value, agy_effort: $("#aiAgEffort").value } };
@@ -2805,7 +2817,6 @@ function draftTags(d) {
   });
   $("#settingsEdit").onclick = () => { const o = $("#settingsEditor"); o.hidden = !o.hidden; $("#settingsEdit").textContent = o.hidden ? "Edit" : "Close"; };
   $("#settingsSave").onclick = async () => {
-    if (runGuard()) return; 
     const out = { planning: {}, imageHost: {} }; // only what the form edits; the rest stays as saved
     for (const el of $$("#settingsForm [data-s]")) {
       const parts = el.dataset.s.split(".");
