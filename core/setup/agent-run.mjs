@@ -104,6 +104,19 @@ export function sanitizeReport(text, max = REPORT_MAX) {
 export const FRIENDLY_LINES = 40;
 const MODE_VI = { research: "Research", create: "Create", publish: "Publish", sync: "Đồng bộ Metricool" };
 const baseName = (f) => String(f || "").split(/[\\/]/).pop().toLowerCase();
+// The one-image Flow snippets of draft.mjs flow-brief (scripts/flow-snippets.mjs): <draft>-<n>[-safe]-flow-<step>.js
+const FLOW_SNIPPET_RE = /^([a-z0-9][a-z0-9-]{2,60}?)-([1-4])(?:-safe)?-flow-(prep|submit|ready|collect)\.js$/;
+const SNIPPET_VI = { prep: "Flow: tải ảnh tham chiếu + gõ prompt", submit: "Flow: gửi prompt", ready: "Flow: kiểm ảnh đã xong chưa", collect: "Flow: bấm tải ảnh 1K" };
+// Tool name for the technical log: short and readable (a full MCP name like mcp__playwright__browser_run_code_unsafe is 40 characters and the
+// secret scrub turned it into "[hidden]"), plus the friendly words when they say more than "Đang xử lý…".
+export function toolLabel(name, input = {}) {
+  const n = String(name || ""), m = /^mcp__(.+?)__(.+)$/.exec(n);
+  const short = m ? (m[1] === "playwright" ? m[2] : `${m[1].replace(/^claude_ai_/, "").split("_")[0]}: ${m[2]}`) : n;
+  const f = friendlyTool(n, input);
+  return /^Đang xử lý/.test(f) ? short : `${short} · ${f}`;
+}
+// "(+N s)" after a tool line = the time since the previous tool call (the model's turn + the previous tool), shown from 5 s on, like product-review.
+const timedTool = (run, text) => { const t = Date.now(), prev = run._toolAt || 0; run._toolAt = t; const gap = prev ? Math.round((t - prev) / 1000) : 0; return gap >= 5 ? `${text} (+${gap} s)` : text; };
 export function friendlyTool(name, input = {}) {
   const n = String(name || ""), i = input && typeof input === "object" ? input : {};
   if (n === "Bash") {
@@ -119,6 +132,9 @@ export function friendlyTool(name, input = {}) {
     if (/draft\.mjs\s+flow-brief/.test(c)) return m(/--safe\b/.test(c) ? (agyImg ? "Ảnh bị từ chối → thử lại 1 lần bằng mô tả an toàn" : "Flow từ chối → thử lại 1 lần bằng mô tả an toàn") : agyImg ? "Chuẩn bị nội dung cho Antigravity tạo ảnh" : "Chuẩn bị nội dung gửi Flow");
     if (/draft\.mjs\s+sign-check/.test(c)) return m("Kiểm chữ trên biển");
     if (/flow-pace\.mjs\s+gate/.test(c)) return m("Chờ nhịp rồi gửi prompt Flow");
+    if (/flow-pace\.mjs\s+download-collect/.test(c)) return m("Lấy ảnh vừa tải về");
+    if (/flow-pace\.mjs\s+download-lock\s+acquire/.test(c)) return m("Chờ lượt tải ảnh");
+    if (/flow-pace\.mjs\s+download-lock/.test(c)) return m("Nhả lượt tải ảnh");
     if (/flow-pace\.mjs/.test(c)) return "Đang điều nhịp Flow";
     if (/draft\.mjs/.test(c)) return "Đang xử lý bài nháp";
     if (/(?:research|collect)\.mjs/.test(c)) { const m = /--source[= ]+([a-z0-9][a-z0-9,-]{0,60})/i.exec(c); return m ? `Đang đọc nguồn ${m[1]}` : "Đang đọc nguồn"; }
@@ -130,6 +146,7 @@ export function friendlyTool(name, input = {}) {
   if (n === "Write" || n === "Edit") return /caption|idea/.test(baseName(i.file_path)) ? "Đang viết nội dung (caption/ý tưởng)" : "Đang ghi dữ liệu";
   if (n === "Read") return /\.(png|jpe?g|webp|gif)$/.test(baseName(i.file_path)) ? "Đang xem ảnh" : "Đang đọc tài liệu";
   if (n === "Glob" || n === "Grep") return "Đang tìm dữ liệu";
+  if (n === "mcp__playwright__browser_run_code_unsafe") { const s = FLOW_SNIPPET_RE.exec(baseName(i.filename)); if (s) return `Bài ${s[1]} · ảnh ${s[2]} · ${SNIPPET_VI[s[3]]}`; }
   if (n === "mcp__playwright__browser_navigate") { try { return `Đang mở ${new URL(String(i.url)).hostname}`; } catch { return "Đang mở trang web"; } }
   if (/^mcp__playwright__browser_(click|type|press_key|run_code_unsafe|fill_form|select_option|file_upload|evaluate)$/.test(n)) return "Đang thao tác trên trình duyệt";
   if (/^mcp__playwright__/.test(n)) return "Đang xem trang trên trình duyệt";
@@ -387,8 +404,8 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
         const c = agyToolCall(su.tool_name, su.tool_info?.parameters, run.mcpName, su.subagent_info?.subagents, run.agyImages);
         if (su.tool_name === "invoke_subagent" && su.state === "DONE" && !(su.subagent_info?.subagents || []).length && !(su.tool_info?.parameters?.type_name) && !run.agyWarned?.has(k)) { (run.agyWarned ||= new Set()).add(k); addLine(run, "! subagent step ended without type info (could not check it)"); }
         if (su.state === "DONE" && su.tool_name === "invoke_subagent") quotaCheck(run, su.tool_info?.output); // the subagent's answer only: never the output of reading a file or running a command
-        if (first) addLine(run, "tool: " + c.name);
-        else if (su.state === "DONE" && Number(su.duration_seconds) >= 2) addLine(run, `  ${c.name}: ${Math.round(Number(su.duration_seconds) * 10) / 10} s`); // slow steps, shown in the details
+        if (first) addLine(run, timedTool(run, "tool: " + toolLabel(c.name, c.input)));
+        else if (su.state === "DONE" && Number(su.duration_seconds) >= 2) addLine(run, `  ${toolLabel(c.name, c.input).split(" · ")[0]}: ${Math.round(Number(su.duration_seconds) * 10) / 10} s`); // slow steps, shown in the details
         if (c.foreign) { // a built-in browser/web tool, a subagent other than image-generator, or an MCP server other than this run's own: the run is stopped
           run.guardError = `Antigravity used ${c.name}, which this run does not allow: stopped.`;
           addLine(run, "! " + run.guardError); say(run, "Dừng: agent gọi công cụ không được phép"); run.guardSaid = true;
@@ -427,7 +444,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (typeof ev.error === "string") scan(run, ev.error);
       for (const c of ev.message.content) {
         if (c.type === "text" && c.text) { addLine(run, "A: " + c.text); say(run, c.text.replace(/\s+/g, " ").trim()); scan(run, c.text); const t = sanitize(c.text); if (t) run.state.last_text = t; run.lastRaw = c.text; }
-        else if (c.type === "tool_use" && typeof c.name === "string") { addLine(run, "tool: " + c.name); say(run, friendlyTool(c.name, c.input)); }
+        else if (c.type === "tool_use" && typeof c.name === "string") { addLine(run, timedTool(run, "tool: " + toolLabel(c.name, c.input))); say(run, friendlyTool(c.name, c.input)); }
       }
       touch(run);
     } else if (ev.type === "result") {
@@ -581,7 +598,7 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
       if (mode === "research") args.push("--strict-mcp-config");
     }
     const snapDir = join(tmpDir, `run-${runId}`); try { mkdirSync(snapDir, { recursive: true }); writeFileSync(join(snapDir, "settings.json"), JSON.stringify(s)); } catch {}
-    const env = { ...process.env, SA_RUN_ID: runId, SA_PIPE_ID: pipeId, SA_SETTINGS: join(snapDir, "settings.json"), ...(agy ? { SA_AGENT: "antigravity" } : {}), ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
+    const env = { ...process.env, SA_RUN_ID: runId, SA_PIPE_ID: pipeId, SA_SETTINGS: join(snapDir, "settings.json"), SA_FLOW_SPEED: "1", ...(agy ? { SA_AGENT: "antigravity" } : {}), ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
