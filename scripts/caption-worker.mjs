@@ -79,7 +79,7 @@ export function callAi({ backend, cli, model = '', effort = '', prompt, dirs = [
       try { const r = spawnSync(...cmdOf(cli, ['mcp', 'list']), { encoding: 'utf8', windowsHide: true, timeout: 30000 }); if (r.status === 0) names = parseAgyMcpList(r.stdout); } catch {}
       cfg = path.join(os.tmpdir(), `sa-caption-${process.pid}-${Date.now()}.json`);
       fs.writeFileSync(cfg, JSON.stringify(agySettings(names, '', true)));
-      args = ['--input-format', 'stream-json', '--output-format', 'stream-json', '-p=', '--dangerously-skip-permissions', '--settings', cfg, ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : []), '--print-timeout', `${Math.ceil(timeoutMs / 60000)}m`, ...dirs.flatMap((x) => ['--add-dir', x])];
+      args = ['--input-format', 'stream-json', '--output-format', 'stream-json', '-p=', '--dangerously-skip-permissions', '--settings', cfg, ...(model ? ['--model', model] : []), ...(effort && !/-(low|medium|high|xhigh)$/.test(model) ? ['--effort', effort] : []), '--print-timeout', `${Math.ceil(timeoutMs / 60000)}m`, ...dirs.flatMap((x) => ['--add-dir', x])];
     } else {
       args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'default', '--allowedTools', 'Read,Glob,Grep', '--strict-mcp-config', '--max-turns', '40', ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : []), '--add-dir', ...dirs];
     }

@@ -14,7 +14,11 @@ import { claudeChoice } from "../core/setup/agent-run.mjs";
 
 export function captionChoice(settings = {}) {
   const backend = agentFor(settings, "create");
-  if (backend === "antigravity") { const c = agyChoice(settings); return { backend, model: c.id || AGY_FAST_DEFAULT, effort: c.effort }; }
+  if (backend === "antigravity") {
+    const c = agyChoice(settings), model = c.id || AGY_FAST_DEFAULT;
+    // a model id that already ends in its level (gemini-3.8-flash-medium) takes no --effort: agy refuses the pair
+    return { backend, model, effort: /-(low|medium|high|xhigh)$/.test(model) ? "" : c.effort };
+  }
   const c = claudeChoice(settings); return { backend, model: c.id, effort: c.effort };
 }
 
