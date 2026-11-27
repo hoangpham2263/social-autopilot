@@ -45,6 +45,7 @@
 //   node scripts/draft.mjs contact-sheet [--ids a,b | --brand <id|all>] [--status needs_caption] [--per-sheet 6] [--out <dir>]
 //        one PNG of several draft images (labelled #n + draft id), so every new image is LOOKED at in one read
 //        (pure Node; JPEG/WebP via ffmpeg when present). Default: drafts with an image waiting for captions/review.
+//   node scripts/draft.mjs redo-done --id <draft>            Tạo lại (app): drop the images of redo-request.json made again since the request
 //   node scripts/draft.mjs show  --id <draft>
 //   node scripts/draft.mjs list  [--brand <id>] [--status s]
 import fs from 'node:fs';
@@ -58,6 +59,7 @@ import { unsparkleFile } from './image/unsparkle.mjs';
 import { main, out, isMain, parseArgs, need, settings, loadBrand, workspace, toolRoot, readJson, writeJson, today, stamp, inside, sha1, projectSection, projectField, findDraft, setStatus, withLock, listDrafts, draftsRoot, hasHidden, sharedWords, readBrandOverride } from './lib.mjs';
 import { readStore, storeDir, storeIdeasFile, markUsed, reuseProblems } from './store.mjs';
 import { track } from './progress.mjs';
+import { redoDone } from './redo.mjs';
 import { ideaSignProblems, promptProblems, signRules, requireSignRules, cause, WORKFLOW_VERSION, perImageSigns, albumSignOf, albumSignProblems, signMode, draftSignMode, placeholderOf, signLines } from './signtext.mjs';
 import { contactSheet } from './contact-sheet.mjs';
 import { codexModelArgs } from './agent-models.mjs';
@@ -870,9 +872,10 @@ if (isMain(import.meta.url)) main(async () => {
   if (cmd === 'confirm-clean') return out(confirmClean(args));
   if (cmd === 'size-check') return out(sizeCheck(args));
   if (cmd === 'contact-sheet') return out(contactSheets(args, s));
+  if (cmd === 'redo-done') return out(redoDone(need(args, 'id')));
   if (cmd === 'show') return out(summary(findDraft(need(args, 'id'))));
   if (cmd === 'list') return out({ drafts: listDrafts(args.brand && String(args.brand)).filter((d) => !args.status || d.status.status === args.status).map((d) => ({ id: d.id, brand: d.draft.brand, status: d.status.status, dir: d.dir })) });
-  throw new Error('Lệnh: new | reprompt | image | register-image | flow-brief | flow-queue | register-batch | image-batch | watermark | confirm-clean | size-check | check-prompt | sign-check | check | show | list');
+  throw new Error('Lệnh: new | reprompt | image | register-image | flow-brief | flow-queue | register-batch | image-batch | watermark | confirm-clean | size-check | check-prompt | sign-check | check | redo-done | show | list');
 });
 
 // Album: one prompt per extra image (prompt-02.txt, ...), filled from prompts/album-extra.txt. {{PRODUCT_DESCRIPTION}}

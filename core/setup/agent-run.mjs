@@ -531,21 +531,21 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     // a Create run whose agent ended its turn before every image/caption was made is not done: it can be continued
     if (status === "done" && st.mode === "create") { try { if (unfinished(st)) status = "stopped"; } catch {} }
     const available = RESUMABLE.includes(status) && st.mode !== "sync" && !!inp && inp.run_id === st.run_id && inp.mode === st.mode && typeof inp.prompt === "string";
-    return available ? { available, run_id: st.run_id, mode: st.mode, status, brands: Array.isArray(inp.brands) ? inp.brands : [], model: inp.model || "default", image_engine: inp.image_engine || "", started: st.started || "", ended: st.updated || "" } : { available: false };
+    return available ? { available, run_id: st.run_id, mode: st.mode, status, brands: Array.isArray(inp.brands) ? inp.brands : [], model: inp.model || "default", image_engine: inp.image_engine || "", ...(inp.redo ? { redo: inp.redo } : {}), started: st.started || "", ended: st.updated || "" } : { available: false };
   }
 
-  function start({ mode, prompt, brands, imageEngine, model, threads, resume = false, _retry = null } = {}) {
+  function start({ mode, prompt, brands, imageEngine, model, threads, redo = null, resume = false, _retry = null } = {}) {
     let prefix = "", from = "", resumedPipe = "";
     if (_retry) { // automatic relaunch of the SAME run after a dropped connection: same inputs, the continue line, the same pipeline folder, the previous log lines kept
       const inp = readInput(); if (!inp) return { ok: false, status: 409, error: "Nothing to restart." };
-      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.caption_threads || inp.threads;
+      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.caption_threads || inp.threads; redo = inp.redo || null;
       prefix = continueLine(mode, { status: "failed" }); from = inp.run_id; resumedPipe = inp.pipe_id || inp.run_id;
     } else if (resume) {
       if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
       const ri = resumeInfo();
       if (!ri.available) return { ok: false, status: 409, error: "There is no stopped run to continue." };
       const inp = readInput();
-      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.caption_threads || inp.threads;
+      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.caption_threads || inp.threads; redo = inp.redo || null;
       prefix = continueLine(mode, ri); from = ri.run_id; resumedPipe = inp.pipe_id || ri.run_id;
     }
     if (!_retry && !resume) netTry.n = 0; // a start by the person begins a fresh count
@@ -573,7 +573,9 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
     const nThreads = usesFlow(mode, s, imageEngine) || (agy && mode === "research") ? 1 : threadsFor(mode, threads); // Create and Research (classification) only; Flow runs, Publish and Sync always 1
     // Caption workers (Create): the Run tab Threads value as chosen, never cut by Flow (they use no browser; Flow stays one sequential agent).
-    const captionWorkers = mode === "create", captionThreads = captionWorkers ? threadsFor(mode, threads) : 0;
+    // A redo run (Posts > Tạo lại: redo = { items: [{ id, images }], images }) is a Create run on existing drafts only: no caption workers (it rewrites a caption only when the cover wording changed).
+    redo = mode === "create" && redo && Array.isArray(redo.items) && redo.items.length ? { items: redo.items.slice(0, 200).map((x) => ({ id: String(x.id), images: (Array.isArray(x.images) ? x.images : []).map(Number).filter(Number.isInteger) })), images: Number(redo.images) || 0 } : null;
+    const captionWorkers = mode === "create" && !redo, captionThreads = captionWorkers ? threadsFor(mode, threads) : 0;
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     const pipeId = resumedPipe || runId; // the pipeline folder of this run (a resumed run keeps the one of the run it continues)
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
@@ -616,10 +618,10 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     const started = _retry?.started || new Date(now()).toISOString();
     const run = {
       child, cfg, backend, label, mcpName, agyImages: usesAgyImages(mode, s, imageEngine), mcpGone: false, agyPath: found.path, agyText: {}, agyTools: new Set(), settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, ...(captionWorkers ? { caption_workers: true, caption_threads: captionThreads } : {}), pipe_id: pipeId, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, ...(captionWorkers ? { caption_workers: true, caption_threads: captionThreads } : {}), pipe_id: pipeId, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(redo ? { redo } : {}), ...(from ? { resumed_from: from } : {}) },
     };
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
-    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads, ...(captionWorkers ? { caption_threads: captionThreads } : {}), pipe_id: pipeId })); } catch {}
+    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads, ...(captionWorkers ? { caption_threads: captionThreads } : {}), ...(redo ? { redo } : {}), pipe_id: pipeId })); } catch {}
     cur = run;
     if (mcpName) registerLive(run);
     if (_retry) { run.lines = _retry.lines; run.friendly = _retry.friendly; try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {} addLine(run, `restart: ${mode} run ${runId}`); }
@@ -627,7 +629,7 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
       try { writeFileSync(logFile, ""); } catch {}
       run.friendly = [];
       { const ml = agy ? agyModelLine(choice.id, choice.effort, fastDefault) : modelLine(choice.id, choice.effort); addLine(run, ml); say(run, ml); }
-      say(run, `Bắt đầu chạy: ${MODE_VI[mode] || mode}`);
+      say(run, `Bắt đầu chạy: ${redo ? `Tạo lại ${redo.images} ảnh` : MODE_VI[mode] || mode}`);
       addLine(run, `start: ${mode} run ${runId}`);
     }
     saveState(run.state);
@@ -676,7 +678,7 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      backend: shown?.backend || "claude", pipe_id: shown?.pipe_id || "", quota: shown?.quota || null, threads: shown?.threads || 1, caption_workers: !!shown?.caption_workers, caption_threads: shown?.caption_threads || 0, run_id: shown?.run_id || "", usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      backend: shown?.backend || "claude", pipe_id: shown?.pipe_id || "", quota: shown?.quota || null, threads: shown?.threads || 1, caption_workers: !!shown?.caption_workers, caption_threads: shown?.caption_threads || 0, run_id: shown?.run_id || "", usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], redo: shown?.redo || null, resumed_from: shown?.resumed_from || "",
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),

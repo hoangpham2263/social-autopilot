@@ -266,6 +266,25 @@ pre { white-space: pre-wrap; word-break: break-word; font: 11.5px/1.45 var(--fon
 .card.open-card:focus { outline: 1px solid #0078d7; outline-offset: -1px; }
 .host { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 11.5px; }
 .reject-box { display: flex; gap: 6px; align-items: center; } .reject-box input { flex: 1 1 auto; min-width: 0; width: auto; }
+/* Post id / image tag ("<draft>#<n>") with a small copy button; Tạo lại (redo request) controls. Border-only states, no shadows. */
+.idrow { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; color: var(--muted); }
+.idrow code { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px/1.4 Consolas, ui-monospace, monospace; color: var(--ink); }
+.idrow .btn, .redo-img .btn, .redo-post .btn { height: 22px; padding: 0 8px 2px; font-size: 11px; }
+.redo .btn[aria-pressed="true"] { background: #fff; border-color: #b06000; color: #b06000; }
+.redo { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.redo > .label { font-size: 11px; color: var(--muted); }
+.redo-img { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 8px; align-items: start; padding: 6px; border: 1px solid var(--line); background: #fff; }
+.redo-img.on { border-color: #b06000; }
+.redo-img img { width: 56px; height: 56px; object-fit: cover; border: 1px solid var(--line); grid-row: span 2; }
+.redo-img .f, .redo-post .f { display: grid; gap: 4px; min-width: 0; }
+.redo-img .f > label, .redo-post .f > label { font-size: 11px; color: var(--muted); margin: 0; }
+.redo-img .f[hidden], .redo-post .f[hidden] { display: none; }
+.redo-post { display: grid; gap: 6px; }
+.redo .row-actions { margin-top: 0; }
+.redo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; margin: 0 0 12px; border: 1px solid #b06000; background: #fff; font-size: 12px; }
+.redo-bar[hidden] { display: none; }
+.redo-bar .grow { flex: 1 1 auto; min-width: 0; }
+.ar-posts .btn { height: 20px; padding: 0 6px 2px; font-size: 11px; }
 /* Preview: static mocks of a Facebook feed post and an Instagram post (no external calls). */
 .pv { width: 360px; max-width: 100%; background: #fff; border: 1px solid #dadde1; border-radius: 8px; font: 14px/1.34 "Segoe UI", Helvetica, Arial, sans-serif; color: #050505; overflow: hidden; }
 .pv .pv-tag { font-size: 10px; color: #65676b; padding: 6px 12px 0; }
@@ -492,6 +511,7 @@ header + * { margin-top: 0; }
       <div class="field auto"><span class="label">&nbsp;</span><span class="meta inline-control" id="drExtra"></span></div>
     </div>
     <div class="meta" id="drHostBar" hidden></div>
+    <div class="redo-bar" id="drRedoBar" hidden></div>
     <div id="draftList"></div>
   </section>
 
@@ -1005,6 +1025,7 @@ header + * { margin-top: 0; }
   const tile = (x) => `<div class="tile" data-id="${esc(x.id)}" tabindex="0">
     ${x.img ? `<img class="tile-img" loading="lazy" src="${img(x.img)}" alt="">` : `<div class="tile-img none">No image</div>`}
     <div class="tile-title"><span class="t" title="${esc(x.title)}">${esc(x.title)}</span>${x.status || ""}</div>
+    ${x.idHtml || ""}
     ${x.sub || x.subRight ? `<div class="tile-sub"><span class="ts-l" title="${esc(x.sub || "")}">${esc(x.sub || "")}</span>${x.subRight ? `<span class="ts-r" title="${esc(x.subRightTip || "")}">${esc(x.subRight)}</span>` : ""}</div>` : ""}
     <div class="tile-foot"><span class="who" title="${esc(x.whoTip || x.who)}">${x.whoHtml || esc(x.who)}</span>${x.actions || ""}</div>
     <div class="msg"></div></div>`;
@@ -1743,7 +1764,7 @@ header + * { margin-top: 0; }
     setDisabled($("#prCopy"), !!prBlock, prBlock);
     // Continue the previous run (GET /api/agent-run resume): enabled only when the last run stopped / failed midway; same inputs, only the missing work.
     { const rs = r?.resume, ok = !!rs?.available && !busy && !noCli && claude, btn = $("#prResume");
-      const what = rs?.available ? `${{ research: "Research", create: "Create & publish", publish: "Publish approved" }[rs.mode] || rs.mode}${rs.brands?.length ? " · " + rs.brands.join(", ") : ""} · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : "";
+      const what = rs?.available ? rs.redo ? `Tạo lại ${rs.redo.images || ""} ảnh · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : `${{ research: "Research", create: "Create & publish", publish: "Publish approved" }[rs.mode] || rs.mode}${rs.brands?.length ? " · " + rs.brands.join(", ") : ""} · ${(AR_CHIP[rs.status]?.[0] || rs.status).toLowerCase()} ${when(rs.ended)}` : "";
       setDisabled(btn, !ok, busy ? `A ${r.mode} run is active (started ${clock(r.started)})` : rs?.available ? (noCli ? (agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json") : "Choose the Claude Code or Antigravity Agent") : "No stopped run to continue: the last run finished or none was started from the app");
       if (ok) btn.title = `Continues the previous run with the same options, without redoing finished work: ${what}`; }
     { const st = stockInfo(); if (st.zero) { setDisabled($("#prRunNow"), true, st.msg); setDisabled($("#prCopy"), true, st.msg); } }
@@ -1765,7 +1786,7 @@ header + * { margin-top: 0; }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
     // Elapsed and the step live in the progress bar only; here just the mode, the limit and the turns (the current action is in the live log).
-    $("#arElapsed").textContent = [`${r.mode}${r.flow ? " (Flow)" : ""}`, r.model && r.model !== "default" ? r.model : "", r.limit_min ? `limit ${r.limit_min} min` : "", r.turns ? `${r.turns} turns` : ""].filter(Boolean).join(" · ");
+    $("#arElapsed").textContent = [r.redo ? `Tạo lại ${r.redo.images || ""} ảnh${r.flow ? " (Flow)" : ""}` : `${r.mode}${r.flow ? " (Flow)" : ""}`, r.model && r.model !== "default" ? r.model : "", r.limit_min ? `limit ${r.limit_min} min` : "", r.turns ? `${r.turns} turns` : ""].filter(Boolean).join(" · ");
     const startMsg = r.mode === "research" ? `Starting… ${appAgent()} works in the browser.` : r.mode === "create" ? (chosenEngine() === "antigravity" ? "Starting… Antigravity makes the images and writes drafts." : chosenEngine() === "flow" ? `Starting… ${appAgent() === "Antigravity" ? "Antigravity makes" : "images are made"} the images in Google Flow, drafts are written.` : "Starting… image generation uses the Codex quota and writes drafts.") : "Starting…";
     // A recognised problem (not logged in, Metricool, Chrome not connected) is shown as the headline, also while the run is still going.
     { const bad = !!r.problem || !!(r.error && r.status !== "running"), full = !bad && !busy && typeof r.report === "string" && r.report.trim() ? r.report : ""; arSetResult(r.problem?.message || (bad ? r.error : busy ? (arr(r.friendly).length ? "" : startMsg) : full || r.last_text || ""), !bad && !busy && !!(full || r.last_text), !!full); } // while running the raw assistant text stays out (live log has the friendly lines)
@@ -1779,7 +1800,7 @@ header + * { margin-top: 0; }
   function arPostsDraw(r) {
     const p = r.progress || {}, posts = arr(p.posts), cur = r.active && p.current ? String(p.current) : "";
     $("#arCur").hidden = !cur; $("#arCur").textContent = cur ? "Đang làm: " + cur : "";
-    const box = $("#arPostsBox"), html = posts.map((x) => `<li class="${esc(x.state)}" title="${esc(x.id)}"><span class="ic">${AR_POST_IC[x.state] || "○"}</span><span class="id">${esc(x.id)}</span><span class="nm">ảnh ${Number(x.images) || 0}/${Number(x.total) || 0} · caption ${x.caption ? "✔" : "–"}</span></li>`).join("");
+    const box = $("#arPostsBox"), html = posts.map((x) => `<li class="${esc(x.state)}" title="${esc(x.id)}"><span class="ic">${AR_POST_IC[x.state] || "○"}</span><span class="id">${esc(x.id)}</span><span class="nm">${p.redo ? `tạo lại ${Number(x.images) || 0}/${Number(x.total) || 0} ảnh` : `ảnh ${Number(x.images) || 0}/${Number(x.total) || 0} · caption ${x.caption ? "✔" : "–"}`}</span><button class="btn copy-id" type="button" data-copy="${esc(x.id)}" title="Copy ${esc(x.id)}">Copy</button></li>`).join("");
     box.hidden = !posts.length;
     if ($("#arPosts").dataset.sig !== html) { $("#arPosts").innerHTML = html; $("#arPosts").dataset.sig = html; }
   }
@@ -1869,6 +1890,7 @@ header + * { margin-top: 0; }
       if (!rows.length) return "";
       return rows.map((x) => `${names(x.brand)} ${x.kept}${x.target ? "/" + x.target : ""}`).join(" · ") + (rows.length > 1 ? ` · total ${p.research.kept}${p.research.target ? "/" + p.research.target : ""}` : "") + " new posts";
     }
+    if (p.redo) return `tạo lại ${p.redo.imagesDone}/${p.redo.imagesTotal} ảnh`;
     if (p.create) return `drafts ${p.create.drafts}${p.create.requested ? "/" + p.create.requested : ""} · images ${p.create.images}/${p.create.drafts}`;
     if (p.publish) return `scheduled ${p.publish.scheduled}/${p.publish.approved} approved`;
     return "";
@@ -1946,7 +1968,7 @@ header + * { margin-top: 0; }
     if (e.target.closest?.("[data-page], #home")) setTimeout(runLockBanner, 0);
   }, true);
   function arEnded(r) {
-    const mins = arClock(r.elapsed_s || 0), what = { research: "Research", create: "Create & publish", publish: "Publish approved" }[r.mode] || r.mode;
+    const mins = arClock(r.elapsed_s || 0), what = r.redo ? `Tạo lại ${r.redo.images || ""} ảnh` : { research: "Research", create: "Create & publish", publish: "Publish approved" }[r.mode] || r.mode;
     if (r.problem && !arToldProblem.has(r.started + r.problem.kind)) arToldProblem.add(r.started + r.problem.kind);
     if (r.status === "done" && !r.problem) toast(`${what} finished (${mins}${r.turns ? `, ${r.turns} turns` : ""}). Results are in Posts, Library and Log.`, "ok");
     else if (r.status === "done") toast(`${what} ended: ${r.problem.message}`);
@@ -2430,6 +2452,7 @@ header + * { margin-top: 0; }
       toast(failedList.length ? `Gửi lại ảnh: ${failedList.length} lỗi${stopped ? " (dừng vì lỗi lặp lại)" : ""}. ` + failedList.join(" | ") : `Đã gửi lại ảnh cho ${lacking.length} bài.`, failedList.length ? "error" : "ok");
       loadDrafts();
     };
+    redoBarDraw(everyDraft);
     const list = drafts.filter((d) => stateOf(d) === drState);
     drList = list.slice(); // the preview overlay edits its own copy; the tiles below keep the list they were drawn from
     $("#draftList").innerHTML = list.length ? `<div class="tiles">${list.map((d) => {
@@ -2439,8 +2462,8 @@ header + * { margin-top: 0; }
       const badge = hostTag + (drState === "scheduled" ? `<span class="status-tag c-green" title="Scheduled on Metricool (id ${esc(live?.id || "-")}); never sent again">On Metricool</span>` : drState === "approved" ? `<span class="status-tag c-amber" title="Approved, not on Metricool yet: the next Publish approved sends it">Waiting to send</span>` : "");
       const posted = drState === "posted" && liveIds(d.brand_post)[0];
       const when = live && drState === "scheduled" ? vnEt(live.publication, live.timezone) : posted ? `Posted ${vnEt(posted.publication, posted.timezone)}` : drState === "approved" ? "Not on Metricool yet" : "";
-      return tile({ id: d.id, img: draftThumb(d), title: titleOf(d),
-        status: (fail ? `<span class="dot ${["approved", "scheduled"].includes(drState) && !bad ? "dot-amber" : "dot-red"}" title="${esc(fail)}"></span>` : "") + badge,
+      return tile({ id: d.id, img: draftThumb(d), title: titleOf(d), idHtml: idRow(d.id),
+        status: redoTag(d) + (fail ?`<span class="dot ${["approved", "scheduled"].includes(drState) && !bad ? "dot-amber" : "dot-red"}" title="${esc(fail)}"></span>` : "") + badge,
         sub: bad ? d.brand_post.host_error : when, subRight: String(d.created || "").slice(0, 10), subRightTip: d.created ? `Created ${String(d.created).slice(0, 16).replace("T", " ")}` : "", who: d.preview?.page_name || d.brand, whoTip: [d.brand, fail || (drState === "approved" ? "the next Publish approved sends it" : "")].filter(Boolean).join(" · "),
         actions: review ? `<button class="btn primary" type="button" data-act="approve">Approve</button><button class="btn" type="button" data-act="drop">Drop</button>` : ["approved", "scheduled"].includes(drState) && d.brand_post && MC(d) !== "published" ? `${bad ? '<button class="btn" type="button" data-act="rehost">Gửi lại ảnh</button>' : ""}<button class="btn" type="button" data-act="unreview">Back to review</button>` : "" });
     }).join("")}</div>` : `<div class="meta">Nothing here.</div>`;
@@ -2469,6 +2492,78 @@ header + * { margin-top: 0; }
   });
   let drList = [];
   const draftThumb = (d) => (d.image_exists ? d.image : arr(d.preview?.media).find((m) => m.type !== "video")?.path || "");
+  // ----- Post id / image tag + Copy (every place a draft or its images are listed: Posts tiles, Preview, lightbox, Run tab rows) -----
+  // Image tag = "<draft>#<n>" (n = 1 cover, 2-4 extras), the same tag the agent and flow-pace use.
+  const imgTag = (id, n) => `${id}#${n}`;
+  const idRow = (text) => `<div class="idrow"><code title="${esc(text)}">${esc(text)}</code><button class="btn copy-id" type="button" data-copy="${esc(text)}" title="Copy ${esc(text)}">Copy</button></div>`;
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch {}
+    try { const a = document.createElement("textarea"); a.value = t; a.setAttribute("readonly", ""); a.style.position = "fixed"; a.style.top = "0"; a.style.opacity = "0"; document.body.append(a); a.select(); const ok = document.execCommand("copy"); a.remove(); return ok; } catch { return false; }
+  }
+  // Capture phase: tiles stop the click of their own buttons from bubbling (wireTiles), so the copy is handled before that.
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest?.(".copy-link, .copy-id");
+    if (!b || b.disabled) return;
+    e.preventDefault();
+    const t = b.textContent, ok = await copyText(b.dataset.copy || "");
+    b.textContent = ok ? "Copied" : "Copy failed"; setTimeout(() => { b.textContent = t; }, 1500);
+  }, true);
+  // ----- Tạo lại: redo requests (draft folder redo-request.json through POST /api/redo), one run for all (POST /api/redo/run) -----
+  const redoTag = (d) => (d.redo && canRedo(d) ? `<span class="status-tag c-amber" title="Chờ tạo lại: ${d.redo.whole ? "cả bài" : "ảnh " + arr(d.redo.images).join(", ")}${d.redo.note ? " · " + esc(d.redo.note) : ""}">Tạo lại ${arr(d.redo.images).length}</span>` : "");
+  const canRedo = (d) => !d.brand_post && d.status !== "rejected";
+  function redoBarDraw(all) {
+    const bar = $("#drRedoBar"), items = arr(all).filter((d) => d.redo && canRedo(d)), n = items.reduce((a, d) => a + arr(d.redo.images).length, 0);
+    bar.hidden = !n;
+    if (!n) { bar.innerHTML = ""; return; }
+    bar.innerHTML = `<span class="grow">Chờ tạo lại: <b>${n} ảnh</b> trong ${items.length} bài <span class="meta">(${items.map((d) => esc(d.id)).join(", ")})</span></span><button class="btn primary" type="button" id="drRedoRun" data-runlock>Chạy tạo lại (${n} ảnh)</button>`;
+    $("#drRedoRun").onclick = async (e) => {
+      if (runGuard()) return;
+      if (!confirm(`Chạy tạo lại ${n} ảnh (${items.length} bài)? Một lượt Create chỉ làm lại các ảnh đã đánh dấu, không duyệt, không gửi Metricool.`)) return;
+      const btn = e.currentTarget; btn.disabled = true; btn.textContent = "Starting…";
+      const r = await postJson("/api/redo/run", {}).catch(() => offline);
+      if (r.error) { toast(r.error); btn.disabled = false; btn.textContent = `Chạy tạo lại (${n} ảnh)`; return; }
+      toast(`Đã bắt đầu tạo lại ${r.images} ảnh. Theo dõi ở tab Run.`, "ok");
+      await loadAgentRun(); show("prompt");
+    };
+  }
+  // Preview side panel block: the post id, then one row per image (tag + Copy, Tạo lại toggle, note), "Tạo lại cả bài" + note, Save.
+  function redoBlock(d) {
+    const files = arr(d.images).length ? d.images : d.image_exists ? [d.image] : [], r = d.redo || { images: [], notes: {}, note: "", whole: false }, on = new Set(arr(r.images)), can = canRedo(d);
+    const rows = files.map((p, i) => { const n = i + 1, sel = on.has(n) && !r.whole, note = (r.notes || {})[n] || "";
+      return `<div class="redo-img${on.has(n) ? " on" : ""}" data-n="${n}"><img src="${img(p)}" alt="" data-rv="${i}">${idRow(imgTag(d.id, n))}
+        <div class="f">${can ? `<div class="row-actions"><button class="btn" type="button" data-redo-img="${n}" aria-pressed="${sel}">Tạo lại${n === 1 ? " (ảnh bìa)" : ""}</button></div>
+        <div class="f" ${sel ? "" : "hidden"}><label>Lý do / muốn sửa gì (ảnh ${n})</label><input class="redo-note" data-n="${n}" maxlength="300" value="${esc(note)}" placeholder="Không bắt buộc"></div>` : `<span class="meta">${n === 1 ? "Ảnh bìa" : `Ảnh ${n}`}</span>`}</div></div>`; }).join("");
+    const post = can ? `<div class="redo-post"><div class="row-actions"><button class="btn" type="button" data-redo-all aria-pressed="${!!r.whole}">Tạo lại cả bài</button></div>
+      <div class="f" ${r.whole || on.size ? "" : "hidden"}><label>Lý do / muốn sửa gì (cả bài)</label><input class="redo-note-all" maxlength="300" value="${esc(r.note || "")}" placeholder="Không bắt buộc"></div>
+      <div class="row-actions"><button class="btn primary" type="button" data-redo-save data-runlock>Lưu yêu cầu tạo lại</button>${r.at ? `<span class="meta">Đã lưu ${esc(when(r.at))}</span>` : ""}</div><div class="msg redo-msg"></div></div>` : `<div class="meta">${d.brand_post ? "Đã duyệt: Back to review trước khi tạo lại." : "Bài đã bỏ."}</div>`;
+    return `<div class="redo"><span class="label">Mã bài</span>${idRow(d.id)}${files.length ? `<span class="label">Ảnh (mã để copy · Tạo lại)</span>${rows}` : ""}${files.length ? post : ""}</div>`;
+  }
+  function redoWire(box, d, reopen) {
+    const sync = () => {
+      const all = $("[data-redo-all]", box)?.getAttribute("aria-pressed") === "true";
+      for (const row of $$(".redo-img", box)) { const b = $("[data-redo-img]", row), sel = b?.getAttribute("aria-pressed") === "true"; row.classList.toggle("on", all || sel); const f = $(".redo-note", row)?.closest(".f"); if (f) f.hidden = !sel || all; }
+      const any = all || $$("[data-redo-img][aria-pressed=true]", box).length > 0, fa = $(".redo-note-all", box)?.closest(".f"); if (fa) fa.hidden = !any;
+    };
+    for (const b of $$("[data-redo-img]", box)) b.onclick = () => { b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")); $("[data-redo-all]", box)?.setAttribute("aria-pressed", "false"); sync(); };
+    const ab = $("[data-redo-all]", box); if (ab) ab.onclick = () => { const v = ab.getAttribute("aria-pressed") !== "true"; ab.setAttribute("aria-pressed", String(v)); if (v) for (const b of $$("[data-redo-img]", box)) b.setAttribute("aria-pressed", "false"); sync(); };
+    for (const m of $$("[data-rv]", box)) m.onclick = () => reopen(Number(m.dataset.rv));
+    const save = $("[data-redo-save]", box); if (!save) return;
+    save.onclick = async () => {
+      if (runGuard()) return;
+      const whole = $("[data-redo-all]", box)?.getAttribute("aria-pressed") === "true";
+      const images = whole ? [] : $$("[data-redo-img][aria-pressed=true]", box).map((b) => Number(b.dataset.redoImg));
+      const notes = Object.fromEntries($$(".redo-note", box).filter((i) => images.includes(Number(i.dataset.n)) && i.value.trim()).map((i) => [i.dataset.n, i.value.trim()]));
+      save.disabled = true;
+      const r = await postJson("/api/redo", { id: d.id, whole, images, note: $(".redo-note-all", box)?.value.trim() || "", notes }).catch(() => offline);
+      save.disabled = false;
+      const msg = $(".redo-msg", box);
+      if (r.error) { msg.innerHTML = errLine(r.error); return; }
+      d.redo = r.cleared ? null : r.request; const i = drList.findIndex((x) => x.id === d.id); if (i >= 0) drList[i] = d;
+      toast(r.cleared ? `Đã bỏ yêu cầu tạo lại: ${d.id}` : `Đã lưu: tạo lại ${r.request.whole ? "cả bài" : "ảnh " + r.request.images.join(", ")} (${d.id})`, "ok");
+      msg.textContent = r.cleared ? "Không còn ảnh nào chờ tạo lại." : `Chờ tạo lại ${r.request.images.length} ảnh. Bấm "Chạy tạo lại" ở đầu trang Posts.`;
+      loadDrafts();
+    };
+  }
   // The card's ONE label: the latest step reached (Making → To review → Approved · waiting to send → Scheduled →
   // Posted), Dropped, or Failed in red. A post recorded earlier as a Metricool draft (old) counts as approved and
   // waiting: the next Create & publish run sends it as a scheduled post.
@@ -2503,7 +2598,7 @@ function draftTags(d) {
   const plannedOf = (d) => { const m = arr(d.brand_post?.metricool_sent).find((x) => x.publication); return m ? `${String(m.publication).slice(0, 16).replace("T", " ")}${m.draft ? " (old draft)" : ""}` : "-"; };
   // The post's media for the lightbox: its own images/videos, then the shop's original (scene-swap).
   function mediaOf(d) {
-    const own = (arr(d.preview?.media).length ? d.preview.media : d.image_exists ? (arr(d.images).length ? d.images : [d.image]).map((p) => ({ type: "image", path: p })) : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? (i === 0 ? `Cover 1/${all.length}` : `Image ${i + 1}/${all.length}`) : "New image" }));
+    const own = (arr(d.preview?.media).length ? d.preview.media : d.image_exists ? (arr(d.images).length ? d.images : [d.image]).map((p) => ({ type: "image", path: p })) : []).map((m, i, all) => ({ ...m, label: m.type === "video" ? "Video" : all.length > 1 ? (i === 0 ? `Cover 1/${all.length}` : `Image ${i + 1}/${all.length}`) : "New image", ...(m.type === "video" ? {} : { copy: imgTag(d.id, i + 1) }) }));
     // Album: every image of the post, cover (image.png) first.
     return d.image_mode === "scene-swap" && d.reference_image ? [...own, { type: "image", path: d.reference_image, label: "Shop's original" }] : own;
   }
@@ -2548,9 +2643,9 @@ function draftTags(d) {
     const draw = () => {
       const m = items[i];
       const media = m.type === "video" ? `<video src="${img(m.path)}" controls autoplay></video>` : `<img src="${img(m.path)}" alt="${esc(m.label)}">`;
-      openOverlay(`${esc(m.label)}${items.length > 1 ? ` · ${i + 1}/${items.length}` : ""}`,
+      openOverlay(`${esc(m.label)}${items.length > 1 ? ` · ${i + 1}/${items.length}` : ""}${m.copy ? ` · <code>${esc(m.copy)}</code>` : ""}`,
         `<div class="lb-stage">${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="-1" aria-label="Previous">‹</button>` : ""}${media}${items.length > 1 ? `<button class="btn lb-nav" type="button" data-step="1" aria-label="Next">›</button>` : ""}</div>`,
-        (step) => { i = (i + step + items.length) % items.length; draw(); });
+        (step) => { i = (i + step + items.length) % items.length; draw(); }, m.copy ? `<button class="btn copy-id" type="button" data-copy="${esc(m.copy)}" title="Copy ${esc(m.copy)}">Copy mã ảnh</button>` : "");
       for (const b of $$(".lb-nav", overlay)) b.onclick = (e) => { e.stopPropagation(); lbKeys(Number(b.dataset.step)); };
     };
     draw();
@@ -2627,6 +2722,7 @@ function draftTags(d) {
       ${canCancel ? `<div class="row-actions">${d.status === "ready" ? `<button class="btn primary" type="button" data-act="approve" title="Save to the brand and host the image; the next Create &amp; publish run schedules it in Metricool">Approve</button>` : ""}<button class="btn" type="button" data-act="cancel" title="Only before the post is approved">Drop</button></div>
         <div class="reject-box" hidden><input class="note" placeholder="Reason (optional)"><button class="btn" type="button" data-act="cancel-go">Confirm drop</button></div>` : ""}
       ${canUnreview ? `<div class="row-actions"><button class="btn" type="button" data-act="unreview" title="Undo the approval: the post goes back to To review and its hosted image is removed">Back to review</button></div>` : ""}
+      ${redoBlock(d)}
       <div class="msg"></div>`;
     const title = `Preview ${esc(bp?.post || "")} <span class="meta">(mock${bp?.metricool === "published" ? "" : ", not posted"})</span>`;
     let lang = null; // the chosen language, kept when switching channel
@@ -2644,6 +2740,7 @@ function draftTags(d) {
       for (const b of $$("[data-item]", overlay)) b.onclick = () => go(Number(b.dataset.item));
       const sideBox = $(".pv-side", overlay);
       for (const b of $$("[data-act]", sideBox)) b.onclick = () => cancelDraft(sideBox, d, b.dataset.act, nav);
+      redoWire(sideBox, d, (i) => big(i));
       if ($("[data-orig]", sideBox)) $("[data-orig]", sideBox).onclick = () => big(mediaOf(d).length - 1);
       for (const b of $$("[data-tab]", overlay)) b.onclick = () => draw(Number(b.dataset.tab));
       for (const b of $$("[data-lang]", overlay)) b.onclick = () => { lang = keyOf(opts[Number(b.dataset.lang)]); draw(k); };
@@ -2701,12 +2798,6 @@ function draftTags(d) {
     if (old.length && old.length === bp.metricool_sent.length) return `${line}<div class="host meta">Old Metricool draft ${old.map((m) => esc(m.id || "")).join(", ")} (delete it in Metricool); the next run sends this post as a scheduled post.</div>`;
     return `${line}<dl class="kv mc-kv">${bp.metricool_sent.map((m) => `<dt>${esc(m.network)}</dt><dd>${m.draft ? "old draft" : "scheduled"} ${esc(etVn(m.publication, m.timezone))}${m.time_source ? `<br><span class="meta">${esc(m.time_source)}</span>` : ""}<br><span class="meta">Metricool id ${esc(m.id || "-")}</span>${m.planner_url ? ` · <a href="${esc(m.planner_url)}" target="_blank" rel="noopener">Open in Metricool</a>` : ""}</dd>`).join("")}</dl>${pub}${histHtml}`;
   }
-  document.addEventListener("click", async (e) => {
-    const b = e.target.closest(".copy-link");
-    if (!b) return;
-    const t = b.textContent;
-    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => { b.textContent = t; }, 1500); } catch {}
-  });
   // Optional "Drop" of a post before it is written into the brand (finalize.mjs cancel); nothing waits for it.
   async function cancelDraft(panel, d, act, nav) {
     const msg = $(".msg", panel), box = $(".reject-box", panel);

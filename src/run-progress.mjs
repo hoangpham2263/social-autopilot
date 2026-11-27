@@ -8,6 +8,7 @@ import { workspace, readJson, runDir, latestRun, listDrafts } from "../scripts/l
 import { brandTotal } from "../scripts/research.mjs";
 import { queueReport } from "../scripts/queue.mjs";
 import { draftImages } from "../scripts/draft-lib.mjs";
+import { redoProgress } from "../scripts/redo.mjs";
 
 const arr = (v) => (Array.isArray(v) ? v : []);
 // A file counts for this run only when it was written after the run started (a small slack for clock rounding).
@@ -87,6 +88,7 @@ export function runProgress(st, allBrands = []) {
   const mode = st?.mode || "", started = st?.started || "", scope = scopeOf(st, allBrands);
   const out = { mode, active: !!st?.active, started };
   if (mode === "research") out.research = researchProgress(scope, started);
+  else if (mode === "create" && st?.redo) out.redo = redoProgress(st.redo, started); // Posts > Tạo lại: only the listed images of existing drafts
   else if (mode === "create") out.create = createProgress(started, st?.pipe_id || "");
   else if (mode === "publish") out.publish = publishProgress(scope);
   return out;
@@ -101,6 +103,12 @@ export function progressOf(st, allBrands = []) {
       const r = researchProgress(scope, started);
       if (!r.rows.some((x) => x.started) || !r.target) return null;
       return { done: Math.min(r.kept, r.target), total: r.target, label: `Sources ${r.unitsDone}/${r.units} · Found ${r.found} · Kept ${r.kept}/${r.target}` };
+    }
+    if (mode === "create" && st?.redo) {
+      const c = redoProgress(st.redo, started);
+      if (!c.imagesTotal) return null;
+      const eta = st?.active ? etaMinutes(c, started) : 0, current = st?.active ? currentItem(c, st?.friendly) : "";
+      return { done: c.imagesDone, total: c.imagesTotal, label: `Tạo lại ${c.imagesDone}/${c.imagesTotal} ảnh · ${c.drafts} bài`, eta_min: eta, current, posts: c.posts, images_run: c.imagesRun, redo: true };
     }
     if (mode === "create") {
       const c = createProgress(started, st?.pipe_id || "");

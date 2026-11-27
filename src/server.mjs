@@ -32,6 +32,8 @@ import { researchTimes, dayTimes } from "../scripts/metricool-csv.mjs";
 import { findClaude } from "../core/setup/claude-cli.mjs";
 import { localChromeProfiles, openExtensionStore, tokenProfiles, saveExtensionToken } from "../core/setup/chrome.mjs";
 import { createAgentRunner, agyNote, threadsNote } from "../core/setup/agent-run.mjs";
+import { setRedo, pendingRedos, clearDoneRedos, redoPrompt, readRedo } from "../scripts/redo.mjs";
+import { agentFor } from "../scripts/agent-models.mjs";
 import { browserInfo, openLoginBrowser, cachedLoginStatus, profileLocked, profileProblem, browserSettings, PLATFORMS } from "../core/setup/own-browser.mjs";
 import { runVisitCheck, visitResults, clearVisitResults, visitActive, visitProgress, mergeLogins, buildSummary, readChecks } from "../core/setup/login-visit.mjs";
 
@@ -50,6 +52,7 @@ const agentRun = createAgentRunner({ toolRoot: root, workspace, unfinished: (st)
   loginWindowOpen: () => { const d = browserSettings(settings(), root).profileDir; return visitActive() || (existsSync(d) && profileLocked(d)); },
   browserCheck: (dir) => profileProblem({ dir, exists: existsSync(dir), locked: false }),
   onEnd: (st) => {
+  if (st.redo) { try { clearDoneRedos(); } catch {} } // Tạo lại: requests whose images were made again are cleared, the rest stays pending
   if (st.mode === "sync") return; // a brand-list refresh is not a Create/Publish run: no entry in the Log tab
   const lastLog = listLogs({ mode: st.mode, limit: 1 })[0];
   if (lastLog && Date.parse(lastLog.ended) >= Date.parse(st.started)) return;
@@ -87,7 +90,7 @@ function draftsData(brand, status) {
   return listDrafts(brand || undefined).filter((d) => !status || d.status.status === status).map((d) => ({
     ...summary(d), image_exists: existsSync(join(d.dir, "image.png")), languages: d.draft.languages, language_mode: d.draft.language_mode,
     inspiration_url: d.draft.inspiration.post_url || d.draft.inspiration.source_url, product_image: d.draft.product_image,
-    created: d.draft.created, by: d.status.by || "", image_host: d.status.image_host || null, brand_post: d.status.brand_post ? { ...d.status.brand_post, ...writtenPost(d) } : null, error: d.status.error || "", metadata_clean: d.status.metadata_clean || null, watermark: d.status.watermark || null, preview: previewOf(d),
+    created: d.draft.created, by: d.status.by || "", image_host: d.status.image_host || null, brand_post: d.status.brand_post ? { ...d.status.brand_post, ...writtenPost(d) } : null, error: d.status.error || "", metadata_clean: d.status.metadata_clean || null, watermark: d.status.watermark || null, preview: previewOf(d), redo: readRedo(d.dir),
   })).sort((a, b) => String(b.created).localeCompare(String(a.created)));
 }
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -372,6 +375,19 @@ async function handle(req, res) {
     const st = agentRun.status(), key = st.active && st.mode === String(b.mode ?? "") ? st.pipe_id || "" : "";
     return { run: newRun(String(b.mode ?? ""), { brands, agent: typeof b.agent === "string" ? b.agent.slice(0, 40) : "", key }) };
   });
+  // Posts > Preview > Tạo lại: one draft's redo request (images [n], whole, note, notes {n: text}); no image marked = cleared.
+  if (path === "/api/redo" && req.method === "GET") return api(res, () => { const items = pendingRedos(); return { items: items.map(({ dir, ...x }) => x), images: items.reduce((a, x) => a + x.images.length, 0), brands: [...new Set(items.map((x) => x.brand))].sort(), engine: imageEngine(settings()), agent: agentFor(settings(), "create") }; });
+  if (path === "/api/redo" && req.method === "POST") return api(res, async () => { const b = await body(req); return setRedo(draftId(b), { images: b.images, whole: b.whole === true, note: b.note, notes: b.notes }); });
+  // "Chạy tạo lại (N ảnh)": ONE Create-mode run for every pending request; the prompt is built here (scripts/redo.mjs redoPrompt).
+  if (path === "/api/redo/run" && req.method === "POST") { await body(req).catch(() => ({}));
+    try {
+      if (agentRun.status().active) return send(res, 409, { error: "A run is active: wait for it or press Stop." });
+      const items = pendingRedos(), s = settings(), engine = imageEngine(s), agent = agentFor(s, "create");
+      const prompt = redoPrompt({ items, engine, agent, browser: engine === "flow" ? browserInfo({ settings: s, toolRoot: root, workspace, runActive: false }) : {}, brands: discovered().brands });
+      const images = items.reduce((a, x) => a + x.images.length, 0);
+      const r = agentRun.start({ mode: "create", prompt, brands: [...new Set(items.map((x) => x.brand))].sort(), imageEngine: engine, threads: 1, redo: { items: items.map((x) => ({ id: x.id, images: x.images })), images } });
+      return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started, brands: r.brands, images } : { error: r.error });
+    } catch (e) { return send(res, 400, { error: e.message }); } }
   if (path === "/api/drafts") return api(res, () => ({ drafts: draftsData(get("brand"), get("status")) }));
   if (path === "/api/queue") return api(res, () => queueReport({ brand: get("brand") || undefined }));
   // Optional "Bỏ" of a generated post before it is written into the brand (finalize.mjs cancel). Nothing waits for it.
