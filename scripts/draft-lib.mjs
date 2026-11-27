@@ -40,6 +40,46 @@ export function logoWarnings(prompt) {
 // no-logo prompt rule (warning) and, when the brand asks for one, the watermark overlay.
 // Template placeholders in Title/upper case ("Your Names", "YOUR LOGO", "Your Bar Name"); a CTA like "send us your logo" is fine.
 const PLACEHOLDER_IN_CAPTION = /\bY(?:our|OUR)\s+(?:N(?:ames?|AMES?)(?:\s+H(?:ere|ERE))?|L(?:ogo|OGO)|B(?:ar|AR)(?:\s+N(?:ame|AME))?|B(?:usiness|USINESS)(?:\s+N(?:ame|AME))?|T(?:ext|EXT)|S(?:hop|HOP)(?:\s+N(?:ame|AME))?)\b/;
+// The caption rules shared by checkDraft and the app's caption workers (scripts/caption-worker.mjs): website line, fixed
+// hashtag, the reference caption (no copied words) of this draft.
+export function captionContext(draft) {
+  let project = '';
+  try { project = fs.readFileSync(path.join(draft.brand_dir, 'project', 'project.md'), 'utf8'); } catch {}
+  const website = projectField(project, 'Website').split(/\s/)[0];
+  const tag = projectField(project, 'Hashtag cố định').split(/\s/)[0];
+  let refCaption = '';
+  // The reference caption from the brand's store (store_item; drafts made before the store: matched by the post link).
+  try { const key = postKey(draft.inspiration.post_url); refCaption = readStore(draft.brand).items.find((r) => (draft.inspiration.store_item && r.id === draft.inspiration.store_item) || (!draft.inspiration.store_item && key && (r.post_keys || [r.post_key]).includes(key)))?.caption || ''; } catch {}
+  return { website, tag, refCaption };
+}
+// Every caption file of a draft: its languages (posted + reviewer-only) and per-network variants already written.
+export function captionFiles(dir, draft) {
+  const langs = draftLangs(draft);
+  const files = [...new Set([...Object.values(draft.captions || {}), ...langs.review.map(langs.file)])];
+  try { for (const f of fs.readdirSync(dir)) if (/^content-[a-z]{2}-[a-z]+\.txt$/.test(f)) files.push(f); } catch {}
+  return files;
+}
+export function captionTextProblems(draft, f, text, { website = '', tag = '', refCaption = '' } = {}) {
+  const problems = [];
+  if (!text.trim()) problems.push(`${f} trống`);
+  if (hasHidden(text)) problems.push(`${f} có ký tự ẩn`);
+  // User rule: never any AI label on a post (the record that AI made the image stays in the catalog's ai_disclosure).
+  const ai = aiLabelHits(text);
+  if (ai.length) problems.push(`${f} có nhãn AI (${ai.map((x) => `"${x}"`).join(', ')}): không bao giờ ghi nhãn AI trên bài`);
+  if (/\*\*|`|^#{1,6}\s|^>\s|\\#/m.test(text)) problems.push(`${f} có Markdown`);
+  if (/\n[\t ]*\n[\t ]*\n/.test(text.replace(/\r\n/g, '\n'))) problems.push(`${f} thừa dòng trống`);
+  if (website && !text.includes(`🌐 Website: ${website}`)) problems.push(`${f} thiếu dòng "🌐 Website: ${website}"`);
+  if (tag && !text.trim().split(/\r?\n/).at(-1)?.split(/\s+/).includes(tag)) problems.push(`${f} thiếu hashtag ${tag} ở dòng cuối`);
+  const hits = sharedWords(text, refCaption);
+  if (hits.length) problems.push(`${f} chép chữ bài tham khảo: "${hits[0]}"`);
+  // Sign text: every caption (posted and reviewer-only) quotes it (sign mode placeholder: not quoted as a name); scene mode: never a template placeholder.
+  if (draft.sign_text && draftSignMode(draft) !== 'placeholder' && !text.toLowerCase().includes(String(draft.sign_text).toLowerCase())) problems.push(`${f} không nhắc đúng chữ trên bảng "${draft.sign_text}"`);
+  if (draft.custom_text && PLACEHOLDER_IN_CAPTION.test(text)) problems.push(`${f} còn chữ mẫu kiểu "Your Names"/"Your Logo": dùng đúng chữ trên bảng`);
+  const shop = String(draft.inspiration?.source_shop || '').trim();
+  if (draft.image_mode === 'scene-swap' && shop.length > 2 && text.toLowerCase().includes(shop.toLowerCase())) problems.push(`${f} nhắc tên shop nguồn "${shop}"`);
+  return problems;
+}
+
 export function checkDraft(dir, draft, status = {}) {
   const problems = [];
   const promptFile = path.join(dir, 'prompt.txt');
@@ -48,41 +88,19 @@ export function checkDraft(dir, draft, status = {}) {
     const social = brandSocial(draft.brand_dir);
     if (social.product_images?.watermark?.enabled && !status.watermark) problems.push('thương hiệu bật watermark nhưng chưa chèn (draft.mjs watermark)');
   } catch {}
-  const project = fs.readFileSync(path.join(draft.brand_dir, 'project', 'project.md'), 'utf8');
-  const website = projectField(project, 'Website').split(/\s/)[0];
-  const tag = projectField(project, 'Hashtag cố định').split(/\s/)[0];
+  const ctx = captionContext(draft);
   if (!fs.existsSync(path.join(dir, 'image.png'))) problems.push('chưa có image.png');
   // image.png must be the remove-watermark skill's clean copy: no metadata chunks, pixels identical to the original.
   else problems.push(...cleanProblems(dir, status));
-  let refCaption = '';
-  // The reference caption from the brand's store (store_item; drafts made before the store: matched by the post link).
-  try { const key = postKey(draft.inspiration.post_url); refCaption = readStore(draft.brand).items.find((r) => (draft.inspiration.store_item && r.id === draft.inspiration.store_item) || (!draft.inspiration.store_item && key && (r.post_keys || [r.post_key]).includes(key)))?.caption || ''; } catch {}
   // Posted languages and reviewer-only languages are checked alike.
-  const langs = draftLangs(draft);
-  const files = [...new Set([...Object.values(draft.captions || {}), ...langs.review.map(langs.file)])];
-  for (const f of fs.readdirSync(dir)) if (/^content-[a-z]{2}-[a-z]+\.txt$/.test(f)) files.push(f);
+  const files = captionFiles(dir, draft);
   const captions = {};
   for (const f of files) {
     const file = path.join(dir, f);
     if (!fs.existsSync(file)) { problems.push(`thiếu ${f}`); continue; }
     const text = fs.readFileSync(file, 'utf8');
     captions[f] = text;
-    if (!text.trim()) problems.push(`${f} trống`);
-    if (hasHidden(text)) problems.push(`${f} có ký tự ẩn`);
-    // User rule: never any AI label on a post (the record that AI made the image stays in the catalog's ai_disclosure).
-    const ai = aiLabelHits(text);
-    if (ai.length) problems.push(`${f} có nhãn AI (${ai.map((x) => `"${x}"`).join(', ')}): không bao giờ ghi nhãn AI trên bài`);
-    if (/\*\*|`|^#{1,6}\s|^>\s|\\#/m.test(text)) problems.push(`${f} có Markdown`);
-    if (/\n[\t ]*\n[\t ]*\n/.test(text.replace(/\r\n/g, '\n'))) problems.push(`${f} thừa dòng trống`);
-    if (website && !text.includes(`🌐 Website: ${website}`)) problems.push(`${f} thiếu dòng "🌐 Website: ${website}"`);
-    if (tag && !text.trim().split(/\r?\n/).at(-1)?.split(/\s+/).includes(tag)) problems.push(`${f} thiếu hashtag ${tag} ở dòng cuối`);
-    const hits = sharedWords(text, refCaption);
-    if (hits.length) problems.push(`${f} chép chữ bài tham khảo: "${hits[0]}"`);
-    // Sign text: every caption (posted and reviewer-only) quotes it (sign mode placeholder: not quoted as a name); scene mode: never a template placeholder.
-    if (draft.sign_text && draftSignMode(draft) !== 'placeholder' && !text.toLowerCase().includes(String(draft.sign_text).toLowerCase())) problems.push(`${f} không nhắc đúng chữ trên bảng "${draft.sign_text}"`);
-    if (draft.custom_text && PLACEHOLDER_IN_CAPTION.test(text)) problems.push(`${f} còn chữ mẫu kiểu "Your Names"/"Your Logo": dùng đúng chữ trên bảng`);
-    const shop = String(draft.inspiration.source_shop || '').trim();
-    if (draft.image_mode === 'scene-swap' && shop.length > 2 && text.toLowerCase().includes(shop.toLowerCase())) problems.push(`${f} nhắc tên shop nguồn "${shop}"`);
+    problems.push(...captionTextProblems(draft, f, text, ctx));
   }
   // Scene-swap: the source shop's name/logo/watermark must be gone from the image. A program cannot read that reliably,
   // so a person or the agent looks and confirms (draft.mjs confirm-clean); a new image needs a new confirmation.
