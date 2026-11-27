@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createAgentRunner, sanitize, mcpConfig, validate, ALLOWED_TOOLS, usesFlow, runEngine, limitsFor, addDirs, needsBrowser, MODELS, modelFlag, DEFAULT_MINUTES, DEFAULT_TURNS } from '../core/setup/agent-run.mjs';
+import { createAgentRunner, CAPTION_NOTE, sanitize, mcpConfig, validate, ALLOWED_TOOLS, usesFlow, runEngine, limitsFor, addDirs, needsBrowser, MODELS, modelFlag, DEFAULT_MINUTES, DEFAULT_TURNS } from '../core/setup/agent-run.mjs';
 import { classifyProblem, MESSAGES } from '../core/setup/agent-problems.mjs';
 import { findClaude } from '../core/setup/claude-cli.mjs';
 
@@ -223,7 +223,7 @@ test('create with image engine flow: Playwright browser tools allowed, same own-
   r2.start({ mode: 'create', prompt: PROMPT }); await done(r2);
   const c = recorded(o2);
   assert.equal(c.args[c.args.indexOf('--allowedTools') + 1], ALLOWED_TOOLS.create.join(','));
-  assert.equal(c.stdin, PROMPT);
+  assert.equal(c.stdin, CAPTION_NOTE + PROMPT, 'create: only the caption-workers line in front (the app writes the captions)');
 });
 
 test('per-run image engine: the run choice beats the setting for tools and the own-browser note (create only)', async () => {
@@ -239,7 +239,7 @@ test('per-run image engine: the run choice beats the setting for tools and the o
   r2.start({ mode: 'create', prompt: PROMPT, imageEngine: 'codex' }); await done(r2);
   const c = recorded(o2);
   assert.equal(c.args[c.args.indexOf('--allowedTools') + 1], ALLOWED_TOOLS.create.join(','));
-  assert.equal(c.stdin, PROMPT);
+  assert.equal(c.stdin, CAPTION_NOTE + PROMPT, 'create: only the caption-workers line in front (the app writes the captions)');
   // No choice (or an invalid one): the setting decides. Publish ignores the engine.
   assert.equal(usesFlow('create', { image_engine: 'flow' }, ''), true);
   assert.equal(usesFlow('create', { image_engine: 'flow' }, 'nonsense'), true);
