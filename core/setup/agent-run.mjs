@@ -193,7 +193,7 @@ If a site shows a login wall, a checkpoint / security check or a captcha: STOP, 
 // Claude drafting text for several posts (N sub-agents, disjoint drafts, one writer per draft). Never parallel: Google Flow (pacing gate per profile), Research (one
 // source at a time in one tab: the state machine, tokens and blocked-platform skipping), Publish and Sync (Metricool).
 export const threadsFor = (mode, threads) => (mode === "create" || mode === "research" ? Math.min(4, Math.max(1, Math.trunc(Number(threads)) || 1)) : 1);
-export function threadsNote(mode, n, { agy = false, engine = "codex" } = {}) {
+export function threadsNote(mode, n, { agy = false, engine = "codex", captions = false } = {}) {
   // THREADS drives the steps that use NO browser, nothing else. n may be the placeholder "{N}" (the copy prompt of the Run tab fills it in).
   // Nothing is added for N = 1, Publish, Sync, a Flow run (any agent: pacing, the pages are Playwright) or an Antigravity Research run (it may call no subagent).
   if ((mode !== "create" && mode !== "research") || (n !== "{N}" && !(Number(n) >= 2))) return "";
@@ -206,10 +206,15 @@ export function threadsNote(mode, n, { agy = false, engine = "codex" } = {}) {
   }
   if (engine === "antigravity") parts.push(`IMAGES IN PARALLEL: make the pictures in GROUPS of up to ${n}: in ONE turn call invoke_subagent once per image of the group (type_name "image-generator", nothing else), wait for all, then LOOK at each and run its register-image one after the other. A group is either the covers (image 1) of up to ${n} DIFFERENT posts, or the extras (image 2..4) of ONE post whose cover is already registered. Never two registers of the same draft at the same time; one failing image never blocks its group.`);
   else parts.push(`Codex images: the tool runs up to ${n} at once by itself (draft.mjs image-batch); nothing to do for it.`);
-  if (!agy) parts.push(`WORKERS (steps without a browser): up to ${n} sub-agents (Agent tool) on DISJOINT draft ids: captions, image prompt files, register-image and the checks of different drafts; each writes only its own drafts' files (one writer per draft; shared files go through the tool's locked commands). Keep for YOURSELF what must stay consistent across posts: the ideas list (ideas differ from each other), the sign wording (differs per post), every pipeline.mjs / queue / publish command. Sub-agents use no browser tool. Wait for all of them before the next pipeline step.`);
+  if (!agy) parts.push(`WORKERS (steps without a browser): up to ${n} sub-agents (Agent tool) on DISJOINT draft ids: ${captions ? "" : "captions, "}image prompt files, register-image and the checks of different drafts; each writes only its own drafts' files (one writer per draft; shared files go through the tool's locked commands). Keep for YOURSELF what must stay consistent across posts: the ideas list (ideas differ from each other), the sign wording (differs per post), every pipeline.mjs / queue / publish command. Sub-agents use no browser tool. Wait for all of them before the next pipeline step.`);
   else parts.push("Draft text stays one post after another (Antigravity may call no subagent except image-generator).");
   return t + parts.join("\n") + "\n";
 }
+
+// ----- Captions in parallel (Create runs started by the app): the server's caption workers (src/caption-pump.mjs + scripts/caption-worker.mjs) write
+// every caption on separate light CLI processes as soon as a post's cover image is registered, while this agent keeps making images. The agent
+// writes no caption; pipeline.mjs (SA_CAPTION_WORKERS=1) waits for them at Stage C and prefills captions-todo.json. Copy prompt runs are unchanged.
+export const CAPTION_NOTE = "CAPTIONS: this app writes every caption itself, in parallel with your images (caption workers start as soon as a post's image 1 is registered). Do NOT write, rewrite or edit any caption (content-*.txt) and start no sub-agent for captions. In captions-todo.json leave every \"captions\" value exactly as prefilled; fill only the image checks (size_check, sign_check, confirm_clean) or a \"redo\". When pipeline.mjs says captions are still being written it waits by itself; only a post it lists under captions_failed gets its captions from you (brief.md of that draft).\n";
 
 // ----- Antigravity backend (agent.backend = "antigravity", CLI `agy`) -----
 // Same runner, other CLI: `agy -p= --input-format stream-json --output-format stream-json` reads the prompt as one NDJSON message on STDIN
@@ -532,14 +537,14 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     let prefix = "", from = "", resumedPipe = "";
     if (_retry) { // automatic relaunch of the SAME run after a dropped connection: same inputs, the continue line, the same pipeline folder, the previous log lines kept
       const inp = readInput(); if (!inp) return { ok: false, status: 409, error: "Nothing to restart." };
-      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.threads;
+      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.caption_threads || inp.threads;
       prefix = continueLine(mode, { status: "failed" }); from = inp.run_id; resumedPipe = inp.pipe_id || inp.run_id;
     } else if (resume) {
       if (cur) return { ok: false, status: 409, error: `A ${cur.state.mode} run is already active (started ${cur.state.started}). Only one run at a time: wait for it or press Stop.` };
       const ri = resumeInfo();
       if (!ri.available) return { ok: false, status: 409, error: "There is no stopped run to continue." };
       const inp = readInput();
-      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.threads;
+      ({ mode, prompt, brands, model } = inp); imageEngine = inp.image_engine || ""; threads = inp.caption_threads || inp.threads;
       prefix = continueLine(mode, ri); from = ri.run_id; resumedPipe = inp.pipe_id || ri.run_id;
     }
     if (!_retry && !resume) netTry.n = 0; // a start by the person begins a fresh count
@@ -566,6 +571,8 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     }
     const { limitMin, maxTurns } = limitsFor(mode, s, flow);
     const nThreads = usesFlow(mode, s, imageEngine) || (agy && mode === "research") ? 1 : threadsFor(mode, threads); // Create and Research (classification) only; Flow runs, Publish and Sync always 1
+    // Caption workers (Create): the Run tab Threads value as chosen, never cut by Flow (they use no browser; Flow stays one sequential agent).
+    const captionWorkers = mode === "create", captionThreads = captionWorkers ? threadsFor(mode, threads) : 0;
     const runId = `${new Date(now()).toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     const pipeId = resumedPipe || runId; // the pipeline folder of this run (a resumed run keeps the one of the run it continues)
     mkdirSync(tmpDir, { recursive: true }); mkdirSync(runsDir, { recursive: true });
@@ -600,7 +607,7 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
       if (mode === "research") args.push("--strict-mcp-config");
     }
     const snapDir = join(tmpDir, `run-${runId}`); try { mkdirSync(snapDir, { recursive: true }); writeFileSync(join(snapDir, "settings.json"), JSON.stringify(s)); } catch {}
-    const env = { ...process.env, SA_RUN_ID: runId, SA_PIPE_ID: pipeId, SA_SETTINGS: join(snapDir, "settings.json"), SA_FLOW_SPEED: "1", ...(agy ? { SA_AGENT: "antigravity" } : {}), ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
+    const env = { ...process.env, SA_RUN_ID: runId, SA_PIPE_ID: pipeId, SA_SETTINGS: join(snapDir, "settings.json"), SA_FLOW_SPEED: "1", ...(captionWorkers ? { SA_CAPTION_WORKERS: "1" } : {}), ...(agy ? { SA_AGENT: "antigravity" } : {}), ...(nThreads > 1 ? { SA_THREADS: String(nThreads) } : {}), ...(profile && !own ? { PLAYWRIGHT_MCP_PROFILE_DIR_NAME: profile } : {}), ...(extTok ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: extTok } : {}) };
     const cmd = plat === "win32" && /\.(cmd|bat)$/i.test(found.path) ? ["cmd", ["/c", found.path, ...args]] : [found.path, args];
     let child;
     try { child = spawnFn(cmd[0], cmd[1], { cwd: toolRoot, env, windowsHide: true, detached: false, stdio: ["pipe", "pipe", "pipe"] }); }
@@ -608,10 +615,10 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     const started = _retry?.started || new Date(now()).toISOString();
     const run = {
       child, cfg, backend, label, mcpName, agyImages: usesAgyImages(mode, s, imageEngine), mcpGone: false, agyPath: found.path, agyText: {}, agyTools: new Set(), settingModel: choice.id, effort: choice.effort, lines: [], buf: "", written: 0, stderr: [], limitMin, browser, own, ended: false, forced: "", result: null, timer: null,
-      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, pipe_id: pipeId, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
+      state: { run_id: runId, mode, pid: child.pid ?? null, started, updated: started, status: "running", backend, threads: nThreads, ...(captionWorkers ? { caption_workers: true, caption_threads: captionThreads } : {}), pipe_id: pipeId, exit_code: null, last_text: "", report: "", turns: 0, error: "", problem: null, flow, model: modelKey, limit_min: limitMin, max_turns: maxTurns, brands: Array.isArray(brands) ? brands.filter((b) => typeof b === "string").slice(0, 50) : [], ...(from ? { resumed_from: from } : {}) },
     };
     // The inputs of this run, for a later "continue" (the original prompt, without the continue line).
-    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads, pipe_id: pipeId })); } catch {}
+    try { writeFileSync(inputFile, JSON.stringify({ run_id: runId, mode, prompt, brands: run.state.brands, model: modelKey, image_engine: ["codex", "flow", "antigravity"].includes(imageEngine) ? imageEngine : "", threads: nThreads, ...(captionWorkers ? { caption_threads: captionThreads } : {}), pipe_id: pipeId })); } catch {}
     cur = run;
     if (mcpName) registerLive(run);
     if (_retry) { run.lines = _retry.lines; run.friendly = _retry.friendly; try { writeFileSync(logFile, run.lines.join("\n") + "\n"); } catch {} addLine(run, `restart: ${mode} run ${runId}`); }
@@ -632,7 +639,7 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     // This text is prepended to the same prompt Copy prompt gives; Copy prompt is not changed.
     const note = own ? ownNote(bs.headless) : browser ? (flow ? flowExtensionNote : extensionNote) : "";
     // agy reads the prompt as ONE NDJSON user message on stdin (never argv: no length limit, nothing in the process list).
-    const text = note + threadsNote(mode, nThreads, { agy, engine: runEngine(s, imageEngine) }) + (agy ? agyNote(mcpName, browser, usesAgyImages(mode, s, imageEngine)) : "") + prefix + prompt;
+    const text = note + threadsNote(mode, nThreads, { agy, engine: runEngine(s, imageEngine), captions: captionWorkers }) + (captionWorkers ? CAPTION_NOTE : "") + (agy ? agyNote(mcpName, browser, usesAgyImages(mode, s, imageEngine)) : "") + prefix + prompt;
     try { child.stdin?.end(agy ? JSON.stringify({ event: "user", message: { content: text } }) + String.fromCharCode(10) : text); } catch {}
     // Hard time limit: the whole process tree is killed.
     if (limitMin > 0) run.timer = setTimeout(() => { if (run.ended) return; run.forced = "timeout"; killTree(child); setTimeout(() => finish(run, null), graceMs).unref?.(); }, limitMin * 60000);
@@ -668,12 +675,17 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
     return {
       active: !!run, status: shown?.status || "idle", mode: shown?.mode || "", started: shown?.started || "",
       elapsed_s: shown?.started ? Math.max(0, Math.round(((run ? now() : Date.parse(shown.updated) || now()) - Date.parse(shown.started)) / 1000)) : 0,
-      backend: shown?.backend || "claude", pipe_id: shown?.pipe_id || "", quota: shown?.quota || null, threads: shown?.threads || 1, usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
+      backend: shown?.backend || "claude", pipe_id: shown?.pipe_id || "", quota: shown?.quota || null, threads: shown?.threads || 1, caption_workers: !!shown?.caption_workers, caption_threads: shown?.caption_threads || 0, run_id: shown?.run_id || "", usage: shown?.usage || null, last_text: shown?.last_text || "", report: typeof shown?.report === "string" ? shown.report : "", turns: shown?.turns || 0, error: shown?.error || "", problem: shown?.problem || null, flow: !!shown?.flow, model: validClaudeModel(shown?.model) ? shown.model : "default", model_in_use: shown?.model_in_use || "", limit_min: shown?.limit_min || 0, max_turns: shown?.max_turns || 0, brands: shown?.brands || [], resumed_from: shown?.resumed_from || "",
       resume: resumeInfo(),
       tail: lines.slice(-TAIL_LINES),
       friendly: run ? friendlyView(run.friendly) : friendlyView((() => { try { return JSON.parse(readFileSync(friendlyFile, "utf8")); } catch { return []; } })()),
       cli: { found: !!cli?.found, path: cli?.path || "" }, agy: { found: !!agyCli?.found },
     };
   }
-  return { start, stop, status, shutdown, isActive: () => !!cur, browserActive: () => !!cur?.browser && !!cur?.own };
+  // A line from the app itself (the caption workers) in the live view and the details of the active run.
+  function note(text, runId = "") {
+    if (!cur || cur.waiting || (runId && cur.state.run_id !== runId)) return false;
+    addLine(cur, "app: " + text); say(cur, text); return true;
+  }
+  return { start, stop, status, shutdown, note, isActive: () => !!cur, browserActive: () => !!cur?.browser && !!cur?.own };
 }

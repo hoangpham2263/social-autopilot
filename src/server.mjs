@@ -19,6 +19,7 @@ import { cancel } from "../scripts/finalize.mjs";
 import { readSocial, saveSocial, saveOverride } from "../scripts/social.mjs";
 import { queueReport, writtenPost } from "../scripts/queue.mjs";
 import { runProgress, progressOf } from "./run-progress.mjs";
+import { createCaptionPump } from "./caption-pump.mjs";
 import { listItems, setItemStatus, readProgress, storeDir, storeIdeasFile, duplicatesFile, sourceAvatar, registryAll, resetRegistry } from "../scripts/store.mjs";
 import { promptList, skillLine, ALL_BRANDS, FLOW_IMAGES_TEXT, AGY_IMAGES_TEXT, EXTERNAL_TEXT } from "../scripts/prompts.mjs";
 import { listSources, defaultSource } from "../scripts/skills.mjs";
@@ -55,7 +56,10 @@ const agentRun = createAgentRunner({ toolRoot: root, workspace, unfinished: (st)
   const why = { failed: "run failed", stopped: "stopped by the user", timeout: "time limit reached" }[st.status] || "";
   addLog({ mode: st.mode, agent: st.backend === "antigravity" ? "Antigravity (app)" : "Claude Code (app)", brands: st.brands || [], started: st.started, reason: why ? `${why}${st.error ? ": " + st.error : ""}` : "", warning: why ? "" : "The agent did not write a run log; this one was added by the app." });
 } });
-for (const sig of ["exit", "SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { agentRun.shutdown(); if (sig !== "exit") process.exit(0); });
+// Captions in parallel with the images (src/caption-pump.mjs): light caption workers start as soon as a post's cover image is registered.
+const captionPump = createCaptionPump({ agentRun, toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }), findAgy });
+setInterval(() => { try { captionPump.tick(); } catch {} }, 3000).unref();
+for (const sig of ["exit", "SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { agentRun.shutdown(); captionPump.shutdown(); if (sig !== "exit") process.exit(0); });
 let codexModelsCache = null, agyModelsCache = null;
 const configApi = createConfigApi({ hubRoot: root, pwsh: PWSH, env: toolEnv });
 mkdirSync(logs, { recursive: true });
@@ -349,7 +353,7 @@ async function handle(req, res) {
     if (!r.ok) throw new Error(r.error);
     return { ok: true, run_id: r.run_id, started: r.started };
   });
-  if (path === "/api/agent-run" && req.method === "GET") return api(res, () => { const st = agentRun.status(); return { ...st, progress: progressOf(st, discovered().brands.filter((b) => b.usable).map((b) => b.id)) }; }); // progress {done,total,label}: facts on disk, one function
+  if (path === "/api/agent-run" && req.method === "GET") return api(res, () => { const st = agentRun.status(); return { ...st, progress: progressOf(st, discovered().brands.filter((b) => b.usable).map((b) => b.id)), captions: captionPump.status() }; }); // progress {done,total,label}: facts on disk, one function
   if (path === "/api/agent-run" && req.method === "POST") { const b = await body(req).catch(() => ({})); try { if (!agentRun.status().active) rmSync(join(workspace, "pipeline", "publish.json"), { force: true }); } catch {} // a send plan of an earlier run is never reused (it caused duplicate Metricool posts)
     const r = agentRun.start(b.resume === true ? { resume: true } : { mode: b.mode, prompt: b.prompt, brands: b.brands, imageEngine: b.image_engine, model: b.model, threads: b.threads }); return send(res, r.status, r.ok ? { ok: true, run_id: r.run_id, mode: r.mode, started: r.started, brands: r.brands, resumed: r.resumed } : { error: r.error }); }
   if (path === "/api/run-progress" && req.method === "GET") return api(res, () => runProgress(agentRun.status(), discovered().brands.filter((b) => b.usable).map((b) => b.id)));
