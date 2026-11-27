@@ -33,7 +33,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isoWithOffset } from './metricool-mcp.mjs';
 import { nowIn, publishStock } from './metricool-csv.mjs';
-import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, imageEngine, loadBrand, findDraft, cleanText, metricoolBrands, isMain } from './lib.mjs';
+import { main, out, parseArgs, workspace, readJson, writeJson, stamp, settings, imageEngine, loadBrand, findDraft, cleanText, metricoolBrands, isMain, withLock } from './lib.mjs';
+import { needsCaptions } from './caption-worker.mjs';
 import { previousUses } from './store.mjs';
 import { flowSpeedOn } from './flow-snippets.mjs';
 import { REUSE_RULE } from './ideas.mjs';
@@ -330,6 +331,20 @@ function waitImages(st, maxMs) {
   while (running() || busy()) { if (Date.now() > until) return false; sleep(1000); }
   return true;
 }
+// Caption workers of the app (SA_CAPTION_WORKERS=1, set by the app's Create runs; src/caption-pump.mjs): they write content-<lang>.txt as soon
+// as a post's cover image exists. Stage C waits for the ones still missing; the posts the workers gave up on (captions-failed.json) go to the agent.
+const captionWorkersOn = () => process.env.SA_CAPTION_WORKERS === '1';
+function waitCaptions(st, maxMs) {
+  const until = Date.now() + maxMs;
+  for (;;) {
+    const rep = readJson(path.join(pipeDir(), 'captions-failed.json'), { failed: [], fatal: '' });
+    const missing = (st.drafts || []).filter((id) => { try { return needsCaptions(findDraft(id)); } catch { return false; } });
+    const failed = rep.fatal ? missing : missing.filter((id) => (rep.failed || []).includes(id));
+    const pending = missing.filter((id) => !failed.includes(id));
+    if (!pending.length || Date.now() > until) return { pending, failed };
+    sleep(2000);
+  }
+}
 function captionTemplate(st) {
   const tpl = { how: 'LOOK at every contact sheet first. Per draft EITHER the captions (one key per language in langs: the posted ones and the reviewer-only ones; follow brief.md, SKILL.md section A, project.md; mention sign_text exactly (not for _context.sign_mode placeholder: never quote the placeholder as a name); write it from the idea + audience, not from the image; Website line + fixed hashtag; no Markdown, no AI label, no source shop name) plus "size_check": { "product_pct": N, "object_pct": N } measured on the image (product width as % of the image width and of the comparison object; not for ref_mode keep-scene, which keeps the original framing), plus for a draft with a sign mode and sign_text "sign_check": { "reads": "<the words you SEE on the sign>", "by": "<name>" } (step 5: it must equal sign_text; without it the captions are not accepted: [CAUSE:caption-before-image-check]), plus for a scene-swap draft "confirm_clean": { "by": "<name>", "no_people": true|false } once you LOOKED at the image beside _context.reference_image (no shop name, logo, watermark, phone, price left; new-scene: no person left, no_people true; keep-scene: the new sign_text reads exactly), OR "redo": { "description": "...", "size": "...", "compare": "...", "smaller": N, "sign_text": "..." } (only what changes; "smaller": N when the product is too big, N from the size limits; at most 2 redos per draft). Then: node scripts/pipeline.mjs create --resume --captions workspace/pipeline/captions-todo.json', drafts: {} };
   const old = readJson(path.join(pipeDir(), 'captions-todo.json'), { drafts: {} }).drafts || {};
@@ -354,6 +369,9 @@ function stageC(st, args) {
   }
   const done = waitImages(st, Number(args['wait-minutes'] || 40) * 60000);
   if (!done) return { stage: 'C waiting', next: 'Images are still being made: run node scripts/pipeline.mjs create --resume again.' };
+  // App runs: the captions are written by the app's caption workers in parallel with the images; wait for the last ones here.
+  const cw = captionWorkersOn() ? waitCaptions(st, Number(args['caption-wait-minutes'] || 20) * 60000) : null;
+  if (cw && cw.pending.length) return { stage: 'C waiting for captions', captions_pending: cw.pending, next: 'The app is still writing these captions: run node scripts/pipeline.mjs create --resume again (do not write them yourself).' };
   const batch = readJson(st.batch?.out || '', null);
   const sheet = step('draft.mjs', ['contact-sheet', '--ids', st.drafts.join(',')]);
   const tpl = captionTemplate(st);
@@ -365,11 +383,12 @@ function stageC(st, args) {
   const failed = Object.entries(tpl.drafts).filter(([, x]) => x._context.status === 'image_failed').map(([id, x]) => ({ id, error: x._context.error }));
   return {
     stage: 'C done', contact_sheets: (sheet.sheets || []).map((s) => ({ file: s.file, drafts: s.drafts.map((x) => `#${x.n} ${x.id}`) })), image_failed: failed, batch_failed: batch?.failed || [],
-    captions_file: capFile, drafts: Object.keys(tpl.drafts),
+    captions_file: capFile, drafts: Object.keys(tpl.drafts), ...(cw ? { captions_by_app: true, captions_failed: cw.failed } : {}),
     next: [
       'STOP (ii): LOOK at every contact sheet (Read each PNG; rules docs/LESSONS.md): product fits the setting, real size vs surroundings (fill size_check: product % of image width and of the comparison object; too big = redo with "smaller"), sign text exact, no logo on the product, no placeholder. Unsure: open that image file.',
       failed.length ? `image_failed: give those drafts a "redo" (Codex quota: stop making images and report).` : '',
-      `Write every caption in ${rel(capFile)} (or "redo" for a bad image), then: node scripts/pipeline.mjs create --resume --captions ${rel(capFile)}`,
+      cw ? `The captions were written by the app (prefilled in ${rel(capFile)}): do NOT change them; fill only size_check / sign_check / confirm_clean (or a "redo" for a bad image)${cw.failed.length ? `; write the captions yourself ONLY for captions_failed (${cw.failed.join(', ')}), from each draft's brief.md` : ''}, then: node scripts/pipeline.mjs create --resume --captions ${rel(capFile)}`
+        : `Write every caption in ${rel(capFile)} (or "redo" for a bad image), then: node scripts/pipeline.mjs create --resume --captions ${rel(capFile)}`,
     ].filter(Boolean),
   };
 }
@@ -406,11 +425,15 @@ function stageD(st, file, args) {
       if (!fresh.status.sign_check?.ok) { problems.push(`${id}: ${cause('caption-before-image-check', 'step 6 before step 5: LOOK at the image and give "sign_check": { "reads": "<words seen on the sign>", "by": "<name>" } with the captions (or draft.mjs sign-check).')}`); continue; }
     }
     // Step 6: the captions (written from the idea, quoting sign_text exactly).
-    const caps = e.captions || {};
+    // A caption the app's caption worker wrote after the captions file was made counts too (left empty in the file = keep the one on disk).
+    const caps = { ...(e.captions || {}) };
     const want = Object.keys(d.draft.captions || {});
+    const capFile = (l) => path.join(d.dir, d.draft.captions[l] || `content-${l}.txt`);
+    for (const l of want) if (!String(caps[l] || '').trim()) { try { caps[l] = fs.readFileSync(capFile(l), 'utf8'); } catch {} }
     const empty = want.filter((l) => !String(caps[l] || '').trim());
     if (empty.length) { problems.push(`${id}: caption missing for ${empty.join(', ')}`); continue; }
-    for (const l of want) fs.writeFileSync(path.join(d.dir, d.draft.captions[l] || `content-${l}.txt`), cleanText(String(caps[l])).text.trim() + '\n', 'utf8');
+    // Same lock as the caption workers (scripts/caption-worker.mjs): one writer per draft at a time; an unchanged text is not rewritten.
+    withLock(path.join(d.dir, 'captions'), () => { for (const l of want) { const t = cleanText(String(caps[l])).text.trim() + '\n'; let cur = null; try { cur = fs.readFileSync(capFile(l), 'utf8'); } catch {} if (cur !== t) fs.writeFileSync(capFile(l), t, 'utf8'); } });
     const c = step('draft.mjs', ['check', '--id', id]);
     results.push({ id, status: c.status || 'error', problems: c.problems || (c.error ? [c.error] : []), warnings: c.warnings || [] });
   }
