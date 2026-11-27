@@ -305,7 +305,7 @@ const defaultNpx = (plat) => {
 };
 
 const defaultAgyExec = (file, args, opts = {}) => spawnSync(file, args, { encoding: "utf8", windowsHide: true, timeout: 30000, ...opts });
-export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}), findCli, findAgy = () => ({ found: false, path: "" }), agyExec = defaultAgyExec, plat = osPlatform(), spawnFn = spawn, killTree = (c) => defaultKill(c, plat), npxOk = () => defaultNpx(plat), now = () => Date.now(), graceMs = 4000, onEnd = null, home = homedir(), browserCheck = () => "", loginWindowOpen = () => false }) {
+export function createAgentRunner({ toolRoot, workspace, unfinished = () => false, getSettings = () => ({}), findCli, findAgy = () => ({ found: false, path: "" }), agyExec = defaultAgyExec, plat = osPlatform(), spawnFn = spawn, killTree = (c) => defaultKill(c, plat), npxOk = () => defaultNpx(plat), now = () => Date.now(), graceMs = 4000, onEnd = null, home = homedir(), browserCheck = () => "", loginWindowOpen = () => false }) {
   const runsDir = join(workspace, "runs"), tmpDir = join(workspace, "tmp");
   // Every app window (process) has its OWN run files (agent-run-<instance>.*): a window never reads or overwrites another's live run. agent-run.json is only a mirror
   // of the last write (other tools / tests). When a window starts, it adopts the newest run of a window that is gone (so the last result and Resume survive a restart).
@@ -521,7 +521,9 @@ export function createAgentRunner({ toolRoot, workspace, getSettings = () => ({}
   function resumeInfo() {
     if (cur) return { available: false };
     const st = last || readState(); if (!st) return { available: false };
-    const status = st.status === "running" ? "failed" : st.status, inp = readInput();
+    let status = st.status === "running" ? "failed" : st.status; const inp = readInput();
+    // a Create run whose agent ended its turn before every image/caption was made is not done: it can be continued
+    if (status === "done" && st.mode === "create") { try { if (unfinished(st)) status = "stopped"; } catch {} }
     const available = RESUMABLE.includes(status) && st.mode !== "sync" && !!inp && inp.run_id === st.run_id && inp.mode === st.mode && typeof inp.prompt === "string";
     return available ? { available, run_id: st.run_id, mode: st.mode, status, brands: Array.isArray(inp.brands) ? inp.brands : [], model: inp.model || "default", image_engine: inp.image_engine || "", started: st.started || "", ended: st.updated || "" } : { available: false };
   }

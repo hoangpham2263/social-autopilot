@@ -43,7 +43,7 @@ const logs = join(workspace, "logs");
 // When a run ends the result goes to the run log (Log tab) like a prompt run: the agent normally writes it (runlog.mjs add); this only fills in when it did not (failed, stopped, timeout, or forgot).
 // Antigravity CLI (agy): PATH first, then its usual install folder.
 const findAgy = () => { const p = findTool("agy") || [join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "agy", "bin", "agy.exe"), join(homedir(), ".local", "bin", "agy")].find((x) => existsSync(x)) || ""; return { found: !!p, path: p }; };
-const agentRun = createAgentRunner({ toolRoot: root, workspace, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }),
+const agentRun = createAgentRunner({ toolRoot: root, workspace, unfinished: (st) => { const p = progressOf(st, discovered().brands.filter((b) => b.usable).map((b) => b.id)); return !!(p && p.total && p.done < p.total); }, getSettings: () => settings(), findCli: () => findClaude({ settings: rawSettings() }),
   findAgy,
   // Own browser: a run refuses to start while the login window holds the profile (or when there is no profile yet).
   loginWindowOpen: () => { const d = browserSettings(settings(), root).profileDir; return visitActive() || (existsSync(d) && profileLocked(d)); },
