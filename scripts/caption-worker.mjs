@@ -105,7 +105,7 @@ export function callAi({ backend, cli, model = '', effort = '', prompt, dirs = [
     child.on('close', (code) => {
       clearTimeout(timer); if (buf.trim()) line(buf.trim()); if (cfg) fs.rmSync(cfg, { force: true });
       const err = [result?.error, stderr].filter(Boolean).join(' ').slice(-1500);
-      if (foreign) return resolve({ ok: false, cause: foreign === 'timeout' ? 'TRANSIENT' : 'TOOL', error: foreign === 'timeout' ? 'no answer in time' : `the caption CLI used ${foreign}, which a caption worker may not use` });
+      if (foreign) return resolve({ ok: false, cause: 'TRANSIENT', error: foreign === 'timeout' ? 'no answer in time' : `the caption CLI used ${foreign}, which a caption worker may not use` });
       if (agyQuota(err) || /quota|RESOURCE_EXHAUSTED|usage limit|rate[- ]limit.*(reset|hours)/i.test(err)) return resolve({ ok: false, cause: 'QUOTA', error: err.slice(0, 300) });
       if (/not logged in|please run \/login|authentication|unauthori[sz]ed|sign in again|\b401\b/i.test(err)) return resolve({ ok: false, cause: 'AUTH', error: err.slice(0, 300) });
       const text = result?.text || lastText;
