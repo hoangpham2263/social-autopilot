@@ -61,6 +61,7 @@ import { track } from './progress.mjs';
 import { ideaSignProblems, promptProblems, signRules, requireSignRules, cause, WORKFLOW_VERSION, perImageSigns, albumSignOf, albumSignProblems, signMode, draftSignMode, placeholderOf, signLines } from './signtext.mjs';
 import { contactSheet } from './contact-sheet.mjs';
 import { codexModelArgs } from './agent-models.mjs';
+import { writeFlowSnippets, flowSpeedOn } from './flow-snippets.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 // The brand's own photo: inside its skill folder, or inside a local folder its social.json lists in
@@ -637,7 +638,22 @@ export function flowBrief(args, s = settings()) {
     reference_for_upload = path.join(downloads, `sa-ref-${process.env.SA_RUN_ID ? process.env.SA_RUN_ID + '-' : ''}${draft.id}-${n}${path.extname(ref) || '.png'}`);
     fs.copyFileSync(ref, reference_for_upload);
   }
-  return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt, ...(safe ? { safe: true } : {}), needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),
+  // SPEED (Flow only): 4 ready-made one-item Playwright snippets (scripts/flow-snippets.mjs) + a copy of the reference under the tool folder (the
+  // file chooser refuses Downloads). Written into the run's temp folder (removed with the run). Never fatal: without them the agent works by hand.
+  let js = null, upload = '';
+  if (!agy && reference_for_upload && args['no-js'] !== true && flowSpeedOn()) {
+    try {
+      const jsDir = path.join(workspace, 'tmp', process.env.SA_RUN_ID ? `run-${process.env.SA_RUN_ID}` : 'flow-js', 'flow');
+      fs.mkdirSync(jsDir, { recursive: true });
+      upload = path.join(jsDir, path.basename(reference_for_upload));
+      fs.copyFileSync(reference_for_upload, upload);
+      const own = s?.browser?.mode === 'own';
+      const saveAs = own ? path.join(os.homedir(), 'Downloads', `sa-flow-${process.env.SA_RUN_ID ? process.env.SA_RUN_ID + '-' : ''}${draft.id}-${n}.jpg`) : '';
+      js = writeFlowSnippets({ upload, prompt, own, saveAs }, jsDir, `${draft.id}-${n}${safe ? '-safe' : ''}`);
+    } catch { js = null; }
+  }
+  return { id: draft.id, n, file: files[n - 1], aspect: '1:1', prompt,
+    ...(js ? { js, upload, speed: `browser_run_code_unsafe {filename}: js.prep (1:1 check + upload + chip + prompt typed) -> node scripts/flow-pace.mjs gate --tag ${draft.id}#${n} -> js.submit; later js.ready (no side effect) -> download-lock acquire --tag ${draft.id}#${n} -> js.collect -> node scripts/flow-pace.mjs download-collect --tag ${draft.id}#${n} (moves the file, releases the lock) -> LOOK once -> register.` } : {}), ...(safe ? { safe: true } : {}), needs_image1_as_reference: n > 1, ...(albumModeOf(draft) ? { album_mode: albumModeOf(draft) } : {}), ...(n > 1 && albumModeOf(draft) === 'scene' ? { album_scene, ...(album_scene ? {} : { warning_scene: 'no scene chosen yet for this extra: pick it per the brand table (project.md section 10), never one that is forbidden, different from image 1 and the other extras.' }) } : {}),
     ...(agy ? { image_paths: reference_for_upload ? [reference_for_upload] : [], image_name: `${draft.id}-${n}`, antigravity_call: 'invoke_subagent(type_name="image-generator"), task gives Prompt = prompt, ImagePaths = image_paths (empty list when none), AspectRatio = aspect, ImageName = image_name; it saves a JPG under ~/.gemini/antigravity-cli/brain/<conversation>/; then run the register command with --from = that file' } : {}),
     reference: agy ? (reference_for_upload ? (n > 1 ? 'image 1 of this post (ImagePaths): ' : 'reference photo (ImagePaths): ') + reference_for_upload : 'none') : n > 1 ? 'image 1 of this post: in Flow use "+" > its thumbnail in the project (Tất cả / Hình ảnh) > "Thêm vào câu lệnh"; fallback: upload ' + (reference_for_upload || ref) : (reference_for_upload || 'none'),
     ...(n > 1 && !fs.existsSync(ref) ? { warning: 'image 1 is not registered yet (extras follow the cover).' } : {}),
@@ -659,7 +675,7 @@ export function flowQueue(args, s = settings()) {
   // Order like a person working post by post (user 2026-11-23): each post's cover, then its own extras (they use that cover as
   // reference), then the next post. Drafts keep their order.
   items.sort((a, b) => (drafts.findIndex((d) => d.draft.id === a.id) - drafts.findIndex((d) => d.draft.id === b.id)) || (a.n - b.n));
-  const queue = items.map((it, k) => { const b = flowBrief({ id: it.id, n: String(it.n), engine: agy ? 'antigravity' : 'flow' }, s); return { order: k + 1, wave: it.n === 1 ? 1 : 2, tag: `${it.id}#${it.n}`, id: it.id, n: it.n, file: b.file, album_mode: b.album_mode, prompt: b.prompt, reference: b.reference, ...(agy ? { aspect: b.aspect, image_paths: b.image_paths, image_name: b.image_name } : {}), ...(b.warning_scene ? { warning_scene: b.warning_scene } : {}), register: b.register }; });
+  const queue = items.map((it, k) => { const b = flowBrief({ id: it.id, n: String(it.n), engine: agy ? 'antigravity' : 'flow', 'no-js': true }, s); return { order: k + 1, wave: it.n === 1 ? 1 : 2, tag: `${it.id}#${it.n}`, id: it.id, n: it.n, file: b.file, album_mode: b.album_mode, prompt: b.prompt, reference: b.reference, ...(agy ? { aspect: b.aspect, image_paths: b.image_paths, image_name: b.image_name } : {}), ...(b.warning_scene ? { warning_scene: b.warning_scene } : {}), register: b.register }; });
   if (agy) return { count: queue.length, queue, next: AGY_QUEUE_NEXT };
   return { count: queue.length, queue,
     next: 'WORK LIKE A PERSON, post by post, by hand with the browser tools: NEVER write or run a script, loop or batch file that drives Google Flow for several images (Google locks the profile for automated bursts). Upload the reference images of ONE item right before the prompt of that item; never pre-upload the references of several items in bulk. For each post: run node scripts/flow-pace.mjs gate --tag <draft>#1 right BEFORE you submit the cover (it waits a random human-like time; never skip it), submit, wait for it, then the extras of THAT post (each with its own gate right before its submit; the gate itself makes groups of 2-3 with random pauses), wait, download each image, LOOK at it, register it (draft.mjs register-image), then the next post. A "unusual activity" error means STOP (do not retry in a loop).' };
