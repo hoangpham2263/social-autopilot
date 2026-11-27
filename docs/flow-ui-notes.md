@@ -2,6 +2,13 @@
 
 Read BEFORE opening Flow. Newer one-liners: `workspace/flow-ui-lessons.md`. Labels as shown; the same buttons appear in English in some profiles (in brackets). Pace gate, stop rules and status lines stay in `docs/flow-images.md`.
 
+## Tốc độ (đo 2026-11-27: Antigravity + Flow ~4 phút/ảnh, ~8 lượt agent mỗi ảnh, mỗi lượt 7-36 s; Flow render không phải cổ chai. Cùng cách product-review 2026-11-26)
+- `flow-brief` in `js.{prep,submit,ready,collect}`: file trong `workspace/tmp/run-<run>/flow/` (sinh bởi `scripts/flow-snippets.mjs`, mỗi file cho đúng MỘT ảnh). Chạy bằng `browser_run_code_unsafe` với `filename`. prep = bước 5-8 gộp một lệnh (kiểm chip 1:1 / Nano Banana 2.1, tải ảnh tham chiếu của ảnh này, gắn chip, gõ prompt; không gửi); submit = bước 10; ready = kiểm ảnh xong chưa (không thao tác); collect = bước 12-13 (mở ô kết quả + bấm 1K). Trả `{stop: ...}` thì làm phần đó bằng tay theo các bước dưới.
+- Ảnh 2-4: prep tải chính image.png của bài (bản đã đăng ký) làm tham chiếu, không cần tìm ô ảnh bìa trong dự án.
+- Tải: `node scripts/flow-pace.mjs download-lock acquire --tag <draft>#<n>` > collect > `node scripts/flow-pace.mjs download-collect --tag <draft>#<n>` (đợi file, chuyển vào workspace/tmp/flow-downloads/<run>/<draft>-<n>.<ext>, kiểm là ảnh, LUÔN nhả khoá; in sẵn lệnh register) > NHÌN ảnh một lần > register-image. Khoá dùng chung file với product-review (`<tmp>/flow-download.lock`), chỉ giữ lúc bấm + chuyển file.
+- Không browser_snapshot / chụp màn hình / browser_wait_for. Chưa xong thì làm flow-brief + prep của ảnh kế, rồi kiểm lại bằng `ready`.
+- Gate không đổi (5-12 s, nhóm 2-3, 20-45 s sau nhóm, tối đa 8 prompt/2 phút).
+
 ## Steps (typical time)
 0. Reuse the Flow project: `node scripts/flow-pace.mjs project get` (one per Chrome profile). A url = open it directly (settings are kept; check the chip). None / fails to open: create one, then `project set --url <url>`. Work the posts grouped by ratio.
 1. `node scripts/draft.mjs flow-brief --id <draft> --n 1` first (prompt + reference copied to Downloads). Then `pw_tabs list`, and EVERY `run_code_unsafe` starts with `await page.bringToFront()`.
