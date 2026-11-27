@@ -325,7 +325,8 @@ export function createAgentRunner({ toolRoot, workspace, unfinished = () => fals
   (function adoptPrevious() {
     try {
       mkdirSync(runsDir, { recursive: true });
-      const dead = stateFilesOfOthers().filter((x) => !aliveApp(x.st?.app_pid)).sort((a, b) => String(b.st?.updated).localeCompare(String(a.st?.updated)));
+      // an in-process reload (/api/reload) keeps the same pid: this process's earlier files count too unless that run is still going
+      const dead = stateFilesOfOthers().filter((x) => !aliveApp(x.st?.app_pid) || (x.st?.app_pid === process.pid && x.st?.status !== "running")).sort((a, b) => String(b.st?.updated).localeCompare(String(a.st?.updated)));
       const best = dead[0]; if (!best) return;
       const sib = (suffix) => join(runsDir, best.inst ? `agent-run-${best.inst}${suffix}` : `agent-run${suffix}`);
       copyFileSync(best.file, stateFile);
