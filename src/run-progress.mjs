@@ -26,22 +26,51 @@ export function researchProgress(brands, started) {
   return { rows, kept: sum("kept"), found: sum("found"), target: sum("target"), units: sum("units"), unitsDone: sum("unitsDone") };
 }
 
+const mtime = (f) => { try { return statSync(f).mtimeMs; } catch { return 0; } };
+// Create: posts, captions and images of this run's pipeline, plus one row per post (images done/total, caption, state) and the images
+// registered SINCE this agent run started (their times give the pace for the time left; a resumed run counts only its own new images).
+// pipeId = the run's own pipeline folder (kept by a resumed run): its create.json belongs to the run whatever its age; only the old shared
+// file (no pipeId) must be newer than the start.
 export function createProgress(started, pipeId = "") {
   const file = join(workspace, "pipeline", ...(pipeId ? [pipeId] : []), "create.json");
-  if (!fresh(file, started)) return null;
+  if (!pipeId && !fresh(file, started)) return null;
   const st = readJson(file, null);
   if (!st) return null;
   const ideas = st.ideas_file && existsSync(st.ideas_file) ? readJson(st.ideas_file, {}) : {};
-  const ids = new Set(arr(st.drafts));
-  const mine = listDrafts().filter((d) => ids.has(d.id));
+  const order = arr(st.drafts), ids = new Set(order);
+  const mine = listDrafts().filter((d) => ids.has(d.id)).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const requested = arr(ideas.ideas).filter((i) => !i.reject).length || arr(ideas.ideas).length;
+  const t0 = Date.parse(started) || 0;
   let imagesTotal = 0, imagesDone = 0, captions = 0;
+  const posts = [], runTimes = [];
+  let next = null;
   for (const d of mine) {
-    const files = draftImages(d.draft);
-    imagesTotal += files.length; imagesDone += files.filter((f) => existsSync(join(d.dir, f))).length;
-    if (Object.values(d.draft?.captions || {}).some((f) => typeof f === "string" && existsSync(join(d.dir, f)))) captions++;
+    const files = draftImages(d.draft), have = files.map((f) => mtime(join(d.dir, f)));
+    const done = have.filter(Boolean).length;
+    for (const t of have) if (t && t0 && t >= t0 - 5000) runTimes.push(t);
+    const caption = Object.values(d.draft?.captions || {}).some((f) => typeof f === "string" && existsSync(join(d.dir, f)));
+    imagesTotal += files.length; imagesDone += done; if (caption) captions++;
+    const s = String(d.status?.status || "");
+    const state = /failed/.test(s) ? "failed" : done >= files.length && caption ? "done" : done || caption ? "partial" : "todo";
+    posts.push({ id: d.id, brand: d.draft?.brand || "", images: done, total: files.length, caption, state });
+    if (!next && done < files.length && state !== "failed") next = { id: d.id, n: have.findIndex((t) => !t) + 1 };
   }
-  return { requested, drafts: ids.size, captions, images: mine.filter((d) => existsSync(join(d.dir, "image.png"))).length, imagesTotal, imagesDone, stage: st.stage || "" };
+  runTimes.sort((a, b) => a - b);
+  return { requested, drafts: ids.size, captions, images: mine.filter((d) => existsSync(join(d.dir, "image.png"))).length, imagesTotal, imagesDone, stage: st.stage || "",
+    posts, next, imagesRun: runTimes.length, lastImageAt: runTimes.length ? new Date(runTimes.at(-1)).toISOString() : "" };
+}
+// Time left from the pace of the images finished in THIS run (2 at least): elapsed / images done here x images still missing. 0 = no estimate.
+export function etaMinutes(c, started, nowMs = Date.now()) {
+  const el = (nowMs - (Date.parse(started) || nowMs)) / 1000, left = (c?.imagesTotal || 0) - (c?.imagesDone || 0);
+  if (!c || c.imagesRun < 2 || left <= 0 || el < 30) return 0;
+  return Math.max(1, Math.round((left * (el / c.imagesRun)) / 60));
+}
+// The item being worked: the newest per-image live line ("Bài <id> · ảnh N · <bước>") while it names a post that still misses an image, else the first missing image on disk.
+export function currentItem(c, friendly = []) {
+  if (!c) return "";
+  const open = new Set(arr(c.posts).filter((p) => p.images < p.total).map((p) => p.id));
+  for (const f of arr(friendly).slice().reverse().slice(0, 12)) { const m = /^Bài (\S+) · ảnh (\d) · (.+)$/.exec(String(f?.text || "")); if (m && open.has(m[1])) return m[0]; }
+  return c.next ? `Bài ${c.next.id} · ảnh ${c.next.n}` : "";
 }
 
 export function publishProgress(brands) {
@@ -78,7 +107,9 @@ export function progressOf(st, allBrands = []) {
       if (!c) return null;
       const posts = Math.max(c.requested, c.drafts);
       if (!posts) return null;
-      return { done: c.drafts + c.captions + c.imagesDone, total: posts * 2 + Math.max(c.imagesTotal, 0), label: `Posts ${c.drafts}/${posts} · Captions ${c.captions} · Images ${c.imagesDone}/${c.imagesTotal}` };
+      const eta = st?.active ? etaMinutes(c, started) : 0, current = st?.active ? currentItem(c, st?.friendly) : "";
+      return { done: c.drafts + c.captions + c.imagesDone, total: posts * 2 + Math.max(c.imagesTotal, 0), label: `Bài ${c.drafts}/${posts} · Caption ${c.captions}/${c.drafts || posts} · Ảnh ${c.imagesDone}/${c.imagesTotal}`,
+        eta_min: eta, current, posts: c.posts, images_run: c.imagesRun };
     }
     if (mode === "publish") {
       const p = publishProgress(scope);

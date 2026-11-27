@@ -213,7 +213,18 @@ details[open] > summary { margin-bottom: 6px; }
 .ar-seg[hidden] { display: none; }
 .ar-track.indet .ar-fill { width: 100%; background: linear-gradient(90deg, #cfe2fd 0%, var(--accent) 50%, #cfe2fd 100%); background-size: 200% 100%; animation: arShimmer 1.4s linear infinite; }
 .ar-track.ok .ar-fill { background: #2e8b57; } .ar-track.bad .ar-fill { background: rgb(176, 0, 0); } .ar-track.warn .ar-fill { background: #b06000; }
-.ar-barmeta { flex: 0 0 auto; font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ar-barmeta { flex: 0 1 auto; min-width: 0; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* Current item + one row per post of the run (from facts on disk): icon, post id, images done/total, caption. States by border colour only. */
+.ar-cur { font-size: 12px; overflow-wrap: anywhere; }
+.ar-cur[hidden], .ar-postsbox[hidden] { display: none; }
+.ar-postsbox { display: flex; flex-direction: column; gap: 4px; }
+.ar-postsbox > .label { font-size: 11px; color: var(--muted); }
+.ar-posts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 4px; }
+.ar-posts li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 2px 8px; border: 1px solid var(--line); background: #fff; font-size: 12px; }
+.ar-posts li.done { border-color: #2e8b57; } .ar-posts li.partial { border-color: var(--accent); } .ar-posts li.failed { border-color: rgb(176, 0, 0); }
+.ar-posts .ic { flex: 0 0 auto; width: 1em; text-align: center; } .ar-posts li.done .ic { color: #2e8b57; } .ar-posts li.failed .ic { color: rgb(176, 0, 0); } .ar-posts li.todo .ic { color: var(--muted); }
+.ar-posts .id { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ar-posts .nm { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @keyframes arShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 /* While a run is active the bar visibly MOVES: diagonal stripes run along the filled part and the next segment, so it never looks frozen. */
 .ar-track.run:not(.indet) .ar-fill { background-color: var(--accent); background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.30) 0 10px, rgba(255,255,255,0) 10px 20px); background-size: 28px 28px; animation: arStripe .7s linear infinite; }
@@ -532,6 +543,8 @@ header + * { margin-top: 0; }
     <!-- Run now: live view of the headless Claude run (GET /api/agent-run, polled every 3 s while active). -->
     <div class="ar-panel" id="prAgentRun" hidden>
       <div class="ar-bar" id="arBar" hidden><div class="ar-track" id="arTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="ar-fill" id="arFill"></div><div class="ar-seg" id="arSeg" hidden></div></div><span class="ar-barmeta" id="arBarMeta"></span><span class="ar-count" id="arCount" hidden></span></div>
+      <div class="ar-cur" id="arCur" hidden></div>
+      <div class="ar-postsbox" id="arPostsBox" hidden><span class="label">Bài trong lượt</span><ul class="ar-posts" id="arPosts"></ul></div>
       <div class="ar-line"><span class="status-tag" id="arChip"></span> <span class="meta" id="arElapsed"></span></div>
       <div class="ar-resline" id="arResLine" role="status" hidden></div>
       <div id="arLast" class="ar-last ar-result"></div>
@@ -1740,14 +1753,14 @@ header + * { margin-top: 0; }
     $("#prStop").hidden = !busy || howNow() !== "app";
     const box = $("#prAgentRun"), show = !!r && (noCli || (r.status && r.status !== "idle"));
     box.hidden = howNow() !== "app"; prRunVis();
-    if (!show) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last ar-result"; $("#arLogBox").hidden = true; box.classList.remove("has-log"); return; }
+    if (!show) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = "No run yet. Press Run now to start one."; $("#arLast").className = "meta ar-last ar-result"; $("#arLogBox").hidden = true; $("#arPostsBox").hidden = true; $("#arCur").hidden = true; box.classList.remove("has-log"); return; }
     $("#arLast").className = "ar-last ar-result"; $("#arLogBox").hidden = false; box.classList.add("has-log");
-    if (noCli) { $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
+    if (noCli) { $("#arPostsBox").hidden = true; $("#arCur").hidden = true; $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").textContent = agyPicked() ? "Antigravity CLI (agy) not found: install it or add it to PATH" : "Claude CLI not found: set claudeCli.command in workspace/settings.json"; $("#arLog").textContent = ""; return; }
     const endedAt = r.started ? Date.parse(r.started) + (r.elapsed_s || 0) * 1000 : 0;
     if (!busy && endedAt && Date.now() - endedAt > 10 * 60000) { // stale result: one quiet line instead of the result block
       $("#arBar").hidden = true; $("#arChip").hidden = true; $("#arElapsed").textContent = ""; $("#arLast").className = "meta ar-last ar-result";
       $("#arLast").textContent = `Last run ${(AR_CHIP[r.status]?.[0] || r.status).toLowerCase()} ${when(new Date(endedAt).toISOString())}`;
-      $("#arLogBox").hidden = true; box.classList.remove("has-log"); return;
+      $("#arLogBox").hidden = true; $("#arPostsBox").hidden = true; $("#arCur").hidden = true; box.classList.remove("has-log"); return;
     }
     const [txt, cls] = AR_CHIP[r.status] || [r.status, ""];
     $("#arChip").hidden = false; $("#arChip").className = "status-tag " + cls; $("#arChip").textContent = txt;
@@ -1759,7 +1772,16 @@ header + * { margin-top: 0; }
     $("#arLast").style.color = r.problem || (r.error && r.status !== "running") ? "#8a1c13" : "";
     const log = $("#arLog"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
     log.textContent = arr(r.tail).join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
-    arFeedDraw(r); arBarDraw(r); arResLineDraw(r);
+    arFeedDraw(r); arBarDraw(r); arResLineDraw(r); arPostsDraw(r);
+  }
+  // Current item ("Bài <id> · ảnh N · <bước>") and one row per post (✔ done · ◔ going · ✖ failed · ○ not started), all from r.progress (facts on disk).
+  const AR_POST_IC = { done: "✔", partial: "◔", failed: "✖", todo: "○" };
+  function arPostsDraw(r) {
+    const p = r.progress || {}, posts = arr(p.posts), cur = r.active && p.current ? String(p.current) : "";
+    $("#arCur").hidden = !cur; $("#arCur").textContent = cur ? "Đang làm: " + cur : "";
+    const box = $("#arPostsBox"), html = posts.map((x) => `<li class="${esc(x.state)}" title="${esc(x.id)}"><span class="ic">${AR_POST_IC[x.state] || "○"}</span><span class="id">${esc(x.id)}</span><span class="nm">ảnh ${Number(x.images) || 0}/${Number(x.total) || 0} · caption ${x.caption ? "✔" : "–"}</span></li>`).join("");
+    box.hidden = !posts.length;
+    if ($("#arPosts").dataset.sig !== html) { $("#arPosts").innerHTML = html; $("#arPosts").dataset.sig = html; }
   }
   // ONE result line per finished run: green done with the counts, amber stopped / partial (quota reset time when that was the cause), red failed with the short cause.
   function arResLineDraw(r) {
@@ -1819,8 +1841,9 @@ header + * { margin-top: 0; }
     const cls = busy ? "" : st === "done" ? "ok" : st === "failed" ? "bad" : "warn";
     // ONE line: counts (from the server: facts on disk) + elapsed (+ a rough time left once 3 units are done); Stop keeps the last counts.
     const text = (e) => {
-      const left = busy && p && p.done >= 3 && p.done < p.total && e > 0 ? Math.max(1, Math.round((e / p.done) * (p.total - p.done) / 60)) : 0;
-      return [p ? p.label : busy ? "Đang chuẩn bị…" : "", `${arMmss(e)}`, left ? `~${left} min left` : "", !busy && r.quota ? `hết hạn mức ảnh${r.quota.at ? ", hồi lúc " + r.quota.at : ""} · chọn Antigravity (Flow) hoặc Codex` : ""].filter(Boolean).join(" · ");
+      // Create: the server's estimate from the pace of the images finished in this run (eta_min); other modes: done units so far.
+      const left = !busy || !p ? 0 : p.eta_min !== undefined ? p.eta_min : p.done >= 3 && p.done < p.total && e > 0 ? Math.max(1, Math.round((e / p.done) * (p.total - p.done) / 60)) : 0;
+      return [p ? p.label : busy ? "Đang chuẩn bị…" : "", `${arMmss(e)}`, left ? `còn ~${left} phút` : "", !busy && r.quota ? `hết hạn mức ảnh${r.quota.at ? ", hồi lúc " + r.quota.at : ""} · chọn Antigravity (Flow) hoặc Codex` : ""].filter(Boolean).join(" · ");
     };
     const elapsed = busy && r.started ? Math.max(0, Math.round((Date.now() - Date.parse(r.started)) / 1000)) : r.elapsed_s || 0;
     let pct = p ? Math.round((p.done / p.total) * 100) : st === "done" ? 100 : 0;
